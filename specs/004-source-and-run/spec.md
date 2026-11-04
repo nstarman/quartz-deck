@@ -20,6 +20,11 @@
   their own small spec.
 - Q: Source pane layout? → A: A resizable side-by-side split with the slides
   by default, toggleable, plus a button for full-width source.
+- Q (user direction, at planning): how are Python packages managed? → A: Each
+  presentation has its own reproducible environment with a lockfile, managed
+  by **uv** by default, or **pixi** with PyPI dependencies (not conda
+  packages) as the alternative — never by plain `pip install` into a shared
+  Python.
 
 ## Context
 
@@ -245,6 +250,24 @@ there; edit the cell: it is marked stale until run again.
   languages MUST show "cannot run here yet" (R, Julia and Observable are a
   later spec).
 
+**Reproducible environments (all stories)**
+
+- **FR-017**: Each deck MUST run its code in its own environment described by
+  a manifest and a lockfile kept next to the deck (or at its Quarto project
+  root): uv (`pyproject.toml` + `uv.lock`) by default, or pixi (`pixi.toml` /
+  `pyproject.toml` + `pixi.lock`, with PyPI dependencies) when the deck
+  already uses pixi.
+- **FR-018**: A deck without an environment MUST be offered one in a single
+  step (editor button or `qd env init`), created with the packages Quarto and
+  Run need, and locked; qd never installs into the system or a shared Python.
+- **FR-019**: Adding a package (editor or `qd env add <pkg>`) MUST update the
+  manifest and the lockfile; running code and rendering MUST use exactly the
+  locked versions and MUST refuse, with an explanation, when the lockfile is
+  out of date with the manifest.
+- **FR-020**: Rendering, preview, export and Run MUST all use the deck's
+  environment, so the output on screen, in the export and on a colleague's
+  machine (after one sync step) come from the same package versions.
+
 **Agents and safety (US4)**
 
 - **FR-013**: `qd run <cell>` and `qd run --all` MUST run code and return JSON
@@ -261,6 +284,8 @@ there; edit the cell: it is marked stale until run again.
 
 ### Key Entities
 
+- **Environment**: the deck's manifest + lockfile and the tool that manages
+  them (uv or pixi), the folder they live in, and whether the lock is current.
 - **Code cell**: a fenced code block with an engine language (e.g.
   `{python}`), its options (`#|` lines), its source text and a fingerprint of
   that text.
@@ -289,14 +314,17 @@ there; edit the cell: it is marked stale until run again.
   the `.qmd` (100% byte-identical before/after).
 - **SC-005**: An agent asked to fix a failing cell does so with `qd run` and
   `qd edit` in at most 6 commands, without usage errors, in 9 of 10 trials.
+- **SC-007**: On a second machine with only uv and Quarto installed, a deck's
+  environment is recreated from its lockfile in one command and renders with
+  identical package versions (100% of locked packages match).
 - **SC-006**: No code runs in a test where another local web page tries to
   trigger a run through the editor's connection (0 of all attempts).
 
 ## Assumptions
 
-- Code execution uses Jupyter, the engine Quarto uses for Python; the person
-  installs it as for Quarto (`pip install jupyter`). qd does not bundle
-  Python.
+- Code execution uses a Jupyter kernel inside the deck's own uv (or pixi)
+  environment; qd needs `uv` (or `pixi`) installed, not a global Jupyter.
+  qd does not bundle Python.
 - The final rendered deck is still produced by Quarto's own render; outputs
   shown in the editor are a working view and may differ from a full render if
   cells depend on run order (see FR-008).
