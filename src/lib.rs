@@ -1,7 +1,10 @@
+pub mod assets;
 pub mod attrs;
+pub mod browser;
 pub mod cli;
 pub mod deck;
 pub mod error;
+pub mod offline;
 pub mod ops;
 pub mod render;
 pub mod server;

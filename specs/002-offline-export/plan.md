@@ -22,8 +22,10 @@ with JSON output and goes through `run_op` for the editor.
 
 **Language/Version**: Rust stable, MSRV 1.89 (unchanged).
 
-**Primary Dependencies (new)**: `headless_chrome` 1.0 (MIT; drives Chrome over
-the DevTools protocol: request interception, exceptions, `printToPDF`),
+**Primary Dependencies (new)**: `chromiumoxide` 0.9 (MIT/Apache; async DevTools
+client on the existing tokio: request interception, exceptions, `printToPDF`;
+chosen over `headless_chrome`, whose build-time code generator
+`auto_generate_cdp` is GPL-3.0 — research R6),
 `ureq` (MIT/Apache, HTTPS download of the libraries and browser), `zip`
 (MIT, unpack the browser). Existing: `sha2`, `serde_yaml_ng`, `tokio` (not
 used by export). See research.md R6 for licenses.
@@ -108,5 +110,5 @@ each, called from `cli.rs` like `render.rs` is today.
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |---|---|---|
-| `headless_chrome` (~100 transitive crates) | FR-001/020 need request interception, exception capture and `printToPDF` on a running page | Hand-written DevTools client (WebSocket + JSON-RPC) is more code to own; Python+Playwright was rejected by the user (extra runtime); Chrome's `--print-to-pdf` flag prints blank decks (skill finding) and cannot block requests |
+| `chromiumoxide` (~140 transitive crates, all permissive) | FR-001/020 need request interception, exception capture and `printToPDF` on a running page | Hand-written DevTools client (WebSocket + JSON-RPC) is more code to own; Python+Playwright was rejected by the user (extra runtime); Chrome's `--print-to-pdf` flag prints blank decks (skill finding) and cannot block requests |
 | Browser download (`ureq` + `zip`) | FR-042: user chose "installed Chrome or download on first use" | Requiring a manual install fails the "works anywhere" choice; the `headless_chrome` built-in fetcher does not verify checksums (FR-042 requires verification) |

@@ -1,0 +1,32 @@
+---
+title: "Fragments"
+format: revealjs
+---
+
+## One {#one}
+
+First slide.
+
+## Steps {#steps}
+
+::: {.fragment}
+step one
+:::
+
+::: {.fragment}
+step two
+:::
+
+::: {.notes}
+these are the speaker notes
+:::
+
+## Three {#three}
+
+::: {.print-only}
+PRINT STILL
+:::
+
+::: {.print-hide}
+LIVE ONLY
+:::

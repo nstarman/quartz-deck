@@ -1,0 +1,8 @@
+---
+title: "Missing file"
+format: revealjs
+---
+
+## Gone {#gone background-video="media/not-there.mp4"}
+
+The video file does not exist.
