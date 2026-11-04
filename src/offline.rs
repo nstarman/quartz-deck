@@ -399,6 +399,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn counts_pdf_pages_not_page_trees() {
+        let pdf = b"<< /Type /Pages /Count 2 >> << /Type /Page /Parent 1 0 R >> << /Type/Page>> << /Type /Page\n>>";
+        assert_eq!(count_pdf_pages(pdf), 3);
+        assert_eq!(count_pdf_pages(b"%PDF-1.4"), 0);
+    }
+
+    #[test]
     fn allowlist() {
         assert!(allowed("about:blank?config=TeX-AMS_HTML-full"));
         assert!(
@@ -433,4 +440,68 @@ mod tests {
             "{u}"
         );
     }
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct PdfResult {
+    pub path: PathBuf,
+    pub pages: usize,
+    pub per_slide: bool,
+    pub notes: bool,
+}
+
+/// Number of pages in a PDF (page objects, not the `/Pages` tree nodes).
+pub fn count_pdf_pages(pdf: &[u8]) -> usize {
+    let mut n = 0;
+    for pat in [&b"/Type /Page"[..], &b"/Type/Page"[..]] {
+        n += pdf
+            .windows(pat.len() + 1)
+            .filter(|w| w.starts_with(pat) && !w[pat.len()].is_ascii_alphanumeric())
+            .count();
+    }
+    n
+}
+
+/// Print a deck to PDF through reveal.js's own print mode (research R4).
+pub fn print_pdf(
+    html: &Path,
+    out: &Path,
+    notes: bool,
+    per_slide: bool,
+    chrome: &Found,
+) -> Result<PdfResult> {
+    use chromiumoxide::cdp::browser_protocol::page::PrintToPdfParams;
+    // URL options override the deck's config (reveal.js): fragments as pages unless
+    // per-slide; notes only when asked (even if the YAML sets show-notes)
+    let url = format!(
+        "{}?print-pdf&pdfSeparateFragments={}&showNotes={}",
+        file_url(html)?,
+        !per_slide,
+        if notes { "separate-page" } else { "false" }
+    );
+    let bytes = runtime()?.block_on(async {
+        let op = OfflinePage::open(chrome).await?;
+        let res = async {
+            op.load(&url).await?;
+            tokio::time::sleep(Duration::from_millis(300)).await; // print layout settles after MathJax
+            let params = PrintToPdfParams::builder()
+                .prefer_css_page_size(true)
+                .print_background(true)
+                .build();
+            op.page.pdf(params).await.map_err(other)
+        }
+        .await;
+        op.close().await;
+        res
+    })?;
+    if let Some(dir) = out.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(out, &bytes)?;
+    Ok(PdfResult {
+        path: out.to_path_buf(),
+        pages: count_pdf_pages(&bytes),
+        per_slide,
+        notes,
+    })
 }

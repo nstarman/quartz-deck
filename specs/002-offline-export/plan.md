@@ -70,6 +70,18 @@ none installed); later exports work offline. Never modify deck/project files.
 Post-design re-check: PASS — the design adds no deck state and no GUI-only
 capability.
 
+Final check after implementation (T031, 2026-11-04): PASS. I — built from
+public docs and the user's own skill; the license check rejected
+`headless_chrome` (GPL-3.0 build dependency) in favour of `chromiumoxide`.
+II — export/check render temporary copies; tests assert the deck and
+`_quarto.yml` are byte-identical afterwards and no temp files remain. III —
+`check --offline`, `export`, `pdf`, `browser` are CLI commands; the editor uses
+`run_op` (parity test); Skill section + sync test. IV — preview unchanged;
+export problems link to preview anchors. V — staging + swap; foreign folders
+never replaced; failed export leaves the previous one byte-identical. VI —
+tests written first and seen failing for every module. VII — three focused
+modules; dependencies justified in Complexity Tracking.
+
 ## Project Structure
 
 ### Documentation (this feature)

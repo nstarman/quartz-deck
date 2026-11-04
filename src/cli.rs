@@ -82,6 +82,42 @@ enum Cmd {
         #[arg(long)]
         no_download: bool,
     },
+    /// Export a self-contained offline deck (one HTML + files that cannot be inlined), checked offline
+    Export {
+        /// Destination folder (default: export/ next to the deck)
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Also print a PDF
+        #[arg(long)]
+        pdf: bool,
+        /// PDF: speaker notes on separate pages
+        #[arg(long, requires = "pdf")]
+        notes: bool,
+        /// PDF: one page per slide instead of per fragment step
+        #[arg(long, requires = "pdf")]
+        per_slide: bool,
+        /// Never download MathJax or a browser (also QD_NO_DOWNLOAD=1)
+        #[arg(long)]
+        no_download: bool,
+    },
+    /// Print a deck to PDF (default: the deck's export) through reveal.js's print mode
+    Pdf {
+        /// Rendered HTML to print (default: export/<deck>.html)
+        #[arg(long)]
+        html: Option<PathBuf>,
+        /// Output PDF (default: next to the HTML)
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Speaker notes on separate pages
+        #[arg(long)]
+        notes: bool,
+        /// One page per slide instead of per fragment step
+        #[arg(long)]
+        per_slide: bool,
+        /// Never download a browser (also QD_NO_DOWNLOAD=1)
+        #[arg(long)]
+        no_download: bool,
+    },
     /// Show the browser used for offline checks/PDF; install or remove qd's copy
     Browser {
         /// Download qd's pinned Chrome for Testing if no browser is found
@@ -302,6 +338,10 @@ fn output_of(cmd: &str) -> &'static str {
         }
         "serve" => r#"{"url","port","pid"} (one line, then serves until stopped)"#,
         "url" => r#"{"url"}"#,
+        "pdf" => r#"{"path","pages","per_slide","notes"}"#,
+        "export" => {
+            r#"{"kind":"export","ok","out","html","files":[...],"check":{offline_check},"assets":[{"name","version","sha256","source","path"}],"pdf"?:{"path","pages","per_slide","notes"},"staging"? (when ok is false)}"#
+        }
         "browser" => r#"{"path","source":"env|installed|download","version"} or {"ok","removed"}"#,
         "render" => r#"{"ok","output":"<absolute path>","format","log"}"#,
         "stop" => r#"{"ok","pid"}"#,
@@ -551,6 +591,12 @@ struct Ctx<'a> {
 }
 
 impl Ctx<'_> {
+    /// qd's cache root: the API's store's root, else the default.
+    fn cache_root(&self) -> PathBuf {
+        self.store
+            .map_or_else(crate::store::cache_root, Store::root)
+    }
+
     fn store(&self) -> Result<Store> {
         if let Some(s) = self.store {
             return Ok(s.clone());
@@ -593,6 +639,8 @@ impl Ctx<'_> {
 /// Commands the HTTP API may run (FR-010). No server control, no file I/O
 /// beyond the deck itself.
 const API_OPS: &[&str] = &[
+    "export",
+    "pdf",
     "render",
     "box add",
     "box move",
@@ -738,8 +786,7 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             no_download,
             ..
         } => {
-            let chrome =
-                crate::browser::find(&crate::store::cache_root(), allow_download(*no_download))?;
+            let chrome = crate::browser::find(&ctx.cache_root(), allow_download(*no_download))?;
             let report = match html {
                 Some(h) => crate::offline::check(h, &chrome)?,
                 None => {
@@ -761,6 +808,61 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                 }
             };
             Ok(serde_json::to_value(report).unwrap())
+        }
+        Cmd::Export {
+            out,
+            pdf,
+            notes,
+            per_slide,
+            no_download,
+        } => crate::export::run(
+            &ctx.store()?,
+            &crate::export::Options {
+                out: out.clone(),
+                pdf: *pdf,
+                notes: *notes,
+                per_slide: *per_slide,
+                allow_download: allow_download(*no_download),
+            },
+        ),
+        Cmd::Pdf {
+            html,
+            out,
+            notes,
+            per_slide,
+            no_download,
+        } => {
+            let html = match html {
+                Some(h) => h.clone(),
+                None => {
+                    let s = ctx.store()?;
+                    let stem = s
+                        .path
+                        .file_stem()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .into_owned();
+                    let h = s
+                        .path
+                        .parent()
+                        .unwrap_or(Path::new("."))
+                        .join("export")
+                        .join(format!("{stem}.html"));
+                    if !h.exists() {
+                        return Err(QdError::NotFound(format!(
+                            "no export at {}; run `qd export` first (or pass --html)",
+                            h.display()
+                        )));
+                    }
+                    h
+                }
+            };
+            let out = out.clone().unwrap_or_else(|| html.with_extension("pdf"));
+            let chrome = crate::browser::find(&ctx.cache_root(), allow_download(*no_download))?;
+            Ok(serde_json::to_value(crate::offline::print_pdf(
+                &html, &out, *notes, *per_slide, &chrome,
+            )?)
+            .unwrap())
         }
         Cmd::Browser {
             install,
@@ -1053,8 +1155,13 @@ pub fn main() -> i32 {
                 writeln!(out, "{v}")
             };
             // a failed offline check: the report is on stdout, the error on stderr
-            if v["kind"] == "offline_check" && v["ok"] == false {
-                let n = v["problems"]
+            if (v["kind"] == "offline_check" || v["kind"] == "export") && v["ok"] == false {
+                let probs = if v["kind"] == "export" {
+                    &v["check"]["problems"]
+                } else {
+                    &v["problems"]
+                };
+                let n = probs
                     .as_array()
                     .map_or(0, |p| p.iter().filter(|p| p["severity"] == "error").count());
                 let e = QdError::Offline(n);

@@ -232,3 +232,64 @@ fn no_browser_is_a_clear_error_and_editing_still_works() {
         "E_NO_BROWSER"
     );
 }
+
+// ---------- SC-001 detection table (T028): one failure mode per test ----------
+
+fn has(report: &Value, code: &str, slide: Option<&str>, url_part: Option<&str>) -> bool {
+    report["problems"].as_array().unwrap().iter().any(|p| {
+        p["code"] == code
+            && slide.is_none_or(|s| p["slide"] == s)
+            && url_part.is_none_or(|u| p["url"].as_str().is_some_and(|x| x.contains(u)))
+    })
+}
+
+#[test]
+fn detects_katex() {
+    if !ready() {
+        return;
+    }
+    let (_t, dir) = deck("katex.qmd");
+    let (_, report, _) = check(&dir, &[]);
+    assert!(has(&report, "P_RAW_TEX", Some("math"), None), "{report}");
+    assert!(has(&report, "P_NETWORK", None, Some("katex")), "{report}");
+}
+
+#[test]
+fn detects_missing_background_iframe() {
+    if !ready() {
+        return;
+    }
+    let (_t, dir) = deck("missing-iframe.qmd");
+    let (_, report, _) = check(&dir, &[]);
+    assert!(
+        has(
+            &report,
+            "P_MISSING_FILE",
+            Some("app"),
+            Some("apps/not-there.html")
+        ),
+        "{report}"
+    );
+}
+
+#[test]
+fn detects_plotly_web_scripts() {
+    let py = Command::new("python3")
+        .args(["-c", "import plotly, ipykernel"])
+        .output()
+        .is_ok_and(|o| o.status.success());
+    if !py {
+        eprintln!("skipping: python plotly/ipykernel not installed");
+        return;
+    }
+    if !ready() {
+        return;
+    }
+    let (_t, dir) = deck("plotly.qmd");
+    let (_, report, _) = check(&dir, &[]);
+    assert!(
+        has(&report, "P_NETWORK", None, Some("plot.ly"))
+            || has(&report, "P_NETWORK", None, Some("mathjax")),
+        "Plotly's web scripts must be reported: {report}"
+    );
+}

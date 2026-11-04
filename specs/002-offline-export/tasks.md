@@ -68,14 +68,14 @@ absent; CI provides all three.
 
 ### Tests
 
-- [ ] T014 [P] [US2] Unit tests in `src/export.rs`: `export_copy(deck, ctx)` merges into front matter `format.revealjs.embed-resources: true`, `html-math-method {method: mathjax, url: "about:blank"}`, and appends qd's header to `include-in-header` (string or list form preserved); keeps all other keys; deck with `format: revealjs` as a string becomes a map; already-set-up decks (math url `about:blank` in front matter or any `_quarto.yml` up to the project root) get no qd header (research R1); decks with Python plotly cells get the renderer cell after the front matter, others do not (R2); `chalkboard`/`multiplex` → `E_OFFLINE_INCOMPATIBLE` naming key and file (R7); `collect_files` returns background video/iframe/parallax paths relative to the deck
-- [ ] T015 [P] [US2] Integration tests `tests/export.rs` (gated on quarto + browser): export `math.qmd`, `fragments.qmd`, `bgvideo.qmd`, `bgiframe.qmd`, `skillsetup/` → each `check.ok`, zero `P_NETWORK`/`P_RAW_TEX`; `files` lists `media/clip.mp4` / `apps/app.html` and they exist in the export; deck `.qmd` and `_quarto.yml` bytes unchanged and no `*.qd-export.qmd` left behind (FR-012); `chalkboard.qmd` → `E_OFFLINE_INCOMPATIBLE`, no export folder; second export after making the deck fail (missing video) → `E_OFFLINE`, previous export folder byte-identical, staging path in `details` (FR-015); `plotly.qmd` (gated on Python plotly) → check ok and the HTML contains no `cdn.plot.ly` / web MathJax
+- [X] T014 [P] [US2] Unit tests in `src/export.rs`: `export_copy(deck, ctx)` merges into front matter `format.revealjs.embed-resources: true`, `html-math-method {method: mathjax, url: "about:blank"}`, and appends qd's header to `include-in-header` (string or list form preserved); keeps all other keys; deck with `format: revealjs` as a string becomes a map; already-set-up decks (math url `about:blank` in front matter or any `_quarto.yml` up to the project root) get no qd header (research R1); decks with Python plotly cells get the renderer cell after the front matter, others do not (R2); `chalkboard`/`multiplex` → `E_OFFLINE_INCOMPATIBLE` naming key and file (R7); `collect_files` returns background video/iframe/parallax paths relative to the deck
+- [X] T015 [P] [US2] Integration tests `tests/export.rs` (gated on quarto + browser): export `math.qmd`, `fragments.qmd`, `bgvideo.qmd`, `bgiframe.qmd`, `skillsetup/` → each `check.ok`, zero `P_NETWORK`/`P_RAW_TEX`; `files` lists `media/clip.mp4` / `apps/app.html` and they exist in the export; deck `.qmd` and `_quarto.yml` bytes unchanged and no `*.qd-export.qmd` left behind (FR-012); `chalkboard.qmd` → `E_OFFLINE_INCOMPATIBLE`, no export folder; second export after making the deck fail (missing video) → `E_OFFLINE`, previous export folder byte-identical, staging path in `details` (FR-015); `plotly.qmd` (gated on Python plotly) → check ok and the HTML contains no `cdn.plot.ly` / web MathJax — done; also: never replaces an export folder qd did not create (marker `.qd-export`), staging next to the destination (same filesystem)
 
 ### Implementation
 
-- [ ] T016 [US2] Implement `src/export.rs`: `export_copy` (serde_yaml_ng merge of the front matter, header file `<cache>/lib/qd-offline-header.html` written from a template with absolute library paths), plotly renderer cell (the skill's `_deck/setup.qmd` contents), offline-incompatible detection, `collect_files` — T014 passes
-- [ ] T017 [US2] Orchestration `export::run(store, opts)`: ensure assets (T006; plotly only when needed), render the export copy into `<cache>/export-staging/<n>/` via `render::render(..., preview=false)`, rename HTML to `<stem>.html`, copy collected files, run `offline::check`, then on ok swap into `opts.out` (rename new in, remove old after); on failure keep staging and return `E_OFFLINE` with the report — T015 passes
-- [ ] T018 [US2] `qd export [--out DIR] [--pdf] [--notes] [--per-slide] [--no-download]` in `src/cli.rs` returning `ExportResult` JSON (`assets` with versions/hashes); `--pdf` wired in Phase 5
+- [X] T016 [US2] Implement `src/export.rs`: `export_copy` (serde_yaml_ng merge of the front matter, header file `<cache>/lib/qd-offline-header.html` written from a template with absolute library paths), plotly renderer cell (the skill's `_deck/setup.qmd` contents), offline-incompatible detection, `collect_files` — T014 passes
+- [X] T017 [US2] Orchestration `export::run(store, opts)`: ensure assets (T006; plotly only when needed), render the export copy into `<cache>/export-staging/<n>/` via `render::render(..., preview=false)`, rename HTML to `<stem>.html`, copy collected files, run `offline::check`, then on ok swap into `opts.out` (rename new in, remove old after); on failure keep staging and return `E_OFFLINE` with the report — T015 passes
+- [X] T018 [US2] `qd export [--out DIR] [--pdf] [--notes] [--per-slide] [--no-download]` in `src/cli.rs` returning `ExportResult` JSON (`assets` with versions/hashes); `--pdf` wired in Phase 5
 
 **Checkpoint**: one command produces a verified offline deck.
 
@@ -89,12 +89,12 @@ absent; CI provides all three.
 
 ### Tests
 
-- [ ] T019 [P] [US3] Tests in `tests/export.rs` (gated): `qd export --pdf` on `fragments.qmd` → `pdf.pages` == check `steps` and equals the page count read from the PDF structure (`/Type /Page` objects); `--per-slide` → pages == slides; `--notes` → pages == steps + slides-with-notes and the notes text is in the PDF; without `--notes` the notes text is absent; `qd pdf` with no export → `E_NOT_FOUND` hint `qd export`; `.print-only` still shown / `.print-hide` hidden (fixture slide with both)
+- [X] T019 [P] [US3] Tests in `tests/export.rs` (gated): `qd export --pdf` on `fragments.qmd` → `pdf.pages` == check `steps` and equals the page count read from the PDF structure (`/Type /Page` objects); `--per-slide` → pages == slides; `--notes` → pages == steps + slides-with-notes and the notes text is in the PDF; without `--notes` the notes text is absent; `qd pdf` with no export → `E_NOT_FOUND` hint `qd export`; `.print-only` still shown / `.print-hide` hidden (fixture slide with both) — done; notes are forced off unless requested (`showNotes=false`), so YAML `show-notes` never leaks into a PDF
 
 ### Implementation
 
-- [ ] T020 [US3] Implement `offline::print_pdf(html, opts) -> PdfResult` in `src/offline.rs`: open `?print-pdf&pdfSeparateFragments=<!per_slide>` (+ `&showNotes=separate-page` when notes), same offline interception, await Reveal + MathJax, `print_to_pdf { prefer_css_page_size, print_background }`, write file, count pages (research R4); qd's export header also carries the skill's `.print-only`/`.print-hide` CSS
-- [ ] T021 [US3] `qd pdf [--html FILE] [--out FILE] [--notes] [--per-slide] [--no-download]` in `src/cli.rs`; `qd export --pdf` prints `export/<stem>.pdf` and adds `pdf` to the result — T019 passes
+- [X] T020 [US3] Implement `offline::print_pdf(html, opts) -> PdfResult` in `src/offline.rs`: open `?print-pdf&pdfSeparateFragments=<!per_slide>` (+ `&showNotes=separate-page` when notes), same offline interception, await Reveal + MathJax, `print_to_pdf { prefer_css_page_size, print_background }`, write file, count pages (research R4); qd's export header also carries the skill's `.print-only`/`.print-hide` CSS
+- [X] T021 [US3] `qd pdf [--html FILE] [--out FILE] [--notes] [--per-slide] [--no-download]` in `src/cli.rs`; `qd export --pdf` prints `export/<stem>.pdf` and adds `pdf` to the result — T019 passes
 
 **Checkpoint**: archive HTML + PDF from one command.
 
@@ -106,21 +106,21 @@ absent; CI provides all three.
 
 **Independent Test**: editor Export on a deck with a web request shows the problem; clicking it shows the slide; CLI JSON matches.
 
-- [ ] T022 [P] [US4] Tests: `run_op` parity in `tests/cli.rs` for `export` (`{"pdf": true}`) and `check` (`{"offline": true}`) vs the CLI (skip when no quarto/browser); `run_op` refuses `browser`, and `out`/`html` paths outside the deck folder (`E_INVALID_ARG`); `tests/serve.rs`: `POST /api/op` export reply has `href`s for HTML and PDF
-- [ ] T023 [US4] Allow `export`, `pdf` and `check --offline` in `API_OPS` with the path restrictions in `src/cli.rs`; server adds `href`s for `html`/`pdf` like `render` in `src/server.rs` — T022 passes
-- [ ] T024 [US4] Editor in `src/ui/index.html` + `editor.js` + `editor.css`: Export button (+ "with PDF" checkbox) → `op('export', …)`; a results panel listing problems (code, message, hint) — each with a slide becomes a button that navigates the preview there; links to the exported HTML/PDF
-- [ ] T025 [US4] Skill `skills/quartz-deck/SKILL.md`: an "Offline export" section (check → export → pdf loop, problem codes and fixes, first-run download note, `qd browser`); Skill/CLI sync test covers the new commands
-- [ ] T026 [US4] Browser verification per quickstart §4 (Export with a failing deck, click problem → slide; export OK deck → links open); record in `specs/002-offline-export/checklists/gui.md`
+- [X] T022 [P] [US4] Tests: `run_op` parity in `tests/cli.rs` for `export` (`{"pdf": true}`) and `check` (`{"offline": true}`) vs the CLI (skip when no quarto/browser); `run_op` refuses `browser`, and `out`/`html` paths outside the deck folder (`E_INVALID_ARG`); `tests/serve.rs`: `POST /api/op` export reply has `href`s for HTML and PDF — done; cache root comes from the deck's Store (no process-wide env in tests)
+- [X] T023 [US4] Allow `export`, `pdf` and `check --offline` in `API_OPS` with the path restrictions in `src/cli.rs`; server adds `href`s for `html`/`pdf` like `render` in `src/server.rs` — T022 passes — done; API still takes no paths (defaults only); replies add `html_href`/`pdf_href`
+- [X] T024 [US4] Editor in `src/ui/index.html` + `editor.js` + `editor.css`: Export button (+ "with PDF" checkbox) → `op('export', …)`; a results panel listing problems (code, message, hint) — each with a slide becomes a button that navigates the preview there; links to the exported HTML/PDF
+- [X] T025 [US4] Skill `skills/quartz-deck/SKILL.md`: an "Offline export" section (check → export → pdf loop, problem codes and fixes, first-run download note, `qd browser`); Skill/CLI sync test covers the new commands
+- [X] T026 [US4] Browser verification per quickstart §4 (Export with a failing deck, click problem → slide; export OK deck → links open); record in `specs/002-offline-export/checklists/gui.md` — done; see checklists/gui.md (found: links on failed export, scroll view on narrowing pane — both fixed)
 
 ---
 
 ## Phase 7: Polish & Cross-Cutting
 
-- [ ] T027 [P] SC-004 timing test `tests/export.rs` (`#[ignore]`, gated): 30-slide deck with math + one Plotly figure, export + check + PDF < 60 s; record the measurement in quickstart.md
-- [ ] T028 [P] SC-001 detection table: one test per failure mode from the quarto-revealjs guide (web MathJax default, KaTeX → raw TeX, Plotly web MathJax/plotly.js, missing background video, missing background iframe) asserting the expected problem code; record results in `specs/002-offline-export/checklists/detection.md`
-- [ ] T029 SC-005 agent evaluation: 10 fresh agents with only the Skill, task "export this deck; fix the reported problem; export again" on a deck with a missing background video; logged wrapper + objective grader as in 001; record in `specs/002-offline-export/checklists/agent-eval.md`
-- [ ] T030 [P] README: offline export section; contracts/cli.md of 001 links to 002 additions
-- [ ] T031 Run quickstart §1–§5, `cargo test`, clippy, fmt; re-check the constitution table in plan.md; CI green
+- [X] T027 [P] SC-004 timing test `tests/export.rs` (`#[ignore]`, gated): 30-slide deck with math + one Plotly figure, export + check + PDF < 60 s; record the measurement in quickstart.md — done: 9.1 s for 30 slides + check + PDF (61 pages) locally without Plotly; CI runs it with Plotly
+- [X] T028 [P] SC-001 detection table: one test per failure mode from the quarto-revealjs guide (web MathJax default, KaTeX → raw TeX, Plotly web MathJax/plotly.js, missing background video, missing background iframe) asserting the expected problem code; record results in `specs/002-offline-export/checklists/detection.md` — done; see checklists/detection.md (KaTeX and missing-iframe fixtures added)
+- [X] T029 SC-005 agent evaluation: 10 fresh agents with only the Skill, task "export this deck; fix the reported problem; export again" on a deck with a missing background video; logged wrapper + objective grader as in 001; record in `specs/002-offline-export/checklists/agent-eval.md` — done: 10/10; see checklists/agent-eval.md
+- [X] T030 [P] README: offline export section; contracts/cli.md of 001 links to 002 additions — done
+- [X] T031 Run quickstart §1–§5, `cargo test`, clippy, fmt; re-check the constitution table in plan.md; CI green — done: quickstart §1–§5 pass with the release binary (§4 in the browser, checklists/gui.md); 119 tests pass (4 opt-in ignored); fmt + clippy clean
 
 ---
 
