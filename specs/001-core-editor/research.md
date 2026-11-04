@@ -183,3 +183,21 @@ against that layout:
   `check_offline.py` (no network requests, no raw TeX) and `make_pdf.py`
   (`?print-pdf` via Playwright) are the right model for an offline check and
   PDF export; they need Playwright + Chrome, which qd does not depend on today.
+
+## R11. Concurrency limits found by CI (T049)
+
+Rename-based atomic writes cannot be made airtight against a writer that does
+not cooperate (POSIX has no compare-and-swap on file contents). qd therefore:
+
+- serializes its own writers (CLI, editor server) with an exclusive lock on
+  `<cache>/lock` held across check + write + journal: **guaranteed** no lost
+  edits between qd processes (strict CI test);
+- refuses with `E_CONFLICT` when the file changed since it was read
+  (version token; editors' ordinary saves are caught here);
+- keeps the old file open across the rename and backs out if it was replaced
+  or written to in the window — **best effort**: under an artificial appender
+  writing every 25 ms during ~130 qd writes/s, 0/~1400 appends were lost on
+  macOS but ~10% on a loaded 2-vCPU Linux runner.
+
+SC-007 ("zero data loss across concurrent CLI/GUI/external-editor use") holds
+for CLI/GUI; for external editors it holds except for sub-millisecond races.

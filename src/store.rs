@@ -112,9 +112,11 @@ impl Store {
     /// has a tiny window, so the old file stays open throughout: if it was
     /// replaced (inode changed) before our rename, or written to after our
     /// check, their version is put back, our edit is withdrawn and the caller
-    /// gets `E_CONFLICT`. ponytail: a writer hitting the microseconds between
-    /// our rename and that restore can still lose; only cooperation (the qd
-    /// lock) closes it completely.
+    /// gets `E_CONFLICT`. ponytail: best effort against non-qd writers. One that
+    /// opens the file before our rename and writes after our last check (or
+    /// writes to the new file during the restore) can still lose data; on a
+    /// loaded Linux runner an appender every 25 ms lost ~10% (see
+    /// tests/concurrency.rs). Only cooperation (the qd lock) is airtight.
     fn replace(&self, expected_version: &str, text: &str) -> Result<String> {
         use std::io::{Read, Seek};
         let read_all = |f: &mut fs::File| -> Result<Vec<u8>> {
