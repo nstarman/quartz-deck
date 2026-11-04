@@ -1,0 +1,10 @@
+---
+source: tests/roundtrip.rs
+expression: "Deck::parse(text).outline()"
+---
+slide_level=2 size=1050x700 front_matter=true title_slide=true nl="\n"
+@1 raw-html (auto) Heading L2 title=Some("Raw HTML")
+    raw-html/0 Html "<div class=\"custom\">"
+    raw-html/1 Html "<!--"
+@2 embed (auto) Heading L2 title=Some("Embed")
+    embed/0 Html "<iframe src=\"https://example.com\" width=\"100%\" hei"

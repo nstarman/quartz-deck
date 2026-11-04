@@ -1,0 +1,29 @@
+---
+source: tests/ops.rs
+expression: "ops::diff(&d.text, &after)"
+---
+--- before
++++ after
+@@ -4,4 +4,12 @@
+ ---
+ 
++## Conclusion {#conclusion}
++
++Thanks.
++
++::: {.notes}
++Bye.
++:::
++
+ ## Intro
+ 
+@@ -19,9 +27,2 @@
+ A rule slide.
+ 
+-## Conclusion
+-
+-Thanks.
+-
+-::: {.notes}
+-Bye.
+-:::

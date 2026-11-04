@@ -1,0 +1,21 @@
+---
+title: Tables
+format: revealjs
+---
+
+## Pipe table
+
+| Model | Score |
+|-------|------:|
+| A     | 0.91  |
+| B     | 0.87  |
+
+: Results {#tbl-results}
+
+## Grid table
+
++---------+---------+
+| Head 1  | Head 2  |
++=========+=========+
+| cell    | cell    |
++---------+---------+
