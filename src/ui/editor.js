@@ -1370,23 +1370,23 @@ function openInserted({ ref, mode }) {
   });
 }
 
-async function copyElement(t) {
+/** Copy an element's markdown. Our own copy is immediate; the system clipboard is
+ *  written in the background (it can stay pending, e.g. in a page without focus). */
+function copyElement(t) {
   state.clip = t.block.text;
-  try {
-    const html = t.el?.innerHTML || '';
-    await navigator.clipboard.write([new ClipboardItem({
-      'text/plain': new Blob([t.block.text], { type: 'text/plain' }),
-      'text/html': new Blob([html], { type: 'text/html' }),
-    })]);
-  } catch {
-    try { await navigator.clipboard.writeText(t.block.text); } catch { /* kept in state.clip */ }
-  }
+  const item = new ClipboardItem({
+    'text/plain': new Blob([t.block.text], { type: 'text/plain' }),
+    'text/html': new Blob([t.el?.innerHTML || ''], { type: 'text/html' }),
+  });
+  navigator.clipboard.write([item]).catch(() => navigator.clipboard.writeText(t.block.text)).catch(() => {});
   say('Copied');
 }
 
 async function pasteAfter(t) {
   let text = null;
-  try { text = await navigator.clipboard.readText(); } catch { /* not allowed: use our own copy */ }
+  // the system clipboard if it answers within a second, else our own copy
+  const timeout = new Promise((resolve) => { setTimeout(() => resolve(null), 1000); });
+  try { text = await Promise.race([navigator.clipboard.readText(), timeout]); } catch { /* not allowed */ }
   text = text?.trim() ? text : state.clip;
   if (!text) { say('Nothing to paste', true); return; }
   const r = await op('block add', { slide: t.slideId, after: t.ref, md: text });
