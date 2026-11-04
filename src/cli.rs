@@ -560,24 +560,22 @@ fn attrs_json(a: Option<&crate::attrs::Attrs>) -> Value {
 
 fn block_json(d: &Deck, b: &Block) -> Value {
     let text = d.slice(b.span);
-    let hash = crate::deck::version_of(text.as_bytes());
     let mut v = json!({"id": b.id, "explicit": b.id_explicit, "kind": b.kind, "text": text,
-        "hash": hash, "lines": d.lines(b.span), "attrs": attrs_json(b.attrs.as_ref())});
+        "hash": crate::deck::version_of(text.as_bytes()), "lines": d.lines(b.span), "attrs": attrs_json(b.attrs.as_ref())});
     if matches!(b.kind, BlockKind::Cell | BlockKind::Code) {
-        // ```{python} is an executable cell; ```python is shown code (spec 004)
-        let fence = text
+        // ```{python} (kind "cell", executable) or ```python (kind "code", shown) → "python"
+        let info = text
             .lines()
             .next()
-            .unwrap_or("")
-            .trim_start_matches(['`', '~']);
-        let lang = fence
-            .trim_start_matches('{')
-            .split(['}', ' ', ','])
-            .next()
-            .unwrap_or("");
-        v["lang"] = json!(lang);
-        v["exec"] = json!(b.kind == BlockKind::Cell);
-        v["fingerprint"] = json!(hash);
+            .and_then(crate::deck::code_open)
+            .map_or("", |(_, _, i)| i);
+        v["lang"] = json!(
+            info.trim()
+                .trim_start_matches('{')
+                .split(['}', ' ', ','])
+                .next()
+                .unwrap_or("")
+        );
     }
     if b.kind == BlockKind::Box
         && let Some(a) = &b.attrs

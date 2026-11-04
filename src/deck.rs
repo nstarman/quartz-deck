@@ -173,7 +173,7 @@ fn setext_level(l: &str) -> Option<u8> {
 }
 
 /// Opening code fence at any indent: (fence char, length, info string).
-fn code_open(l: &str) -> Option<(char, usize, &str)> {
+pub(crate) fn code_open(l: &str) -> Option<(char, usize, &str)> {
     let t = l.trim_start();
     let ch = t.chars().next().filter(|c| *c == '`' || *c == '~')?;
     let n = t.chars().take_while(|&c| c == ch).count();

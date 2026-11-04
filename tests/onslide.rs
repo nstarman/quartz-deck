@@ -21,6 +21,7 @@ const SRC: &str = "document.querySelector('#srcedit textarea')";
 /// Default wait: generous, since all browser tests (each with Quarto and Chrome) run in parallel.
 const WAIT: u64 = 20;
 
+const PANE: &str = "document.querySelector('#srcpane textarea')";
 const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/corpus");
 
 /// Chrome to use, or None (test skips) when Quarto or a browser is missing.
@@ -85,18 +86,15 @@ impl Ed {
         std::fs::read_to_string(self.dir.path().join("deck.qmd")).unwrap()
     }
 
-    fn cli_json(&self, args: &[&str]) -> Value {
-        let out = qd(self.dir.path()).args(args).output().unwrap();
-        serde_json::from_slice(&out.stdout).unwrap()
-    }
-
-    fn cli(&self, args: &[&str]) {
+    /// Run qd in the deck folder; it must succeed. Returns its JSON output.
+    fn cli(&self, args: &[&str]) -> Value {
         let out = qd(self.dir.path()).args(args).output().unwrap();
         assert!(
             out.status.success(),
             "qd {args:?}: {}",
             String::from_utf8_lossy(&out.stderr)
         );
+        serde_json::from_slice(&out.stdout).unwrap_or(Value::Null)
     }
 
     async fn eval(&self, js: &str) -> Value {
@@ -357,6 +355,27 @@ impl Ed {
     async fn click_menu(&self, label: &str) {
         self.wait(&format!("[...document.querySelectorAll('#ctxmenu li')].some((li) => li.firstChild?.textContent === {label:?} && li.offsetParent)")).await;
         self.click_js(&format!("(() => {{ const li = [...document.querySelectorAll('#ctxmenu li')].find((li) => li.firstChild?.textContent === {label:?} && li.offsetParent); li.dispatchEvent(new MouseEvent('mouseenter')); const r = li.getBoundingClientRect(); return [r.left + 20, r.top + r.height / 2]; }})()")).await;
+    }
+
+    async fn open_source(&self) {
+        self.click_editor("#toggle-source").await;
+        self.wait(&format!(
+            "{PANE}.value.length > 0 && !document.querySelector('#srcpane').hidden"
+        ))
+        .await;
+    }
+    /// Put the caret right after `after` in the source pane (or select `after` itself).
+    async fn pane_caret(&self, after: &str, select: bool) {
+        let len = after.chars().count();
+        let from = if select { 0 } else { len };
+        let js = format!(
+            "(() => {{ const t = {PANE}; const i = t.value.indexOf({after:?}); t.focus(); t.setSelectionRange(i + {from}, i + {len}); t.dispatchEvent(new KeyboardEvent('keyup')); return i >= 0; }})()"
+        );
+        assert_eq!(
+            self.eval(&js).await,
+            Value::Bool(true),
+            "{after:?} not in the pane"
+        );
     }
 }
 
@@ -1066,30 +1085,6 @@ async fn fragments_notes_and_keyboard_selection() {
 
 // ---------- spec 004: source pane and sync (T008, T011) ----------
 
-const PANE: &str = "document.querySelector('#srcpane textarea')";
-
-impl Ed {
-    async fn open_source(&self) {
-        self.click_editor("#toggle-source").await;
-        self.wait(&format!(
-            "{PANE}.value.length > 0 && !document.querySelector('#srcpane').hidden"
-        ))
-        .await;
-    }
-    /// Put the caret right after `after` in the source pane (or select `after` itself).
-    async fn pane_caret(&self, after: &str, select: bool) {
-        let js = format!(
-            "(() => {{ const t = {PANE}; const i = t.value.indexOf({after:?}); t.focus(); if ({select}) t.setSelectionRange(i, i + {len}); else t.setSelectionRange(i + {len}, i + {len}); t.dispatchEvent(new KeyboardEvent('keyup')); return i >= 0; }})()",
-            len = after.chars().count()
-        );
-        assert_eq!(
-            self.eval(&js).await,
-            Value::Bool(true),
-            "{after:?} not in the pane"
-        );
-    }
-}
-
 #[tokio::test(flavor = "multi_thread")]
 async fn source_pane_saves_minimal_changes() {
     let Some(ed) = Ed::open(DECK).await else {
@@ -1141,10 +1136,8 @@ async fn source_pane_saves_minimal_changes() {
     let bar = ed
         .eval("document.querySelector('#conflict').textContent")
         .await;
-    assert!(
-        bar.as_str().unwrap().contains("(agent)") && bar.as_str().unwrap().contains("(pane)"),
-        "{bar}"
-    );
+    let bar = bar.as_str().unwrap();
+    assert!(bar.contains("(agent)") && bar.contains("(pane)"), "{bar}");
     ed.click_editor("#conflict [data-act=mine]").await;
     ed.wait_file(
         |f| f.contains("- two (pane)\n") && !f.contains("(agent)"),
@@ -1163,13 +1156,12 @@ async fn source_and_slides_follow_each_other() {
     ed.pane_caret("Text.", false).await;
     ed.wait("document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide().id === 'results'").await;
     assert_eq!(
-        ed.eval("document.activeElement === document.querySelector('#srcpane textarea')")
-            .await,
+        ed.eval(&format!("document.activeElement === {PANE}")).await,
         true
     );
     // selecting an element on a slide highlights its lines in the pane
     ed.go("methods").await;
-    let lines = ed.cli_json(&["show", "methods"])["slide"]["blocks"][1]["lines"].clone();
+    let lines = ed.cli(&["show", "methods"])["slide"]["blocks"][1]["lines"].clone();
     ed.select("[data-qd=\"methods/1\"]").await;
     let want = format!("{}-{}", lines[0], lines[1]);
     ed.wait(&format!(

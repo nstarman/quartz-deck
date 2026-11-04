@@ -164,7 +164,7 @@ main:not(.panel-open) > aside { display: none; }
 #splitter { display: none; flex: none; width: 6px; cursor: col-resize; background: var(--line); }
 main.source-open > #splitter { display: block; }
 #srcpane { flex: none; width: var(--srcw, 40%); min-width: 240px; display: flex; flex-direction: column;
-  border-left: 1px solid var(--line); background: var(--panel); min-height: 0; }
+  border-right: 1px solid var(--line); background: var(--panel); min-height: 0; }
 main.source-full > #stage, main.source-full > #splitter { display: none; }
 main.source-full > #srcpane { flex: 1; width: auto; }
 #srcpane .srcbar { display: flex; gap: 8px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
@@ -182,9 +182,7 @@ main.source-full > #srcpane { flex: 1; width: auto; }
 #srcpane .c { color: #1e8449; } #srcpane .o { color: #b7950b; }
 #srcpane .l { color: var(--accent); text-decoration: underline; }
 #srcpane .band { position: absolute; left: 0; right: 0; background: rgba(42, 91, 215, 0.14); pointer-events: none; opacity: 0; }
-#srcpane .band.flash { animation: qd-band 1.6s ease-out; }
-@keyframes qd-band { 0% { opacity: 1; } 70% { opacity: 1; } 100% { opacity: 0; } }
 @media (max-width: 700px) {
-  #srcpane { width: auto; height: 40vh; border-left: 0; border-top: 1px solid var(--line); }
+  #srcpane { width: auto; height: 40vh; border-right: 0; border-bottom: 1px solid var(--line); }
   main.source-open > #splitter { display: none; }
 }

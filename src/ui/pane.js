@@ -5,6 +5,8 @@
 // side, so edits elsewhere never block it (R9). Changes made elsewhere are
 // merged in when they don't overlap the person's unsaved text (FR-004).
 
+import { diffRegion as region } from '/ui/inline.js';
+
 const pane = document.querySelector('#srcpane');
 const ta = pane.querySelector('textarea');
 const hl = pane.querySelector('pre');
@@ -61,17 +63,8 @@ function syncScroll() {
   band.style.transform = `translateY(${-ta.scrollTop}px)`;
 }
 
-/** Changed region a→b: start, end in a, end in b. */
-function region(a, b) {
-  let p = 0;
-  while (p < a.length && p < b.length && a[p] === b[p]) p++;
-  let q = 0;
-  while (q < a.length - p && q < b.length - p && a[a.length - 1 - q] === b[b.length - 1 - q]) q++;
-  return { start: p, endA: a.length - q, endB: b.length - q };
-}
-
 /** Three-way merge of two edits of `b`; null when they touch the same text. */
-export function merge(b, mine, theirs) {
+function merge(b, mine, theirs) {
   if (mine === b) return theirs;
   if (theirs === b || theirs === mine) return mine;
   const m = region(b, mine);
@@ -132,7 +125,7 @@ async function rebase(afterRefusal = false) {
     const theirsPart = theirs.slice(a, z + theirs.length - base.length);
     api.conflict(theirsPart, minePart, async () => {
       if (await api.op('replace', { old: theirsPart, new: minePart })) await load();
-    }, () => load());
+    }, load);
     base = theirs; // the conflict bar now holds the person's text
     setText(theirs);
     return;
@@ -163,22 +156,17 @@ export function changed() {
   if (!pane.hidden && !saving) rebase();
 }
 
-function lineHeight() {
-  return parseFloat(getComputedStyle(ta).lineHeight) || 18;
-}
-
 /** Scroll to and highlight lines [first, last] (1-based) without taking focus (US2). */
 export function reveal([first, last]) {
   if (pane.hidden || !first) return;
-  const lh = lineHeight();
-  const pad = parseFloat(getComputedStyle(ta).paddingTop) || 0;
+  const css = getComputedStyle(ta);
+  const lh = parseFloat(css.lineHeight) || 18;
+  const pad = parseFloat(css.paddingTop) || 0;
   const top = pad + (first - 1) * lh;
   if (top < ta.scrollTop || top > ta.scrollTop + ta.clientHeight - lh * 2) ta.scrollTop = Math.max(0, top - ta.clientHeight / 3);
   Object.assign(band.style, { top: top + 'px', height: (last - first + 1) * lh + 'px' });
   band.dataset.lines = `${first}-${last}`;
-  band.classList.remove('flash');
-  void band.offsetWidth; // restart the fade
-  band.classList.add('flash');
+  band.animate([{ opacity: 1 }, { opacity: 1, offset: 0.7 }, { opacity: 0 }], 1600);
   syncScroll();
 }
 
@@ -199,8 +187,4 @@ export function initPane(a) {
     if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); save(); }
     e.stopPropagation(); // the editor's own shortcuts don't apply while typing source
   });
-}
-
-export function shown() {
-  return !pane.hidden;
 }

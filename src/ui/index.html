@@ -30,6 +30,20 @@
     <ol id="slides"></ol>
     <button type="button" id="add-slide" class="wide">+ Add slide</button>
   </nav>
+  <section id="srcpane" aria-label="Source" hidden>
+    <div class="srcbar">
+      <strong>Source</strong>
+      <span class="hint">saves as you pause · ⌘S saves now</span>
+      <button type="button" data-act="full" aria-pressed="false" title="Use the full width">Full width</button>
+      <button type="button" data-act="form" title="Slide/element properties form">Form</button>
+    </div>
+    <div class="srcwrap">
+      <pre aria-hidden="true"></pre>
+      <div class="band" aria-hidden="true"></div>
+      <textarea spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Deck source (.qmd)"></textarea>
+    </div>
+  </section>
+  <div id="splitter" role="separator" aria-orientation="vertical" aria-label="Resize the source pane" tabindex="0"></div>
   <section id="stage" aria-label="Preview">
     <div id="slidebar" role="toolbar" aria-label="Slide properties" hidden>
       <label class="inline">Background <input type="color" name="bg" aria-label="Background colour"></label>
@@ -43,20 +57,6 @@
       <button type="button" data-act="more" aria-haspopup="menu" title="More slide actions (or right-click the slide)">⋯</button>
     </div>
     <iframe id="preview" title="Slide preview"></iframe>
-  </section>
-  <div id="splitter" role="separator" aria-orientation="vertical" aria-label="Resize the source pane" tabindex="0"></div>
-  <section id="srcpane" aria-label="Source" hidden>
-    <div class="srcbar">
-      <strong>Source</strong>
-      <span class="hint">saves as you pause · ⌘S saves now</span>
-      <button type="button" data-act="full" aria-pressed="false" title="Use the full width">Full width</button>
-      <button type="button" data-act="form" title="Slide/element properties form">Form</button>
-    </div>
-    <div class="srcwrap">
-      <pre aria-hidden="true"></pre>
-      <div class="band" aria-hidden="true"></div>
-      <textarea spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Deck source (.qmd)"></textarea>
-    </div>
   </section>
   <aside id="panel" aria-label="Properties"></aside>
 </main>

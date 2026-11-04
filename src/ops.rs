@@ -274,14 +274,15 @@ fn single_line(s: &str, what: &str) -> Result<()> {
 }
 
 /// Normalize user markdown: trim surrounding blank lines, match the deck's line endings.
-fn norm(md: &str, nl: &str) -> String {
+/// `md` with the deck's line endings.
+fn with_nl(md: &str, nl: &str) -> String {
     let md = md.replace("\r\n", "\n");
-    let md = md.trim_matches('\n').trim_end();
-    if nl == "\n" {
-        md.to_string()
-    } else {
-        md.replace('\n', nl)
-    }
+    if nl == "\n" { md } else { md.replace('\n', nl) }
+}
+
+/// `md` trimmed of surrounding blank lines, with the deck's line endings.
+fn norm(md: &str, nl: &str) -> String {
+    with_nl(md.replace("\r\n", "\n").trim_matches('\n').trim_end(), nl)
 }
 
 fn patch(
@@ -772,15 +773,7 @@ pub fn block_class(d: &Deck, element: &str, add: &[String], remove: &[String]) -
 /// text changed elsewhere (`E_CONFLICT`); found twice needs more context
 /// (`E_AMBIGUOUS`). Line endings follow the deck (a browser textarea sends `\n`).
 pub fn replace(d: &Deck, old: &str, new: &str) -> Result<Patch> {
-    let fix = |t: &str| {
-        let t = t.replace("\r\n", "\n");
-        if d.nl == "\n" {
-            t
-        } else {
-            t.replace('\n', d.nl)
-        }
-    };
-    let (old, new) = (fix(old), fix(new));
+    let (old, new) = (with_nl(old, d.nl), with_nl(new, d.nl));
     if old.is_empty() {
         return Err(QdError::InvalidArg("the text to replace is empty".into()));
     }

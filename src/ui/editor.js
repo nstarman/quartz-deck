@@ -1048,6 +1048,13 @@ conflictBar.innerHTML = '<strong>This was changed elsewhere while you were editi
   + '<button type="button" data-act="theirs">Keep theirs</button></div>';
 banner.after(conflictBar);
 
+function showConflict(c) {
+  state.conflict = c;
+  $('.theirs', conflictBar).textContent = c.theirs || '(see the slide)';
+  $('.mine', conflictBar).textContent = c.mine;
+  conflictBar.hidden = false;
+}
+
 /**
  * A save was refused because the element changed meanwhile: close the edit
  * (the file keeps the other version) and let the person choose (FR-015).
@@ -1056,10 +1063,7 @@ async function conflict(s, mine, details) {
   let theirs = details?.current_source;
   if (theirs === undefined && s.kind === 'slide') theirs = blockOfBody((await fetchSlide(s.slide)) || { blocks: [] });
   endSession(s, false);
-  state.conflict = { kind: s.kind, ref: s.ref, slide: s.slide, anchor: s.root.closest?.('section')?.id || s.anchor, mine, theirs: theirs ?? '', hash: details?.current_hash };
-  $('.theirs', conflictBar).textContent = theirs ?? '(see the slide)';
-  $('.mine', conflictBar).textContent = mine;
-  conflictBar.hidden = false;
+  showConflict({ kind: s.kind, ref: s.ref, slide: s.slide, anchor: s.root.closest?.('section')?.id || s.anchor, mine, theirs: theirs ?? '', hash: details?.current_hash });
   await fetchDeck();
 }
 
@@ -1255,21 +1259,18 @@ const mainEl = document.querySelector('main');
 const toggleSource = $('#toggle-source');
 const srcpane = $('#srcpane');
 const pref = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch { /* storage unavailable */ } return null; };
-function setPanel(open) {
-  mainEl.classList.toggle('panel-open', open);
-  pref('qd.panel', open ? '1' : '');
+/** Toggle a layout class on <main>, its button's aria-pressed, and the remembered pref. */
+function layout(cls, key, on, btn) {
+  mainEl.classList.toggle(cls, on);
+  btn?.setAttribute('aria-pressed', String(on));
+  pref(key, on ? '1' : '');
 }
+const setPanel = (on) => layout('panel-open', 'qd.panel', on);
+const setFull = (on) => layout('source-full', 'qd.sourcefull', on, $('[data-act=full]', srcpane));
 function setSource(open) {
-  mainEl.classList.toggle('source-open', open);
+  layout('source-open', 'qd.source', open, toggleSource);
   srcpane.hidden = !open;
-  toggleSource.setAttribute('aria-pressed', String(open));
-  pref('qd.source', open ? '1' : '');
   if (open) pane.load();
-}
-function setFull(on) {
-  mainEl.classList.toggle('source-full', on);
-  $('[data-act=full]', srcpane).setAttribute('aria-pressed', String(on));
-  pref('qd.sourcefull', on ? '1' : '');
 }
 toggleSource.addEventListener('click', () => setSource(srcpane.hidden));
 $('[data-act=form]', srcpane).addEventListener('click', () => setPanel(!mainEl.classList.contains('panel-open')));
@@ -1278,12 +1279,12 @@ const splitter = $('#splitter');
 const setWidth = (px) => { mainEl.style.setProperty('--srcw', Math.max(240, Math.min(px, innerWidth - 320)) + 'px'); pref('qd.srcw', String(px)); };
 splitter.addEventListener('pointerdown', (e) => {
   splitter.setPointerCapture(e.pointerId);
-  const move = (ev) => setWidth(mainEl.getBoundingClientRect().right - ev.clientX);
+  const move = (ev) => setWidth(ev.clientX - srcpane.getBoundingClientRect().left); // source on the left
   splitter.addEventListener('pointermove', move);
   splitter.addEventListener('pointerup', () => splitter.removeEventListener('pointermove', move), { once: true });
 });
 splitter.addEventListener('keydown', (e) => {
-  const d = { ArrowLeft: 20, ArrowRight: -20 }[e.key];
+  const d = { ArrowLeft: -20, ArrowRight: 20 }[e.key];
   if (d) { e.preventDefault(); setWidth(srcpane.getBoundingClientRect().width + d); }
 });
 if (pref('qd.srcw')) setWidth(Number(pref('qd.srcw')));
@@ -1294,12 +1295,7 @@ setSource(pref('qd.source') === '1');
 pane.initPane({
   op: (name, args) => op(name, args, { fileExpect: false }),
   lastError: () => op.lastError,
-  conflict: (theirs, mine, onMine, onTheirs) => {
-    state.conflict = { kind: 'source', theirs, mine, onMine, onTheirs };
-    $('.theirs', conflictBar).textContent = theirs;
-    $('.mine', conflictBar).textContent = mine;
-    conflictBar.hidden = false;
-  },
+  conflict: (theirs, mine, onMine, onTheirs) => showConflict({ kind: 'source', theirs, mine, onMine, onTheirs }),
   // the caret's slide is shown (US2); the front matter shows the title slide
   onCaretLine: (line) => {
     const s = (state.deck?.slides || []).find((x) => x.lines[0] <= line && line <= x.lines[1]);
@@ -1310,7 +1306,7 @@ pane.initPane({
 
 /** Element (or slide title) → its source lines in the pane (US2). */
 async function revealSource(s) {
-  if (!pane.shown()) return;
+  if (srcpane.hidden) return;
   if (s?.ref) { const b = await fetchBlock(s.ref); if (b) pane.reveal(b.lines); return; }
   if (s?.slide) { const sl = await fetchSlide(s.slide); if (sl) pane.reveal([sl.lines[0], sl.lines[0]]); }
 }

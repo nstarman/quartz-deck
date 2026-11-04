@@ -48,8 +48,9 @@ qd outputs [<CELL>...]           # stored outputs, with "stale": true|false
 ## `qd show` / `qd slides` (extended)
 
 Slides and blocks gain `"lines": [start, end]` (1-based, inclusive). Code
-blocks gain `"lang"`, `"fingerprint"` and `"output": {"stale", "counter"}` when
-an output is stored.
+blocks gain `"lang"`; `kind` is `"cell"` for executable cells (```` ```{python} ````)
+and `"code"` for shown code; a cell's fingerprint is its existing `hash`.
+Cells gain `"output": {"stale", "counter"}` when an output is stored.
 
 ## Render through the environment
 
