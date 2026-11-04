@@ -12,6 +12,10 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # SC-005 (< 3 s edit-to-preview) is checked at 3 s locally; GitHub's 2-vCPU
+  # runners render several decks in parallel, so allow more here (the test
+  # prints the measured time either way).
+  QD_PREVIEW_BUDGET_SECS: "10"
   QUARTO_VERSION: 1.11.9   # the version research.md and the checklists were verified against
 
 jobs:
