@@ -2,7 +2,7 @@
 //! stable codes and exit statuses, file untouched on error/dry-run.
 
 use assert_cmd::Command;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::fs;
 use std::path::PathBuf;
 
@@ -891,38 +891,29 @@ const RUN: &str = include_str!("fixtures/run/basic.qmd");
 fn show_reports_line_ranges_and_code_cells() {
     let e = Env::with(RUN);
     let lines: Vec<&str> = RUN.lines().collect();
+    let at = |v: &Value| lines[v.as_u64().unwrap() as usize - 1];
     let v = e.ok(&["show", "plot"]);
     let s = &v["slide"];
-    let [a, b] = [
-        s["lines"][0].as_u64().unwrap(),
-        s["lines"][1].as_u64().unwrap(),
-    ];
-    assert_eq!(lines[a as usize - 1], "## Plot {#plot}");
+    assert_eq!(at(&s["lines"][0]), "## Plot {#plot}");
     assert!(
-        lines[b as usize - 1].is_empty() || lines[b as usize - 1] == "```",
+        matches!(at(&s["lines"][1]), "" | "```"),
         "{}",
-        lines[b as usize - 1]
+        at(&s["lines"][1])
     );
     let cell = &s["blocks"][0];
-    let [c0, c1] = [
-        cell["lines"][0].as_u64().unwrap() as usize,
-        cell["lines"][1].as_u64().unwrap() as usize,
-    ];
-    assert_eq!(lines[c0 - 1], "```{python}");
-    assert_eq!(lines[c1 - 1], "```");
+    assert_eq!(at(&cell["lines"][0]), "```{python}");
+    assert_eq!(at(&cell["lines"][1]), "```");
     assert_eq!(cell["lang"], "python");
-    assert_eq!(cell["exec"], true);
-    assert_eq!(cell["fingerprint"], cell["hash"]);
+    assert_eq!(cell["kind"], "cell"); // executable; its `hash` is the cell's fingerprint
     // a plain ```python block is code but not a cell; an R cell is a cell in another language
     assert_eq!(
-        e.ok(&["show", "plain"])["slide"]["blocks"][0]["exec"],
-        false
+        e.ok(&["show", "plain"])["slide"]["blocks"][0]["kind"],
+        "code"
     );
     assert_eq!(e.ok(&["show", "r"])["slide"]["blocks"][0]["lang"], "r");
     // slide listings carry lines too (for source ↔ slide sync)
-    let first = &e.ok(&["slides"])["slides"][0];
     assert_eq!(
-        lines[first["lines"][0].as_u64().unwrap() as usize - 1],
+        at(&e.ok(&["slides"])["slides"][0]["lines"][0]),
         "## Print {#print}"
     );
 }
@@ -932,11 +923,12 @@ fn line_ranges_count_crlf_lines() {
     let e = Env::with("## A {#a}\r\n\r\nText.\r\n\r\n## B {#b}\r\n\r\nMore.\r\n");
     let v = e.ok(&["show", "b"]);
     assert_eq!(v["slide"]["lines"][0], 5);
-    assert_eq!(v["slide"]["blocks"][0]["lines"], serde_json::json!([7, 7]));
+    assert_eq!(v["slide"]["blocks"][0]["lines"], json!([7, 7]));
 }
 
 #[test]
 fn replace_swaps_one_unique_occurrence() {
+    use quartz_deck::cli::run_op;
     let e = Env::with(DECK);
     let v = e.ok(&[
         "replace",
@@ -971,29 +963,23 @@ fn replace_swaps_one_unique_occurrence() {
         "--new",
         "- two\n\n## Added {#added}\n\nNew slide.\n",
     ]);
-    assert!(
-        e.ok(&["slides"])["slides"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|s| s["id"] == "added")
-    );
+    e.ok(&["show", "added"]);
     e.ok(&["undo"]);
     assert_eq!(e.text(), before);
     // the API never reads files or the server's stdin
     for bad in [
-        serde_json::json!({"old": "-", "new": "x"}),
-        serde_json::json!({"old-file": "/etc/hosts", "new": "x"}),
+        json!({"old": "-", "new": "x"}),
+        json!({"old-file": "/etc/hosts", "new": "x"}),
     ] {
         assert_eq!(
-            quartz_deck::cli::run_op(&e.store(), "replace", &bad, None)
+            run_op(&e.store(), "replace", &bad, None)
                 .unwrap_err()
                 .code(),
             "E_INVALID_ARG"
         );
     }
     // through the API too
-    let args = serde_json::json!({"old": "Some \"quoted\"", "new": "Some 'quoted'"});
-    quartz_deck::cli::run_op(&e.store(), "replace", &args, None).unwrap();
+    let args = json!({"old": "Some \"quoted\"", "new": "Some 'quoted'"});
+    run_op(&e.store(), "replace", &args, None).unwrap();
     assert!(e.text().contains("Some 'quoted' text"));
 }

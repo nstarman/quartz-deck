@@ -22,7 +22,7 @@ P3: US5. Paths relative to repo root.
 
 ## Phase 1: Setup
 
-- [X] T001 [P] CI in `.github/workflows/ci.yml`: install **uv** (official installer) and **pixi**; keep Python for existing Plotly tests; add the gated tests to the normal `cargo test` step — done (installer scripts; `$HOME/.local/bin`, `$HOME/.pixi/bin` on PATH)
+- [ ] T001 [P] CI in `.github/workflows/ci.yml`: install **uv** (official installer) and **pixi**; keep Python for existing Plotly tests; add the gated tests to the normal `cargo test` step — moved to the environments phase (audit: nothing in the MVP uses uv/pixi); add it with T015
 - [X] T002 [P] Fixtures `tests/fixtures/run/`: `basic.qmd` (Python cell printing a value, a matplotlib figure cell, a cell using a variable from the first, a failing cell `1/0`, an `eval: false` cell, an R cell), `slow.qmd` (a `while True` cell), `nocode.qmd`; `README.md` per file — done
 - [X] T003 Module skeletons wired into `src/lib.rs`: `src/env.rs`, `src/kernel.rs`, `src/outputs.rs`, `src/kernel_bridge.py` (embedded with `include_str!`); editor modules `src/ui/pane.js`, `src/ui/run.js` added to the `/ui/<name>` table in `src/server.rs` — done for the MVP (`pane.js` served); `env.rs`, `kernel.rs`, `outputs.rs`, `kernel_bridge.py`, `run.js` are created by their phases rather than as empty files
 
