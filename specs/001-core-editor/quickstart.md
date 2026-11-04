@@ -45,7 +45,8 @@ Open the URL in a browser (or the agent's browser tool):
 - drag a slide in the list → `qd slides` shows the new order;
 - click a paragraph, edit, confirm → `git diff` shows only that paragraph;
 - `qd box add results --text "Note" --at 100,100 --size 300,80`, drag it
-  in the GUI, then `qd show results` reports the new `geom`;
+  in the GUI (or edit Left/Top/Width/Height in its panel), then
+  `qd show results` reports the new `geom`;
 - `quarto render deck.qmd` → box at the same position (±1 px).
 
 ## 5. Concurrency (SC-007)

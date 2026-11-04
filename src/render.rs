@@ -364,6 +364,44 @@ mod tests {
         assert!(left.is_empty(), "temp copies left: {left:?}");
     }
 
+    /// SC-006 / T041: a box placed by `qd box add` lands at the same px in a
+    /// stock Quarto render. Needs Quarto.
+    #[test]
+    fn box_position_fidelity() {
+        if quarto().is_err() {
+            eprintln!("quarto not found: skipping");
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("deck.qmd");
+        let d = Deck::parse(BASIC.to_string());
+        let p = crate::ops::box_add(
+            &d,
+            "intro",
+            crate::ops::BoxContent::Text("Box"),
+            Some((200.0, 100.0)),
+            Some((300.0, 50.0)),
+        )
+        .unwrap();
+        let text = crate::ops::apply(&d.text, &p).unwrap();
+        std::fs::write(&deck, &text).unwrap();
+        let html = std::fs::read_to_string(
+            render(&deck, &text, "check", &dir.path().join("out"), false).unwrap(),
+        )
+        .unwrap();
+        let tag = html
+            .split(&format!("id=\"{}\"", p.target))
+            .nth(1)
+            .expect("box rendered")
+            .split('>')
+            .next()
+            .unwrap()
+            .to_string();
+        for want in ["left: 200px", "top: 100px", "width: 300px", "height: 50px"] {
+            assert!(tag.contains(want), "{want} missing in {tag}");
+        }
+    }
+
     /// Rendered preview keeps slide count and carries the markers (needs Quarto).
     #[test]
     fn renders_with_quarto() {

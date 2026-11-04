@@ -2,7 +2,7 @@
 
 use crate::deck::{Block, BlockKind, Deck, Slide};
 use crate::error::{QdError, Result};
-use crate::ops::{self, AttrChange, Patch, Pos, SlideSpec};
+use crate::ops::{self, AttrChange, BoxContent, Patch, Pos, SlideSpec};
 use crate::store::Store;
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use serde_json::{Value, json};
@@ -162,6 +162,11 @@ enum Cmd {
         #[command(flatten)]
         input: Input,
     },
+    /// Positioned boxes (Quarto `.absolute`; px on the slide, default 1050x700)
+    Box {
+        #[command(subcommand)]
+        action: BoxCmd,
+    },
     /// Revert the last qd edit
     Undo,
     /// Re-apply the last undone edit
@@ -172,6 +177,69 @@ enum Cmd {
         #[arg(long)]
         title: Option<String>,
     },
+}
+
+#[derive(Args)]
+#[group(required = true, multiple = false)]
+struct BoxSource {
+    /// Markdown text for a text box
+    #[arg(long, allow_hyphen_values = true)]
+    text: Option<String>,
+    /// Image path or URL for an image box
+    #[arg(long)]
+    image: Option<String>,
+}
+
+#[derive(Subcommand)]
+enum BoxCmd {
+    /// Add a text or image box to a slide (default: 300x100, centred)
+    Add {
+        slide: String,
+        #[command(flatten)]
+        source: BoxSource,
+        /// LEFT,TOP in px
+        #[arg(long, value_parser = parse_pair, allow_hyphen_values = true)]
+        at: Option<(f64, f64)>,
+        /// W,H in px
+        #[arg(long, value_parser = parse_pair)]
+        size: Option<(f64, f64)>,
+    },
+    /// Move a box: to LEFT,TOP, or by DX,DY
+    Move {
+        #[arg(id = "box", value_name = "BOX")]
+        bx: String,
+        #[arg(long, value_parser = parse_pair, allow_hyphen_values = true, conflicts_with = "by", required_unless_present = "by")]
+        at: Option<(f64, f64)>,
+        #[arg(long, value_parser = parse_pair, allow_hyphen_values = true)]
+        by: Option<(f64, f64)>,
+    },
+    /// Resize a box to W,H (optionally also moving it to LEFT,TOP)
+    Resize {
+        #[arg(id = "box", value_name = "BOX")]
+        bx: String,
+        #[arg(long, value_parser = parse_pair, required = true)]
+        size: Option<(f64, f64)>,
+        #[arg(long, value_parser = parse_pair, allow_hyphen_values = true)]
+        at: Option<(f64, f64)>,
+    },
+    /// Remove a box
+    Rm {
+        #[arg(id = "box", value_name = "BOX")]
+        bx: String,
+    },
+}
+
+/// `X,Y` (numbers, px).
+fn parse_pair(s: &str) -> std::result::Result<(f64, f64), String> {
+    let (a, b) = s
+        .split_once(',')
+        .ok_or_else(|| format!("expected X,Y, got '{s}'"))?;
+    let n = |v: &str| {
+        v.trim()
+            .parse::<f64>()
+            .map_err(|_| format!("'{v}' is not a number"))
+    };
+    Ok((n(a)?, n(b)?))
 }
 
 #[derive(Subcommand)]
@@ -196,10 +264,10 @@ fn parse_kv(s: &str) -> std::result::Result<(String, String), String> {
 fn output_of(cmd: &str) -> &'static str {
     match cmd {
         "slides" => {
-            r#"{"version","slide_level","title_slide","slides":[{"id","explicit","index","kind","title","summary","blocks","boxes","opaque","anchor","hidden"}]}"#
+            r#"{"version","slide_level","width","height","title_slide","slides":[{"id","explicit","index","kind","title","summary","blocks","boxes","opaque","anchor","hidden"}]}"#
         }
         "show" => {
-            r#"{"version","slide":{"id","explicit","index","kind","level","title","attrs":{"id","classes","kv"},"opaque","source","blocks":[{"id","explicit","kind","text","attrs"}]}}"#
+            r#"{"version","slide":{"id","explicit","index","kind","level","title","attrs":{"id","classes","kv"},"opaque","source","blocks":[{"id","explicit","kind","text","attrs","geom"?}]}}"#
         }
         "meta" => r#"{"version","front_matter":{...}}"#,
         "check" => {
@@ -211,6 +279,9 @@ fn output_of(cmd: &str) -> &'static str {
         "schema" => r#"{"commands":[...],"errors":[...]}"#,
         "skill" => r#"{"skill":"<markdown>"} or {"ok","path"} with --install"#,
         "undo" | "redo" => r#"{"ok","op","undone|redone","version"}"#,
+        "box" => {
+            r#"{"ok","op","version","diff","assigned_ids","target":"<box id>","converted_units"?}"#
+        }
         "new" => r#"{"ok","op":"new","path","version","target"}"#,
         _ => r#"{"ok","op","version","diff","assigned_ids","target","dry_run"?}"#,
     }
@@ -327,7 +398,21 @@ fn attrs_json(a: Option<&crate::attrs::Attrs>) -> Value {
 }
 
 fn block_json(d: &Deck, b: &Block) -> Value {
-    json!({"id": b.id, "explicit": b.id_explicit, "kind": b.kind, "text": d.slice(b.span), "attrs": attrs_json(b.attrs.as_ref())})
+    let mut v = json!({"id": b.id, "explicit": b.id_explicit, "kind": b.kind, "text": d.slice(b.span), "attrs": attrs_json(b.attrs.as_ref())});
+    if b.kind == BlockKind::Box
+        && let Some(a) = &b.attrs
+    {
+        // px values as numbers, anything else (%, em) as strings
+        let g = ops::geom(a);
+        let len = |l: Option<ops::Length>| match l {
+            Some(l) if l.unit == "px" => json!(l.value),
+            Some(l) => json!(format!("{}{}", l.value, l.unit)),
+            None => Value::Null,
+        };
+        v["geom"] = json!({"left": len(g.left), "top": len(g.top), "width": len(g.width), "height": len(g.height),
+            "right": len(g.right), "bottom": len(g.bottom)});
+    }
+    v
 }
 
 fn summary(d: &Deck, s: &Slide) -> String {
@@ -368,7 +453,8 @@ pub fn slides_json(d: &Deck) -> Value {
             })
         })
         .collect();
-    json!({"version": d.version, "slide_level": d.slide_level, "title_slide": d.has_title_slide(), "slides": slides})
+    json!({"version": d.version, "slide_level": d.slide_level, "width": d.width, "height": d.height,
+        "title_slide": d.has_title_slide(), "slides": slides})
 }
 
 pub fn show_json(d: &Deck, s: &Slide) -> Value {
@@ -454,6 +540,9 @@ impl Ctx<'_> {
         let after = ops::apply(&d.text, &p)?;
         let diff = ops::diff(&d.text, &after);
         let mut v = json!({"ok": true, "op": p.op, "diff": diff, "assigned_ids": p.assigned_ids, "target": p.target});
+        if p.converted_units {
+            v["converted_units"] = json!(true);
+        }
         if self.cli.dry_run {
             v["dry_run"] = json!(true);
             v["version"] = json!(d.version);
@@ -471,6 +560,10 @@ impl Ctx<'_> {
 /// Commands the HTTP API may run (FR-010). No server control, no file I/O
 /// beyond the deck itself.
 const API_OPS: &[&str] = &[
+    "box add",
+    "box move",
+    "box resize",
+    "box rm",
     "slides",
     "show",
     "meta",
@@ -699,6 +792,26 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             let md = required_input(input)?;
             ctx.edit(|d| ops::edit(d, element, &md))
         }
+        Cmd::Box { action } => match action {
+            BoxCmd::Add {
+                slide,
+                source,
+                at,
+                size,
+            } => {
+                let content = match (&source.text, &source.image) {
+                    (Some(t), _) => BoxContent::Text(t),
+                    (_, Some(i)) => BoxContent::Image(i),
+                    _ => unreachable!("clap group is required"),
+                };
+                ctx.edit(|d| ops::box_add(d, slide, content, *at, *size))
+            }
+            BoxCmd::Move { bx, at, by } => ctx.edit(|d| ops::box_move(d, bx, *at, *by)),
+            BoxCmd::Resize { bx, size, at } => {
+                ctx.edit(|d| ops::box_resize(d, bx, size.unwrap(), *at))
+            }
+            BoxCmd::Rm { bx } => ctx.edit(|d| ops::box_rm(d, bx)),
+        },
         Cmd::Undo => {
             let (v, op) = ctx.store()?.undo()?;
             Ok(json!({"ok": true, "op": "undo", "undone": op, "version": v}))

@@ -55,6 +55,12 @@
       <button type="reset">Revert</button>
     </div>
   </form>
+  <form class="add-box">
+    <h3>Positioned boxes</h3>
+    <div class="buttons"><button type="button" data-act="textbox">Add text box</button></div>
+    <label>Image path or URL <input name="image" placeholder="figures/plot.png" autocomplete="off"></label>
+    <div class="buttons"><button type="submit">Add image box</button></div>
+  </form>
   <div class="buttons">
     <button type="button" data-act="up">Move up</button>
     <button type="button" data-act="down">Move down</button>
@@ -75,6 +81,22 @@
 
 <template id="element-panel">
   <h2><span class="kind"></span> <code class="ref"></code></h2>
+  <form class="geom-form" hidden>
+    <fieldset>
+      <legend>Position and size (px)</legend>
+      <div class="grid">
+        <label>Left <input name="left" type="number" step="1"></label>
+        <label>Top <input name="top" type="number" step="1"></label>
+        <label>Width <input name="width" type="number" step="1" min="1"></label>
+        <label>Height <input name="height" type="number" step="1" min="1"></label>
+      </div>
+    </fieldset>
+    <div class="buttons">
+      <button type="submit" class="primary">Apply position</button>
+      <button type="button" data-act="rmbox" class="danger">Delete box</button>
+    </div>
+    <p class="hint">Or drag the box in the preview; drag a handle to resize (Shift keeps the aspect ratio).</p>
+  </form>
   <form class="element-form">
     <label>Source (markdown)
       <textarea name="md" rows="12" spellcheck="false"></textarea>

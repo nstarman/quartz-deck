@@ -420,3 +420,211 @@ fn new_deck_is_valid() {
     assert_eq!(d.slides.len(), 1);
     assert!(d.slides[0].id_explicit);
 }
+
+// ---------- US4: positioned boxes (T040) ----------
+
+use quartz_deck::ops::BoxContent;
+
+#[test]
+fn box_add_text_and_image() {
+    let d = deck();
+    let p = ops::box_add(
+        &d,
+        "intro",
+        BoxContent::Text("A note"),
+        Some((100.0, 50.0)),
+        Some((300.0, 80.0)),
+    )
+    .unwrap();
+    snap("box_add_text", &d, &p);
+    assert!(p.target.starts_with("b-") && p.target.len() == 6);
+    let a = run(&d, p.clone(), &["intro"]);
+    let (_, b) = a.element(&format!("#{}", p.target)).unwrap();
+    assert_eq!(b.kind, quartz_deck::deck::BlockKind::Box);
+    assert!(a.text.contains(&format!(
+        "::: {{#{} .absolute left=100 top=50 width=300 height=80}}\nA note\n:::",
+        p.target
+    )));
+
+    let p = ops::box_add(
+        &d,
+        "@3",
+        BoxContent::Image("fig.png"),
+        Some((0.4, 9.6)),
+        Some((10.0, 10.0)),
+    )
+    .unwrap();
+    let out = ops::apply(&d.text, &p).unwrap();
+    assert!(
+        out.contains(&format!(
+            "![](fig.png){{#{} .absolute left=0 top=10 width=10 height=10}}",
+            p.target
+        )),
+        "{out}"
+    );
+
+    // defaults: centred on the 1050x700 slide, 300x100
+    let p = ops::box_add(&d, "conclusion", BoxContent::Text("x"), None, None).unwrap();
+    assert!(
+        ops::apply(&d.text, &p)
+            .unwrap()
+            .contains("left=375 top=300 width=300 height=100}")
+    );
+    // multi-line text, and the notes block stays where it is
+    let p = ops::box_add(
+        &d,
+        "conclusion",
+        BoxContent::Text("line 1\n\nline 2"),
+        Some((1.0, 2.0)),
+        None,
+    )
+    .unwrap();
+    let a = run(&d, p, &["conclusion"]);
+    let kinds: Vec<_> = a
+        .slide("conclusion")
+        .unwrap()
+        .blocks
+        .iter()
+        .map(|b| b.kind)
+        .collect();
+    use quartz_deck::deck::BlockKind::*;
+    assert_eq!(kinds, vec![Para, Notes, Box]);
+}
+
+#[test]
+fn box_move_resize_rm() {
+    let d = deck();
+    let p = ops::box_move(&d, "#b-plot", Some((200.0, 100.0)), None).unwrap();
+    snap("box_move_at", &d, &p);
+    let a = run(&d, p.clone(), &["results"]);
+    assert!(
+        a.text
+            .contains("{#b-plot .absolute top=100 left=200 width=300 height=200}"),
+        "{}",
+        a.text
+    );
+    assert_eq!(p.target, "b-plot");
+
+    let p = ops::box_move(&d, "#b-plot", None, Some((-5.0, 7.0))).unwrap();
+    assert!(
+        ops::apply(&d.text, &p)
+            .unwrap()
+            .contains("{#b-plot .absolute top=17 left=15 width=300 height=200}")
+    );
+
+    let p = ops::box_resize(&d, "results/1", (640.5, 480.0), None).unwrap();
+    assert!(
+        ops::apply(&d.text, &p)
+            .unwrap()
+            .contains("{#b-plot .absolute top=10 left=20 width=641 height=480}")
+    );
+    let p = ops::box_resize(&d, "#b-plot", (100.0, 100.0), Some((1.0, 2.0))).unwrap();
+    assert!(
+        ops::apply(&d.text, &p)
+            .unwrap()
+            .contains("{#b-plot .absolute top=2 left=1 width=100 height=100}")
+    );
+
+    let p = ops::box_rm(&d, "#b-plot").unwrap();
+    snap("box_rm", &d, &p);
+    let a = run(&d, p, &["results"]);
+    assert!(
+        a.slide("results")
+            .unwrap()
+            .blocks
+            .iter()
+            .all(|b| b.id != "b-plot")
+    );
+    assert!(a.text.contains("- two\n\n---\n"), "{}", a.text);
+}
+
+#[test]
+fn box_units_and_refusals() {
+    let d = Deck::parse(include_str!("corpus/11-absolute.qmd").into());
+    // right/bottom + % width: --at writes px left/top, drops right/bottom, reports conversion
+    let p = ops::box_move(&d, "boxes/2", Some((10.0, 20.0)), None).unwrap();
+    assert!(p.converted_units);
+    let out = ops::apply(&d.text, &p).unwrap();
+    assert!(
+        out.contains(&format!(
+            "::: {{#{} .absolute width=20% left=10 top=20}}",
+            p.target
+        )),
+        "{out}"
+    );
+    assert_eq!(
+        p.assigned_ids,
+        vec![p.target.clone()],
+        "unnamed box gets an id"
+    );
+    // --by needs px left/top
+    assert_eq!(
+        ops::box_move(&d, "boxes/2", None, Some((1.0, 1.0)))
+            .unwrap_err()
+            .code(),
+        "E_INVALID_ARG"
+    );
+    // quoted px values are fine
+    let p = ops::box_move(&d, "#b-note", None, Some((10.0, 10.0))).unwrap();
+    assert!(!p.converted_units);
+    assert!(
+        ops::apply(&d.text, &p)
+            .unwrap()
+            .contains("{#b-note .absolute top=60 left=610 width=400 height=120}")
+    );
+    // not a box / bad sizes
+    let basic = deck();
+    assert_eq!(
+        ops::box_move(&basic, "results/0", Some((0.0, 0.0)), None)
+            .unwrap_err()
+            .code(),
+        "E_INVALID_ARG"
+    );
+    assert_eq!(
+        ops::box_resize(&basic, "#b-plot", (0.0, 10.0), None)
+            .unwrap_err()
+            .code(),
+        "E_INVALID_ARG"
+    );
+    assert_eq!(
+        ops::box_rm(&basic, "intro/0").unwrap_err().code(),
+        "E_INVALID_ARG"
+    );
+}
+
+#[test]
+fn geom_parsing() {
+    use quartz_deck::attrs::Attrs;
+    use quartz_deck::ops::{Length, geom};
+    let g =
+        geom(&Attrs::parse(r#"{.absolute top="50" left=600px width=20% height=1.5em}"#).unwrap());
+    assert_eq!(
+        g.top,
+        Some(Length {
+            value: 50.0,
+            unit: "px".into()
+        })
+    );
+    assert_eq!(
+        g.left,
+        Some(Length {
+            value: 600.0,
+            unit: "px".into()
+        })
+    );
+    assert_eq!(
+        g.width,
+        Some(Length {
+            value: 20.0,
+            unit: "%".into()
+        })
+    );
+    assert_eq!(
+        g.height,
+        Some(Length {
+            value: 1.5,
+            unit: "em".into()
+        })
+    );
+    assert_eq!(g.right, None);
+}

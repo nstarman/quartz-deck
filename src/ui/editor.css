@@ -65,6 +65,9 @@ aside fieldset { border: 1px solid var(--line); border-radius: 6px; margin: 0 0 
 aside legend { color: var(--muted); font-size: 12px; padding: 0 4px; }
 aside .buttons { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
 aside .hint { color: var(--muted); font-size: 12px; }
+aside h3 { font-size: 13px; margin: 8px 0 6px; }
+aside .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; }
+aside form.add-box { border-top: 1px solid var(--line); margin-top: 8px; }
 
 @media (max-width: 1000px) { aside { width: 260px; } nav { width: 180px; } }
 @media (max-width: 700px) {
