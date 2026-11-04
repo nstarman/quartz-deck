@@ -43,7 +43,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Python packages for Plotly fixtures
-        run: pip install plotly numpy jupyter
+        run: pip install plotly jupyter
       - name: Browser
         run: google-chrome --version
 

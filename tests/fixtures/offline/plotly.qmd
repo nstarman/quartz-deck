@@ -7,6 +7,6 @@ jupyter: python3
 ## Figure {#figure}
 
 ```{python}
-import plotly.express as px
-px.scatter(x=[1, 2, 3], y=[3, 1, 2], title=r"$y = f(x)$")
+import plotly.graph_objects as go
+go.Figure(go.Scatter(x=[1, 2, 3], y=[3, 1, 2]), layout_title_text=r"$y = f(x)$")
 ```

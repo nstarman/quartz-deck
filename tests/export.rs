@@ -257,7 +257,8 @@ fn exports_plotly_without_web_scripts() {
     assert_eq!(v["check"]["ok"], true, "{v}");
     let html = std::fs::read_to_string(dir.join("export/deck.html")).unwrap();
     assert!(
-        !html.contains("cdn.plot.ly"),
+        // the bundled plotly.js itself mentions cdn.plot.ly (topojsonURL default), so look for a script tag
+        !html.contains("src=\"https://cdn.plot.ly"),
         "plotly.js must not be loaded from the web"
     );
     assert!(
@@ -415,7 +416,7 @@ fn export_30_slides_under_a_minute() {
         );
     }
     if plotly {
-        text += "## Figure\n\n```{python}\nimport plotly.express as px\npx.scatter(x=[1,2,3], y=[3,1,2])\n```\n";
+        text += "## Figure\n\n```{python}\nimport plotly.graph_objects as go\ngo.Figure(go.Scatter(x=[1,2,3], y=[3,1,2]))\n```\n";
     }
     std::fs::write(d.path().join("deck.qmd"), text).unwrap();
     let t = std::time::Instant::now();
