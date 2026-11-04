@@ -270,6 +270,54 @@ frame.addEventListener('load', () => {
   fetchDeck().then(renderPanel);
 });
 
+// ---------- hover preview of a slide in the list ----------
+
+// One small second copy of the rendered deck, steered by hash. Reloaded only when
+// the main preview re-renders, so hovering is instant after the first time.
+const peek = Object.assign(document.createElement('iframe'), { id: 'peek', tabIndex: -1, hidden: true });
+peek.setAttribute('aria-hidden', 'true');
+document.body.append(peek);
+let peekSrc = null;
+let peekWant = null;
+let peekTimer;
+
+peek.addEventListener('load', () => {
+  const w = peek.contentWindow;
+  const ready = () => {
+    // as in hookFrame: the small frame would otherwise switch Reveal to scroll view
+    w.Reveal.configure({ scrollActivationWidth: 1, controls: false, progress: false, slideNumber: false });
+    const style = w.document.createElement('style');
+    style.textContent = '.slide-menu-button { display: none !important; }';
+    w.document.head.append(style);
+    w.dispatchEvent(new Event('resize'));
+    if (peekWant) w.location.hash = '#/' + peekWant;
+  };
+  if (w.Reveal?.isReady?.()) ready(); else w.Reveal?.on?.('ready', ready);
+});
+
+function showPeek(li, anchor) {
+  clearTimeout(peekTimer);
+  peekTimer = setTimeout(() => {
+    peekWant = anchor;
+    const src = frame.getAttribute('src');
+    if (!src) return;
+    if (peekSrc !== src) { peekSrc = src; peek.src = src + '#/' + anchor; }
+    else peek.contentWindow.location.hash = '#/' + anchor;
+    const r = li.getBoundingClientRect();
+    const W = 300; const H = 200; const m = 8;
+    const across = getComputedStyle(list).display === 'flex';
+    const clamp = (v, max) => Math.max(m, Math.min(v, max - m));
+    peek.style.left = (across ? clamp(r.left, innerWidth - W) : r.right + m) + 'px';
+    peek.style.top = (across ? r.bottom + 6 : clamp(r.top, innerHeight - H)) + 'px';
+    peek.hidden = false;
+  }, 200);
+}
+
+function hidePeek() {
+  clearTimeout(peekTimer);
+  peek.hidden = true;
+}
+
 // ---------- slide list (drag to reorder) ----------
 
 let dragId = null;
@@ -299,10 +347,13 @@ function renderList() {
       b.append(' ', tag);
     }
     if (cur && s.id === cur.id) b.setAttribute('aria-current', 'true');
-    b.addEventListener('click', () => { state.sel = null; go(s.anchor); });
+    b.addEventListener('click', () => { hidePeek(); state.sel = null; go(s.anchor); });
     li.append(b);
+    li.addEventListener('mouseenter', () => { if (!dragId) showPeek(li, s.anchor); });
+    li.addEventListener('mouseleave', hidePeek);
 
     li.addEventListener('dragstart', (e) => {
+      hidePeek();
       dragId = s.id;
       li.classList.add('dragging');
       e.dataTransfer.effectAllowed = 'move';
@@ -313,7 +364,8 @@ function renderList() {
       if (!dragId || dragId === s.id) return;
       e.preventDefault();
       const r = li.getBoundingClientRect();
-      const before = e.clientY < r.top + r.height / 2;
+      const across = getComputedStyle(list).display === 'flex'; // narrow layout: horizontal strip
+      const before = across ? e.clientX < r.left + r.width / 2 : e.clientY < r.top + r.height / 2;
       li.classList.toggle('drop-before', before);
       li.classList.toggle('drop-after', !before);
     });
@@ -333,6 +385,7 @@ function renderList() {
     });
     return li;
   }));
+  list.querySelector('li.current')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 
 $('#add-slide').addEventListener('click', async () => {
