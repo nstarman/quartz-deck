@@ -1,0 +1,8 @@
+---
+title: "No code"
+format: revealjs
+---
+
+## Words {#words}
+
+Just text.

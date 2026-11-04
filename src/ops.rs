@@ -767,6 +767,47 @@ pub fn block_class(d: &Deck, element: &str, add: &[String], remove: &[String]) -
     )
 }
 
+/// Replace the unique occurrence of `old` with `new` (spec 004: source-pane
+/// saves, and a literal search-and-replace for agents). Not found means the
+/// text changed elsewhere (`E_CONFLICT`); found twice needs more context
+/// (`E_AMBIGUOUS`). Line endings follow the deck (a browser textarea sends `\n`).
+pub fn replace(d: &Deck, old: &str, new: &str) -> Result<Patch> {
+    let fix = |t: &str| {
+        let t = t.replace("\r\n", "\n");
+        if d.nl == "\n" {
+            t
+        } else {
+            t.replace('\n', d.nl)
+        }
+    };
+    let (old, new) = (fix(old), fix(new));
+    if old.is_empty() {
+        return Err(QdError::InvalidArg("the text to replace is empty".into()));
+    }
+    let mut hits = d.text.match_indices(&old).map(|(i, _)| i);
+    let at = hits.next().ok_or_else(|| {
+        QdError::Conflict(
+            "the text to replace is not in the deck (it changed meanwhile?); re-read and retry"
+                .into(),
+        )
+    })?;
+    if hits.next().is_some() {
+        return Err(QdError::Ambiguous(
+            "the text to replace occurs more than once; include more surrounding text".into(),
+        ));
+    }
+    let target = d
+        .slides
+        .iter()
+        .find(|s| s.span.start <= at && at < s.span.end)
+        .map_or("front-matter".to_string(), |s| s.id.clone());
+    let span = Span {
+        start: at,
+        end: at + old.len(),
+    };
+    Ok(patch("replace", target, vec![(span, new)], Vec::new()))
+}
+
 // ---------- front matter ----------
 
 /// Line range [first, end) of a top-level YAML key inside the front matter body.

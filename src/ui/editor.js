@@ -5,6 +5,7 @@ import { showToolbar, hideToolbar, formatKey, place as placeToolbar } from '/ui/
 import { openSource, closeSource, sourceError, sourceText } from '/ui/source.js';
 import { makeActions } from '/ui/actions.js';
 import { openMenu, closeMenu, menuOpen } from '/ui/menu.js';
+import * as pane from '/ui/pane.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const frame = $('#preview');
@@ -582,6 +583,7 @@ async function slideAction(act, slide) {
 async function select(ref) {
   state.sel = ref;
   highlight();
+  if (ref) revealSource({ ref });
   await renderPanel();
 }
 
@@ -769,6 +771,7 @@ es.addEventListener('changed', async (e) => {
     await fetchDeck();
     if (!editing()) await renderPanel();
   }
+  pane.changed();
 });
 es.addEventListener('rendering', () => { statusEl.textContent = 'rendering…'; });
 es.addEventListener('rendered', (e) => {
@@ -861,6 +864,7 @@ function openSession(s) {
   state.sel = null;
   highlight();
   s.root.classList.add('qd-editing');
+  revealSource(s);
 }
 
 function beginSession(s, point) {
@@ -1065,6 +1069,7 @@ conflictBar.addEventListener('click', async (e) => {
   if (!act || !c) return;
   conflictBar.hidden = true;
   state.conflict = null;
+  if (c.kind === 'source') { (act === 'theirs' ? c.onTheirs : c.onMine)(); return; }
   if (act === 'theirs') { say('Kept the version in the file'); return; }
   const doc = frame.contentDocument;
   if (c.kind === 'block') {
@@ -1245,15 +1250,70 @@ slidebar.addEventListener('click', async (e) => {
   else if (act === 'more') { const r = e.target.getBoundingClientRect(); openMenu(actions.slide(t), r.left, r.bottom + 4); }
 });
 
-// the Source panel (the old form) is hidden by default (FR-018)
+// layout prefs (per browser): source pane, its width / full width, the old form panel
+const mainEl = document.querySelector('main');
 const toggleSource = $('#toggle-source');
+const srcpane = $('#srcpane');
+const pref = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch { /* storage unavailable */ } return null; };
 function setPanel(open) {
-  document.querySelector('main').classList.toggle('panel-open', open);
-  toggleSource.setAttribute('aria-pressed', String(open));
-  try { localStorage.setItem('qd.panel', open ? '1' : ''); } catch { /* storage unavailable */ }
+  mainEl.classList.toggle('panel-open', open);
+  pref('qd.panel', open ? '1' : '');
 }
-toggleSource.addEventListener('click', () => setPanel(toggleSource.getAttribute('aria-pressed') !== 'true'));
-try { setPanel(localStorage.getItem('qd.panel') === '1'); } catch { setPanel(false); }
+function setSource(open) {
+  mainEl.classList.toggle('source-open', open);
+  srcpane.hidden = !open;
+  toggleSource.setAttribute('aria-pressed', String(open));
+  pref('qd.source', open ? '1' : '');
+  if (open) pane.load();
+}
+function setFull(on) {
+  mainEl.classList.toggle('source-full', on);
+  $('[data-act=full]', srcpane).setAttribute('aria-pressed', String(on));
+  pref('qd.sourcefull', on ? '1' : '');
+}
+toggleSource.addEventListener('click', () => setSource(srcpane.hidden));
+$('[data-act=form]', srcpane).addEventListener('click', () => setPanel(!mainEl.classList.contains('panel-open')));
+$('[data-act=full]', srcpane).addEventListener('click', () => setFull(!mainEl.classList.contains('source-full')));
+const splitter = $('#splitter');
+const setWidth = (px) => { mainEl.style.setProperty('--srcw', Math.max(240, Math.min(px, innerWidth - 320)) + 'px'); pref('qd.srcw', String(px)); };
+splitter.addEventListener('pointerdown', (e) => {
+  splitter.setPointerCapture(e.pointerId);
+  const move = (ev) => setWidth(mainEl.getBoundingClientRect().right - ev.clientX);
+  splitter.addEventListener('pointermove', move);
+  splitter.addEventListener('pointerup', () => splitter.removeEventListener('pointermove', move), { once: true });
+});
+splitter.addEventListener('keydown', (e) => {
+  const d = { ArrowLeft: 20, ArrowRight: -20 }[e.key];
+  if (d) { e.preventDefault(); setWidth(srcpane.getBoundingClientRect().width + d); }
+});
+if (pref('qd.srcw')) setWidth(Number(pref('qd.srcw')));
+setPanel(pref('qd.panel') === '1');
+setFull(pref('qd.sourcefull') === '1');
+setSource(pref('qd.source') === '1');
+
+pane.initPane({
+  op: (name, args) => op(name, args, { fileExpect: false }),
+  lastError: () => op.lastError,
+  conflict: (theirs, mine, onMine, onTheirs) => {
+    state.conflict = { kind: 'source', theirs, mine, onMine, onTheirs };
+    $('.theirs', conflictBar).textContent = theirs;
+    $('.mine', conflictBar).textContent = mine;
+    conflictBar.hidden = false;
+  },
+  // the caret's slide is shown (US2); the front matter shows the title slide
+  onCaretLine: (line) => {
+    const s = (state.deck?.slides || []).find((x) => x.lines[0] <= line && line <= x.lines[1]);
+    const anchor = s ? s.anchor : (state.deck?.title_slide ? 'title-slide' : null);
+    if (anchor && anchor !== state.anchor) go(anchor);
+  },
+});
+
+/** Element (or slide title) → its source lines in the pane (US2). */
+async function revealSource(s) {
+  if (!pane.shown()) return;
+  if (s?.ref) { const b = await fetchBlock(s.ref); if (b) pane.reveal(b.lines); return; }
+  if (s?.slide) { const sl = await fetchSlide(s.slide); if (sl) pane.reveal([sl.lines[0], sl.lines[0]]); }
+}
 
 // insert (+) and drag (⠿) handles beside the element under the mouse (US4)
 const hoverbar = document.createElement('div');
