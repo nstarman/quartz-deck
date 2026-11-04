@@ -6,29 +6,13 @@ use serde_json::Value;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::time::{Duration, Instant};
 
+mod common;
+use common::{have_quarto, qd};
+
 const BASIC: &str = include_str!("fixtures/basic.qmd");
-
-fn have_quarto() -> bool {
-    let ok = Command::new("quarto")
-        .arg("--version")
-        .output()
-        .is_ok_and(|o| o.status.success());
-    if !ok {
-        eprintln!("quarto not found: skipping");
-    }
-    ok
-}
-
-fn qd(dir: &Path) -> Command {
-    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("qd"));
-    c.current_dir(dir)
-        .env("QD_CACHE_DIR", dir.join(".cache"))
-        .env_remove("QD_DECK");
-    c
-}
 
 fn qd_json(dir: &Path, args: &[&str]) -> (bool, Value) {
     let out = qd(dir).args(args).output().unwrap();

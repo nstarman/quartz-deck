@@ -196,7 +196,7 @@ enum Cmd {
         slide: String,
         #[arg(allow_hyphen_values = true)]
         text: String,
-        /// Fail with E_CONFLICT unless the current title hashes to this (see `qd show`)
+        /// Fail with E_CONFLICT unless the current title hashes to this (`title_hash` in `qd show`)
         #[arg(long, value_name = "HASH")]
         expect_text: Option<String>,
     },
@@ -544,6 +544,7 @@ pub fn slides_json(d: &Deck) -> Value {
 pub fn show_json(d: &Deck, s: &Slide) -> Value {
     json!({"version": d.version, "slide": {
         "id": s.id, "explicit": s.id_explicit, "index": s.index, "kind": s.kind, "level": s.level, "title": s.title,
+        "title_hash": s.title.as_ref().map(|t| crate::deck::version_of(t.as_bytes())),
         "attrs": attrs_json(s.attrs.as_ref()), "opaque": s.opaque, "source": d.slice(s.span),
         "blocks": s.blocks.iter().map(|b| block_json(d, b)).collect::<Vec<_>>(),
     }})

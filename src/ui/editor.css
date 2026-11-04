@@ -11,6 +11,8 @@
   }
 }
 * { box-sizing: border-box; }
+/* `hidden` always hides, even on elements whose rules set `display` */
+[hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; }
 body { display: flex; flex-direction: column; background: var(--bg); color: var(--text);
   font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -50,7 +52,6 @@ nav .tag { font-size: 11px; color: var(--muted); border: 1px solid var(--line); 
 
 #peek { position: fixed; z-index: 10; width: 300px; height: 200px; pointer-events: none; background: #fff;
   border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25); }
-#peek[hidden] { display: none; }
 
 #stage { flex: 1; padding: 16px; min-width: 0; }
 #preview { width: 100%; height: 100%; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
@@ -103,9 +104,7 @@ aside .status.fail { color: var(--danger); }
 #fmtbar { position: fixed; z-index: 20; display: flex; flex-wrap: wrap; gap: 2px; align-items: center;
   max-width: calc(100vw - 8px); padding: 4px; border: 1px solid var(--line); border-radius: 8px;
   background: var(--panel); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2); }
-#fmtbar[hidden] { display: none; }
 #fmtbar button { min-width: 28px; height: 28px; padding: 0 6px; }
-#fmtbar button[hidden] { display: none; }
 #fmtbar button[data-fmt=bold] { font-weight: 700; }
 #fmtbar button[data-fmt=italic] { font-style: italic; }
 #fmtbar button[data-fmt=underline] { text-decoration: underline; }
@@ -115,14 +114,12 @@ aside .status.fail { color: var(--danger); }
 #pending { margin-left: 8px; color: var(--muted); font-size: 12px; }
 #srcedit { position: fixed; z-index: 20; padding: 6px; border: 2px solid var(--accent); border-radius: 8px;
   background: var(--panel); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25); }
-#srcedit[hidden] { display: none; }
 #srcedit textarea { display: block; width: 100%; resize: vertical; border: 0; outline: none; padding: 4px;
   background: var(--bg); color: var(--text); border-radius: 4px; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
 #srcedit .bar { display: flex; gap: 8px; justify-content: space-between; margin-top: 4px; font-size: 12px; }
 #srcedit .err { color: var(--danger); }
 #srcedit .hint { color: var(--muted); margin-left: auto; }
 #conflict { padding: 8px 16px; background: var(--error-bg); color: var(--text); border-bottom: 1px solid var(--line); }
-#conflict[hidden] { display: none; }
 #conflict .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 6px 0; }
 #conflict .lbl { font-size: 12px; color: var(--muted); }
 #conflict pre { margin: 2px 0 0; max-height: 8em; overflow: auto; padding: 6px; border-radius: 6px;

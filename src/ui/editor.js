@@ -68,6 +68,19 @@ async function fetchSlide(ref) {
   return res.ok ? (await res.json()).slide : null;
 }
 
+/** The block for an element ref `<slide>/<i>`, or null. */
+async function fetchBlock(ref) {
+  const cut = ref.lastIndexOf('/');
+  const slide = await fetchSlide(ref.slice(0, cut));
+  return slide?.blocks[Number(ref.slice(cut + 1))] || null;
+}
+
+/** The deck's front matter (without op()'s status message). */
+async function fetchMeta() {
+  const res = await fetch('/api/op', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: 'meta' }) });
+  return res.ok ? (await res.json()).front_matter || {} : {};
+}
+
 /**
  * Run one CLI op. Returns the result object, or null after reporting the error.
  * `fileExpect: false` skips the whole-file version check (on-slide saves check
@@ -479,10 +492,7 @@ async function newBox(slide, source) {
 async function renderTitlePanel() {
   const view = $('#title-panel').content.cloneNode(true);
   const f = $('form', view);
-  const res = await fetch('/api/op', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: 'meta' }),
-  });
-  const meta = res.ok ? (await res.json()).front_matter || {} : {};
+  const meta = await fetchMeta();
   const before = typeof meta.title === 'string' ? meta.title : '';
   f.title.value = before;
   f.addEventListener('submit', async (e) => {
@@ -555,9 +565,7 @@ async function select(ref) {
 
 async function renderElementPanel() {
   const ref = state.sel;
-  const cut = ref.lastIndexOf('/');
-  const slide = await fetchSlide(ref.slice(0, cut));
-  const block = slide?.blocks[Number(ref.slice(cut + 1))];
+  const block = await fetchBlock(ref);
   if (!block) { state.sel = null; return renderPanel(); }
   const view = $('#element-panel').content.cloneNode(true);
   const f = $('form.element-form', view);
@@ -739,11 +747,6 @@ function pendingBadge(on) {
   b.textContent = on ? 'updated — will refresh when you finish editing' : '';
 }
 
-async function sha16(text) {
-  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return [...new Uint8Array(d)].slice(0, 8).map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
 /** What a click on `node` would edit: a block, a slide title, or a title-slide field. */
 function editTarget(node) {
   const el = node.closest?.('[data-qd]');
@@ -767,9 +770,7 @@ async function beginEdit(target, point) {
   let s = null;
   if (target.kind === 'block') {
     const ref = target.root.dataset.qd;
-    const cut = ref.lastIndexOf('/');
-    const slide = await fetchSlide(ref.slice(0, cut));
-    const block = slide?.blocks[Number(ref.slice(cut + 1))];
+    const block = await fetchBlock(ref);
     if (!block || NOT_TYPEABLE.has(block.kind)) return false;
     const reg = region(block.kind, block.text);
     if (!reg) return false;
@@ -778,11 +779,10 @@ async function beginEdit(target, point) {
     const slide = slideByAnchor(target.anchor);
     const full = slide && (await fetchSlide(slide.id));
     if (!full?.title) return false;
-    s = { ...target, slide: full.id, source: full.title, hash: await sha16(full.title),
+    s = { ...target, slide: full.id, source: full.title, hash: full.title_hash,
       reg: { mode: 'inline', prefix: '', inner: full.title, suffix: '' }, hints: {} };
   } else {
-    const r = await fetch('/api/op', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: 'meta' }) });
-    const value = r.ok ? (await r.json()).front_matter?.[target.key] : null;
+    const value = (await fetchMeta())[target.key];
     if (typeof value !== 'string') return false;
     s = { ...target, source: value, reg: { mode: 'inline', prefix: '', inner: value, suffix: '' }, hints: {} };
   }
@@ -795,14 +795,19 @@ async function beginEdit(target, point) {
   return true;
 }
 
-function beginSession(s, point) {
-  const doc = s.root.ownerDocument;
+/** Common start of a typing or source session. */
+function openSession(s) {
   hidePeek();
   state.session = s;
   state.sel = null;
   highlight();
-  s.root.contentEditable = 'true';
   s.root.classList.add('qd-editing');
+}
+
+function beginSession(s, point) {
+  const doc = s.root.ownerDocument;
+  openSession(s);
+  s.root.contentEditable = 'true';
   doc.execCommand('styleWithCSS', false, false);
   doc.execCommand('defaultParagraphSeparator', false, 'p');
   s.root.focus();
@@ -812,17 +817,15 @@ function beginSession(s, point) {
     sel.removeAllRanges();
     sel.addRange(r);
   }
-  s.onKey = (e) => sessionKey(e, s);
-  s.onBlur = () => { if (!s.hold && !s.failed) setTimeout(() => { if (state.session === s && !s.root.contains(doc.activeElement)) saveSession(); }, 0); };
-  s.onPaste = (e) => {
+  s.ac = new AbortController(); // removes all of these listeners in endSession
+  const on = (type, fn) => s.root.addEventListener(type, fn, { signal: s.ac.signal });
+  on('keydown', (e) => sessionKey(e, s));
+  on('focusout', () => { if (!s.hold && !s.failed) setTimeout(() => { if (state.session === s && !s.root.contains(doc.activeElement)) saveSession(); }, 0); });
+  on('paste', (e) => {
     e.preventDefault(); // plain text only (formatting from other apps is dropped)
     doc.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
-  };
-  s.onInput = () => { s.failed = false; placeToolbar(frame); };
-  s.root.addEventListener('keydown', s.onKey);
-  s.root.addEventListener('focusout', s.onBlur);
-  s.root.addEventListener('paste', s.onPaste);
-  s.root.addEventListener('input', s.onInput);
+  });
+  on('input', () => { s.failed = false; placeToolbar(frame); });
   showToolbar(s, frame);
   say(s.reg.mode === 'inline' ? 'Editing — Enter or click elsewhere saves, Esc cancels' : 'Editing — ⌘Enter, Tab or click elsewhere saves, Esc cancels');
 }
@@ -911,10 +914,7 @@ function endSession(s, saved, { keepPending = false } = {}) {
   if (s.mode === 'source') {
     closeSource();
   } else {
-    s.root.removeEventListener('keydown', s.onKey);
-    s.root.removeEventListener('focusout', s.onBlur);
-    s.root.removeEventListener('paste', s.onPaste);
-    s.root.removeEventListener('input', s.onInput);
+    s.ac.abort();
     s.root.removeAttribute('contenteditable');
     if (!saved) { s.root.innerHTML = s.html; s.root.style.textAlign = ''; }
     s.root.blur();
@@ -938,11 +938,7 @@ function pageRect(el) {
 }
 
 function startSourceSession(s, text) {
-  hidePeek();
-  state.session = s;
-  state.sel = null;
-  highlight();
-  s.root.classList.add('qd-editing');
+  openSession(s);
   openSource(pageRect(s.root), text, { save: () => saveSession(), cancel: () => endSession(s, false) });
   say('Editing source — ⌘Enter or click elsewhere saves, Esc cancels');
 }
@@ -954,9 +950,7 @@ async function beginSource(el, draft = null, base = null) {
   let source = base?.source;
   let hash = base?.hash;
   if (!base) {
-    const cut = ref.lastIndexOf('/');
-    const slide = await fetchSlide(ref.slice(0, cut));
-    const block = slide?.blocks[Number(ref.slice(cut + 1))];
+    const block = await fetchBlock(ref);
     if (!block || state.session) return false;
     source = block.text;
     hash = block.hash;

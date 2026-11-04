@@ -29,8 +29,8 @@ function fence(code) {
   return n > 1 || /^`|`$/.test(code) ? `${t} ${code} ${t}` : `${t}${code}${t}`;
 }
 
-const SIZE_STYLE = /^font-size:\s*[\d.]+em;?$/;
-const COLOR_STYLE = /^color:\s*#[0-9a-f]{3,8};?$/i;
+const SIZE_STYLE = /^font-size:\s*[\d.]+em$/;
+const COLOR_STYLE = /^color:\s*#[0-9a-f]{3,8}$/i;
 
 /** Markdown for the inline content of `node`. Throws Unsupported. */
 export function serializeInline(node) {
@@ -62,8 +62,7 @@ export function serializeInline(node) {
         const style = (n.getAttribute('style') || '').trim();
         const classes = [...n.classList];
         const others = [...n.attributes].filter((a) => !['style', 'class'].includes(a.name));
-        const okStyle = !style || SIZE_STYLE.test(style) || COLOR_STYLE.test(style)
-          || style.split(';').filter(Boolean).every((p) => SIZE_STYLE.test(p.trim()) || COLOR_STYLE.test(p.trim()));
+        const okStyle = style.split(';').filter((p) => p.trim()).every((p) => SIZE_STYLE.test(p.trim()) || COLOR_STYLE.test(p.trim()));
         if (others.length || !okStyle || classes.some((c) => c.startsWith('math') || c.startsWith('citation'))) {
           throw new Unsupported('span');
         }
@@ -79,10 +78,7 @@ export function serializeInline(node) {
 
 function isBlank(n) { return n.nodeType === 3 && !n.data.trim(); }
 
-function paragraph(n) {
-  const s = serializeInline(n);
-  return s.replace(/^\s+|\s+$/g, '');
-}
+const paragraph = (n) => serializeInline(n).trim();
 
 function listItems(list, hints) {
   const ordered = list.tagName === 'OL';
@@ -256,7 +252,7 @@ export function splice(T, S0, S1, pos) {
  */
 export function gate(root, reg, hints) {
   try {
-    const S0 = reg.mode === 'inline' ? serializeInline(root).trim() : serializeBlocks(root, hints);
+    const S0 = reserialize(root, reg, hints);
     const pos = align(S0, reg.inner);
     return pos ? { S0, pos } : null;
   } catch (e) {

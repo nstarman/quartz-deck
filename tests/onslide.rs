@@ -11,25 +11,17 @@ use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures_util::StreamExt;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{Duration, Instant};
 
-const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/corpus");
+mod common;
+use common::{have_quarto, qd};
 
-fn qd(dir: &Path) -> Command {
-    let mut c = Command::new(env!("CARGO_BIN_EXE_qd"));
-    c.current_dir(dir)
-        .env("QD_CACHE_DIR", dir.join(".cache"))
-        .env_remove("QD_DECK");
-    c
-}
+const SRC: &str = "document.querySelector('#srcedit textarea')";
+const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/corpus");
 
 /// Chrome to use, or None (test skips) when Quarto or a browser is missing.
 fn chrome() -> Option<PathBuf> {
-    let quarto = Command::new("quarto")
-        .arg("--version")
-        .output()
-        .is_ok_and(|o| o.status.success());
+    let quarto = have_quarto();
     let tmp = tempfile::tempdir().unwrap();
     let out = qd(tmp.path()).args(["browser"]).output().ok()?;
     let path = serde_json::from_slice::<Value>(&out.stdout).ok()?["path"]
@@ -114,8 +106,13 @@ impl Ed {
     }
 
     async fn wait(&self, cond: &str, secs: u64) {
+        // a condition that throws (e.g. the preview is mid-reload after a
+        // render) counts as "not yet", not as a failure
+        let cond_safe = format!(
+            "(async () => {{ try {{ return await ({cond}); }} catch {{ return false; }} }})()"
+        );
         let start = Instant::now();
-        while self.eval(cond).await != Value::Bool(true) {
+        while self.eval(&cond_safe).await != Value::Bool(true) {
             assert!(
                 start.elapsed() < Duration::from_secs(secs),
                 "timed out waiting for: {cond}"
@@ -147,46 +144,25 @@ impl Ed {
     }
 
     /// Trusted click on an element of the preview (`sel` is a CSS selector in the iframe).
+    /// Trusted click at the page point `[x, y]` that `js` evaluates to.
+    async fn click_js(&self, js: &str) {
+        let pt = self.eval(js).await;
+        let (x, y) = (pt[0].as_f64().unwrap(), pt[1].as_f64().unwrap());
+        self.page.click(Point { x, y }).await.unwrap();
+    }
+
+    /// Click an element of the preview (`sel` is a CSS selector in the iframe).
     async fn click_in_slide(&self, sel: &str) {
-        let pt = self
-            .eval(&format!(
-                "(() => {{ const f = document.querySelector('#preview'); const el = f.contentDocument.querySelector({sel:?}); const a = f.getBoundingClientRect(); const r = el.getBoundingClientRect(); return [a.left + r.left + 4, a.top + r.top + r.height / 2]; }})()"
-            ))
-            .await;
-        self.page
-            .click(Point {
-                x: pt[0].as_f64().unwrap(),
-                y: pt[1].as_f64().unwrap(),
-            })
-            .await
-            .unwrap();
+        self.click_js(&format!("(() => {{ const f = document.querySelector('#preview'); const el = f.contentDocument.querySelector({sel:?}); const a = f.getBoundingClientRect(); const r = el.getBoundingClientRect(); return [a.left + r.left + 4, a.top + r.top + r.height / 2]; }})()")).await;
     }
 
     async fn click_editor(&self, sel: &str) {
-        let pt = self
-            .eval(&format!("(() => {{ const r = document.querySelector({sel:?}).getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }})()"))
-            .await;
-        self.page
-            .click(Point {
-                x: pt[0].as_f64().unwrap(),
-                y: pt[1].as_f64().unwrap(),
-            })
-            .await
-            .unwrap();
+        self.click_js(&format!("(() => {{ const r = document.querySelector({sel:?}).getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }})()")).await;
     }
 
     /// Click somewhere on the slide that is not an element (ends an edit).
     async fn click_blank(&self) {
-        let pt = self
-            .eval("(() => { const r = document.querySelector('#preview').getBoundingClientRect(); return [r.left + r.width / 2, r.bottom - 30]; })()")
-            .await;
-        self.page
-            .click(Point {
-                x: pt[0].as_f64().unwrap(),
-                y: pt[1].as_f64().unwrap(),
-            })
-            .await
-            .unwrap();
+        self.click_js("(() => { const r = document.querySelector('#preview').getBoundingClientRect(); return [r.left + r.width / 2, r.bottom - 30]; })()").await;
     }
 
     /// Put the caret (or a selection of `word`) inside the open edit.
@@ -241,6 +217,34 @@ impl Ed {
 
     async fn session(&self) -> Value {
         self.eval("window.qdSession()").await
+    }
+
+    async fn set_source(&self, text: &str) {
+        self.eval(&format!("(() => {{ const t = {SRC}; t.value = {text:?}; t.dispatchEvent(new Event('input')); t.focus(); }})()")).await;
+    }
+    async fn idle(&self) {
+        self.wait(
+            "window.qdSession() === null && !document.querySelector('#pending')?.textContent",
+            30,
+        )
+        .await;
+    }
+
+    /// Wait until the preview shows the file as it is now (render caught up, no edit open).
+    async fn settle(&self) {
+        self.wait(
+            "(async () => { const v = (await fetch('/api/deck').then((r) => r.json())).version; const st = document.querySelector('#status').textContent; const f = document.querySelector('#preview').contentWindow; return window.qdSession() === null && st === 'rendered ' + v.slice(0, 7) && !!f.Reveal?.isReady?.(); })()",
+            60,
+        )
+        .await;
+    }
+    /// Type `text` at the end of a paragraph-like element and leave it.
+    async fn type_into(&self, anchor: &str, sel: &str, text: &str) {
+        self.settle().await;
+        self.go(anchor).await;
+        self.click_in_slide(&format!("{sel} p")).await;
+        self.caret(sel, None).await;
+        self.type_text(text).await;
     }
 }
 
@@ -396,11 +400,7 @@ async fn typing_writes_only_the_element() {
 
     // Escape abandons an edit
     let before = ed.file();
-    ed.wait(
-        "window.qdSession() === null && !document.querySelector('#pending')?.textContent",
-        10,
-    )
-    .await;
+    ed.idle().await;
     ed.click_in_slide("[data-qd=\"methods/1\"] li").await;
     ed.caret("[data-qd=\"methods/1\"]", None).await;
     ed.type_text(" nope").await;
@@ -435,11 +435,7 @@ async fn enter_adds_list_items_and_saves_titles() {
     );
 
     // the slide title: Enter saves; attributes are kept
-    ed.wait(
-        "window.qdSession() === null && !document.querySelector('#pending')?.textContent",
-        15,
-    )
-    .await;
+    ed.idle().await;
     ed.go("methods").await;
     ed.click_in_slide("section#methods > h2").await;
     ed.caret("section#methods > h2", None).await;
@@ -537,21 +533,6 @@ async fn render_waits_for_the_open_edit() {
 const MATH: &str =
     "---\ntitle: T\nformat: revealjs\n---\n\n## Eq {#eq}\n\n$$\nE = mc^2\n$$\n\nPlain words.\n";
 
-const SRC: &str = "document.querySelector('#srcedit textarea')";
-
-impl Ed {
-    async fn set_source(&self, text: &str) {
-        self.eval(&format!("(() => {{ const t = {SRC}; t.value = {text:?}; t.dispatchEvent(new Event('input')); t.focus(); }})()")).await;
-    }
-    async fn idle(&self) {
-        self.wait(
-            "window.qdSession() === null && !document.querySelector('#pending')?.textContent",
-            30,
-        )
-        .await;
-    }
-}
-
 #[tokio::test(flavor = "multi_thread")]
 async fn source_editor_opens_over_math_and_refuses_new_slides() {
     let Some(ed) = Ed::open(MATH).await else {
@@ -622,25 +603,6 @@ async fn alt_enter_switches_typing_to_source() {
 }
 
 // ---------- US5: editing together with an agent (T019, T021) ----------
-
-impl Ed {
-    /// Wait until the preview shows the file as it is now (render caught up, no edit open).
-    async fn settle(&self) {
-        self.wait(
-            "(async () => { const v = (await fetch('/api/deck').then((r) => r.json())).version; const st = document.querySelector('#status').textContent; const f = document.querySelector('#preview').contentWindow; return window.qdSession() === null && st === 'rendered ' + v.slice(0, 7) && !!f.Reveal?.isReady?.(); })()",
-            60,
-        )
-        .await;
-    }
-    /// Type `text` at the end of a paragraph-like element and leave it.
-    async fn type_into(&self, anchor: &str, sel: &str, text: &str) {
-        self.settle().await;
-        self.go(anchor).await;
-        self.click_in_slide(&format!("{sel} p")).await;
-        self.caret(sel, None).await;
-        self.type_text(text).await;
-    }
-}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn same_element_conflict_offers_both_versions() {
