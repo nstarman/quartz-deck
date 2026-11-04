@@ -323,6 +323,16 @@ enum BlockCmd {
     Rm { element: String },
     /// Duplicate an element (placed right after it; explicit ids are renewed)
     Dup { element: String },
+    /// Add/remove classes on an element (e.g. `--add fragment`: appears on click)
+    Class {
+        element: String,
+        /// Class to add (repeatable)
+        #[arg(long)]
+        add: Vec<String>,
+        /// Class to remove (repeatable)
+        #[arg(long)]
+        remove: Vec<String>,
+    },
 }
 
 #[derive(Args)]
@@ -706,6 +716,7 @@ const API_OPS: &[&str] = &[
     "block move",
     "block rm",
     "block dup",
+    "block class",
     "slides",
     "show",
     "meta",
@@ -1099,6 +1110,11 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             }
             BlockCmd::Rm { element } => ctx.edit(|d| ops::block_rm(d, element)),
             BlockCmd::Dup { element } => ctx.edit(|d| ops::block_dup(d, element)),
+            BlockCmd::Class {
+                element,
+                add,
+                remove,
+            } => ctx.edit(|d| ops::block_class(d, element, add, remove)),
         },
         Cmd::Undo => {
             let (v, op) = ctx.store()?.undo()?;

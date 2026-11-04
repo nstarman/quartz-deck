@@ -573,7 +573,8 @@ fn box_units_and_refusals() {
     assert!(
         ops::apply(&d.text, &p)
             .unwrap()
-            .contains("{#b-note .absolute top=60 left=610 width=400 height=120}")
+            // moved values are rewritten; untouched width/height keep their quotes
+            .contains("{#b-note .absolute top=60 left=610 width=\"400\" height=\"120\"}")
     );
     // not a box / bad sizes
     let basic = deck();
