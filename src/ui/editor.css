@@ -11,6 +11,8 @@
   }
 }
 * { box-sizing: border-box; }
+/* `hidden` always hides, even on elements whose rules set `display` */
+[hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; }
 body { display: flex; flex-direction: column; background: var(--bg); color: var(--text);
   font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -47,6 +49,9 @@ nav li button:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
 nav li.current button { color: var(--accent); font-weight: 600; background: var(--bg); }
 nav .idx { color: var(--muted); display: inline-block; min-width: 2em; }
 nav .tag { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+
+#peek { position: fixed; z-index: 10; width: 300px; height: 200px; pointer-events: none; background: #fff;
+  border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25); }
 
 #stage { flex: 1; padding: 16px; min-width: 0; }
 #preview { width: 100%; height: 100%; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
@@ -86,4 +91,71 @@ aside .status.fail { color: var(--danger); }
   main { flex-direction: column; }
   nav, aside { width: auto; max-height: 30vh; border: 0; border-bottom: 1px solid var(--line); }
   #stage { padding: 0; min-height: 50vh; }
+  /* slide list becomes a side-scrolling strip; drag reorders left/right */
+  nav { display: flex; align-items: center; overflow-x: auto; overflow-y: hidden; }
+  nav ol { display: flex; gap: 4px; flex: none; }
+  nav li { flex: none; max-width: 180px; border: 0; border-left: 2px solid transparent; border-right: 2px solid transparent; }
+  nav li.drop-before { border-left-color: var(--drop); }
+  nav li.drop-after { border-right-color: var(--drop); }
+  nav button.wide { flex: none; width: auto; margin: 0 8px 0 0; white-space: nowrap; }
 }
+
+/* ---------- on-slide editing (spec 003) ---------- */
+#fmtbar { position: fixed; z-index: 20; display: flex; flex-wrap: wrap; gap: 2px; align-items: center;
+  max-width: calc(100vw - 8px); padding: 4px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2); }
+#fmtbar button { min-width: 28px; height: 28px; padding: 0 6px; }
+#fmtbar button[data-fmt=bold] { font-weight: 700; }
+#fmtbar button[data-fmt=italic] { font-style: italic; }
+#fmtbar button[data-fmt=underline] { text-decoration: underline; }
+#fmtbar button[data-fmt=strike] { text-decoration: line-through; }
+#fmtbar .swatch { min-width: 18px; width: 18px; height: 18px; padding: 0; border-radius: 50%; }
+#fmtbar .sep { width: 1px; height: 20px; margin: 0 3px; background: var(--line); }
+#pending { margin-left: 8px; color: var(--muted); font-size: 12px; }
+#srcedit { position: fixed; z-index: 20; padding: 6px; border: 2px solid var(--accent); border-radius: 8px;
+  background: var(--panel); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25); }
+#srcedit textarea { display: block; width: 100%; resize: vertical; border: 0; outline: none; padding: 4px;
+  background: var(--bg); color: var(--text); border-radius: 4px; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+#srcedit .bar { display: flex; gap: 8px; justify-content: space-between; margin-top: 4px; font-size: 12px; }
+#srcedit .err { color: var(--danger); }
+#srcedit .hint { color: var(--muted); margin-left: auto; }
+#conflict { padding: 8px 16px; background: var(--error-bg); color: var(--text); border-bottom: 1px solid var(--line); }
+#conflict .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 6px 0; }
+#conflict .lbl { font-size: 12px; color: var(--muted); }
+#conflict pre { margin: 2px 0 0; max-height: 8em; overflow: auto; padding: 6px; border-radius: 6px;
+  background: var(--panel); white-space: pre-wrap; font: 12px/1.4 ui-monospace, monospace; }
+#conflict .buttons { display: flex; gap: 6px; }
+@media (max-width: 700px) { #conflict .cols { grid-template-columns: 1fr; } }
+
+/* ---------- spec 003 P2: menus, bars, Source panel ---------- */
+#stage { display: flex; flex-direction: column; gap: 6px; }
+#preview { flex: 1; min-height: 0; }
+#slidebar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; }
+#slidebar input[type=color] { width: 28px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 4px; vertical-align: middle; }
+main:not(.panel-open) > aside { display: none; }
+#toggle-source[aria-pressed=true] { background: var(--bg); border-color: var(--accent); }
+
+#ctxmenu { position: fixed; z-index: 30; }
+#ctxmenu ul { list-style: none; margin: 0; padding: 4px; min-width: 210px; background: var(--panel); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25); }
+#ctxmenu li { position: relative; display: flex; gap: 16px; justify-content: space-between; padding: 5px 10px;
+  border-radius: 5px; cursor: default; white-space: nowrap; outline: none; }
+#ctxmenu li[role=separator] { height: 1px; padding: 0; margin: 4px 6px; background: var(--line); }
+#ctxmenu li:focus, #ctxmenu li.open { background: var(--accent); color: var(--accent-text); }
+#ctxmenu li[aria-disabled=true] { opacity: 0.45; }
+#ctxmenu li[role=menuitemcheckbox] { padding-left: 22px; }
+#ctxmenu li[aria-checked=true]::before { content: "✓"; position: absolute; left: 7px; }
+#ctxmenu li[aria-haspopup]::after { content: "▸"; }
+#ctxmenu kbd { font: inherit; opacity: 0.7; }
+#ctxmenu li > ul { display: none; position: absolute; top: -5px; left: 100%; }
+#ctxmenu li > ul.left { left: auto; right: 100%; }
+#ctxmenu li.open > ul { display: block; }
+
+#elbar, #hoverbar { position: fixed; z-index: 15; display: flex; gap: 2px; padding: 3px; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18); }
+#elbar button, #hoverbar button { height: 26px; min-width: 26px; padding: 0 6px; font-size: 13px; }
+#elbar button[aria-pressed=true] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+#hoverbar { padding: 2px; box-shadow: none; }
+#hoverbar [data-act=drag] { cursor: grab; }
+#dropline { position: fixed; z-index: 16; height: 3px; background: var(--drop); border-radius: 2px; pointer-events: none; }
+#emptyadd { position: fixed; z-index: 15; }

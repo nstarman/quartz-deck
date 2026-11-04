@@ -14,6 +14,9 @@ pub enum Item {
 pub struct Attrs {
     pub items: Vec<Item>,
     orig: Option<String>,
+    /// Each parsed item with its source text, so a changed block still prints
+    /// its untouched items exactly as written (quoting, escapes).
+    raw: Vec<(Item, String)>,
 }
 
 impl Attrs {
@@ -21,15 +24,20 @@ impl Attrs {
     pub fn parse(s: &str) -> Option<Attrs> {
         let inner = s.strip_prefix('{')?.strip_suffix('}')?;
         let mut items = Vec::new();
-        let mut chars = inner.chars().peekable();
+        let mut raw = Vec::new();
+        let mut chars = inner.char_indices().peekable();
+        let end_of = |chars: &mut std::iter::Peekable<std::str::CharIndices>| {
+            chars.peek().map_or(inner.len(), |&(i, _)| i)
+        };
         loop {
-            while chars.next_if(|c| c.is_whitespace()).is_some() {}
+            while chars.next_if(|(_, c)| c.is_whitespace()).is_some() {}
+            let start = end_of(&mut chars);
             if chars.peek().is_none() {
                 break;
             }
             let mut tok = String::new();
             let mut value: Option<String> = None;
-            while let Some(&c) = chars.peek() {
+            while let Some(&(_, c)) = chars.peek() {
                 if c.is_whitespace() {
                     break;
                 }
@@ -37,12 +45,12 @@ impl Attrs {
                 if c == '=' && value.is_none() && !tok.starts_with(['#', '.']) {
                     let mut v = String::new();
                     match chars.peek() {
-                        Some(&q @ ('"' | '\'')) => {
+                        Some(&(_, q @ ('"' | '\''))) => {
                             chars.next();
                             let mut closed = false;
-                            while let Some(c) = chars.next() {
+                            while let Some((_, c)) = chars.next() {
                                 if c == '\\' && q == '"' {
-                                    v.push(chars.next()?);
+                                    v.push(chars.next()?.1);
                                 } else if c == q {
                                     closed = true;
                                     break;
@@ -55,7 +63,7 @@ impl Attrs {
                             }
                         }
                         _ => {
-                            while let Some(c) = chars.next_if(|c| !c.is_whitespace()) {
+                            while let Some((_, c)) = chars.next_if(|(_, c)| !c.is_whitespace()) {
                                 v.push(c);
                             }
                         }
@@ -68,17 +76,21 @@ impl Attrs {
                 }
                 tok.push(c);
             }
-            items.push(match value {
+            let text = inner[start..end_of(&mut chars)].to_string();
+            let item = match value {
                 Some(v) if !tok.is_empty() => Item::Kv(tok, v),
                 Some(_) => return None,
                 None if tok.len() > 1 && tok.starts_with('#') => Item::Id(tok[1..].into()),
                 None if tok.len() > 1 && tok.starts_with('.') => Item::Class(tok[1..].into()),
                 None => Item::Other(tok),
-            });
+            };
+            raw.push((item.clone(), text));
+            items.push(item);
         }
         Some(Attrs {
             items,
             orig: Some(s.to_string()),
+            raw,
         })
     }
 
@@ -190,11 +202,14 @@ impl Attrs {
         let parts: Vec<String> = self
             .items
             .iter()
-            .map(|i| match i {
-                Item::Id(id) => format!("#{id}"),
-                Item::Class(c) => format!(".{c}"),
-                Item::Kv(k, v) => format!("{k}={}", quote(v)),
-                Item::Other(o) => o.clone(),
+            .map(|i| match self.raw.iter().find(|(r, _)| r == i) {
+                Some((_, text)) => text.clone(), // untouched item: as written
+                None => match i {
+                    Item::Id(id) => format!("#{id}"),
+                    Item::Class(c) => format!(".{c}"),
+                    Item::Kv(k, v) => format!("{k}={}", quote(v)),
+                    Item::Other(o) => o.clone(),
+                },
             })
             .collect();
         format!("{{{}}}", parts.join(" "))

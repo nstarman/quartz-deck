@@ -56,6 +56,16 @@ struct Where {
     before: Option<String>,
 }
 
+impl Where {
+    fn pos(&self) -> Pos<'_> {
+        match (&self.after, &self.before) {
+            (Some(a), _) => Pos::After(a),
+            (_, Some(b)) => Pos::Before(b),
+            _ => unreachable!("clap group is required"),
+        }
+    }
+}
+
 #[derive(Subcommand)]
 enum Cmd {
     /// List slides with ids, titles and summaries
@@ -196,6 +206,9 @@ enum Cmd {
         slide: String,
         #[arg(allow_hyphen_values = true)]
         text: String,
+        /// Fail with E_CONFLICT unless the current title hashes to this (`title_hash` in `qd show`)
+        #[arg(long, value_name = "HASH")]
+        expect_text: Option<String>,
     },
     /// Replace a slide's content (positioned boxes are kept)
     Body {
@@ -224,11 +237,19 @@ enum Cmd {
         element: String,
         #[command(flatten)]
         input: Input,
+        /// Fail with E_CONFLICT unless the element's source hashes to this (`hash` in `qd show`)
+        #[arg(long, value_name = "HASH")]
+        expect_text: Option<String>,
     },
     /// Positioned boxes (Quarto `.absolute`; px on the slide, default 1050x700)
     Box {
         #[command(subcommand)]
         action: BoxCmd,
+    },
+    /// Single elements of a slide: add, move, remove, duplicate (ref: <slide>/<index> or #id)
+    Block {
+        #[command(subcommand)]
+        action: BlockCmd,
     },
     /// Revert the last qd edit
     Undo,
@@ -290,6 +311,55 @@ enum BoxCmd {
         #[arg(id = "box", value_name = "BOX")]
         bx: String,
     },
+}
+
+#[derive(Subcommand)]
+enum BlockCmd {
+    /// Add markdown as new block(s) on a slide
+    Add {
+        slide: String,
+        #[command(flatten)]
+        at: BlockWhere,
+        #[command(flatten)]
+        input: Input,
+    },
+    /// Move an element before/after another element of the same slide
+    Move {
+        element: String,
+        #[command(flatten)]
+        to: Where,
+    },
+    /// Remove an element
+    Rm { element: String },
+    /// Duplicate an element (placed right after it; explicit ids are renewed)
+    Dup { element: String },
+    /// Add/remove classes on an element (e.g. `--add fragment`: appears on click)
+    Class {
+        element: String,
+        /// Class to add (repeatable)
+        #[arg(long)]
+        add: Vec<String>,
+        /// Class to remove (repeatable)
+        #[arg(long)]
+        remove: Vec<String>,
+    },
+}
+
+#[derive(Args)]
+#[group(required = true, multiple = false)]
+struct BlockWhere {
+    /// Place after this element
+    #[arg(long)]
+    after: Option<String>,
+    /// Place before this element
+    #[arg(long)]
+    before: Option<String>,
+    /// Place before the slide's first element
+    #[arg(long)]
+    start: bool,
+    /// Place after the slide's last element
+    #[arg(long)]
+    end: bool,
 }
 
 /// `X,Y` (numbers, px).
@@ -422,8 +492,11 @@ fn find_deck(arg: &Option<PathBuf>) -> Result<PathBuf> {
     let qmds: Vec<PathBuf> = std::fs::read_dir(".")?
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| {
+            let name = p.file_name().unwrap().to_string_lossy();
+            // qd's own render copies (`<stem>.qd-<tag>.qmd`) are not decks
             p.extension().is_some_and(|e| e == "qmd")
-                && !p.file_name().unwrap().to_string_lossy().starts_with('.')
+                && !name.starts_with('.')
+                && !name.contains(".qd-")
         })
         .collect();
     match qmds.as_slice() {
@@ -471,7 +544,9 @@ fn attrs_json(a: Option<&crate::attrs::Attrs>) -> Value {
 }
 
 fn block_json(d: &Deck, b: &Block) -> Value {
-    let mut v = json!({"id": b.id, "explicit": b.id_explicit, "kind": b.kind, "text": d.slice(b.span), "attrs": attrs_json(b.attrs.as_ref())});
+    let text = d.slice(b.span);
+    let mut v = json!({"id": b.id, "explicit": b.id_explicit, "kind": b.kind, "text": text,
+        "hash": crate::deck::version_of(text.as_bytes()), "attrs": attrs_json(b.attrs.as_ref())});
     if b.kind == BlockKind::Box
         && let Some(a) = &b.attrs
     {
@@ -533,6 +608,7 @@ pub fn slides_json(d: &Deck) -> Value {
 pub fn show_json(d: &Deck, s: &Slide) -> Value {
     json!({"version": d.version, "slide": {
         "id": s.id, "explicit": s.id_explicit, "index": s.index, "kind": s.kind, "level": s.level, "title": s.title,
+        "title_hash": s.title.as_ref().map(|t| crate::deck::version_of(t.as_bytes())),
         "attrs": attrs_json(s.attrs.as_ref()), "opaque": s.opaque, "source": d.slice(s.span),
         "blocks": s.blocks.iter().map(|b| block_json(d, b)).collect::<Vec<_>>(),
     }})
@@ -646,6 +722,11 @@ const API_OPS: &[&str] = &[
     "box move",
     "box resize",
     "box rm",
+    "block add",
+    "block move",
+    "block rm",
+    "block dup",
+    "block class",
     "slides",
     "show",
     "meta",
@@ -957,16 +1038,13 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             ctx.edit(|d| ops::add(d, &spec, pos))
         }
         Cmd::Dup { slide, after } => ctx.edit(|d| ops::dup(d, slide, after.as_deref())),
-        Cmd::Move { slide, to } => {
-            let pos = match (&to.after, &to.before) {
-                (Some(a), _) => Pos::After(a),
-                (_, Some(b)) => Pos::Before(b),
-                _ => unreachable!("clap group is required"),
-            };
-            ctx.edit(|d| ops::mv(d, slide, pos))
-        }
+        Cmd::Move { slide, to } => ctx.edit(|d| ops::mv(d, slide, to.pos())),
         Cmd::Rm { slide } => ctx.edit(|d| ops::rm(d, slide)),
-        Cmd::Title { slide, text } => ctx.edit(|d| ops::title(d, slide, text)),
+        Cmd::Title {
+            slide,
+            text,
+            expect_text,
+        } => ctx.edit(|d| ops::title(d, slide, text, expect_text.as_deref())),
         Cmd::Body { slide, input } => {
             let md = required_input(input)?;
             ctx.edit(|d| ops::body(d, slide, &md))
@@ -986,9 +1064,13 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             };
             ctx.edit(|d| ops::set(d, slide, &change))
         }
-        Cmd::Edit { element, input } => {
+        Cmd::Edit {
+            element,
+            input,
+            expect_text,
+        } => {
             let md = required_input(input)?;
-            ctx.edit(|d| ops::edit(d, element, &md))
+            ctx.edit(|d| ops::edit(d, element, &md, expect_text.as_deref()))
         }
         Cmd::Box { action } => match action {
             BoxCmd::Add {
@@ -1009,6 +1091,27 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                 ctx.edit(|d| ops::box_resize(d, bx, size.unwrap(), *at))
             }
             BoxCmd::Rm { bx } => ctx.edit(|d| ops::box_rm(d, bx)),
+        },
+        Cmd::Block { action } => match action {
+            BlockCmd::Add { slide, at, input } => {
+                let md = required_input(input)?;
+                let first = format!("{slide}/0"); // --start: before the first element
+                let pos = match (&at.after, &at.before, at.start) {
+                    (Some(r), _, _) => Pos::After(r),
+                    (_, Some(r), _) => Pos::Before(r),
+                    (_, _, true) => Pos::Before(&first),
+                    _ => Pos::End,
+                };
+                ctx.edit(|d| ops::block_add(d, slide, pos, &md))
+            }
+            BlockCmd::Move { element, to } => ctx.edit(|d| ops::block_move(d, element, to.pos())),
+            BlockCmd::Rm { element } => ctx.edit(|d| ops::block_rm(d, element)),
+            BlockCmd::Dup { element } => ctx.edit(|d| ops::block_dup(d, element)),
+            BlockCmd::Class {
+                element,
+                add,
+                remove,
+            } => ctx.edit(|d| ops::block_class(d, element, add, remove)),
         },
         Cmd::Undo => {
             let (v, op) = ctx.store()?.undo()?;

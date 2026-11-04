@@ -1,0 +1,28 @@
+---
+title: "Prose"
+format: revealjs
+---
+
+## Quotes and dashes {#quotes}
+
+She said "hello" -- then 'left' --- quickly... It's fine.
+
+## Soft breaks {#breaks}
+
+A paragraph that the author wrapped
+across several lines in the source,
+like most hand-written markdown.
+
+## Escapes {#escapes}
+
+Use snake_case names, 5 \* 3, a literal \# hash, and price \$5.
+
+## Footnotes and refs {#refs}
+
+A claim with a footnote.[^1] See @fig-none and [@knuth1984].
+
+[^1]: The footnote text.
+
+## Emoji and entities {#emoji}
+
+Fish & chips < 5 > 3, and an em—dash typed directly.

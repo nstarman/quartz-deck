@@ -14,8 +14,11 @@ struct Env {
 
 impl Env {
     fn new() -> Env {
+        Env::with(BASIC)
+    }
+    fn with(text: &str) -> Env {
         let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("deck.qmd"), BASIC).unwrap();
+        fs::write(dir.path().join("deck.qmd"), text).unwrap();
         Env { dir }
     }
     fn path(&self) -> PathBuf {
@@ -608,4 +611,274 @@ fn box_commands() {
     std::fs::write(e.path(), include_str!("corpus/11-absolute.qmd")).unwrap();
     let v = e.ok(&["box", "move", "boxes/2", "--at", "1,2"]);
     assert_eq!(v["converted_units"], true);
+}
+
+// ---------- spec 003: element hashes, minimal edits, element-level conflicts ----------
+
+const DECK: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## Methods\n\nWe use **bold** words and a [link](https://example.org)\nacross two lines.\n\n- one\n- two\n\n## Results {#results}\n\nSome \"quoted\" text -- here.\n";
+
+fn hash(s: &str) -> String {
+    quartz_deck::deck::version_of(s.as_bytes())
+}
+
+#[test]
+fn show_reports_block_and_title_hashes() {
+    let e = Env::with(DECK);
+    let v = e.ok(&["show", "methods"]);
+    for b in v["slide"]["blocks"].as_array().unwrap() {
+        assert_eq!(b["hash"], hash(b["text"].as_str().unwrap()), "{b}");
+    }
+    assert_eq!(v["slide"]["title_hash"], hash("Methods"));
+}
+
+#[test]
+fn edit_changes_only_the_element_bytes() {
+    let e = Env::with(DECK);
+    let new = "We use **bold** words and a [link](https://example.org)\nacross three lines.";
+    e.ok(&["edit", "methods/0", "--md", new]);
+    // the slide heading has an implicit id: an element edit must not pin it
+    assert_eq!(
+        e.text(),
+        DECK.replace("across two lines.", "across three lines.")
+    );
+}
+
+#[test]
+fn expect_text_is_per_element() {
+    let e = Env::with(DECK);
+    let para = e.ok(&["show", "methods"])["slide"]["blocks"][0]["hash"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    // an unrelated edit elsewhere changes the file version, not this element
+    e.ok(&["edit", "results/0", "--md", "Other text."]);
+    e.ok(&[
+        "edit",
+        "methods/0",
+        "--md",
+        "Changed.",
+        "--expect-text",
+        &para,
+    ]);
+    assert!(e.text().contains("## Methods\n\nChanged.\n\n- one"));
+    // now the element differs from what the caller read: refused
+    let err = e.err(
+        &[
+            "edit",
+            "methods/0",
+            "--md",
+            "Again.",
+            "--expect-text",
+            &para,
+        ],
+        "E_CONFLICT",
+        1,
+    );
+    assert_eq!(err["error"]["details"]["current_source"], "Changed.");
+    assert_eq!(err["error"]["details"]["current_hash"], hash("Changed."));
+}
+
+#[test]
+fn title_expect_text_uses_the_title_source() {
+    let e = Env::with(DECK);
+    e.ok(&[
+        "title",
+        "results",
+        "Findings",
+        "--expect-text",
+        &hash("Results"),
+    ]);
+    e.err(
+        &[
+            "title",
+            "results",
+            "Again",
+            "--expect-text",
+            &hash("Results"),
+        ],
+        "E_CONFLICT",
+        1,
+    );
+}
+
+#[test]
+fn api_maps_expect_text() {
+    let e = Env::with(DECK);
+    let args = serde_json::json!({"element": "methods/0", "md": "Via API.", "expect-text": "0000000000000000"});
+    let r = quartz_deck::cli::run_op(&e.store(), "edit", &args, None);
+    assert_eq!(
+        r.unwrap_err().code(),
+        "E_CONFLICT",
+        "wrong hash must be refused"
+    );
+}
+
+#[test]
+fn body_of_an_empty_slide_keeps_the_next_slide_separate() {
+    // regression: the new body ran into the next heading, which Pandoc then
+    // swallowed into the body's last list item
+    let e = Env::with("## A {#a}\n\n## B {#b}\n\ntext\n");
+    e.ok(&["body", "a", "--md", "- one\n- two\n"]);
+    assert_eq!(e.text(), "## A {#a}\n\n- one\n- two\n\n## B {#b}\n\ntext\n");
+}
+
+#[test]
+fn source_that_breaks_slide_structure_is_refused() {
+    let e = Env::with(DECK);
+    for args in [
+        ["edit", "methods/0", "--md", "Text.\n\n## Sneaky\n\nMore."], // new slide heading
+        ["edit", "methods/0", "--md", "::: {.callout-note}\nopen"],   // unclosed div
+        ["edit", "methods/0", "--md", "```python\nprint(1)"],         // unclosed code fence
+        ["body", "methods", "--md", "a\n\n---\n\nb"],                 // `---` starts a slide
+    ] {
+        e.err(&args, "E_INVALID_ARG", 1);
+    }
+    // balanced constructs and sub-headings are fine
+    e.ok(&[
+        "edit",
+        "methods/0",
+        "--md",
+        "::: {.callout-note}\nNote.\n:::",
+    ]);
+    e.ok(&["edit", "results/0", "--md", "### Sub\n\nText."]);
+}
+
+#[test]
+fn deck_discovery_ignores_qds_render_copies() {
+    // `qd serve` renders through `<stem>.qd-<tag>.qmd` next to the deck; an agent
+    // running qd in that folder meanwhile must still find the one real deck
+    let e = Env::with(DECK);
+    fs::write(e.dir.path().join("deck.qd-preview.qmd"), "## copy\n").unwrap();
+    assert_eq!(e.ok(&["slides"])["slides"][0]["id"], "methods");
+}
+
+// ---------- spec 003 US4: qd block add/move/rm/dup (T025) ----------
+
+const BLOCKS: &str = "---\ntitle: T\n---\n\n## S\n\nFirst.\n\n- a\n- b\n\n![](x.png){#b-1 .absolute top=0 left=0 width=10 height=10}\n\n## Empty {#empty}\n\n## Last {#last}\n\nEnd.\n";
+
+#[test]
+fn block_add_places_new_blocks() {
+    let e = Env::with(BLOCKS);
+    let v = e.ok(&["block", "add", "s", "--after", "s/0", "--md", "Second."]);
+    assert_eq!(v["target"], "s/1");
+    assert!(e.text().contains("First.\n\nSecond.\n\n- a"));
+    e.ok(&["block", "add", "s", "--start", "--md", "Zeroth."]);
+    assert!(e.text().contains("## S\n\nZeroth.\n\nFirst."));
+    e.ok(&["block", "add", "s", "--end", "--md", "Final."]);
+    assert!(e.text().contains("height=10}\n\nFinal.\n\n## Empty"));
+    e.ok(&[
+        "block",
+        "add",
+        "s",
+        "--before",
+        "s/0",
+        "--md",
+        "Before all.",
+    ]);
+    assert!(e.text().contains("## S\n\nBefore all.\n\nZeroth."));
+    // an empty slide gets its first block, still separate from the next slide
+    let v = e.ok(&["block", "add", "empty", "--end", "--md", "Now here."]);
+    assert_eq!(v["target"], "empty/0");
+    assert!(
+        e.text()
+            .contains("## Empty {#empty}\n\nNow here.\n\n## Last")
+    );
+    // the slide heading is never rewritten (no id pinned on `## S`)
+    assert!(e.text().contains("\n## S\n"));
+    e.err(
+        &["block", "add", "s", "--end", "--md", "## New slide"],
+        "E_INVALID_ARG",
+        1,
+    );
+    e.err(
+        &["block", "add", "s", "--after", "last/0", "--md", "x"],
+        "E_INVALID_ARG",
+        1,
+    );
+}
+
+#[test]
+fn block_move_rm_dup_keep_bytes() {
+    let e = Env::with(BLOCKS);
+    let v = e.ok(&["block", "move", "s/1", "--before", "s/0"]);
+    assert_eq!(v["target"], "s/0");
+    assert!(e.text().contains("## S\n\n- a\n- b\n\nFirst.\n\n![]"));
+    e.ok(&["block", "move", "s/0", "--after", "s/2"]);
+    assert!(e.text().contains("## S\n\nFirst.\n\n![](x.png){#b-1 .absolute top=0 left=0 width=10 height=10}\n\n- a\n- b\n\n## Empty"));
+    e.err(
+        &["block", "move", "s/0", "--after", "last/0"],
+        "E_INVALID_ARG",
+        1,
+    );
+
+    // duplicate: same text, a fresh id for an element that has one
+    let v = e.ok(&["block", "dup", "#b-1"]);
+    assert_eq!(v["target"], "s/2");
+    assert_eq!(v["assigned_ids"].as_array().unwrap().len(), 1);
+    let t = e.text();
+    assert_eq!(t.matches("![](x.png){#b-").count(), 2);
+    assert_eq!(t.matches("#b-1 ").count(), 1);
+
+    // remove, then undo restores the bytes
+    let before = e.text();
+    e.ok(&["block", "rm", "s/0"]);
+    assert!(e.text().contains("## S\n\n![](x.png)"));
+    e.ok(&["undo"]);
+    assert_eq!(e.text(), before);
+    // removing the only block of a slide leaves it empty and separate
+    e.ok(&["block", "rm", "last/0"]);
+    assert!(
+        e.text().trim_end().ends_with("## Last {#last}"),
+        "{:?}",
+        e.text()
+    );
+}
+
+#[test]
+fn block_ops_through_the_api() {
+    let e = Env::with(BLOCKS);
+    let args = serde_json::json!({"slide": "s", "end": true, "md": "Via API."});
+    let v = quartz_deck::cli::run_op(&e.store(), "block add", &args, None).unwrap();
+    assert_eq!(v["op"], "block add");
+    assert!(e.text().contains("Via API."));
+    for op in ["block move", "block rm", "block dup"] {
+        assert!(quartz_deck::cli::run_op(&e.store(), op, &serde_json::json!({}), None).is_err());
+    }
+}
+
+#[test]
+fn block_class_toggles_round_trip() {
+    let deck = "## S {#s}\n\nPlain para.\n\n::: {.callout-note title=\"Keep 'me'\"}\nNote.\n:::\n\n#### Sub {.c}\n\n![](x.png){width=\"50%\"}\n";
+    let e = Env::with(deck);
+    // a paragraph has no attributes: adding wraps it, removing unwraps it again
+    e.ok(&["block", "class", "s/0", "--add", "fragment"]);
+    assert!(
+        e.text().contains("::: {.fragment}\nPlain para.\n:::"),
+        "{}",
+        e.text()
+    );
+    e.ok(&["block", "class", "s/0", "--remove", "fragment"]);
+    assert_eq!(e.text(), deck);
+    // elements with attributes: the class goes in place, untouched attributes keep their quoting
+    e.ok(&["block", "class", "s/1", "--add", "fragment"]);
+    e.ok(&[
+        "block", "class", "s/2", "--add", "fragment", "--remove", "c",
+    ]);
+    e.ok(&["block", "class", "s/3", "--add", "fragment"]);
+    let t = e.text();
+    assert!(t.contains("title=\"Keep 'me'\""), "{t}");
+    assert!(t.contains(".fragment"), "{t}");
+    assert!(t.contains("#### Sub {.fragment}"), "{t}");
+    for el in ["s/1", "s/3"] {
+        e.ok(&["block", "class", el, "--remove", "fragment"]);
+    }
+    e.ok(&[
+        "block", "class", "s/2", "--remove", "fragment", "--add", "c",
+    ]);
+    assert_eq!(e.text(), deck);
+    e.err(
+        &["block", "class", "s/0", "--remove", "nope"],
+        "E_INVALID_ARG",
+        1,
+    );
 }

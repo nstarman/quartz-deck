@@ -20,7 +20,11 @@ edits, detects concurrent changes and supports undo.
    then `qd show <slide>` for the source and blocks of a slide you will edit.
 2. **Edit** — one command per change. Pass `--expect <version>` from step 1
    so an edit fails instead of clobbering a change made meanwhile. Add
-   `--dry-run` to see the diff first.
+   `--dry-run` to see the diff first. When the person may be typing on the
+   slides in the editor at the same time, prefer `qd edit <slide>/<i> --md …
+   --expect-text <hash>` (each block's `hash` is in `qd show`; `qd title`
+   takes the hash of the current title): it refuses only if *that* element
+   changed, so edits elsewhere in the deck don't block you.
 3. **Check** — `qd check` (duplicate ids, unsafe constructs, missing files);
    `qd check --render` also runs Quarto and reports render errors.
 4. **Look** — start the live preview once with `qd serve --detach` (prints
@@ -65,6 +69,8 @@ when the current directory has exactly one `.qmd`.
 | positioned text box | `qd box add results --text "Note" --at 700,80 --size 300,100` |
 | positioned image | `qd box add results --image figures/plot.png --at 100,150 --size 600,400` |
 | move / resize / delete box | `qd box move #b-1a2b --by 0,40`, `qd box resize #b-1a2b --size 400,300`, `qd box rm #b-1a2b` |
+| speaker notes | `qd block add results --end --md $'::: notes\nSay this.\n:::'` (once per slide; then `qd edit` that block) |
+| add / move / delete / duplicate one element | `qd block add results --after results/0 --md "- point"` (or `--before`, `--start`, `--end`), `qd block move results/2 --before results/0`, `qd block rm results/1`, `qd block dup results/1`, `qd block class results/1 --add fragment` (appears on click) — only that element's bytes move; the heading is untouched |
 | validate | `qd check` (add `--render` to run Quarto) |
 | final output | `qd render` (→ `output` path; `--to pdf` etc. for other formats) |
 | works without network? | `qd check --offline` (headless Chrome, network blocked; problems per slide with hints) |
