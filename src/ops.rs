@@ -548,6 +548,138 @@ pub fn edit(d: &Deck, element: &str, md: &str, expect_text: Option<&str>) -> Res
     )
 }
 
+// ---------- single elements: qd block (spec 003 US4) ----------
+
+/// Where `qd block add` puts new blocks on a slide.
+pub enum BlockPos<'a> {
+    Start,
+    End,
+    After(&'a str),
+    Before(&'a str),
+}
+
+/// Rewrite the run of blocks of `s` (first block to last) after `f` has
+/// rearranged their texts and the separators between them. Bytes outside that
+/// run — the heading, blank lines around it — are untouched.
+fn rearrange(
+    d: &Deck,
+    s: &Slide,
+    f: impl FnOnce(&mut Vec<String>, &mut Vec<String>),
+) -> (Span, String) {
+    let span = Span {
+        start: s.blocks[0].span.start,
+        end: s.blocks[s.blocks.len() - 1].span.end,
+    };
+    let mut texts: Vec<String> = s.blocks.iter().map(|b| d.slice(b.span).to_string()).collect();
+    let mut seps: Vec<String> = s
+        .blocks
+        .windows(2)
+        .map(|w| d.text[w[0].span.end..w[1].span.start].to_string())
+        .collect();
+    f(&mut texts, &mut seps);
+    let mut out = String::new();
+    for (i, t) in texts.iter().enumerate() {
+        if i > 0 {
+            out.push_str(&seps[i - 1]);
+        }
+        out.push_str(t);
+    }
+    (span, out)
+}
+
+/// Element `r`, which must be on slide `s`; returns its index there.
+fn on_slide(d: &Deck, s: &Slide, r: &str) -> Result<usize> {
+    let (es, b) = d.element(r)?;
+    if es.index != s.index {
+        return Err(QdError::InvalidArg(format!(
+            "'{r}' is on another slide; move elements between slides with cut and paste (`block rm` + `block add`)"
+        )));
+    }
+    Ok(s.blocks.iter().position(|x| x.span == b.span).unwrap())
+}
+
+pub fn block_add(d: &Deck, slide: &str, at: BlockPos, md: &str) -> Result<Patch> {
+    let ctx = Ctx::new(d);
+    let s = ctx.slide(slide)?;
+    let md = norm(md, d.nl);
+    if md.is_empty() {
+        return Err(QdError::InvalidArg("nothing to add".into()));
+    }
+    if s.blocks.is_empty() {
+        // first content of an empty slide: `body` handles the blank lines
+        let mut p = body(d, slide, &md)?;
+        p.op = "block add".into();
+        p.target = format!("{}/0", s.id);
+        return Ok(p);
+    }
+    let i = match at {
+        BlockPos::Start => 0,
+        BlockPos::End => s.blocks.len(),
+        BlockPos::After(r) => on_slide(d, s, r)? + 1,
+        BlockPos::Before(r) => on_slide(d, s, r)?,
+    };
+    let blank = format!("{0}{0}", d.nl);
+    let (span, new) = rearrange(d, s, |texts, seps| {
+        texts.insert(i, md);
+        seps.insert(i.min(seps.len()), blank);
+    });
+    keep_structure(d, patch("block add", format!("{}/{i}", s.id), vec![(span, new)], Vec::new()), s.index)
+}
+
+pub fn block_move(d: &Deck, element: &str, to: Pos) -> Result<Patch> {
+    let (s, _) = d.element(element)?;
+    let from = on_slide(d, s, element)?;
+    let mut i = match to {
+        Pos::Before(r) => on_slide(d, s, r)?,
+        Pos::After(r) => on_slide(d, s, r)? + 1,
+        Pos::End => s.blocks.len(),
+    };
+    if i > from {
+        i -= 1; // the moving block no longer sits before its destination
+    }
+    let (span, new) = rearrange(d, s, |texts, _| {
+        let t = texts.remove(from);
+        texts.insert(i, t);
+    });
+    Ok(patch("block move", format!("{}/{i}", s.id), vec![(span, new)], Vec::new()))
+}
+
+pub fn block_rm(d: &Deck, element: &str) -> Result<Patch> {
+    let (s, b) = d.element(element)?;
+    if s.blocks.len() == 1 {
+        // the slide's only content: leave it empty, cleanly separated
+        let mut p = if b.kind == BlockKind::Box { box_rm(d, element)? } else { body(d, &s.id, "")? };
+        p.op = "block rm".into();
+        p.target = b.id.clone();
+        return Ok(p);
+    }
+    let i = on_slide(d, s, element)?;
+    let (span, new) = rearrange(d, s, |texts, seps| {
+        texts.remove(i);
+        seps.remove(i.min(seps.len() - 1));
+    });
+    Ok(patch("block rm", b.id.clone(), vec![(span, new)], Vec::new()))
+}
+
+pub fn block_dup(d: &Deck, element: &str) -> Result<Patch> {
+    let mut ctx = Ctx::new(d);
+    let (s, b) = d.element(element)?;
+    let i = on_slide(d, s, element)?;
+    let mut copy = d.slice(b.span).to_string();
+    let mut assigned = Vec::new();
+    if b.id_explicit {
+        let nid = ctx.fresh(if b.kind == BlockKind::Box { "b" } else { "e" });
+        copy = copy.replacen(&format!("#{}", b.id), &format!("#{nid}"), 1);
+        assigned.push(nid);
+    }
+    let blank = format!("{0}{0}", d.nl);
+    let (span, new) = rearrange(d, s, |texts, seps| {
+        texts.insert(i + 1, copy);
+        seps.insert(i.min(seps.len()), blank);
+    });
+    Ok(patch("block dup", format!("{}/{}", s.id, i + 1), vec![(span, new)], assigned))
+}
+
 // ---------- front matter ----------
 
 /// Line range [first, end) of a top-level YAML key inside the front matter body.

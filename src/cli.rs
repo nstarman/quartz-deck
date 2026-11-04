@@ -236,6 +236,11 @@ enum Cmd {
         #[command(subcommand)]
         action: BoxCmd,
     },
+    /// Single elements of a slide: add, move, remove, duplicate (ref: <slide>/<index> or #id)
+    Block {
+        #[command(subcommand)]
+        action: BlockCmd,
+    },
     /// Revert the last qd edit
     Undo,
     /// Re-apply the last undone edit
@@ -296,6 +301,45 @@ enum BoxCmd {
         #[arg(id = "box", value_name = "BOX")]
         bx: String,
     },
+}
+
+#[derive(Subcommand)]
+enum BlockCmd {
+    /// Add markdown as new block(s) on a slide
+    Add {
+        slide: String,
+        #[command(flatten)]
+        at: BlockWhere,
+        #[command(flatten)]
+        input: Input,
+    },
+    /// Move an element before/after another element of the same slide
+    Move {
+        element: String,
+        #[command(flatten)]
+        to: Where,
+    },
+    /// Remove an element
+    Rm { element: String },
+    /// Duplicate an element (placed right after it; explicit ids are renewed)
+    Dup { element: String },
+}
+
+#[derive(Args)]
+#[group(required = true, multiple = false)]
+struct BlockWhere {
+    /// Place after this element
+    #[arg(long)]
+    after: Option<String>,
+    /// Place before this element
+    #[arg(long)]
+    before: Option<String>,
+    /// Place before the slide's first element
+    #[arg(long)]
+    start: bool,
+    /// Place after the slide's last element
+    #[arg(long)]
+    end: bool,
 }
 
 /// `X,Y` (numbers, px).
@@ -658,6 +702,10 @@ const API_OPS: &[&str] = &[
     "box move",
     "box resize",
     "box rm",
+    "block add",
+    "block move",
+    "block rm",
+    "block dup",
     "slides",
     "show",
     "meta",
@@ -1029,6 +1077,28 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                 ctx.edit(|d| ops::box_resize(d, bx, size.unwrap(), *at))
             }
             BoxCmd::Rm { bx } => ctx.edit(|d| ops::box_rm(d, bx)),
+        },
+        Cmd::Block { action } => match action {
+            BlockCmd::Add { slide, at, input } => {
+                let md = required_input(input)?;
+                let pos = match (&at.after, &at.before, at.start) {
+                    (Some(r), _, _) => ops::BlockPos::After(r),
+                    (_, Some(r), _) => ops::BlockPos::Before(r),
+                    (_, _, true) => ops::BlockPos::Start,
+                    _ => ops::BlockPos::End,
+                };
+                ctx.edit(|d| ops::block_add(d, slide, pos, &md))
+            }
+            BlockCmd::Move { element, to } => {
+                let pos = match (&to.after, &to.before) {
+                    (Some(r), _) => Pos::After(r),
+                    (_, Some(r)) => Pos::Before(r),
+                    _ => unreachable!("clap group is required"),
+                };
+                ctx.edit(|d| ops::block_move(d, element, pos))
+            }
+            BlockCmd::Rm { element } => ctx.edit(|d| ops::block_rm(d, element)),
+            BlockCmd::Dup { element } => ctx.edit(|d| ops::block_dup(d, element)),
         },
         Cmd::Undo => {
             let (v, op) = ctx.store()?.undo()?;

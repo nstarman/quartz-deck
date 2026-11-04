@@ -751,3 +751,70 @@ fn deck_discovery_ignores_qds_render_copies() {
     fs::write(e.dir.path().join("deck.qd-preview.qmd"), "## copy\n").unwrap();
     assert_eq!(e.ok(&["slides"])["slides"][0]["id"], "methods");
 }
+
+// ---------- spec 003 US4: qd block add/move/rm/dup (T025) ----------
+
+const BLOCKS: &str = "---\ntitle: T\n---\n\n## S\n\nFirst.\n\n- a\n- b\n\n![](x.png){#b-1 .absolute top=0 left=0 width=10 height=10}\n\n## Empty {#empty}\n\n## Last {#last}\n\nEnd.\n";
+
+#[test]
+fn block_add_places_new_blocks() {
+    let e = Env::with(BLOCKS);
+    let v = e.ok(&["block", "add", "s", "--after", "s/0", "--md", "Second."]);
+    assert_eq!(v["target"], "s/1");
+    assert!(e.text().contains("First.\n\nSecond.\n\n- a"));
+    e.ok(&["block", "add", "s", "--start", "--md", "Zeroth."]);
+    assert!(e.text().contains("## S\n\nZeroth.\n\nFirst."));
+    e.ok(&["block", "add", "s", "--end", "--md", "Final."]);
+    assert!(e.text().contains("height=10}\n\nFinal.\n\n## Empty"));
+    e.ok(&["block", "add", "s", "--before", "s/0", "--md", "Before all."]);
+    assert!(e.text().contains("## S\n\nBefore all.\n\nZeroth."));
+    // an empty slide gets its first block, still separate from the next slide
+    let v = e.ok(&["block", "add", "empty", "--end", "--md", "Now here."]);
+    assert_eq!(v["target"], "empty/0");
+    assert!(e.text().contains("## Empty {#empty}\n\nNow here.\n\n## Last"));
+    // the slide heading is never rewritten (no id pinned on `## S`)
+    assert!(e.text().contains("\n## S\n"));
+    e.err(&["block", "add", "s", "--end", "--md", "## New slide"], "E_INVALID_ARG", 1);
+    e.err(&["block", "add", "s", "--after", "last/0", "--md", "x"], "E_INVALID_ARG", 1);
+}
+
+#[test]
+fn block_move_rm_dup_keep_bytes() {
+    let e = Env::with(BLOCKS);
+    let v = e.ok(&["block", "move", "s/1", "--before", "s/0"]);
+    assert_eq!(v["target"], "s/0");
+    assert!(e.text().contains("## S\n\n- a\n- b\n\nFirst.\n\n![]"));
+    e.ok(&["block", "move", "s/0", "--after", "s/2"]);
+    assert!(e.text().contains("## S\n\nFirst.\n\n![](x.png){#b-1 .absolute top=0 left=0 width=10 height=10}\n\n- a\n- b\n\n## Empty"));
+    e.err(&["block", "move", "s/0", "--after", "last/0"], "E_INVALID_ARG", 1);
+
+    // duplicate: same text, a fresh id for an element that has one
+    let v = e.ok(&["block", "dup", "#b-1"]);
+    assert_eq!(v["target"], "s/2");
+    assert_eq!(v["assigned_ids"].as_array().unwrap().len(), 1);
+    let t = e.text();
+    assert_eq!(t.matches("![](x.png){#b-").count(), 2);
+    assert_eq!(t.matches("#b-1 ").count(), 1);
+
+    // remove, then undo restores the bytes
+    let before = e.text();
+    e.ok(&["block", "rm", "s/0"]);
+    assert!(e.text().contains("## S\n\n![](x.png)"));
+    e.ok(&["undo"]);
+    assert_eq!(e.text(), before);
+    // removing the only block of a slide leaves it empty and separate
+    e.ok(&["block", "rm", "last/0"]);
+    assert!(e.text().trim_end().ends_with("## Last {#last}"), "{:?}", e.text());
+}
+
+#[test]
+fn block_ops_through_the_api() {
+    let e = Env::with(BLOCKS);
+    let args = serde_json::json!({"slide": "s", "end": true, "md": "Via API."});
+    let v = quartz_deck::cli::run_op(&e.store(), "block add", &args, None).unwrap();
+    assert_eq!(v["op"], "block add");
+    assert!(e.text().contains("Via API."));
+    for op in ["block move", "block rm", "block dup"] {
+        assert!(quartz_deck::cli::run_op(&e.store(), op, &serde_json::json!({}), None).is_err());
+    }
+}
