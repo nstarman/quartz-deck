@@ -73,6 +73,26 @@ fn start(dir: &Path) -> Server {
     Server { child, port }
 }
 
+fn post(port: u16, path: &str, host: &str, ctype: &str, body: &str) -> (u16, String) {
+    let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    write!(
+        s,
+        "POST {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    )
+    .unwrap();
+    let mut buf = Vec::new();
+    s.read_to_end(&mut buf).unwrap();
+    let text = String::from_utf8_lossy(&buf).into_owned();
+    let status = text.split_whitespace().nth(1).unwrap().parse().unwrap();
+    (
+        status,
+        text.split_once("\r\n\r\n")
+            .map(|(_, b)| b.to_string())
+            .unwrap_or_default(),
+    )
+}
+
 fn get(port: u16, path: &str) -> (u16, String) {
     let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
     write!(
@@ -287,5 +307,73 @@ fn render_commands_without_quarto() {
             .unwrap()
             .status
             .success()
+    );
+}
+
+/// T033 over HTTP: POST /api/op edits the deck; non-JSON and foreign hosts are refused.
+#[test]
+fn api_op_over_http() {
+    if !have_quarto() {
+        return;
+    }
+    let (_tmp, dir) = setup();
+    let server = start(&dir);
+    let host = format!("127.0.0.1:{}", server.port);
+    let body = r#"{"op":"title","args":{"slide":"intro","text":"From GUI"}}"#;
+
+    let (status, _) = post(server.port, "/api/op", &host, "text/plain", body);
+    assert_eq!(status, 415, "non-JSON must be refused (CSRF)");
+    let (status, _) = post(
+        server.port,
+        "/api/op",
+        "evil.example:80",
+        "application/json",
+        body,
+    );
+    assert_eq!(status, 403, "foreign Host must be refused (DNS rebinding)");
+    assert_eq!(
+        std::fs::read_to_string(dir.join("deck.qmd")).unwrap(),
+        BASIC
+    );
+
+    let (status, out) = post(server.port, "/api/op", &host, "application/json", body);
+    assert_eq!(status, 200, "{out}");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["op"], "title");
+    assert!(
+        std::fs::read_to_string(dir.join("deck.qmd"))
+            .unwrap()
+            .contains("## From GUI {#intro}")
+    );
+
+    let (status, out) = post(
+        server.port,
+        "/api/op",
+        &host,
+        "application/json",
+        r#"{"op":"serve","args":{}}"#,
+    );
+    assert_eq!(status, 400);
+    assert_eq!(
+        serde_json::from_str::<Value>(&out).unwrap()["error"]["code"],
+        "E_INVALID_ARG"
+    );
+    let stale = r#"{"op":"title","args":{"slide":"intro","text":"x"},"expect":"0000000000000000"}"#;
+    assert_eq!(
+        post(server.port, "/api/op", &host, "application/json", stale).0,
+        409
+    );
+
+    let (status, out) = post(
+        server.port,
+        "/api/op",
+        &format!("localhost:{}", server.port),
+        "application/json",
+        r#"{"op":"undo"}"#,
+    );
+    assert_eq!(status, 200, "{out}");
+    assert_eq!(
+        std::fs::read_to_string(dir.join("deck.qmd")).unwrap(),
+        BASIC
     );
 }

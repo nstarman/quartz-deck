@@ -9,14 +9,84 @@
 <body>
 <header>
   <strong>quartz-deck</strong>
-  <span id="status" role="status" aria-live="polite">connecting…</span>
+  <div class="tools" role="toolbar" aria-label="History">
+    <button type="button" id="undo" title="Undo (⌘Z)">Undo</button>
+    <button type="button" id="redo" title="Redo (⇧⌘Z)">Redo</button>
+  </div>
+  <span id="notice" role="status" aria-live="polite"></span>
+  <span id="status">connecting…</span>
   <a href="/present/" target="_blank" rel="noopener">Present ↗</a>
 </header>
 <div id="banner" role="alert" hidden></div>
 <main>
-  <nav aria-label="Slides"><ol id="slides"></ol></nav>
-  <section id="stage"><iframe id="preview" title="Slide preview"></iframe></section>
+  <nav aria-label="Slides">
+    <ol id="slides"></ol>
+    <button type="button" id="add-slide" class="wide">+ Add slide</button>
+  </nav>
+  <section id="stage" aria-label="Preview"><iframe id="preview" title="Slide preview"></iframe></section>
+  <aside id="panel" aria-label="Properties"></aside>
 </main>
+
+<template id="slide-panel">
+  <h2>Slide <code class="ref"></code></h2>
+  <form class="slide-form">
+    <label>Title <input name="title" autocomplete="off"></label>
+    <fieldset>
+      <legend>Background</legend>
+      <label class="row">Colour
+        <input name="bgpick" type="color" aria-label="Pick background colour">
+        <input name="bg" placeholder="none" autocomplete="off">
+      </label>
+      <label>Image <input name="bgimage" placeholder="path or URL" autocomplete="off"></label>
+    </fieldset>
+    <label>Transition
+      <select name="transition">
+        <option value="">default</option>
+        <option>none</option><option>fade</option><option>slide</option>
+        <option>convex</option><option>concave</option><option>zoom</option>
+      </select>
+    </label>
+    <label>Classes <input name="classes" placeholder="e.g. smaller center" autocomplete="off"></label>
+    <label>Content (markdown; positioned boxes are kept)
+      <textarea name="body" rows="10" spellcheck="false"></textarea>
+    </label>
+    <div class="buttons">
+      <button type="submit" class="primary">Apply</button>
+      <button type="reset">Revert</button>
+    </div>
+  </form>
+  <div class="buttons">
+    <button type="button" data-act="up">Move up</button>
+    <button type="button" data-act="down">Move down</button>
+    <button type="button" data-act="dup">Duplicate</button>
+    <button type="button" data-act="rm" class="danger">Delete</button>
+  </div>
+  <p class="hint">Click an element in the preview to edit it.</p>
+</template>
+
+<template id="title-panel">
+  <h2>Title slide <code>front matter</code></h2>
+  <form>
+    <label>Deck title <input name="title" autocomplete="off"></label>
+    <div class="buttons"><button type="submit" class="primary">Apply</button></div>
+  </form>
+  <p class="hint">Author, date and other options live in the YAML front matter (<code>qd meta</code>).</p>
+</template>
+
+<template id="element-panel">
+  <h2><span class="kind"></span> <code class="ref"></code></h2>
+  <form class="element-form">
+    <label>Source (markdown)
+      <textarea name="md" rows="12" spellcheck="false"></textarea>
+    </label>
+    <div class="buttons">
+      <button type="submit" class="primary">Apply</button>
+      <button type="button" data-act="deselect">Back to slide</button>
+    </div>
+  </form>
+  <p class="hint">Esc returns to the slide. Double-click an element to jump here.</p>
+</template>
+
 <script src="/editor.js"></script>
 </body>
 </html>

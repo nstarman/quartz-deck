@@ -21,6 +21,7 @@ struct Entry {
     after_text: String,
 }
 
+#[derive(Clone)]
 pub struct Store {
     pub path: PathBuf,
     cache: PathBuf,
@@ -45,6 +46,11 @@ pub fn cache_root() -> PathBuf {
 
 impl Store {
     pub fn open(path: &Path) -> Result<Store> {
+        Store::open_in(path, &cache_root())
+    }
+
+    /// Like `open`, with an explicit cache root instead of `cache_root()`.
+    pub fn open_in(path: &Path, root: &Path) -> Result<Store> {
         let path = fs::canonicalize(path)
             .map_err(|e| QdError::NoDeck(format!("{}: {e}", path.display())))?;
         let key: String = Sha256::digest(path.to_string_lossy().as_bytes())
@@ -53,7 +59,7 @@ impl Store {
             .map(|b| format!("{b:02x}"))
             .collect();
         Ok(Store {
-            cache: cache_root().join(key),
+            cache: root.join(key),
             path,
         })
     }

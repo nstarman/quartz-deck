@@ -1,16 +1,16 @@
 //! `qd serve` (contracts/http.md): localhost-only server with the editor
 //! shell, the latest good Quarto render, a read API, and SSE live updates.
 
-use crate::cli::{show_json, slides_json};
+use crate::cli::{run_op, show_json, slides_json};
 use crate::deck::{Deck, version_of};
 use crate::error::{QdError, Result};
 use crate::render::{preview_copy, render};
 use crate::store::Store;
 use axum::extract::{Path as UrlPath, State};
-use axum::http::{StatusCode, header};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Redirect, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use futures_util::stream::{self, Stream, StreamExt};
 use notify::Watcher;
@@ -68,28 +68,37 @@ type Shared = Arc<App>;
 fn err_response(e: QdError) -> Response {
     let status = match e {
         QdError::NotFound(_) => StatusCode::NOT_FOUND,
-        QdError::Ambiguous(_) | QdError::InvalidArg(_) => StatusCode::BAD_REQUEST,
+        QdError::Ambiguous(_) | QdError::InvalidArg(_) | QdError::Usage(_) => {
+            StatusCode::BAD_REQUEST
+        }
+        QdError::Conflict(_) | QdError::NoUndo(_) => StatusCode::CONFLICT,
+        QdError::UnsafeEdit(_) => StatusCode::UNPROCESSABLE_ENTITY,
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     };
     (status, Json(e.to_json())).into_response()
 }
 
+/// Editor assets: never cached, so a new `qd` build is picked up on reload.
+fn asset(content_type: &'static str, body: &'static str) -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, content_type),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        body,
+    )
+}
+
 async fn index() -> impl IntoResponse {
-    ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], INDEX)
+    asset("text/html; charset=utf-8", INDEX)
 }
 
 async fn editor_js() -> impl IntoResponse {
-    (
-        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
-        EDITOR_JS,
-    )
+    asset("text/javascript; charset=utf-8", EDITOR_JS)
 }
 
 async fn editor_css() -> impl IntoResponse {
-    (
-        [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
-        EDITOR_CSS,
-    )
+    asset("text/css; charset=utf-8", EDITOR_CSS)
 }
 
 async fn present(State(app): State<Shared>) -> Redirect {
@@ -111,6 +120,51 @@ async fn api_slide(State(app): State<Shared>, UrlPath(r): UrlPath<String>) -> Re
     match res {
         Ok(v) => Json(v).into_response(),
         Err(e) => err_response(e),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct OpBody {
+    op: String,
+    #[serde(default)]
+    args: Value,
+    expect: Option<String>,
+}
+
+fn local_host(h: &str) -> bool {
+    let host = h.rsplit_once(':').map_or(h, |(h, _)| h);
+    matches!(host, "127.0.0.1" | "localhost")
+}
+
+/// Only pages served by this server may edit: the Host must be loopback
+/// (blocks DNS rebinding) and any Origin must be too. The `Json` extractor
+/// already refuses non-JSON bodies, which browsers cannot send cross-site
+/// without a CORS preflight we never grant.
+fn same_origin(headers: &HeaderMap) -> bool {
+    let get = |n| headers.get(n).and_then(|v| v.to_str().ok());
+    let host_ok = get(header::HOST).is_some_and(local_host);
+    let origin_ok =
+        get(header::ORIGIN).is_none_or(|o| o.strip_prefix("http://").is_some_and(local_host));
+    host_ok && origin_ok
+}
+
+async fn api_op(
+    State(app): State<Shared>,
+    headers: HeaderMap,
+    Json(body): Json<OpBody>,
+) -> Response {
+    if !same_origin(&headers) {
+        return (StatusCode::FORBIDDEN, "forbidden").into_response();
+    }
+    let store = app.store.clone();
+    let res = tokio::task::spawn_blocking(move || {
+        run_op(&store, &body.op, &body.args, body.expect.as_deref())
+    })
+    .await;
+    match res {
+        Ok(Ok(v)) => Json(v).into_response(),
+        Ok(Err(e)) => err_response(e),
+        Err(e) => err_response(QdError::Io(std::io::Error::other(e))),
     }
 }
 
@@ -242,6 +296,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             .route("/present/", get(present))
             .route("/api/deck", get(api_deck))
             .route("/api/slide/{r}", get(api_slide))
+            .route("/api/op", post(api_op))
             .route("/events", get(events))
             .nest_service("/preview", ServeDir::new(&out).fallback(ServeDir::new(&deck_dir)))
             .with_state(app.clone());

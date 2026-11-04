@@ -105,16 +105,16 @@ paths are relative to the repo root.
 
 ### Tests
 
-- [ ] T033 [P] [US3] Test in `tests/serve.rs`: `POST /api/op` with each US1 op returns byte-identical JSON and file result to the CLI command with the same args; unknown op → `E_INVALID_ARG` (FR-010)
+- [X] T033 [P] [US3] Test in `tests/serve.rs`: `POST /api/op` with each US1 op returns byte-identical JSON and file result to the CLI command with the same args; unknown op → `E_INVALID_ARG` (FR-010)
 
 ### Implementation
 
-- [ ] T034 [US3] Implement `POST /api/op` in `src/server.rs`: body `{"op","args","expect"}` dispatches to the same functions `src/cli.rs` uses (refactor command handlers into `fn run_op(op, args) -> Result<Value, QdError>` shared by both)
-- [ ] T035 [US3] Slide list panel in `src/ui/editor.js` + `src/ui/editor.css`: titles from `/api/deck`, drag-to-reorder (HTML5 drag events) → `move`; buttons add/duplicate/delete → `add`/`dup`/`rm`; click → navigate preview to slide
-- [ ] T036 [US3] Click-to-select in `src/ui/editor.js`: in the same-origin iframe, map click target to nearest `[data-qd]` or `[id]` element → highlight outline; double-click opens a textarea with the block's source from `/api/slide/{ref}`; confirm → `edit`
-- [ ] T037 [US3] Properties panel in `src/ui/editor.js`: for slide: title, background-color/image, classes, transition → `title`/`set`; for element: classes/attrs → `set`/`edit`; all writes pass `expect` = last seen version and on `E_CONFLICT` refetch and show a notice
-- [ ] T038 [US3] Undo/redo in `src/ui/editor.js`: Cmd/Ctrl+Z → `undo` op, Cmd/Ctrl+Shift+Z → `redo` op (both CLI commands, FR-010)
-- [ ] T039 [US3] Browser verification (agent browser tool / Playwright) per quickstart §4 bullets 1–2; record result in `specs/001-core-editor/checklists/gui.md`
+- [X] T034 [US3] Implement `POST /api/op` in `src/server.rs`: body `{"op","args","expect"}` dispatches to the same functions `src/cli.rs` uses (refactor command handlers into `fn run_op(op, args) -> Result<Value, QdError>` shared by both) — done: `run_op` rebuilds the argv and parses it with clap (no handler refactor needed); JSON-only + loopback Host/Origin guard
+- [X] T035 [US3] Slide list panel in `src/ui/editor.js` + `src/ui/editor.css`: titles from `/api/deck`, drag-to-reorder (HTML5 drag events) → `move`; buttons add/duplicate/delete → `add`/`dup`/`rm`; click → navigate preview to slide
+- [X] T036 [US3] Click-to-select in `src/ui/editor.js`: in the same-origin iframe, map click target to nearest `[data-qd]` or `[id]` element → highlight outline; double-click opens a textarea with the block's source from `/api/slide/{ref}`; confirm → `edit`
+- [X] T037 [US3] Properties panel in `src/ui/editor.js`: for slide: title, background-color/image, classes, transition → `title`/`set`; for element: classes/attrs → `set`/`edit`; all writes pass `expect` = last seen version and on `E_CONFLICT` refetch and show a notice — done; element attributes are edited through the element's source text (attrs are part of it)
+- [X] T038 [US3] Undo/redo in `src/ui/editor.js`: Cmd/Ctrl+Z → `undo` op, Cmd/Ctrl+Shift+Z → `redo` op (both CLI commands, FR-010) — done (`qd redo` already exists in the CLI)
+- [X] T039 [US3] Browser verification (agent browser tool / Playwright) per quickstart §4 bullets 1–2; record result in `specs/001-core-editor/checklists/gui.md`
 
 **Checkpoint**: humans can do all slide/text editing in the browser.
 

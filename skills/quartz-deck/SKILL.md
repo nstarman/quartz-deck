@@ -27,7 +27,9 @@ edits, detects concurrent changes and supports undo.
    `{"url","port","pid"}`), then open `qd url <slide>` in your browser tool.
    The page re-renders by itself after every edit (about 1–2 s) and stays on
    the current slide; a red banner shows Quarto errors while the last good
-   render stays visible. Stop it with `qd stop`.
+   render stays visible. Stop it with `qd stop`. The person you work with may
+   edit in that page at the same time (it runs the same `qd` commands), so
+   always pass `--expect` and re-read on `E_CONFLICT`.
 5. **Undo** if needed — `qd undo` (and `qd redo`).
 
 Pick the deck with `--deck path/to/talk.qmd` (or `QD_DECK`); it is implicit
