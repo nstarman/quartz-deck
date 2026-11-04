@@ -56,6 +56,16 @@ struct Where {
     before: Option<String>,
 }
 
+impl Where {
+    fn pos(&self) -> Pos<'_> {
+        match (&self.after, &self.before) {
+            (Some(a), _) => Pos::After(a),
+            (_, Some(b)) => Pos::Before(b),
+            _ => unreachable!("clap group is required"),
+        }
+    }
+}
+
 #[derive(Subcommand)]
 enum Cmd {
     /// List slides with ids, titles and summaries
@@ -1028,14 +1038,7 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             ctx.edit(|d| ops::add(d, &spec, pos))
         }
         Cmd::Dup { slide, after } => ctx.edit(|d| ops::dup(d, slide, after.as_deref())),
-        Cmd::Move { slide, to } => {
-            let pos = match (&to.after, &to.before) {
-                (Some(a), _) => Pos::After(a),
-                (_, Some(b)) => Pos::Before(b),
-                _ => unreachable!("clap group is required"),
-            };
-            ctx.edit(|d| ops::mv(d, slide, pos))
-        }
+        Cmd::Move { slide, to } => ctx.edit(|d| ops::mv(d, slide, to.pos())),
         Cmd::Rm { slide } => ctx.edit(|d| ops::rm(d, slide)),
         Cmd::Title {
             slide,
@@ -1092,22 +1095,16 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
         Cmd::Block { action } => match action {
             BlockCmd::Add { slide, at, input } => {
                 let md = required_input(input)?;
+                let first = format!("{slide}/0"); // --start: before the first element
                 let pos = match (&at.after, &at.before, at.start) {
-                    (Some(r), _, _) => ops::BlockPos::After(r),
-                    (_, Some(r), _) => ops::BlockPos::Before(r),
-                    (_, _, true) => ops::BlockPos::Start,
-                    _ => ops::BlockPos::End,
+                    (Some(r), _, _) => Pos::After(r),
+                    (_, Some(r), _) => Pos::Before(r),
+                    (_, _, true) => Pos::Before(&first),
+                    _ => Pos::End,
                 };
                 ctx.edit(|d| ops::block_add(d, slide, pos, &md))
             }
-            BlockCmd::Move { element, to } => {
-                let pos = match (&to.after, &to.before) {
-                    (Some(r), _) => Pos::After(r),
-                    (_, Some(r)) => Pos::Before(r),
-                    _ => unreachable!("clap group is required"),
-                };
-                ctx.edit(|d| ops::block_move(d, element, pos))
-            }
+            BlockCmd::Move { element, to } => ctx.edit(|d| ops::block_move(d, element, to.pos())),
             BlockCmd::Rm { element } => ctx.edit(|d| ops::block_rm(d, element)),
             BlockCmd::Dup { element } => ctx.edit(|d| ops::block_dup(d, element)),
             BlockCmd::Class {

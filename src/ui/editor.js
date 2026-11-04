@@ -37,6 +37,9 @@ function say(msg, isError = false) {
   say.t = setTimeout(() => { notice.textContent = ''; }, isError ? 8000 : 3000);
 }
 
+/** The preview element for an element ref `<slide>/<i>`. */
+const elOf = (ref) => frame.contentDocument?.querySelector(`[data-qd="${CSS.escape(ref)}"]`);
+
 function frameWin() {
   try { return frame.contentWindow; } catch { return null; }
 }
@@ -156,12 +159,12 @@ function highlight() {
   if (!doc) return;
   doc.querySelectorAll('.qd-sel').forEach((el) => el.classList.remove('qd-sel'));
   doc.querySelectorAll('.qd-overlay').forEach((el) => el.remove());
-  placeElbar();
-  if (!state.sel) return;
-  const els = doc.querySelectorAll(`[data-qd="${CSS.escape(state.sel)}"]`);
-  els.forEach((el) => el.classList.add('qd-sel'));
-  const box = [...els].find((el) => el.classList.contains('absolute'));
-  if (box) attachOverlay(box);
+  if (state.sel) {
+    const els = doc.querySelectorAll(`[data-qd="${CSS.escape(state.sel)}"]`);
+    els.forEach((el) => el.classList.add('qd-sel'));
+    const box = [...els].find((el) => el.classList.contains('absolute'));
+    if (box) attachOverlay(box);
+  }
   placeElbar();
 }
 
@@ -568,16 +571,7 @@ async function slideAction(act, slide) {
   if (act === 'textbox') return newBox(slide, { text: 'Text' });
   if (act === 'up' && i > 0) res = await op('move', { slide: slide.id, before: slides[i - 1].id });
   if (act === 'down' && i < slides.length - 1) res = await op('move', { slide: slide.id, after: slides[i + 1].id });
-  if (act === 'dup') {
-    res = await op('dup', { slide: slide.id });
-    if (res) state.goAfterRender = res.target;
-  }
-  if (act === 'rm') {
-    if (!confirm(`Delete slide "${slide.title || slide.id}"? (Undo can restore it.)`)) return;
-    res = await op('rm', { slide: slide.id });
-    const prev = slides[i - 1] || slides[i + 1];
-    if (res && prev) state.goAfterRender = prev.anchor;
-  }
+  if (act === 'dup' || act === 'rm') return actions.run(`slide-${act}`, await slideTarget(slide.id), 'slide');
   if (res) await fetchDeck();
 }
 
@@ -609,7 +603,7 @@ async function renderElementPanel() {
   if (block.kind === 'box') {
     const g = $('form.geom-form', view);
     g.hidden = false;
-    const el = frame.contentDocument?.querySelector(`[data-qd="${CSS.escape(ref)}"]`);
+    const el = elOf(ref);
     const r = el ? rectOf(el) : null;
     const val = (k, measured) => (typeof block.geom?.[k] === 'number' ? block.geom[k] : measured ?? '');
     g.left.value = val('left', r?.l);
@@ -714,17 +708,14 @@ $('#export').addEventListener('click', async (e) => {
 $('#undo').addEventListener('click', () => undoRedo('undo'));
 $('#redo').addEventListener('click', () => undoRedo('redo'));
 
-const ELEMENT_KEYS = [
-  [(e) => e.key === 'Enter' && !e.altKey, 'edit'],
-  [(e) => e.key === 'Enter' && e.altKey, 'source'],
-  [(e, mod) => mod && e.key.toLowerCase() === 'c', 'copy'],
-  [(e, mod) => mod && e.key.toLowerCase() === 'x', 'cut'],
-  [(e, mod) => mod && e.key.toLowerCase() === 'v', 'paste'],
-  [(e, mod) => mod && !e.shiftKey && e.key.toLowerCase() === 'd', 'dup'],
-  [(e) => e.key === 'Backspace' || e.key === 'Delete', 'delete'],
-  [(e) => e.altKey && e.key === 'ArrowUp', 'up'],
-  [(e) => e.altKey && e.key === 'ArrowDown', 'down'],
-];
+/** Element action for a key press on the selected element (contracts/ui.md), or undefined. */
+function elementKey(e, mod) {
+  if (mod) return e.shiftKey ? undefined : { c: 'copy', x: 'cut', v: 'paste', d: 'dup' }[e.key.toLowerCase()];
+  if (e.key === 'Enter') return e.altKey ? 'source' : 'edit';
+  if (e.key === 'Backspace' || e.key === 'Delete') return 'delete';
+  if (e.altKey) return { ArrowUp: 'up', ArrowDown: 'down' }[e.key];
+  return undefined;
+}
 
 function onKey(e) {
   if (menuOpen()) { if (e.key === 'Escape') { e.preventDefault(); closeMenu(); } return; }
@@ -732,12 +723,12 @@ function onKey(e) {
   const mod = e.metaKey || e.ctrlKey;
   if ((e.shiftKey && e.key === 'F10') || e.key === 'ContextMenu') { e.preventDefault(); keyboardMenu(); return; }
   if (state.sel) {
-    const hit = ELEMENT_KEYS.find(([test]) => test(e, mod));
-    if (hit) { e.preventDefault(); elementTarget(state.sel).then((t) => t && actions.run(hit[1], t)); return; }
+    const id = elementKey(e, mod);
+    if (id) { e.preventDefault(); elementTarget(state.sel).then((t) => t && actions.run(id, t)); return; }
   }
   if (mod && e.shiftKey && (e.key.toLowerCase() === 'n' || e.key.toLowerCase() === 'd')) {
     const cur = slideByAnchor(state.anchor);
-    if (cur) { e.preventDefault(); slideTarget(cur.id).then((t) => openMenuAction(actions.slide(t), e.key.toLowerCase() === 'n' ? 'slide-after' : 'slide-dup')); }
+    if (cur) { e.preventDefault(); slideTarget(cur.id).then((t) => actions.run(e.key.toLowerCase() === 'n' ? 'slide-after' : 'slide-dup', t, 'slide')); }
     return;
   }
   if (e.key === 'Escape' && state.sel) { e.preventDefault(); select(null); return; }
@@ -1104,7 +1095,7 @@ async function elementTarget(ref) {
   const index = Number(ref.slice(cut + 1));
   const block = slide?.blocks[index];
   if (!block) return null;
-  const el = frame.contentDocument?.querySelector(`[data-qd="${CSS.escape(ref)}"]`);
+  const el = elOf(ref);
   return { ref, block, slideId, index, count: slide.blocks.length, el };
 }
 
@@ -1117,6 +1108,12 @@ async function slideTarget(slideId) {
 
 const actions = makeActions({
   op: async (name, args) => {
+    if (name === 'rm') {
+      const slides = state.deck?.slides || [];
+      const i = slides.findIndex((x) => x.id === args.slide);
+      const near = slides[i - 1] || slides[i + 1];
+      if (near) state.goAfterRender = near.anchor;
+    }
     const r = await op(name, args);
     if (!r) return null;
     if (name === 'add' || name === 'dup') state.goAfterRender = r.target;
@@ -1137,10 +1134,6 @@ const actions = makeActions({
   slideUrl: (anchor) => `${location.origin}/#/${anchor}`,
 });
 
-function openMenuAction(items, id) {
-  items.find((i) => i.id === id)?.run?.();
-}
-
 /** Right-click in the preview: the element's menu, or the slide's (empty area). */
 async function contextMenuAt(el, sec, x, y) {
   if (el) {
@@ -1156,15 +1149,15 @@ async function contextMenuAt(el, sec, x, y) {
 
 /** Shift+F10 / ContextMenu key: menu for the selected element, else the slide. */
 async function keyboardMenu() {
-  const f = frame.getBoundingClientRect();
-  const el = state.sel && frame.contentDocument?.querySelector(`[data-qd="${CSS.escape(state.sel)}"]`);
+  const el = state.sel && elOf(state.sel);
   if (el) {
-    const r = el.getBoundingClientRect();
+    const p = pageRect(el);
     const t = await elementTarget(state.sel);
-    if (t) openMenu(actions.element(t), f.left + r.left, f.top + r.bottom);
+    if (t) openMenu(actions.element(t), p.left, p.top + p.height);
     return;
   }
   const cur = slideByAnchor(state.anchor);
+  const f = frame.getBoundingClientRect();
   if (cur) openMenu(actions.empty(await slideTarget(cur.id)), f.left + 40, f.top + 40);
 }
 
@@ -1187,20 +1180,18 @@ elbar.addEventListener('click', async (e) => {
   const t = id && state.sel && (await elementTarget(state.sel));
   if (!t) return;
   if (id === 'more') { const r = e.target.getBoundingClientRect(); openMenu(actions.element(t), r.left, r.bottom + 4); return; }
-  if (id === 'fragment') { openMenuAction(actions.element(t), 'fragment'); return; }
   actions.run(id, t);
 });
 
 async function placeElbar() {
-  const el = !state.session && state.sel && frame.contentDocument?.querySelector(`[data-qd="${CSS.escape(state.sel)}"]`);
+  const el = !state.session && state.sel && elOf(state.sel);
   if (!el) { elbar.hidden = true; return; }
   const t = await elementTarget(state.sel);
   $('[data-act=fragment]', elbar).setAttribute('aria-pressed', String(!!t?.block.attrs?.classes?.includes('fragment')));
-  const f = frame.getBoundingClientRect();
-  const r = el.getBoundingClientRect();
+  const p = pageRect(el);
   elbar.hidden = false;
-  elbar.style.left = Math.max(4, Math.min(f.left + r.left, innerWidth - elbar.offsetWidth - 4)) + 'px';
-  elbar.style.top = Math.max(f.top + 2, f.top + r.top - elbar.offsetHeight - 10) + 'px';
+  elbar.style.left = Math.max(4, Math.min(p.left, innerWidth - elbar.offsetWidth - 4)) + 'px';
+  elbar.style.top = Math.max(frame.getBoundingClientRect().top + 2, p.top - elbar.offsetHeight - 10) + 'px';
 }
 
 // slide bar: the slide's common properties (US3)
@@ -1217,20 +1208,20 @@ async function renderSlidebar() {
   placeEmptyadd();
 }
 slidebar.bg = slidebar.querySelector('[name=bg]');
-const slideOp = async (args) => {
+const setSlideAttr = (key, value) => {
   const cur = slideByAnchor(state.anchor);
-  if (cur && (await op('set', { slide: cur.id, ...args }))) { await fetchDeck(); renderSlidebar(); }
+  if (cur) actions.setAttr({ slideId: cur.id }, key, value);
 };
-slidebar.bg.addEventListener('change', () => slideOp({ attr: [`background-color=${slidebar.bg.value}`] }));
-slidebar.querySelector('[name=transition]').addEventListener('change', (e) => slideOp(e.target.value ? { attr: [`transition=${e.target.value}`] } : { unset: ['transition'] }));
-slidebar.querySelector('[name=hidden]').addEventListener('change', (e) => slideOp(e.target.checked ? { attr: ['visibility=hidden'] } : { unset: ['visibility'] }));
+slidebar.bg.addEventListener('change', () => setSlideAttr('background-color', slidebar.bg.value));
+slidebar.querySelector('[name=transition]').addEventListener('change', (e) => setSlideAttr('transition', e.target.value));
+slidebar.querySelector('[name=hidden]').addEventListener('change', (e) => setSlideAttr('visibility', e.target.checked ? 'hidden' : null));
 slidebar.addEventListener('click', async (e) => {
   const act = e.target.closest('button')?.dataset.act;
   const cur = slideByAnchor(state.anchor);
   if (!act || !cur) return;
   const t = await slideTarget(cur.id);
-  if (act === 'bg-clear') slideOp({ unset: ['background-color'] });
-  else if (act === 'bg-image') openMenuAction(actions.slide(t), 'slide-bgimg');
+  if (act === 'bg-clear') setSlideAttr('background-color', null);
+  else if (act === 'bg-image') actions.run('slide-bgimg', t, 'slide');
   else if (act === 'more') { const r = e.target.getBoundingClientRect(); openMenu(actions.slide(t), r.left, r.bottom + 4); }
 });
 
@@ -1258,11 +1249,10 @@ function hoverAt(node) {
   const el = node.closest?.('[data-qd]');
   if (!el || el.classList.contains('absolute')) return;
   hovered = el;
-  const f = frame.getBoundingClientRect();
-  const r = el.getBoundingClientRect();
+  const p = pageRect(el);
   hoverbar.hidden = false;
-  hoverbar.style.left = Math.max(2, f.left + r.left - hoverbar.offsetWidth - 6) + 'px';
-  hoverbar.style.top = f.top + r.top + 'px';
+  hoverbar.style.left = Math.max(2, p.left - hoverbar.offsetWidth - 6) + 'px';
+  hoverbar.style.top = p.top + 'px';
 }
 frame.addEventListener('mouseleave', (e) => { if (!hoverbar.contains(e.relatedTarget)) hoverbar.hidden = true; });
 
@@ -1270,7 +1260,7 @@ hoverbar.querySelector('[data-act=insert]').addEventListener('click', async (e) 
   const t = hovered && (await elementTarget(hovered.dataset.qd));
   if (!t) return;
   const r = e.target.getBoundingClientRect();
-  openMenu(actions.element(t).find((i) => i.id === 'insert-after').items, r.right + 4, r.top);
+  openMenu(actions.insert(t, { after: t.ref }), r.right + 4, r.top);
 });
 
 let dragging = false;
@@ -1290,10 +1280,10 @@ hoverbar.querySelector('[data-act=drag]').addEventListener('pointerdown', (e) =>
     const hit = frame.contentDocument.elementFromPoint(ev.clientX - f.left, ev.clientY - f.top)?.closest?.('[data-qd]');
     const ref = hit?.dataset.qd;
     if (!hit || ref === from || ref.slice(0, ref.lastIndexOf('/')) !== slideId) { dropline.hidden = true; drop = null; return; }
-    const r = hit.getBoundingClientRect();
-    const before = ev.clientY - f.top < r.top + r.height / 2;
+    const p = pageRect(hit);
+    const before = ev.clientY < p.top + p.height / 2;
     drop = { ref, before };
-    Object.assign(dropline.style, { left: f.left + r.left + 'px', width: r.width + 'px', top: f.top + (before ? r.top - 4 : r.bottom + 2) + 'px' });
+    Object.assign(dropline.style, { left: p.left + 'px', width: p.width + 'px', top: (before ? p.top - 4 : p.top + p.height + 2) + 'px' });
     dropline.hidden = false;
   };
   const onUp = async () => {
@@ -1317,7 +1307,7 @@ emptyadd.addEventListener('click', async () => {
   const cur = slideByAnchor(state.anchor);
   if (!cur) return;
   const r = emptyadd.getBoundingClientRect();
-  openMenu(actions.empty(await slideTarget(cur.id)).find((i) => i.id === 'insert-end').items, r.left, r.bottom + 4);
+  openMenu(actions.insert({ slideId: cur.id }, { end: true }), r.left, r.bottom + 4);
 });
 function placeEmptyadd() {
   const cur = slideByAnchor(state.anchor);
@@ -1330,11 +1320,7 @@ function placeEmptyadd() {
 
 /** Insert a new element of `kind` on a slide; it opens for editing once rendered. */
 async function insertBlock(slideId, where, kind) {
-  if (kind.box) {
-    const r = await op('box add', { slide: slideId, text: 'Text' });
-    if (r) { state.selectIdAfterRender = r.target; await fetchDeck(); }
-    return;
-  }
+  if (kind.box) return newBox({ id: slideId }, { text: 'Text' });
   let md = kind.md;
   if (kind.image) {
     const path = prompt('Image path (relative to the deck) or URL');
@@ -1350,7 +1336,7 @@ async function insertBlock(slideId, where, kind) {
 
 function openInserted({ ref, mode }) {
   state.editAfterRender = null;
-  const el = frame.contentDocument?.querySelector(`[data-qd="${CSS.escape(ref)}"]`);
+  const el = elOf(ref);
   if (!el) return;
   if (mode === 'source') { beginSource(el); return; }
   beginEdit({ kind: 'block', root: el }, null).then((ok) => {
