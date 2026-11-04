@@ -108,6 +108,9 @@ const PREVIEW_CSS = `
   [data-qd] { cursor: pointer; }
   [data-qd]:hover { outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; }
   .qd-sel, .qd-sel:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 2px; }
+  section[data-qd-hidden]::after { content: "hidden slide (visibility=hidden): not in the rendered deck";
+    position: absolute; top: 0; right: 0; font: 14px system-ui, sans-serif; padding: 2px 8px;
+    background: #fff3c4; color: #5c4400; border-radius: 4px; }
 `;
 
 function highlight() {
@@ -194,6 +197,12 @@ function renderList() {
     idx.className = 'idx';
     idx.textContent = s.index;
     b.append(idx, s.title || s.summary || '(untitled)');
+    if (s.hidden) {
+      const tag = document.createElement('span');
+      tag.className = 'tag';
+      tag.textContent = 'hidden';
+      b.append(' ', tag);
+    }
     if (cur && s.id === cur.id) b.setAttribute('aria-current', 'true');
     b.addEventListener('click', () => { state.sel = null; go(s.anchor); });
     li.append(b);

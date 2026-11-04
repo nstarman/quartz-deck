@@ -99,6 +99,13 @@ fn read_commands() {
     assert_eq!(v["slides"][1]["boxes"], 1);
     assert_eq!(v["title_slide"], true);
 
+    for s in v["slides"].as_array().unwrap() {
+        assert_eq!(s["hidden"], false);
+    }
+    e.ok(&["set", "intro", "--attr", "visibility=hidden"]);
+    assert_eq!(e.ok(&["slides"])["slides"][0]["hidden"], true);
+    e.ok(&["undo"]);
+
     let v = e.ok(&["show", "results"]);
     assert_eq!(v["slide"]["attrs"]["classes"][0], "smaller");
     assert_eq!(v["slide"]["blocks"][1]["id"], "b-plot");

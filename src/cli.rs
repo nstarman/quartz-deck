@@ -196,7 +196,7 @@ fn parse_kv(s: &str) -> std::result::Result<(String, String), String> {
 fn output_of(cmd: &str) -> &'static str {
     match cmd {
         "slides" => {
-            r#"{"version","slide_level","title_slide","slides":[{"id","explicit","index","kind","title","summary","blocks","boxes","opaque","anchor"}]}"#
+            r#"{"version","slide_level","title_slide","slides":[{"id","explicit","index","kind","title","summary","blocks","boxes","opaque","anchor","hidden"}]}"#
         }
         "show" => {
             r#"{"version","slide":{"id","explicit","index","kind","level","title","attrs":{"id","classes","kv"},"opaque","source","blocks":[{"id","explicit","kind","text","attrs"}]}}"#
@@ -364,6 +364,7 @@ pub fn slides_json(d: &Deck) -> Value {
                 "summary": summary(d, s), "blocks": s.blocks.len(),
                 "boxes": s.blocks.iter().filter(|b| b.kind == BlockKind::Box).count(), "opaque": s.opaque,
                 "anchor": crate::render::preview_id(s),
+                "hidden": s.attrs.as_ref().and_then(|a| a.get("visibility")) == Some("hidden"),
             })
         })
         .collect();
@@ -602,7 +603,7 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             let mut v = check(&d, s.path.parent().unwrap_or(Path::new(".")));
             if *render {
                 let out = s.cache_dir().join("check");
-                let res = crate::render::render(&s.path, &d.text, "check", &out);
+                let res = crate::render::render(&s.path, &d.text, "check", &out, false);
                 let _ = std::fs::remove_dir_all(&out);
                 match res {
                     Ok(_) => {}
@@ -782,10 +783,10 @@ fn human(v: &Value) -> String {
                     s["index"],
                     s["id"].as_str().unwrap_or(""),
                     s["title"].as_str().unwrap_or("(untitled)"),
-                    if s["opaque"] == true {
-                        "  [opaque]"
-                    } else {
-                        ""
+                    match (s["opaque"] == true, s["hidden"] == true) {
+                        (true, _) => "  [opaque]",
+                        (_, true) => "  [hidden]",
+                        _ => "",
                     }
                 )
             })

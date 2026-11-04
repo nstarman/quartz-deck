@@ -115,6 +115,13 @@ qd show last                                # the image block is kind "box"
 
 ## Notes
 
+- **What to write** (reveal.js features, Quarto syntax, offline single-file
+  decks, MathJax/Plotly, PDF) is the `quarto-revealjs` skill's job; this skill
+  is **how to edit** a deck. Deck folders set up that way (a `_quarto.yml`
+  project) work with `qd serve` and `qd check --render` as they are.
+- Link to a slide in deck content with `[text](#id)`, not `#/id`.
+- `{visibility="hidden"}` slides are left out of the rendered deck; `qd slides`
+  marks them `"hidden": true` and the preview still shows them, badged.
 - Section slides are `#` headings (with the default `slide-level: 2`); a `---`
   rule starts an untitled slide. Content before the first heading is an
   untitled slide too.

@@ -149,3 +149,37 @@ All are compatible with private, proprietary use. Each is re-checked with
   `~/.claude/skills/quartz-deck/`. A test asserts every command named in the
   Skill exists in `qd schema`.
 - **Rationale**: Keeps Skill and CLI in sync (FR-014).
+
+## R10. Lessons from the `quarto-revealjs` skill (nstarman/skills#25)
+
+That skill (verified against Quarto 1.11.9 / reveal.js 5.1.0) sets up deck
+folders for offline, single-file decks: a Quarto **project** (`_quarto.yml`
+with `output-dir: _output`, `embed-resources: true`, `include-in-header:
+_deck/header.html` loading local MathJax 3.2.2 / plotly.js). Checked qd
+against that layout:
+
+- **Fixed — preview/check failed in a project.** Quarto leaves `.`/`_`-prefixed
+  files out of a project, so the hidden copy `.deck.qd-preview.qmd` was
+  rendered as a stray file ("--output-dir can only be used when rendering
+  projects") and would have skipped `_quarto.yml` (header, MathJax). The copy
+  is now `deck.qd-preview.qmd` next to the deck (removed after render), and
+  `--output-dir` still keeps it out of the project's `_output/`.
+- **Preview skips `embed-resources`** (`-M embed-resources:false`): inlining
+  MathJax + 4.6 MB plotly.js on every edit is slow (2.5 s → 0.9 s even with
+  stub libraries); the preview is served over HTTP anyway. `qd check --render`
+  keeps the project's setting, so missing `_vendor/` files still fail there.
+- **Fixed — hidden slides.** `{visibility="hidden"}` slides are dropped from
+  Quarto's output, so they could not be seen or edited. The preview copy turns
+  them into `data-qd-hidden="true"` (shown with a badge); `qd slides` reports
+  `"hidden"`. `{visibility="uncounted"}` needs nothing.
+- **Fixed — raw blocks.** ```` ```{=html} ```` (the guide's way to add
+  scripts) is classified `html`, not an executable `cell`.
+- Consistent with qd already: `.absolute` with unitless px; `## Title {#id}`
+  ids; untitled `## {…}` slides; speaker notes as `::: {.notes}`.
+- Slide **links** inside a deck must be `[text](#id)`, not `#/id` (Quarto
+  rewrites it to `#//id`). qd's `#/id` URLs are reveal navigation of the
+  *preview page*, not deck content, so they are unaffected.
+- Out of scope for 001, candidates for US5/export: the skill's
+  `check_offline.py` (no network requests, no raw TeX) and `make_pdf.py`
+  (`?print-pdf` via Playwright) are the right model for an offline check and
+  PDF export; they need Playwright + Chrome, which qd does not depend on today.
