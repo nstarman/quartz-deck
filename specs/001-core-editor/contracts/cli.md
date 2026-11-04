@@ -26,13 +26,13 @@ keep the schema, this file's commands and the Skill in sync.
 
 | Command | Output |
 |---|---|
-| `qd slides` | `{"version", "slides": [{"id", "explicit", "index", "kind", "title", "summary", "blocks": n, "boxes": n}]}` |
+| `qd slides` | `{"version", "slides": [{"id", "explicit", "index", "kind", "title", "summary", "blocks": n, "boxes": n, "opaque", "anchor"}]}` (`anchor` = preview `#/` id; `qd-N` for rule/implicit slides) |
 | `qd show <slide>` | `{"version", "slide": {…, "attrs", "source", "blocks": [{"id", "kind", "text", "attrs", "geom?"}]}}` |
 | `qd meta` | `{"version", "front_matter": {…}}` (parsed YAML) |
-| `qd check` | `{"ok", "problems": [{"severity", "code", "slide?", "message"}]}`; includes Quarto render errors when Quarto is present |
+| `qd check [--render]` | `{"ok", "problems": [{"severity", "code", "slide?", "message"}]}`; `--render` also runs Quarto and adds `E_RENDER` problems |
 | `qd schema` | every command, its args (from clap) and output shape; error codes; ref syntax |
 | `qd skill [--install DIR]` | prints / writes the agent Skill |
-| `qd url [<slide>]` | `{"url": "http://127.0.0.1:PORT/#/<id>"}` from the running server, else `E_NO_SERVER` |
+| `qd url [<slide>]` | `{"url": "http://127.0.0.1:PORT/#/<anchor>"}` from the running server, else `E_NO_SERVER` |
 
 ## Edit commands
 
@@ -60,7 +60,8 @@ keep the schema, this file's commands and the Skill in sync.
 | Command | Output |
 |---|---|
 | `qd render [--to FORMAT]` | `{"ok", "output": "path/to/deck.html", "log"}` |
-| `qd serve [--port N] [--open]` | prints `{"url", "pid"}` then runs until killed; `--detach` returns immediately |
+| `qd serve [--port N] [--open] [--detach]` | prints `{"url", "port", "pid"}` then runs until stopped; `--detach` returns immediately |
+| `qd stop` | `{"ok", "pid"}`; stops this deck's server |
 
 ## Error codes
 

@@ -97,6 +97,12 @@ handled: a slide-level heading *inside* a fenced div still splits a slide in
 Quarto — qd marks that slide opaque (structural edits refused, `qd check`
 warns) rather than modelling the split.
 
+**Implementation notes (US2)**: rule/implicit slides get a synthetic
+`## {#qd-N}` heading in the preview copy so every `<section>` has an
+anchor. Quarto errors are shown without ANSI codes, JS stack trace or the
+temp-file name. `qd check` renders only with `--render` (an LLM runs `check`
+after every edit; a 1–10 s render each time would slow the loop).
+
 ## R6. Live update channel
 
 - **Decision**: Server-Sent Events (`GET /events`) for server→browser

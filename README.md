@@ -11,8 +11,8 @@ presentations, written in Rust.
   (e.g. Claude Code) can edit the deck in-session and watch the same
   browser preview.
 
-Status: **MVP — CLI editing works** (US1). The browser preview/GUI (`qd serve`)
-is next. See [`specs/`](specs/) and the
+Status: **CLI editing (US1) and live browser preview (US2) work.** GUI
+editing (click-to-edit, drag/resize boxes) is next. See [`specs/`](specs/) and the
 [constitution](.specify/memory/constitution.md).
 
 ## Install & try
@@ -22,6 +22,7 @@ cargo install --path .
 qd new demo/deck.qmd --title "Demo" && cd demo
 qd add --title "Results" --md $'- one\n- two'
 qd --human slides
+qd serve --open                                   # live preview in the browser
 qd skill --install ~/.claude/skills/quartz-deck   # teach Claude Code to use qd
 ```
 
