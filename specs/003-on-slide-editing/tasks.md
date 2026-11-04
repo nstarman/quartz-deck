@@ -134,7 +134,7 @@ US6. Paths relative to repo root.
 - [ ] T036 Run quickstart §1–§6 with the release binary in the browser pane; record results in `checklists/quickstart-run.md`; usability check SC-006 (a 6-step task with the Source panel closed, timed)
 - [ ] T037 Agent eval (as in 002): 10 fresh agents asked to change a paragraph while a scripted "person" edits another element through the browser test harness; grade no lost edits and no usage errors from logs; record in `checklists/agent-eval.md`
 - [ ] T038 Final constitution re-check recorded in plan.md; `cargo fmt`, `clippy -D warnings`, full test suite green; update specs/ROADMAP.md status
-- [ ] T039 Concision audit with `/pr-audit` (constitution 1.1.0): sub-agents review the 003 diff — Rust, editor JS/CSS, tests/fixtures, CI and dependencies — with the ponytail review rules; apply verified findings, record skipped ones in the PR description — before the 003 PR is marked ready (also before any earlier PR cut from this branch)
+- [X] T039 Concision audit with `/pr-audit` (constitution 1.1.0): sub-agents review the 003 diff — Rust, editor JS/CSS, tests/fixtures, CI and dependencies — with the ponytail review rules; apply verified findings, record skipped ones in the PR description — before the 003 PR is marked ready (also before any earlier PR cut from this branch)
 
 ---
 
