@@ -110,15 +110,23 @@ impl OfflinePage {
             .map_or(0, |d| d.as_nanos());
         let profile =
             std::env::temp_dir().join(format!("qd-chrome-{}-{nanos}", std::process::id()));
-        let config = BrowserConfig::builder()
-            .chrome_executable(&chrome.path)
-            .user_data_dir(&profile)
-            .window_size(1280, 800)
-            .build()
-            .map_err(other)?;
-        let (browser, mut handler) = Browser::launch(config)
-            .await
-            .map_err(|e| QdError::NoBrowser(format!("{}: {e}", chrome.path.display())))?;
+        let config = || {
+            BrowserConfig::builder()
+                .chrome_executable(&chrome.path)
+                .user_data_dir(&profile)
+                .window_size(1280, 800)
+                // the 20 s default is too short on a loaded machine (CI runs Quarto alongside)
+                .launch_timeout(std::time::Duration::from_secs(60))
+                .build()
+                .map_err(other)
+        };
+        // one retry: a cold start can still miss the timeout
+        let launched = match Browser::launch(config()?).await {
+            Ok(b) => Ok(b),
+            Err(_) => Browser::launch(config()?).await,
+        };
+        let (browser, mut handler) =
+            launched.map_err(|e| QdError::NoBrowser(format!("{}: {e}", chrome.path.display())))?;
         let mut tasks = vec![tokio::spawn(async move {
             while handler.next().await.is_some() {}
         })];
