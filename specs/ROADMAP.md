@@ -15,6 +15,7 @@ open questions each spec must settle.
 | 006 | vscode | planned | Run the interactive editor inside VS Code next to the `.qmd`, alongside the Quarto extension, so text editing, on-slide editing, running code and reveal.js preview all work together there |
 | 007 | app-shell | planned | Desktop-app conventions: menu bar (File, Edit, Insert, Slide, View, Run, Help) with every action and shortcut; Settings window; shortcut reference; consistent selection, clipboard, undo, Escape/Enter |
 | 008 | export-formats | planned | An **Export ▾** drop-down (and `qd export --to <format>`) for every format Quarto/Pandoc can write: PowerPoint, PDF (Beamer/LaTeX or Typst), Word, HTML, Markdown, Jupyter notebook, and more |
+| 009 | history | planned | Optional **save = git commit** (a setting), a **History** side panel to scroll back through versions with a side-by-side preview of the deck as it was, diff any version against now (source and rendered slides), and restore a whole version or just one slide/element |
 
 Small editor improvements that don't need a spec (e.g. the side-scrolling
 slide strip and hover preview, PR #3) go straight to a PR.
@@ -114,3 +115,32 @@ paradigms. The Run menu (004) and the Export ▾ menu (008) live here.
   losses in the result rather than silently dropping content; PDF/LaTeX
   formats need a TeX or Typst install, checked and reported like the browser
   in 002.
+
+### 009 history
+
+Goal: never lose work, and be able to look back — built on git, visible in
+the editor.
+
+- **Setting (007): "Save as git commit".** When on and the deck is in a git
+  repository, every save (on-slide edit, source edit, CLI edit) also makes a
+  commit of the `.qmd` only, with a message describing the change (`qd: edit
+  results/1`, `qd: title methods`, `person`/`agent` noted). Off by default;
+  never commits other files, never pushes. Edits made in a burst (typing
+  sessions, a run of agent commands) may be squashed into one commit after a
+  pause, so history stays readable.
+- **History panel** beside the slides: a timeline of commits that touched the
+  deck (qd's and the person's own), each with time, author and message.
+  Selecting one shows a **side preview** of the deck as it was (rendered,
+  navigable, next to the current deck), with changed slides marked.
+- **Diff** any version against the current file or another version: source
+  diff per slide, and the rendered slides side by side.
+- **Restore**: the whole deck, one slide, or one element from a chosen
+  version — as a normal qd edit (undoable, conflict-checked, and itself
+  committed when the setting is on). Never rewrites git history.
+- CLI for agents: `qd history [--slide <ref>]`, `qd diff <rev> [<rev>]`,
+  `qd restore <rev> [--slide <ref> | --element <ref>]`, JSON output.
+- Open questions: how commits from qd interact with the person's own
+  workflow (staged changes, other files, branches, hooks, signing); what to
+  do outside a git repository (offer `git init`, or keep a private history
+  in qd's cache); rendering old versions (render on demand into the cache,
+  with the code-execution rules of 004).
