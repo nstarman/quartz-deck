@@ -196,6 +196,9 @@ enum Cmd {
         slide: String,
         #[arg(allow_hyphen_values = true)]
         text: String,
+        /// Fail with E_CONFLICT unless the current title hashes to this (see `qd show`)
+        #[arg(long, value_name = "HASH")]
+        expect_text: Option<String>,
     },
     /// Replace a slide's content (positioned boxes are kept)
     Body {
@@ -224,6 +227,9 @@ enum Cmd {
         element: String,
         #[command(flatten)]
         input: Input,
+        /// Fail with E_CONFLICT unless the element's source hashes to this (`hash` in `qd show`)
+        #[arg(long, value_name = "HASH")]
+        expect_text: Option<String>,
     },
     /// Positioned boxes (Quarto `.absolute`; px on the slide, default 1050x700)
     Box {
@@ -471,7 +477,9 @@ fn attrs_json(a: Option<&crate::attrs::Attrs>) -> Value {
 }
 
 fn block_json(d: &Deck, b: &Block) -> Value {
-    let mut v = json!({"id": b.id, "explicit": b.id_explicit, "kind": b.kind, "text": d.slice(b.span), "attrs": attrs_json(b.attrs.as_ref())});
+    let text = d.slice(b.span);
+    let mut v = json!({"id": b.id, "explicit": b.id_explicit, "kind": b.kind, "text": text,
+        "hash": crate::deck::version_of(text.as_bytes()), "attrs": attrs_json(b.attrs.as_ref())});
     if b.kind == BlockKind::Box
         && let Some(a) = &b.attrs
     {
@@ -966,7 +974,11 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             ctx.edit(|d| ops::mv(d, slide, pos))
         }
         Cmd::Rm { slide } => ctx.edit(|d| ops::rm(d, slide)),
-        Cmd::Title { slide, text } => ctx.edit(|d| ops::title(d, slide, text)),
+        Cmd::Title {
+            slide,
+            text,
+            expect_text,
+        } => ctx.edit(|d| ops::title(d, slide, text, expect_text.as_deref())),
         Cmd::Body { slide, input } => {
             let md = required_input(input)?;
             ctx.edit(|d| ops::body(d, slide, &md))
@@ -986,9 +998,13 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             };
             ctx.edit(|d| ops::set(d, slide, &change))
         }
-        Cmd::Edit { element, input } => {
+        Cmd::Edit {
+            element,
+            input,
+            expect_text,
+        } => {
             let md = required_input(input)?;
-            ctx.edit(|d| ops::edit(d, element, &md))
+            ctx.edit(|d| ops::edit(d, element, &md, expect_text.as_deref()))
         }
         Cmd::Box { action } => match action {
             BoxCmd::Add {

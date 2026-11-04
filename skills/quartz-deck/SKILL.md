@@ -20,7 +20,11 @@ edits, detects concurrent changes and supports undo.
    then `qd show <slide>` for the source and blocks of a slide you will edit.
 2. **Edit** — one command per change. Pass `--expect <version>` from step 1
    so an edit fails instead of clobbering a change made meanwhile. Add
-   `--dry-run` to see the diff first.
+   `--dry-run` to see the diff first. When the person may be typing on the
+   slides in the editor at the same time, prefer `qd edit <slide>/<i> --md …
+   --expect-text <hash>` (each block's `hash` is in `qd show`; `qd title`
+   takes the hash of the current title): it refuses only if *that* element
+   changed, so edits elsewhere in the deck don't block you.
 3. **Check** — `qd check` (duplicate ids, unsafe constructs, missing files);
    `qd check --render` also runs Quarto and reports render errors.
 4. **Look** — start the live preview once with `qd serve --detach` (prints

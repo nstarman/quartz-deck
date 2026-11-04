@@ -426,10 +426,28 @@ pub fn rm(d: &Deck, slide: &str) -> Result<Patch> {
     ))
 }
 
-pub fn title(d: &Deck, slide: &str, text: &str) -> Result<Patch> {
+/// `--expect-text`: refuse unless `current` still hashes to `expected`.
+fn check_expect(what: &str, current: &str, expected: Option<&str>) -> Result<()> {
+    let hash = crate::deck::version_of(current.as_bytes());
+    match expected {
+        Some(e) if e != hash => Err(QdError::StaleElement {
+            what: what.into(),
+            current_source: current.into(),
+            current_hash: hash,
+        }),
+        _ => Ok(()),
+    }
+}
+
+pub fn title(d: &Deck, slide: &str, text: &str, expect_text: Option<&str>) -> Result<Patch> {
     single_line(text, "title")?;
     let mut ctx = Ctx::new(d);
     let s = ctx.slide(slide)?;
+    check_expect(
+        &format!("the title of '{}'", s.id),
+        s.title.as_deref().unwrap_or(""),
+        expect_text,
+    )?;
     let mut assigned = Vec::new();
     let t = text.trim();
     let (new, id) = ctx.rewrite(
@@ -461,7 +479,12 @@ pub fn body(d: &Deck, slide: &str, md: &str) -> Result<Patch> {
         Some(b) => d.text[b.span.end..s.span.end].to_string(),
         None => region.to_string(),
     };
-    let trailing = if trailing.is_empty() {
+    let blank = format!("{nl}{nl}");
+    let trailing = if s.span.end < d.text.len() && !trailing.contains(&blank) {
+        // content must end in a blank line, or the next slide's heading would
+        // run into it (Pandoc folds it into a list or paragraph)
+        blank
+    } else if trailing.is_empty() {
         nl.to_string()
     } else {
         trailing
@@ -487,25 +510,19 @@ pub fn body(d: &Deck, slide: &str, md: &str) -> Result<Patch> {
     Ok(patch("body", id, vec![(s.span, new)], assigned))
 }
 
-/// Replace one block's source text.
-pub fn edit(d: &Deck, element: &str, md: &str) -> Result<Patch> {
-    let mut ctx = Ctx::new(d);
-    let (s, b) = d.element(element)?;
-    let s = ctx.slide(&format!("@{}", s.index))?;
-    let md = norm(md, ctx.nl());
+/// Replace one element's source. Only the element's span is written: the slide
+/// heading is left as it is (no id pinning; editing a block can't change the
+/// slide's id), so the file changes nowhere else (spec 003 FR-002).
+pub fn edit(d: &Deck, element: &str, md: &str, expect_text: Option<&str>) -> Result<Patch> {
+    let (_, b) = d.element(element)?;
+    check_expect(&format!("element '{}'", b.id), d.slice(b.span), expect_text)?;
+    let md = norm(md, d.nl);
     if md.is_empty() {
         return Err(QdError::InvalidArg(
             "replacement text is empty; to delete use `qd body` or edit the file".into(),
         ));
     }
-    let rest = format!(
-        "{}{md}{}",
-        &d.text[s.content_start()..b.span.start],
-        &d.text[b.span.end..s.span.end]
-    );
-    let mut assigned = Vec::new();
-    let (new, _) = ctx.rewrite(s, None, None, Some(rest), &mut assigned);
-    Ok(patch("edit", b.id.clone(), vec![(s.span, new)], assigned))
+    Ok(patch("edit", b.id.clone(), vec![(b.span, md)], Vec::new()))
 }
 
 // ---------- front matter ----------
