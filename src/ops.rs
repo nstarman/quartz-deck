@@ -570,7 +570,11 @@ fn rearrange(
         start: s.blocks[0].span.start,
         end: s.blocks[s.blocks.len() - 1].span.end,
     };
-    let mut texts: Vec<String> = s.blocks.iter().map(|b| d.slice(b.span).to_string()).collect();
+    let mut texts: Vec<String> = s
+        .blocks
+        .iter()
+        .map(|b| d.slice(b.span).to_string())
+        .collect();
     let mut seps: Vec<String> = s
         .blocks
         .windows(2)
@@ -623,7 +627,16 @@ pub fn block_add(d: &Deck, slide: &str, at: BlockPos, md: &str) -> Result<Patch>
         texts.insert(i, md);
         seps.insert(i.min(seps.len()), blank);
     });
-    keep_structure(d, patch("block add", format!("{}/{i}", s.id), vec![(span, new)], Vec::new()), s.index)
+    keep_structure(
+        d,
+        patch(
+            "block add",
+            format!("{}/{i}", s.id),
+            vec![(span, new)],
+            Vec::new(),
+        ),
+        s.index,
+    )
 }
 
 pub fn block_move(d: &Deck, element: &str, to: Pos) -> Result<Patch> {
@@ -641,14 +654,23 @@ pub fn block_move(d: &Deck, element: &str, to: Pos) -> Result<Patch> {
         let t = texts.remove(from);
         texts.insert(i, t);
     });
-    Ok(patch("block move", format!("{}/{i}", s.id), vec![(span, new)], Vec::new()))
+    Ok(patch(
+        "block move",
+        format!("{}/{i}", s.id),
+        vec![(span, new)],
+        Vec::new(),
+    ))
 }
 
 pub fn block_rm(d: &Deck, element: &str) -> Result<Patch> {
     let (s, b) = d.element(element)?;
     if s.blocks.len() == 1 {
         // the slide's only content: leave it empty, cleanly separated
-        let mut p = if b.kind == BlockKind::Box { box_rm(d, element)? } else { body(d, &s.id, "")? };
+        let mut p = if b.kind == BlockKind::Box {
+            box_rm(d, element)?
+        } else {
+            body(d, &s.id, "")?
+        };
         p.op = "block rm".into();
         p.target = b.id.clone();
         return Ok(p);
@@ -658,7 +680,12 @@ pub fn block_rm(d: &Deck, element: &str) -> Result<Patch> {
         texts.remove(i);
         seps.remove(i.min(seps.len() - 1));
     });
-    Ok(patch("block rm", b.id.clone(), vec![(span, new)], Vec::new()))
+    Ok(patch(
+        "block rm",
+        b.id.clone(),
+        vec![(span, new)],
+        Vec::new(),
+    ))
 }
 
 pub fn block_dup(d: &Deck, element: &str) -> Result<Patch> {
@@ -677,7 +704,97 @@ pub fn block_dup(d: &Deck, element: &str) -> Result<Patch> {
         texts.insert(i + 1, copy);
         seps.insert(i.min(seps.len()), blank);
     });
-    Ok(patch("block dup", format!("{}/{}", s.id, i + 1), vec![(span, new)], assigned))
+    Ok(patch(
+        "block dup",
+        format!("{}/{}", s.id, i + 1),
+        vec![(span, new)],
+        assigned,
+    ))
+}
+
+/// Add/remove classes on one element (spec 003 US3/US6: "Appears on click",
+/// appearance). The class goes into the element's own attribute block (div
+/// fence, heading, image/box), keeping untouched attributes byte-for-byte; an
+/// element without one is wrapped in `::: {.class}`, and that wrapper goes
+/// again when its last class is removed.
+pub fn block_class(d: &Deck, element: &str, add: &[String], remove: &[String]) -> Result<Patch> {
+    let (s, b) = d.element(element)?;
+    let text = d.slice(b.span);
+    let nl = d.nl;
+    let lines: Vec<&str> = text.split(nl).collect();
+    let fenced = lines[0].trim_start().starts_with(":::")
+        && lines.len() > 1
+        && lines[lines.len() - 1].trim().chars().all(|c| c == ':');
+    // (line index, byte range of `{...}` in that line) of the element's attributes
+    let found = if fenced {
+        let l = lines[0];
+        match (l.find('{'), l.rfind('}')) {
+            (Some(o), Some(c)) if c > o => Some((0, o, c + 1)),
+            _ => None,
+        }
+    } else {
+        let i = if b.kind == BlockKind::Heading {
+            0
+        } else {
+            lines.len() - 1
+        };
+        let l = lines[i].trim_end();
+        match (l.rfind('{'), l.ends_with('}')) {
+            (Some(o), true) if Attrs::parse(&l[o..]).is_some() => Some((i, o, l.len())),
+            _ => None,
+        }
+    };
+    let change = |a: &mut Attrs| -> Result<()> {
+        for c in remove {
+            if !a.remove_class(c) {
+                return Err(QdError::InvalidArg(format!(
+                    "'{element}' has no class '{c}'"
+                )));
+            }
+        }
+        for c in add {
+            a.add_class(c);
+        }
+        Ok(())
+    };
+    let new = match found {
+        Some((i, o, c)) => {
+            let mut a = Attrs::parse(&lines[i][o..c]).expect("checked above");
+            change(&mut a)?;
+            if a.items.is_empty() && fenced && lines.len() > 2 {
+                // our own `::: {.x}` wrapper, now empty: unwrap it
+                lines[1..lines.len() - 1].join(nl)
+            } else {
+                let rendered = if a.items.is_empty() {
+                    String::new()
+                } else {
+                    a.render()
+                };
+                let line = format!("{}{rendered}{}", &lines[i][..o], &lines[i][c..]);
+                let line = if rendered.is_empty() {
+                    line.trim_end().to_string()
+                } else {
+                    line
+                };
+                let mut out: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+                out[i] = line;
+                out.join(nl)
+            }
+        }
+        None => {
+            let mut a = Attrs::default();
+            change(&mut a)?;
+            if a.items.is_empty() {
+                return Err(QdError::InvalidArg("nothing to change".into()));
+            }
+            format!("::: {}{nl}{text}{nl}:::", a.render())
+        }
+    };
+    keep_structure(
+        d,
+        patch("block class", b.id.clone(), vec![(b.span, new)], Vec::new()),
+        s.index,
+    )
 }
 
 // ---------- front matter ----------

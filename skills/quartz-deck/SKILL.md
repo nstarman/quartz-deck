@@ -69,7 +69,7 @@ when the current directory has exactly one `.qmd`.
 | positioned text box | `qd box add results --text "Note" --at 700,80 --size 300,100` |
 | positioned image | `qd box add results --image figures/plot.png --at 100,150 --size 600,400` |
 | move / resize / delete box | `qd box move #b-1a2b --by 0,40`, `qd box resize #b-1a2b --size 400,300`, `qd box rm #b-1a2b` |
-| add / move / delete / duplicate one element | `qd block add results --after results/0 --md "- point"` (or `--before`, `--start`, `--end`), `qd block move results/2 --before results/0`, `qd block rm results/1`, `qd block dup results/1` — only that element's bytes move; the heading is untouched |
+| add / move / delete / duplicate one element | `qd block add results --after results/0 --md "- point"` (or `--before`, `--start`, `--end`), `qd block move results/2 --before results/0`, `qd block rm results/1`, `qd block dup results/1`, `qd block class results/1 --add fragment` (appears on click) — only that element's bytes move; the heading is untouched |
 | validate | `qd check` (add `--render` to run Quarto) |
 | final output | `qd render` (→ `output` path; `--to pdf` etc. for other formats) |
 | works without network? | `qd check --offline` (headless Chrome, network blocked; problems per slide with hints) |

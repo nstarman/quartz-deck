@@ -766,16 +766,35 @@ fn block_add_places_new_blocks() {
     assert!(e.text().contains("## S\n\nZeroth.\n\nFirst."));
     e.ok(&["block", "add", "s", "--end", "--md", "Final."]);
     assert!(e.text().contains("height=10}\n\nFinal.\n\n## Empty"));
-    e.ok(&["block", "add", "s", "--before", "s/0", "--md", "Before all."]);
+    e.ok(&[
+        "block",
+        "add",
+        "s",
+        "--before",
+        "s/0",
+        "--md",
+        "Before all.",
+    ]);
     assert!(e.text().contains("## S\n\nBefore all.\n\nZeroth."));
     // an empty slide gets its first block, still separate from the next slide
     let v = e.ok(&["block", "add", "empty", "--end", "--md", "Now here."]);
     assert_eq!(v["target"], "empty/0");
-    assert!(e.text().contains("## Empty {#empty}\n\nNow here.\n\n## Last"));
+    assert!(
+        e.text()
+            .contains("## Empty {#empty}\n\nNow here.\n\n## Last")
+    );
     // the slide heading is never rewritten (no id pinned on `## S`)
     assert!(e.text().contains("\n## S\n"));
-    e.err(&["block", "add", "s", "--end", "--md", "## New slide"], "E_INVALID_ARG", 1);
-    e.err(&["block", "add", "s", "--after", "last/0", "--md", "x"], "E_INVALID_ARG", 1);
+    e.err(
+        &["block", "add", "s", "--end", "--md", "## New slide"],
+        "E_INVALID_ARG",
+        1,
+    );
+    e.err(
+        &["block", "add", "s", "--after", "last/0", "--md", "x"],
+        "E_INVALID_ARG",
+        1,
+    );
 }
 
 #[test]
@@ -786,7 +805,11 @@ fn block_move_rm_dup_keep_bytes() {
     assert!(e.text().contains("## S\n\n- a\n- b\n\nFirst.\n\n![]"));
     e.ok(&["block", "move", "s/0", "--after", "s/2"]);
     assert!(e.text().contains("## S\n\nFirst.\n\n![](x.png){#b-1 .absolute top=0 left=0 width=10 height=10}\n\n- a\n- b\n\n## Empty"));
-    e.err(&["block", "move", "s/0", "--after", "last/0"], "E_INVALID_ARG", 1);
+    e.err(
+        &["block", "move", "s/0", "--after", "last/0"],
+        "E_INVALID_ARG",
+        1,
+    );
 
     // duplicate: same text, a fresh id for an element that has one
     let v = e.ok(&["block", "dup", "#b-1"]);
@@ -804,7 +827,11 @@ fn block_move_rm_dup_keep_bytes() {
     assert_eq!(e.text(), before);
     // removing the only block of a slide leaves it empty and separate
     e.ok(&["block", "rm", "last/0"]);
-    assert!(e.text().trim_end().ends_with("## Last {#last}"), "{:?}", e.text());
+    assert!(
+        e.text().trim_end().ends_with("## Last {#last}"),
+        "{:?}",
+        e.text()
+    );
 }
 
 #[test]
@@ -817,4 +844,41 @@ fn block_ops_through_the_api() {
     for op in ["block move", "block rm", "block dup"] {
         assert!(quartz_deck::cli::run_op(&e.store(), op, &serde_json::json!({}), None).is_err());
     }
+}
+
+#[test]
+fn block_class_toggles_round_trip() {
+    let deck = "## S {#s}\n\nPlain para.\n\n::: {.callout-note title=\"Keep 'me'\"}\nNote.\n:::\n\n#### Sub {.c}\n\n![](x.png){width=\"50%\"}\n";
+    let e = Env::with(deck);
+    // a paragraph has no attributes: adding wraps it, removing unwraps it again
+    e.ok(&["block", "class", "s/0", "--add", "fragment"]);
+    assert!(
+        e.text().contains("::: {.fragment}\nPlain para.\n:::"),
+        "{}",
+        e.text()
+    );
+    e.ok(&["block", "class", "s/0", "--remove", "fragment"]);
+    assert_eq!(e.text(), deck);
+    // elements with attributes: the class goes in place, untouched attributes keep their quoting
+    e.ok(&["block", "class", "s/1", "--add", "fragment"]);
+    e.ok(&[
+        "block", "class", "s/2", "--add", "fragment", "--remove", "c",
+    ]);
+    e.ok(&["block", "class", "s/3", "--add", "fragment"]);
+    let t = e.text();
+    assert!(t.contains("title=\"Keep 'me'\""), "{t}");
+    assert!(t.contains(".fragment"), "{t}");
+    assert!(t.contains("#### Sub {.fragment}"), "{t}");
+    for el in ["s/1", "s/3"] {
+        e.ok(&["block", "class", el, "--remove", "fragment"]);
+    }
+    e.ok(&[
+        "block", "class", "s/2", "--remove", "fragment", "--add", "c",
+    ]);
+    assert_eq!(e.text(), deck);
+    e.err(
+        &["block", "class", "s/0", "--remove", "nope"],
+        "E_INVALID_ARG",
+        1,
+    );
 }
