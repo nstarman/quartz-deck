@@ -147,11 +147,11 @@ impl Ed {
 
     /// Show the slide with this preview anchor and wait for it.
     async fn go(&self, anchor: &str) {
-        self.eval(&format!(
-            "document.querySelector('#preview').contentWindow.location.hash = '#/{anchor}'"
+        // re-set the hash while waiting: a preview reload in between drops it
+        self.wait(&format!(
+            "(w => w.Reveal?.getCurrentSlide()?.id === '{anchor}' || (w.location.hash = '#/{anchor}', false))(document.querySelector('#preview').contentWindow)"
         ))
         .await;
-        self.wait(&format!("document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide()?.id === '{anchor}'")).await;
         tokio::time::sleep(Duration::from_millis(500)).await; // slide transition
     }
 
