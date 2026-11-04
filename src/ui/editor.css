@@ -126,3 +126,36 @@ aside .status.fail { color: var(--danger); }
   background: var(--panel); white-space: pre-wrap; font: 12px/1.4 ui-monospace, monospace; }
 #conflict .buttons { display: flex; gap: 6px; }
 @media (max-width: 700px) { #conflict .cols { grid-template-columns: 1fr; } }
+
+/* ---------- spec 003 P2: menus, bars, Source panel ---------- */
+#stage { display: flex; flex-direction: column; gap: 6px; }
+#preview { flex: 1; min-height: 0; }
+#slidebar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; }
+#slidebar input[type=color] { width: 28px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 4px; vertical-align: middle; }
+main:not(.panel-open) > aside { display: none; }
+#toggle-source[aria-pressed=true] { background: var(--bg); border-color: var(--accent); }
+
+#ctxmenu { position: fixed; z-index: 30; }
+#ctxmenu ul { list-style: none; margin: 0; padding: 4px; min-width: 210px; background: var(--panel); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25); }
+#ctxmenu li { position: relative; display: flex; gap: 16px; justify-content: space-between; padding: 5px 10px;
+  border-radius: 5px; cursor: default; white-space: nowrap; outline: none; }
+#ctxmenu li[role=separator] { height: 1px; padding: 0; margin: 4px 6px; background: var(--line); }
+#ctxmenu li:focus, #ctxmenu li.open { background: var(--accent); color: var(--accent-text); }
+#ctxmenu li[aria-disabled=true] { opacity: 0.45; }
+#ctxmenu li[role=menuitemcheckbox] { padding-left: 22px; }
+#ctxmenu li[aria-checked=true]::before { content: "✓"; position: absolute; left: 7px; }
+#ctxmenu li[aria-haspopup]::after { content: "▸"; }
+#ctxmenu kbd { font: inherit; opacity: 0.7; }
+#ctxmenu li > ul { display: none; position: absolute; top: -5px; left: 100%; }
+#ctxmenu li > ul.left { left: auto; right: 100%; }
+#ctxmenu li.open > ul { display: block; }
+
+#elbar, #hoverbar { position: fixed; z-index: 15; display: flex; gap: 2px; padding: 3px; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18); }
+#elbar button, #hoverbar button { height: 26px; min-width: 26px; padding: 0 6px; font-size: 13px; }
+#elbar button[aria-pressed=true] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+#hoverbar { padding: 2px; box-shadow: none; }
+#hoverbar [data-act=drag] { cursor: grab; }
+#dropline { position: fixed; z-index: 16; height: 3px; background: var(--drop); border-radius: 2px; pointer-events: none; }
+#emptyadd { position: fixed; z-index: 15; }
