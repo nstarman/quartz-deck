@@ -143,6 +143,9 @@ const PREVIEW_CSS = `
   .qd-sel, .qd-sel:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 2px; }
   .qd-editing, .qd-editing:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 4px; cursor: text; }
   .qd-editing:focus { outline-style: solid; }
+  /* every fragment is shown (and reachable) in the editor; the marker says it appears on click */
+  .reveal .slides section .fragment { opacity: 1 !important; visibility: inherit !important; transform: none !important;
+    box-shadow: inset 3px 0 0 rgba(42, 91, 215, .35); }
   section > h1:hover, section > h2:hover, section > h3:hover, #title-slide :is(.title, .subtitle, .date):hover {
     outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; cursor: text; }
   .qd-overlay { position: absolute; box-sizing: border-box; border: 2px solid #2a5bd7; cursor: move;
@@ -306,7 +309,8 @@ function hookFrame() {
     // always wants the normal slide view.
     // always: the pane may narrow later (panels, window), which would switch
     // Reveal into scroll view, where hash navigation to the last slide fails
-    w.Reveal.configure({ scrollActivationWidth: 1 });
+    // Escape belongs to the editor (leave an edit / deselect), not Reveal's overview
+    w.Reveal.configure({ scrollActivationWidth: 1, keyboard: { 27: null } });
     w.dispatchEvent(new Event('resize'));
     if (state.want && w.Reveal.getCurrentSlide()?.id !== state.want) w.location.hash = '#/' + state.want;
     state.want = null;
@@ -717,21 +721,36 @@ function elementKey(e, mod) {
   return undefined;
 }
 
+/** Tab / Shift+Tab in the preview: select the next / previous element of the slide (FR-017). */
+function stepSelection(back) {
+  const sec = frameWin()?.Reveal?.getCurrentSlide();
+  const els = [...(sec?.querySelectorAll('[data-qd]') || [])].filter((el) => el.closest('section') === sec);
+  if (!els.length) return false;
+  const i = els.findIndex((el) => el.dataset.qd === state.sel);
+  const next = els[i < 0 ? (back ? els.length - 1 : 0) : (i + (back ? -1 : 1) + els.length) % els.length];
+  select(next.dataset.qd);
+  next.scrollIntoView({ block: 'nearest' });
+  fetchBlock(next.dataset.qd).then((b) => b && say(`Selected ${b.kind} ${next.dataset.qd} — Enter edits, ⇧F10 for actions`));
+  return true;
+}
+
 function onKey(e) {
   if (menuOpen()) { if (e.key === 'Escape') { e.preventDefault(); closeMenu(); } return; }
   if (state.session || editing()) return; // edits and form fields handle their own keys
+  // Tab moves between elements only while the slide has focus; elsewhere it moves focus as usual
+  if (e.key === 'Tab' && e.target.ownerDocument === frame.contentDocument && stepSelection(e.shiftKey)) { e.preventDefault(); e.stopPropagation(); return; }
   const mod = e.metaKey || e.ctrlKey;
   if ((e.shiftKey && e.key === 'F10') || e.key === 'ContextMenu') { e.preventDefault(); keyboardMenu(); return; }
   if (state.sel) {
     const id = elementKey(e, mod);
-    if (id) { e.preventDefault(); elementTarget(state.sel).then((t) => t && actions.run(id, t)); return; }
+    if (id) { e.preventDefault(); e.stopPropagation(); elementTarget(state.sel).then((t) => t && actions.run(id, t)); return; }
   }
   if (mod && e.shiftKey && (e.key.toLowerCase() === 'n' || e.key.toLowerCase() === 'd')) {
     const cur = slideByAnchor(state.anchor);
     if (cur) { e.preventDefault(); slideTarget(cur.id).then((t) => actions.run(e.key.toLowerCase() === 'n' ? 'slide-after' : 'slide-dup', t, 'slide')); }
     return;
   }
-  if (e.key === 'Escape' && state.sel) { e.preventDefault(); select(null); return; }
+  if (e.key === 'Escape' && state.sel) { e.preventDefault(); e.stopPropagation(); select(null); return; }
   if (!mod || e.key.toLowerCase() !== 'z' || editing()) return;
   e.preventDefault();
   undoRedo(e.shiftKey ? 'redo' : 'undo');
@@ -1127,6 +1146,7 @@ const actions = makeActions({
   beginEditRef: (t) => t.el && beginEdit({ kind: 'block', root: t.el }, null).then((ok) => ok || beginSource(t.el)),
   beginSourceEl: (t) => t.el && beginSource(t.el),
   beginSlideSource: (t) => beginSlideSource(frame.contentDocument?.getElementById(t.anchor)),
+  editNotes,
   insert: insertBlock,
   copy: copyElement,
   paste: pasteAfter,
@@ -1350,25 +1370,41 @@ function openInserted({ ref, mode }) {
   });
 }
 
-async function copyElement(t) {
+/** Copy an element's markdown. Our own copy is immediate; the system clipboard is
+ *  written in the background (it can stay pending, e.g. in a page without focus). */
+function copyElement(t) {
   state.clip = t.block.text;
-  try {
-    const html = t.el?.innerHTML || '';
-    await navigator.clipboard.write([new ClipboardItem({
-      'text/plain': new Blob([t.block.text], { type: 'text/plain' }),
-      'text/html': new Blob([html], { type: 'text/html' }),
-    })]);
-  } catch {
-    try { await navigator.clipboard.writeText(t.block.text); } catch { /* kept in state.clip */ }
-  }
+  const item = new ClipboardItem({
+    'text/plain': new Blob([t.block.text], { type: 'text/plain' }),
+    'text/html': new Blob([t.el?.innerHTML || ''], { type: 'text/html' }),
+  });
+  navigator.clipboard.write([item]).catch(() => navigator.clipboard.writeText(t.block.text)).catch(() => {});
   say('Copied');
 }
 
 async function pasteAfter(t) {
   let text = null;
-  try { text = await navigator.clipboard.readText(); } catch { /* not allowed: use our own copy */ }
+  // the system clipboard if it answers within a second, else our own copy
+  const timeout = new Promise((resolve) => { setTimeout(() => resolve(null), 1000); });
+  try { text = await Promise.race([navigator.clipboard.readText(), timeout]); } catch { /* not allowed */ }
   text = text?.trim() ? text : state.clip;
   if (!text) { say('Nothing to paste', true); return; }
   const r = await op('block add', { slide: t.slideId, after: t.ref, md: text });
   if (r) { state.sel = r.target; await fetchDeck(); }
+}
+
+/** Speaker notes (`::: notes`): edit them in the source box over the slide, creating them if missing. */
+async function editNotes(t) {
+  const sec = frame.contentDocument?.getElementById(t.anchor);
+  if (!sec || state.session || !t.full) return;
+  const i = t.full.blocks.findIndex((b) => b.kind === 'notes');
+  let ref = `${t.slideId}/${i}`;
+  if (i < 0) {
+    const r = await op('block add', { slide: t.slideId, end: true, md: '::: notes\nSpeaker notes.\n:::' });
+    if (!r) return;
+    await fetchDeck();
+    ref = r.target;
+  }
+  const b = await fetchBlock(ref);
+  if (b) startSourceSession({ kind: 'block', mode: 'source', root: sec, ref, source: b.text, hash: b.hash }, b.text);
 }
