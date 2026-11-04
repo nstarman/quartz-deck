@@ -1,0 +1,6 @@
+---
+title: "Missing iframe"
+format: revealjs
+---
+
+## {#app background-iframe="apps/not-there.html" background-interactive="true"}

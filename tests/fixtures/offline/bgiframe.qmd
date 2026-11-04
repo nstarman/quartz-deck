@@ -1,0 +1,6 @@
+---
+title: "Background iframe"
+format: revealjs
+---
+
+## {#app background-iframe="apps/app.html" background-interactive="true"}

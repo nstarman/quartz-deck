@@ -1,0 +1,14 @@
+---
+title: "Show notes"
+format:
+  revealjs:
+    show-notes: true
+---
+
+## Visible notes {#visible}
+
+Text.
+
+::: {.notes}
+audience would see this
+:::
