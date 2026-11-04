@@ -47,6 +47,12 @@ fn insert_attr(text: &str, close: usize, tag: &str) -> String {
     format!("{}{sep}data-qd=\"{tag}\"{}", &text[..close], &text[close..])
 }
 
+fn hide_empty_heading(id: &str, nl: &str) -> String {
+    format!(
+        "```{{=html}}{nl}<style>#{id} > h1:empty, #{id} > h2:empty, #{id} > h3:empty {{ display: none; }}</style>{nl}```"
+    )
+}
+
 fn is_caption(t: &str) -> bool {
     t.starts_with(": ") || t.starts_with("Table:")
 }
@@ -59,11 +65,22 @@ pub fn preview_copy(d: &Deck) -> String {
     for s in &d.slides {
         let pid = preview_id(s);
         match s.kind {
+            // A synthetic untitled heading gives the slide an anchor; Pandoc
+            // emits an empty <h2> for it, which `---`/implicit slides don't
+            // have, so hide it to keep the layout identical (layout-drift check).
             SlideKind::Rule if !s.id_explicit => {
-                out += &format!("{} {{#{pid}}}{nl}", "#".repeat(d.slide_level as usize));
+                out += &format!(
+                    "{} {{#{pid}}}{nl}{nl}{}{nl}",
+                    "#".repeat(d.slide_level as usize),
+                    hide_empty_heading(&pid, nl)
+                );
             }
             SlideKind::Implicit if !s.id_explicit => {
-                out += &format!("{} {{#{pid}}}{nl}{nl}", "#".repeat(d.slide_level as usize));
+                out += &format!(
+                    "{} {{#{pid}}}{nl}{nl}{}{nl}{nl}",
+                    "#".repeat(d.slide_level as usize),
+                    hide_empty_heading(&pid, nl)
+                );
             }
             // hidden slides are dropped by Quarto; show them in the editor, marked
             _ if s.attrs.as_ref().and_then(|a| a.get("visibility")) == Some("hidden") => {
@@ -79,6 +96,11 @@ pub fn preview_copy(d: &Deck) -> String {
                 });
             }
             _ => out += &d.text[s.span.start..s.content_start()],
+        }
+        if s.opaque {
+            // qd does not model this slide's structure: render it verbatim
+            out += &d.text[s.content_start()..s.span.end];
+            continue;
         }
         let mut pos = s.content_start();
         for (i, b) in s.blocks.iter().enumerate() {
@@ -116,6 +138,20 @@ pub fn preview_copy(d: &Deck) -> String {
                             )
                         }
                     }
+                }
+                // a heading inside a div would start a slide in Quarto: mark the heading itself
+                BlockKind::Heading => {
+                    let line = first.trim_end();
+                    let marked = match line.rfind('{') {
+                        Some(o)
+                            if line.ends_with('}')
+                                && crate::attrs::Attrs::parse(&line[o..]).is_some() =>
+                        {
+                            insert_attr(line, line.len() - 1, &tag)
+                        }
+                        _ => format!("{line} {{data-qd=\"{tag}\"}}"),
+                    };
+                    format!("{marked}{}", &text[first_end..])
                 }
                 BlockKind::Image | BlockKind::Box
                     if b.attrs.is_some() && text.trim_end().ends_with('}') =>
@@ -267,7 +303,11 @@ mod tests {
             "{c}"
         );
         assert!(
-            c.contains("## {#qd-3}\n\n::: {data-qd=\"@3/0\"}\nA rule slide.\n:::"),
+            c.contains("## {#qd-3}\n\n```{=html}\n<style>#qd-3 > h1:empty"),
+            "{c}"
+        );
+        assert!(
+            c.contains("```\n\n::: {data-qd=\"@3/0\"}\nA rule slide.\n:::"),
             "{c}"
         );
         assert!(
@@ -288,7 +328,11 @@ mod tests {
         );
         let c = preview_copy(&d);
         assert!(
-            c.starts_with("## {#qd-1}\n\n::: {data-qd=\"@1/0\"}\nPre.\n:::"),
+            c.starts_with("## {#qd-1}\n\n```{=html}\n<style>#qd-1"),
+            "{c}"
+        );
+        assert!(
+            c.contains("```\n\n::: {data-qd=\"@1/0\"}\nPre.\n:::"),
             "{c}"
         );
         assert!(c.contains("::: notes\nn\n:::"));
@@ -300,6 +344,18 @@ mod tests {
         );
         assert!(c.contains("\n<!-- c -->\n"));
         assert!(c.contains("![](x.png){.r data-qd=\"t/6\"}"), "{c}");
+    }
+
+    #[test]
+    fn preview_marks_headings_in_place_and_skips_opaque() {
+        let d = Deck::parse("---\nslide-level: 3\n---\n\n### S\n\n#### Sub\n\n#### Sub2 {.c}\n\n## T\n\n```\nnever closed\n".into());
+        let c = preview_copy(&d);
+        assert!(c.contains("#### Sub {data-qd=\"s/0\"}\n"), "{c}");
+        assert!(c.contains("#### Sub2 {.c data-qd=\"s/1\"}\n"), "{c}");
+        assert!(
+            c.ends_with("## T\n\n```\nnever closed\n"),
+            "opaque slide must be verbatim: {c}"
+        );
     }
 
     #[test]

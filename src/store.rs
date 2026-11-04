@@ -27,6 +27,21 @@ pub struct Store {
     cache: PathBuf,
 }
 
+/// Has `path` been replaced by another file since `old` was opened?
+#[cfg(unix)]
+fn replaced(old: &fs::File, path: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    match (old.metadata(), fs::metadata(path)) {
+        (Ok(a), Ok(b)) => a.ino() != b.ino() || a.dev() != b.dev(),
+        _ => true,
+    }
+}
+
+#[cfg(not(unix))]
+fn replaced(_: &fs::File, _: &Path) -> bool {
+    false
+}
+
 pub fn cache_root() -> PathBuf {
     if let Some(d) = std::env::var_os("QD_CACHE_DIR") {
         return PathBuf::from(d);
@@ -78,30 +93,69 @@ impl Store {
         Ok(Deck::parse(self.read_text()?))
     }
 
+    /// Exclusive lock shared by every qd process editing this deck (CLI, GUI
+    /// server), held across check + write + journal so qd writers serialize.
+    fn lock(&self) -> Result<fs::File> {
+        fs::create_dir_all(&self.cache)?;
+        let f = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(self.cache.join("lock"))?;
+        f.lock()?;
+        Ok(f)
+    }
+
     /// Replace the file with `text` iff it still has `expected_version`.
-    /// ponytail: tiny window between the re-read and the rename; a lock file
-    /// would close it if two writers ever race in practice.
+    ///
+    /// Against writers that ignore qd (editors, scripts) the check-then-rename
+    /// has a tiny window, so the old file stays open throughout: if it was
+    /// replaced (inode changed) before our rename, or written to after our
+    /// check, their version is put back, our edit is withdrawn and the caller
+    /// gets `E_CONFLICT`. ponytail: a writer hitting the microseconds between
+    /// our rename and that restore can still lose; only cooperation (the qd
+    /// lock) closes it completely.
     fn replace(&self, expected_version: &str, text: &str) -> Result<String> {
-        let current = version_of(&fs::read(&self.path)?);
-        if current != expected_version {
-            return Err(QdError::Conflict(format!(
-                "expected version {expected_version}, file is now {current}"
-            )));
-        }
+        use std::io::{Read, Seek};
+        let read_all = |f: &mut fs::File| -> Result<Vec<u8>> {
+            let mut buf = Vec::new();
+            f.rewind()?;
+            f.read_to_end(&mut buf)?;
+            Ok(buf)
+        };
+        let conflict = |v: &str| {
+            QdError::Conflict(format!(
+                "expected version {expected_version}, file is now {v}"
+            ))
+        };
+        let mut old = fs::File::open(&self.path)?;
         let name = self.path.file_name().unwrap().to_string_lossy();
         let tmp = self
             .path
             .with_file_name(format!(".{name}.qd-tmp-{}", std::process::id()));
         fs::write(&tmp, text)?;
-        if let Ok(meta) = fs::metadata(&self.path) {
+        if let Ok(meta) = old.metadata() {
             fs::set_permissions(&tmp, meta.permissions())?;
         }
+        let current = version_of(&read_all(&mut old)?);
+        if current != expected_version || replaced(&old, &self.path) {
+            let _ = fs::remove_file(&tmp);
+            return Err(conflict(&current));
+        }
         fs::rename(&tmp, &self.path)?;
+        let late = read_all(&mut old)?;
+        if version_of(&late) != expected_version {
+            // someone wrote to the file between our check and our rename
+            fs::write(&tmp, &late)?;
+            fs::rename(&tmp, &self.path)?;
+            return Err(conflict(&version_of(&late)));
+        }
         Ok(version_of(text.as_bytes()))
     }
 
     /// Write an edit made against `before`; journals it for undo and clears redo.
     pub fn write(&self, before: &Deck, text: &str, op: &str) -> Result<String> {
+        let _lock = self.lock()?;
         let version = self.replace(&before.version, text)?;
         let entry = Entry {
             ts: SystemTime::now()
@@ -119,6 +173,7 @@ impl Store {
     }
 
     pub fn undo(&self) -> Result<(String, String)> {
+        let _lock = self.lock()?;
         let e = self.pop("undo")?;
         let current = version_of(&fs::read(&self.path)?);
         if current != e.version_after {
@@ -133,6 +188,7 @@ impl Store {
     }
 
     pub fn redo(&self) -> Result<(String, String)> {
+        let _lock = self.lock()?;
         let e = self.pop("redo")?;
         let current = version_of(&fs::read(&self.path)?);
         if current != e.version_before {
