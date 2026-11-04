@@ -65,6 +65,7 @@ export function makeActions(api) {
       ],
     },
     '-',
+    { id: 'slide-notes', label: 'Speaker notes…', run: (t) => api.editNotes(t) },
     { id: 'slide-source', label: 'Edit slide source', run: (t) => api.beginSlideSource(t) },
     { id: 'slide-link', label: 'Copy link to slide', run: (t) => navigator.clipboard?.writeText(api.slideUrl(t.anchor)).then(() => api.say('Link copied')) },
   ];

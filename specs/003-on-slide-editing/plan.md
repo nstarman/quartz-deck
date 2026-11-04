@@ -68,6 +68,21 @@ concurrent agent edits (V).
 Post-design re-check: PASS — data model adds no state to the deck; the only
 browser-only state is the edit session and panel visibility.
 
+Final check after implementation (T038, 2026-11-04): PASS. I — built from
+public docs (Pandoc/Quarto markdown, reveal.js, DOM/ARIA); no slides.com
+material. II — every on-slide edit goes through a qd op that writes only the
+element's span (heading never re-pinned by element edits); the round-trip gate
+keeps untouched markup; `Attrs` now keeps untouched attribute items as written;
+browser tests assert exact bytes and undo restores them. III — every menu,
+bar and key action is a `qd` command (`qd block add|move|rm|dup|class`,
+`edit/title --expect-text`), documented in the skill; the API maps them 1:1.
+IV — the preview is the editor; renders wait while an edit is open. V —
+element-level conflict checks, conflict bar keeps both versions, 50-edit
+person+agent stress test in CI. VI — tests written first for each piece (CLI,
+ops, 17 browser tests over a corpus). VII — no framework or new dependency;
+two concision audits (−122 and −60 lines). Deviations recorded in tasks.md
+(4-deck corpus; T006 built with US6; server-side trim unnecessary).
+
 ## Project Structure
 
 ### Documentation (this feature)

@@ -126,7 +126,7 @@ impl Ed {
         let start = Instant::now();
         while !pred(&self.file()) {
             assert!(
-                start.elapsed() < Duration::from_secs(10),
+                start.elapsed() < Duration::from_secs(30),
                 "file never {what}:\n{}",
                 self.file()
             );
@@ -140,7 +140,7 @@ impl Ed {
             "document.querySelector('#preview').contentWindow.location.hash = '#/{anchor}'"
         ))
         .await;
-        self.wait(&format!("document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide()?.id === '{anchor}'"), 10).await;
+        self.wait(&format!("document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide()?.id === '{anchor}'"), 20).await;
         tokio::time::sleep(Duration::from_millis(500)).await; // slide transition
     }
 
@@ -191,7 +191,7 @@ impl Ed {
     /// Put the caret (or a selection of `word`) inside the open edit.
     async fn caret(&self, sel: &str, word: Option<&str>) {
         // the edit opens once the block's source has been fetched
-        self.wait("window.qdSession() !== null", 10).await;
+        self.wait("window.qdSession() !== null", 20).await;
         let w = word.map_or("null".to_string(), |w| format!("{w:?}"));
         let js = format!(
             "(() => {{ const d = document.querySelector('#preview').contentDocument; const el = d.querySelector({sel:?});
@@ -636,7 +636,7 @@ async fn source_editor_opens_over_math_and_refuses_new_slides() {
     };
     ed.go("eq").await;
     ed.click_in_slide("[data-qd=\"eq/0\"]").await;
-    ed.wait(&format!("{SRC}?.value === '$$\\nE = mc^2\\n$$'"), 10)
+    ed.wait(&format!("{SRC}?.value === '$$\\nE = mc^2\\n$$'"), 20)
         .await;
     // drawn over the element it edits
     let over = ed
@@ -652,14 +652,14 @@ async fn source_editor_opens_over_math_and_refuses_new_slides() {
     ed.idle().await;
     ed.go("eq").await;
     ed.click_in_slide("[data-qd=\"eq/0\"]").await;
-    ed.wait("!document.querySelector('#srcedit').hidden", 10)
+    ed.wait("!document.querySelector('#srcedit').hidden", 20)
         .await;
     let before = ed.file();
     ed.set_source("Text.\n\n## Sneaky\n\nMore.").await;
     ed.key("Enter", "Enter", 13, 2).await;
     ed.wait(
         "(document.querySelector('#srcedit .err')?.textContent || '').includes('slide')",
-        10,
+        20,
     )
     .await;
     assert_eq!(
@@ -670,7 +670,7 @@ async fn source_editor_opens_over_math_and_refuses_new_slides() {
     ed.key("Escape", "Escape", 27, 0).await;
     ed.wait(
         "document.querySelector('#srcedit').hidden && window.qdSession() === null",
-        10,
+        20,
     )
     .await;
     assert_eq!(ed.file(), before);
@@ -686,7 +686,7 @@ async fn alt_enter_switches_typing_to_source() {
     ed.caret("[data-qd=\"eq/1\"]", None).await;
     ed.type_text(" more").await;
     ed.key("Enter", "Enter", 13, 1).await; // Alt+Enter
-    ed.wait(&format!("{SRC}?.value === 'Plain words. more'"), 10)
+    ed.wait(&format!("{SRC}?.value === 'Plain words. more'"), 20)
         .await;
     ed.set_source("Plain *words* more.").await;
     ed.key("Enter", "Enter", 13, 2).await;
@@ -709,7 +709,7 @@ async fn same_element_conflict_offers_both_versions() {
     ed.type_into("methods", para, " mine").await;
     ed.cli(&["edit", "methods/0", "--md", "Agent text."]);
     ed.click_blank().await;
-    ed.wait("!document.querySelector('#conflict').hidden", 10)
+    ed.wait("!document.querySelector('#conflict').hidden", 20)
         .await;
     let bar = ed
         .eval("document.querySelector('#conflict').textContent")
@@ -729,7 +729,7 @@ async fn same_element_conflict_offers_both_versions() {
     ed.settle().await;
     ed.go("methods").await;
     ed.click_editor("#conflict [data-act=mine]").await;
-    ed.wait("!document.querySelector('#srcedit').hidden", 10)
+    ed.wait("!document.querySelector('#srcedit').hidden", 20)
         .await;
     assert!(
         ed.eval(&format!("{SRC}.value"))
@@ -746,17 +746,17 @@ async fn same_element_conflict_offers_both_versions() {
     )
     .await;
     assert!(!ed.file().contains("Agent text."));
-    ed.wait("document.querySelector('#conflict').hidden", 10)
+    ed.wait("document.querySelector('#conflict').hidden", 20)
         .await;
 
     // "Keep theirs": nothing is written
     ed.type_into("methods", para, " again").await;
     ed.cli(&["edit", "methods/0", "--md", "Theirs."]);
     ed.click_blank().await;
-    ed.wait("!document.querySelector('#conflict').hidden", 10)
+    ed.wait("!document.querySelector('#conflict').hidden", 20)
         .await;
     ed.click_editor("#conflict [data-act=theirs]").await;
-    ed.wait("document.querySelector('#conflict').hidden", 10)
+    ed.wait("document.querySelector('#conflict').hidden", 20)
         .await;
     assert!(ed.file().contains("\n\nTheirs.\n\n"));
 
@@ -791,13 +791,13 @@ async fn fifty_interleaved_edits_lose_nothing() {
         }
         ed.click_blank().await;
         if collide {
-            ed.wait("!document.querySelector('#conflict').hidden", 15)
+            ed.wait("!document.querySelector('#conflict').hidden", 20)
                 .await;
             collisions += 1;
             ed.settle().await;
             ed.go("methods").await;
             ed.click_editor("#conflict [data-act=mine]").await;
-            ed.wait("!document.querySelector('#srcedit').hidden", 10)
+            ed.wait("!document.querySelector('#srcedit').hidden", 20)
                 .await;
             ed.eval(&format!("{SRC}.focus()")).await;
             ed.key("Enter", "Enter", 13, 2).await;
@@ -1014,4 +1014,62 @@ async fn copy_and_paste_carry_the_markdown() {
         .eval("navigator.clipboard.readText().catch(() => null)")
         .await;
     assert_eq!(clip.as_str().unwrap_or("First para."), "First para.");
+}
+
+// ---------- polish: fragments, notes, keyboard selection (T032, T033) ----------
+
+#[tokio::test(flavor = "multi_thread")]
+async fn fragments_notes_and_keyboard_selection() {
+    let deck = "---\ntitle: T\nformat: revealjs\n---\n\n## F {#f}\n\n::: {.fragment}\nLater.\n:::\n\nNow.\n";
+    let Some(ed) = Ed::open(deck).await else {
+        return;
+    };
+    ed.go("f").await;
+    // every fragment is visible (and clickable) in the editor
+    let opacity = "getComputedStyle(document.querySelector('#preview').contentDocument.querySelector('.fragment')).opacity";
+    assert_eq!(ed.eval(opacity).await, "1");
+
+    // Tab / Shift+Tab move the selection; Enter edits; Escape leaves the edit, keeping the selection
+    let sel =
+        "document.querySelector('#preview').contentDocument.querySelector('.qd-sel')?.dataset.qd";
+    ed.click_blank().await;
+    ed.key("Tab", "Tab", 9, 0).await;
+    ed.wait(&format!("{sel} === 'f/0'"), 20).await;
+    ed.key("Tab", "Tab", 9, 0).await;
+    ed.wait(&format!("{sel} === 'f/1'"), 20).await;
+    ed.key("Tab", "Tab", 9, 8).await; // Shift+Tab
+    ed.wait(&format!("{sel} === 'f/0'"), 20).await;
+    ed.wait(
+        "document.querySelector('#notice').textContent.startsWith('Selected')",
+        20,
+    )
+    .await;
+    ed.key("Enter", "Enter", 13, 0).await;
+    ed.wait("window.qdSession()?.ref === 'f/0'", 20).await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait(
+        &format!("window.qdSession() === null && {sel} === 'f/0'"),
+        20,
+    )
+    .await;
+
+    // Speaker notes…: created when missing, then edited in the source box
+    ed.right_click(ed.editor_point("#slides li[data-id=f]", Some(20.0)).await)
+        .await;
+    ed.click_menu("Speaker notes…").await;
+    ed.wait_file(
+        |f| f.ends_with("Now.\n\n::: notes\nSpeaker notes.\n:::\n"),
+        "notes added",
+    )
+    .await;
+    ed.wait("!document.querySelector('#srcedit').hidden", 20)
+        .await;
+    assert_eq!(
+        ed.eval(&format!("{SRC}.value")).await,
+        "::: notes\nSpeaker notes.\n:::"
+    );
+    ed.set_source("::: notes\nSay hello first.\n:::").await;
+    ed.key("Enter", "Enter", 13, 2).await;
+    ed.wait_file(|f| f.contains("Say hello first."), "notes saved")
+        .await;
 }

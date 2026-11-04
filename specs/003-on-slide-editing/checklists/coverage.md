@@ -18,3 +18,13 @@ position, and an append leave all other source bytes identical).
 
 Known easy wins for later: plain autolinks, `_`/`__` emphasis (keep the
 source's marker as the bullet hint does).
+
+## Re-run after P2 and its audit (2026-11-04)
+
+Same result: **22 / 33** typeable, splice check clean for every typeable
+block. T035 is met by this check together with the CLI tests: the gate test
+inserts at *every* mapped position of every typeable block (stronger than one
+edited word) and asserts the source changes only there, and
+`edit_changes_only_the_element_bytes` / `source_that_breaks_slide_structure_is_refused`
+show `qd edit` (used by typed and source saves alike) writes nothing outside
+the element and refuses structure changes.
