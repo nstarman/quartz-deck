@@ -59,7 +59,7 @@ keep the schema, this file's commands and the Skill in sync.
 
 | Command | Output |
 |---|---|
-| `qd render [--to FORMAT]` | `{"ok", "output": "path/to/deck.html", "log"}` |
+| `qd render [--to FORMAT]` | `{"ok", "op": "render", "output": "<absolute path>", "format", "log"}`; same as `quarto render` in the deck's folder (project `output-dir` etc. apply); `E_RENDER` with the log in `details` |
 | `qd serve [--port N] [--open] [--detach]` | prints `{"url", "port", "pid"}` then runs until stopped; `--detach` returns immediately |
 | `qd stop` | `{"ok", "pid"}`; stops this deck's server |
 

@@ -85,6 +85,12 @@ enum Cmd {
         #[arg(long)]
         detach: bool,
     },
+    /// Render the deck with Quarto (as `quarto render`) and report the output
+    Render {
+        /// Output format (default: the deck's own, usually revealjs)
+        #[arg(long)]
+        to: Option<String>,
+    },
     /// URL of the running preview (optionally opening on a slide)
     Url { slide: Option<String> },
     /// Stop the running preview server for this deck
@@ -275,6 +281,7 @@ fn output_of(cmd: &str) -> &'static str {
         }
         "serve" => r#"{"url","port","pid"} (one line, then serves until stopped)"#,
         "url" => r#"{"url"}"#,
+        "render" => r#"{"ok","output":"<absolute path>","format","log"}"#,
         "stop" => r#"{"ok","pid"}"#,
         "schema" => r#"{"commands":[...],"errors":[...]}"#,
         "skill" => r#"{"skill":"<markdown>"} or {"ok","path"} with --install"#,
@@ -560,6 +567,7 @@ impl Ctx<'_> {
 /// Commands the HTTP API may run (FR-010). No server control, no file I/O
 /// beyond the deck itself.
 const API_OPS: &[&str] = &[
+    "render",
     "box add",
     "box move",
     "box resize",
@@ -712,6 +720,12 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             Ok(v)
         }
         Cmd::Serve { port, open, detach } => serve(&ctx.store()?, *port, *open, *detach),
+        Cmd::Render { to } => {
+            let s = ctx.store()?;
+            let (output, log) = crate::render::render_deck(&s.path, to.as_deref())?;
+            let format = to.clone().unwrap_or_else(|| "revealjs".into());
+            Ok(json!({"ok": true, "op": "render", "output": output, "format": format, "log": log}))
+        }
         Cmd::Url { slide } => {
             let (s, d) = read()?;
             let url = crate::server::running_url(&s)?;

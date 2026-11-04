@@ -515,6 +515,25 @@ async function undoRedo(kind) {
   const r = await op(kind);
   if (r) { await fetchDeck(); await renderPanel(); }
 }
+$('#render').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  btn.textContent = 'Rendering…';
+  const link = $('#rendered');
+  try {
+    const r = await op('render');
+    if (!r) return;
+    say('Rendered → ' + r.output.split(/[\\/]/).pop());
+    link.hidden = !r.href;
+    if (r.href) {
+      link.href = r.href + '?v=' + Date.now();
+      link.title = r.output;
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Render';
+  }
+});
 $('#undo').addEventListener('click', () => undoRedo('undo'));
 $('#redo').addEventListener('click', () => undoRedo('redo'));
 

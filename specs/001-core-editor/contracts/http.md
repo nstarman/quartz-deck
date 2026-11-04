@@ -18,7 +18,8 @@ positional names and long flags (arrays repeat a flag, `true` sets a switch),
 e.g. `{"op": "set", "args": {"slide": "intro", "attr": ["transition=fade"], "class": ["center"]}}`.
 The server rebuilds the command line and runs it through the CLI's own parser,
 so the GUI exposes nothing the CLI lacks (FR-010). Allowed ops: read ops,
-edits, `undo`/`redo`; not `serve`/`stop`/`new`/`skill`; no `file` or stdin
+edits, `undo`/`redo`, `render` (whose reply adds `href`, a `/preview/…` URL
+for the output when it lies inside the deck folder); not `serve`/`stop`/`new`/`skill`; no `file` or stdin
 input.
 
 Security: `/api/op` requires `Content-Type: application/json` (cross-site

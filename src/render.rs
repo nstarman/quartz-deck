@@ -174,6 +174,54 @@ pub fn render(
     Ok(out_dir.join(format!("{name}.html")))
 }
 
+/// Final render of the deck file itself (US5): exactly `quarto render <deck>
+/// [--to FORMAT]` run in the deck's directory, so a `_quarto.yml` project's
+/// `output-dir`, `embed-resources` etc. apply. Returns the output path (from
+/// Quarto's "Output created:" line) and a cleaned log.
+pub fn render_deck(deck_path: &Path, to: Option<&str>) -> Result<(PathBuf, String)> {
+    let quarto = quarto()?;
+    if let Some(f) = to
+        && (f.is_empty()
+            || f.starts_with('-')
+            || !f
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "-_+.".contains(c)))
+    {
+        return Err(QdError::InvalidArg(format!(
+            "'{f}' is not a Quarto format name"
+        )));
+    }
+    let dir = deck_path.parent().unwrap_or(Path::new("."));
+    let mut cmd = Command::new(quarto);
+    cmd.arg("render")
+        .arg(deck_path.file_name().unwrap())
+        .current_dir(dir);
+    if let Some(f) = to {
+        cmd.args(["--to", f]);
+    }
+    let out = cmd.output()?;
+    let log = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    if !out.status.success() {
+        return Err(QdError::Render(clean_log(&log, "\u{0}")));
+    }
+    let created = log
+        .lines()
+        .rev()
+        .find_map(|l| l.trim().strip_prefix("Output created:"))
+        .map(|p| dir.join(p.trim()))
+        .ok_or_else(|| {
+            QdError::Render(format!(
+                "Quarto succeeded but reported no output file:\n{log}"
+            ))
+        })?;
+    let created = std::fs::canonicalize(&created).unwrap_or(created);
+    Ok((created, clean_log(&log, "\u{0}")))
+}
+
 /// Quarto's error output without ANSI colors, its JS stack trace, or our temp file name.
 fn clean_log(log: &str, temp_name: &str) -> String {
     let mut plain = String::with_capacity(log.len());
