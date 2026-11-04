@@ -1,0 +1,39 @@
+---
+title: Code
+format: revealjs
+jupyter: python3
+---
+
+## A Python cell
+
+```{python}
+#| echo: true
+# This comment looks like a heading but is inside code
+import numpy as np
+
+## also not a heading
+x = np.arange(10)
+```
+
+## An R cell
+
+```{r}
+#| fig-cap: "A plot"
+
+# comment
+plot(1:10)
+```
+
+## Plain code
+
+~~~bash
+# not a heading
+echo hi
+~~~
+
+````markdown
+```{python}
+nested fence
+```
+## still code
+````

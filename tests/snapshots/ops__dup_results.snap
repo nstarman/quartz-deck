@@ -1,0 +1,17 @@
+---
+source: tests/ops.rs
+expression: "ops::diff(&d.text, &after)"
+---
+--- before
++++ after
+@@ -15,4 +15,11 @@
+ ![](plot.png){#b-plot .absolute top=10 left=20 width=300 height=200}
+ 
++## Results {#results-1 .smaller}
++
++- one
++- two
++
++![](plot.png){#b-38bd .absolute top=10 left=20 width=300 height=200}
++
+ ---

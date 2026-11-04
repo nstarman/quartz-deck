@@ -1,0 +1,30 @@
+---
+title: Notes
+format: revealjs
+---
+
+## Speaker notes
+
+Visible text.
+
+. . .
+
+Revealed after a pause.
+
+::: {.notes}
+These are speaker notes.
+
+With two paragraphs.
+:::
+
+## Incremental
+
+::: {.incremental}
+- One
+- Two
+- Three
+:::
+
+::: notes
+Shorthand notes div.
+:::

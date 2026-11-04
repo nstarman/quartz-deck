@@ -1,0 +1,9 @@
+---
+format: revealjs
+---
+
+Text before any heading becomes an untitled slide.
+
+## Then a real slide
+
+Content.

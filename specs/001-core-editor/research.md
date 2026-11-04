@@ -43,8 +43,9 @@ material was consulted (CLEANROOM.md).
   `"explicit": false`), else positional `@N`. Any edit that needs to address
   a slide by a non-explicit ID first writes `{#id}` to that slide's heading
   (`---` untitled slides become `## {#id}`, which Quarto treats as an
-  untitled slide). New slides/boxes always get explicit IDs
-  (`s-<4 hex>`, `b-<4 hex>`). Elements without IDs are addressed as
+  untitled slide; an untitled heading's Pandoc id is `section`, `section-1`…).
+  New slides get an explicit id from the slug of their title (unique,
+  e.g. `results-1`), or `s-<4 hex>` if untitled; copied boxes `b-<4 hex>`. Elements without IDs are addressed as
   `<slide>/<index>` (index among top-level blocks).
 - **Rationale**: Gives agents stable handles while touching only the slide
   being edited (FR-003).
@@ -89,6 +90,18 @@ renders `<section id="untitled-x" class="slide level2">`; a
 `::: {data-qd="intro/0"}` wrapper passes `data-qd` through to HTML;
 `.absolute top=100 left=200 …` renders `style="top: 100px; left: 200px; …"`;
 `.notes` still becomes `<aside class="notes">`.
+
+**Verified (corpus vs. Quarto 1.11.9)**: slide ids computed by qd match the
+`<section id>`s Quarto emits for every corpus deck that renders. Found and
+handled: a slide-level heading *inside* a fenced div still splits a slide in
+Quarto — qd marks that slide opaque (structural edits refused, `qd check`
+warns) rather than modelling the split.
+
+**Implementation notes (US2)**: rule/implicit slides get a synthetic
+`## {#qd-N}` heading in the preview copy so every `<section>` has an
+anchor. Quarto errors are shown without ANSI codes, JS stack trace or the
+temp-file name. `qd check` renders only with `--render` (an LLM runs `check`
+after every edit; a 1–10 s render each time would slow the loop).
 
 ## R6. Live update channel
 
@@ -136,3 +149,55 @@ All are compatible with private, proprietary use. Each is re-checked with
   `~/.claude/skills/quartz-deck/`. A test asserts every command named in the
   Skill exists in `qd schema`.
 - **Rationale**: Keeps Skill and CLI in sync (FR-014).
+
+## R10. Lessons from the `quarto-revealjs` skill (nstarman/skills#25)
+
+That skill (verified against Quarto 1.11.9 / reveal.js 5.1.0) sets up deck
+folders for offline, single-file decks: a Quarto **project** (`_quarto.yml`
+with `output-dir: _output`, `embed-resources: true`, `include-in-header:
+_deck/header.html` loading local MathJax 3.2.2 / plotly.js). Checked qd
+against that layout:
+
+- **Fixed — preview/check failed in a project.** Quarto leaves `.`/`_`-prefixed
+  files out of a project, so the hidden copy `.deck.qd-preview.qmd` was
+  rendered as a stray file ("--output-dir can only be used when rendering
+  projects") and would have skipped `_quarto.yml` (header, MathJax). The copy
+  is now `deck.qd-preview.qmd` next to the deck (removed after render), and
+  `--output-dir` still keeps it out of the project's `_output/`.
+- **Preview skips `embed-resources`** (`-M embed-resources:false`): inlining
+  MathJax + 4.6 MB plotly.js on every edit is slow (2.5 s → 0.9 s even with
+  stub libraries); the preview is served over HTTP anyway. `qd check --render`
+  keeps the project's setting, so missing `_vendor/` files still fail there.
+- **Fixed — hidden slides.** `{visibility="hidden"}` slides are dropped from
+  Quarto's output, so they could not be seen or edited. The preview copy turns
+  them into `data-qd-hidden="true"` (shown with a badge); `qd slides` reports
+  `"hidden"`. `{visibility="uncounted"}` needs nothing.
+- **Fixed — raw blocks.** ```` ```{=html} ```` (the guide's way to add
+  scripts) is classified `html`, not an executable `cell`.
+- Consistent with qd already: `.absolute` with unitless px; `## Title {#id}`
+  ids; untitled `## {…}` slides; speaker notes as `::: {.notes}`.
+- Slide **links** inside a deck must be `[text](#id)`, not `#/id` (Quarto
+  rewrites it to `#//id`). qd's `#/id` URLs are reveal navigation of the
+  *preview page*, not deck content, so they are unaffected.
+- Out of scope for 001, candidates for US5/export: the skill's
+  `check_offline.py` (no network requests, no raw TeX) and `make_pdf.py`
+  (`?print-pdf` via Playwright) are the right model for an offline check and
+  PDF export; they need Playwright + Chrome, which qd does not depend on today.
+
+## R11. Concurrency limits found by CI (T049)
+
+Rename-based atomic writes cannot be made airtight against a writer that does
+not cooperate (POSIX has no compare-and-swap on file contents). qd therefore:
+
+- serializes its own writers (CLI, editor server) with an exclusive lock on
+  `<cache>/lock` held across check + write + journal: **guaranteed** no lost
+  edits between qd processes (strict CI test);
+- refuses with `E_CONFLICT` when the file changed since it was read
+  (version token; editors' ordinary saves are caught here);
+- keeps the old file open across the rename and backs out if it was replaced
+  or written to in the window — **best effort**: under an artificial appender
+  writing every 25 ms during ~130 qd writes/s, 0/~1400 appends were lost on
+  macOS but ~10% on a loaded 2-vCPU Linux runner.
+
+SC-007 ("zero data loss across concurrent CLI/GUI/external-editor use") holds
+for CLI/GUI; for external editors it holds except for sub-millisecond races.

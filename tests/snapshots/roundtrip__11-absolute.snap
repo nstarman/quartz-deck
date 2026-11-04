@@ -1,0 +1,9 @@
+---
+source: tests/roundtrip.rs
+expression: "Deck::parse(text).outline()"
+---
+slide_level=2 size=1050x700 front_matter=true title_slide=true nl="\n"
+@1 boxes Heading L2 title=Some("Boxes") attrs={#boxes}
+    b-logo Box "![](figures/logo.png){#b-logo .absolute top=200 le"
+    b-note Box "::: {#b-note .absolute top=\"50\" left=\"600\" width=\""
+    boxes/2 Box "::: {.absolute bottom=10 right=10 width=20%}"

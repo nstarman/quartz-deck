@@ -1,0 +1,13 @@
+---
+source: tests/roundtrip.rs
+expression: "Deck::parse(text).outline()"
+---
+slide_level=2 size=1050x700 front_matter=true title_slide=true nl="\n"
+@1 part-one (auto) Section L1 title=Some("Part One")
+@2 a Heading L2 title=Some("Slide A") attrs={#a}
+    a/0 Para "Text for A."
+@3 b Heading L2 title=Some("Slide B") attrs={#b .smaller}
+    b/0 Para "Text for B."
+@4 part-two (auto) Section L1 title=Some("Part Two") attrs={background-color="#283b95"}
+@5 slide-c (auto) Heading L2 title=Some("Slide C")
+    slide-c/0 Para "Text for C."
