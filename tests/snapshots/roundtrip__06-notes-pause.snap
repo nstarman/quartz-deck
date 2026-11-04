@@ -1,0 +1,13 @@
+---
+source: tests/roundtrip.rs
+expression: "Deck::parse(text).outline()"
+---
+slide_level=2 size=1050x700 front_matter=true title_slide=true nl="\n"
+@1 speaker-notes (auto) Heading L2 title=Some("Speaker notes")
+    speaker-notes/0 Para "Visible text."
+    speaker-notes/1 Pause ". . ."
+    speaker-notes/2 Para "Revealed after a pause."
+    speaker-notes/3 Notes "::: {.notes}"
+@2 incremental (auto) Heading L2 title=Some("Incremental")
+    incremental/0 Div "::: {.incremental}"
+    incremental/1 Notes "::: notes"

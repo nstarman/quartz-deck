@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # SC-005 (< 3 s edit-to-preview) is checked at 3 s locally; GitHub's 2-vCPU
+  # runners render several decks in parallel, so allow more here (the test
+  # prints the measured time either way).
+  QD_PREVIEW_BUDGET_SECS: "10"
+  QUARTO_VERSION: 1.11.9   # the version research.md and the checklists were verified against
+
+jobs:
+  test:
+    name: fmt, clippy, tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: ${{ env.QUARTO_VERSION }}
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Tests (Quarto-backed tests run, not skip)
+        run: |
+          quarto --version
+          cargo test
+
+      - name: Performance (100-slide deck, SC-004)
+        run: cargo test --release --test cli -- --ignored

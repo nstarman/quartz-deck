@@ -1,0 +1,29 @@
+---
+title: Lists
+format: revealjs
+---
+
+## Loose list
+
+- Item one
+
+- Item two
+
+  Continued paragraph of item two.
+
+- Item three
+
+  ```python
+  # code in list
+  x = 1
+  ```
+
+## Numbered
+
+1. One
+2. Two
+   a. Nested
+3. Three
+
+#. Example list
+#. Another

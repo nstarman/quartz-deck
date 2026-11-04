@@ -1,0 +1,12 @@
+---
+source: tests/roundtrip.rs
+expression: "Deck::parse(text).outline()"
+---
+slide_level=2 size=1050x700 front_matter=true title_slide=true nl="\n"
+@1 image-background (auto) Heading L2 title=Some("Image background") attrs={background-image="img/bg.jpg" background-size="cover"}
+@2 section (auto) Heading L2 title=None attrs={background-color="aquamarine"}
+    section/0 Para "Untitled with background."
+@3 transition (auto) Heading L2 title=Some("Transition") attrs={transition="fade" transition-speed="slow" .center}
+    transition/0 Para "Text."
+@4 closing-sequence (auto) Heading L2 title=Some("Closing `###` sequence")
+    closing-sequence/0 Para "Text."

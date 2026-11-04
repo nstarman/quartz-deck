@@ -1,0 +1,13 @@
+---
+source: tests/ops.rs
+expression: "ops::diff(&d.text, &after)"
+---
+--- before
++++ after
+@@ -8,5 +8,5 @@
+ Hello world.
+ 
+-## Results {#results .smaller}
++## Results {#results .center background-color="#283b95"}
+ 
+ - one

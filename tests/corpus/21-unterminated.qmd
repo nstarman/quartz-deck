@@ -1,0 +1,15 @@
+---
+title: Broken
+format: revealjs
+---
+
+## Good slide
+
+Fine.
+
+## Broken slide
+
+```python
+x = 1
+
+## This looks like a slide but the fence never closes

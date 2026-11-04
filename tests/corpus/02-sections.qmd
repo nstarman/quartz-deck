@@ -1,0 +1,23 @@
+---
+title: Sections
+format:
+  revealjs:
+    theme: dark
+    slide-number: true
+---
+
+# Part One
+
+## Slide A {#a}
+
+Text for A.
+
+## Slide B {#b .smaller}
+
+Text for B.
+
+# Part Two {background-color="#283b95"}
+
+## Slide C
+
+Text for C.

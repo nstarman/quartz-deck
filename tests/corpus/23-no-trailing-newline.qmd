@@ -1,0 +1,7 @@
+---
+format: revealjs
+---
+
+## Last
+
+No trailing newline

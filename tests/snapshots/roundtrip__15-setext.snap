@@ -1,0 +1,11 @@
+---
+source: tests/roundtrip.rs
+expression: "Deck::parse(text).outline()"
+---
+slide_level=2 size=1050x700 front_matter=true title_slide=false nl="\n"
+@1 setext-slide (auto) Heading L2 title=Some("Setext Slide")
+    setext-slide/0 Para "Body text."
+@2 top-setext (auto) Section L1 title=Some("Top Setext")
+    top-setext/0 Para "Section body."
+@3 atx-after (auto) Heading L2 title=Some("ATX after")
+    atx-after/0 Para "done"

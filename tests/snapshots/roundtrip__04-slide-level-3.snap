@@ -1,0 +1,13 @@
+---
+source: tests/roundtrip.rs
+expression: "Deck::parse(text).outline()"
+---
+slide_level=3 size=1050x700 front_matter=true title_slide=true nl="\n"
+@1 chapter (auto) Section L1 title=Some("Chapter")
+@2 section (auto) Section L2 title=Some("Section")
+@3 slide-one (auto) Heading L3 title=Some("Slide one")
+    slide-one/0 Para "Content one."
+    slide-one/1 Heading "#### A sub-heading inside the slide"
+    slide-one/2 Para "More content."
+@4 slide-two (auto) Heading L3 title=Some("Slide two")
+    slide-two/0 Para "Content two."

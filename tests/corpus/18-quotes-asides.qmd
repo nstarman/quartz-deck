@@ -1,0 +1,23 @@
+---
+title: Quotes
+format: revealjs
+---
+
+## Quote
+
+> A block quote
+> over two lines.
+
+::: aside
+An aside at the bottom.
+:::
+
+::: footer
+Custom footer
+:::
+
+## Footnotes
+
+Text with a footnote.^[The footnote.]
+
+[^long]: A long footnote definition.

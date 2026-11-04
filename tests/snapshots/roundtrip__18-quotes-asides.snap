@@ -1,0 +1,12 @@
+---
+source: tests/roundtrip.rs
+expression: "Deck::parse(text).outline()"
+---
+slide_level=2 size=1050x700 front_matter=true title_slide=true nl="\n"
+@1 quote (auto) Heading L2 title=Some("Quote")
+    quote/0 Quote "> A block quote"
+    quote/1 Div "::: aside"
+    quote/2 Div "::: footer"
+@2 footnotes (auto) Heading L2 title=Some("Footnotes")
+    footnotes/0 Para "Text with a footnote.^[The footnote.]"
+    footnotes/1 Para "[^long]: A long footnote definition."

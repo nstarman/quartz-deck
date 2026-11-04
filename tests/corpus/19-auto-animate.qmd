@@ -1,0 +1,22 @@
+---
+title: Animate
+format: revealjs
+---
+
+## Animate {auto-animate=true}
+
+::: {data-id="box1" style="background: red; width: 100px; height: 100px;"}
+:::
+
+## Animate {auto-animate=true}
+
+::: {data-id="box1" style="background: red; width: 300px; height: 300px;"}
+:::
+
+## Duplicate title
+
+One.
+
+## Duplicate title
+
+Two.
