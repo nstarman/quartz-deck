@@ -17,6 +17,9 @@ open questions each spec must settle.
 | 008 | export-formats | planned | An **Export ▾** drop-down (and `qd export --to <format>`) for every format Quarto/Pandoc can write: PowerPoint, PDF (Beamer/LaTeX or Typst), Word, HTML, Markdown, Jupyter notebook, and more |
 | 009 | history | planned | Optional **save = git commit** (a setting), a **History** side panel to scroll back through versions with a side-by-side preview of the deck as it was, diff any version against now (source and rendered slides), and restore a whole version or just one slide/element |
 
+Every PR — spec or small — passes a concision audit (`/pr-audit`,
+constitution 1.1.0) before it is marked ready.
+
 Small editor improvements that don't need a spec (e.g. the side-scrolling
 slide strip and hover preview, PR #3) go straight to a PR.
 
