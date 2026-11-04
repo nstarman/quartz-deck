@@ -1,0 +1,10 @@
+---
+title: "Chalkboard"
+format:
+  revealjs:
+    chalkboard: true
+---
+
+## Draw {#draw}
+
+Cannot be a single offline file.

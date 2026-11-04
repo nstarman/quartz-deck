@@ -67,6 +67,7 @@ when the current directory has exactly one `.qmd`.
 | move / resize / delete box | `qd box move #b-1a2b --by 0,40`, `qd box resize #b-1a2b --size 400,300`, `qd box rm #b-1a2b` |
 | validate | `qd check` (add `--render` to run Quarto) |
 | final output | `qd render` (→ `output` path; `--to pdf` etc. for other formats) |
+| works without network? | `qd check --offline` (headless Chrome, network blocked; problems per slide with hints) |
 | live preview | `qd serve --detach`, then `qd url results`; `qd stop` when done |
 | undo / redo | `qd undo` / `qd redo` |
 | new deck | `qd new talk.qmd --title "My talk"` |
@@ -74,6 +75,38 @@ when the current directory has exactly one `.qmd`.
 
 Multi-line markdown: pass real newlines, or use `--md -` with stdin, or
 `--file body.md`.
+
+## Offline export (talks without Wi-Fi, archives)
+
+A rendered Quarto deck usually still needs the internet (MathJax from a CDN on
+every deck, KaTeX never embedded, Plotly's own web scripts, background videos
+left as separate files). On a connected machine it *looks* fine, so check it:
+
+1. `qd check --offline` — renders the deck and opens it in headless Chrome with
+   the network blocked; each problem has a `code`, the `slide`, and a `hint`.
+2. `qd export` — writes `export/<deck>.html` (one self-contained file) plus any
+   files that cannot be inlined (background video/iframe), with the offline
+   setup applied to a copy (your `.qmd` and `_quarto.yml` are never changed),
+   and runs the check on the result. `--pdf` adds `export/<deck>.pdf`
+   (one page per fragment step; `--per-slide`, `--notes` for speaker notes).
+3. `qd pdf` — re-print the latest export (`--notes`, `--per-slide`).
+
+If the check fails, the export is **not** replaced (exit 1, `E_OFFLINE`, the
+report is still on stdout with `"ok": false`). Fix the reported problem and
+export again:
+
+| problem | fix |
+|---|---|
+| `P_NETWORK` | something loads from the web; `qd export` bundles MathJax/plotly.js, otherwise remove or download the resource |
+| `P_MISSING_FILE` | the background video/iframe/parallax file isn't at that path next to the deck: add it or fix the path (`qd set <slide> --attr background-video=...`) |
+| `P_RAW_TEX` | math not typeset offline (KaTeX, or the web MathJax); `qd export` uses local MathJax |
+| `P_PAGE_ERROR` | a script on the page failed (`{=html}` blocks, embedded apps) |
+| `P_OFFLINE_INCOMPATIBLE` | multiplex (needs a server); chalkboard cannot be one file (`E_OFFLINE_INCOMPATIBLE` from `qd export`) |
+| `P_NOTES_VISIBLE` (warning) | `show-notes` in the YAML shows notes to the audience: `qd meta unset show-notes` if it's top-level |
+
+The first export downloads MathJax 3.2.2 (and Chrome for Testing if no
+Chrome/Chromium is installed; `qd browser` shows which is used), verified by
+SHA-256; later exports work offline. `--no-download` forbids downloads.
 
 ## Errors and what to do
 
@@ -89,6 +122,9 @@ Multi-line markdown: pass real newlines, or use `--md -` with stdin, or
 | `E_NO_DECK` | no/several decks | pass `--deck PATH` |
 | `E_NO_SERVER` | no preview running | `qd serve --detach` |
 | `E_NO_QUARTO` | Quarto missing (preview/render only) | install Quarto; edits still work |
+| `E_OFFLINE` | the deck would not work offline | read `problems` in the stdout report; fix; re-run |
+| `E_OFFLINE_INCOMPATIBLE` | chalkboard/multiplex can't be one offline file | remove the feature for the export |
+| `E_NO_BROWSER` / `E_DOWNLOAD` | no Chrome, or a download failed its checksum | install Chrome, or allow the download; retry |
 
 ## Worked examples
 

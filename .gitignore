@@ -7,6 +7,8 @@
 *.log
 # Quarto render outputs inside tests/
 tests/**/*.html
+!tests/fixtures/offline/apps/*.html
+!tests/fixtures/offline/skillsetup/_deck/*.html
 tests/**/*_files/
 # qd temp/preview files
 .*.qd-tmp-*

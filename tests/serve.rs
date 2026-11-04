@@ -413,6 +413,29 @@ fn api_op_over_http() {
     let (status, body) = get(server.port, "/preview/deck.html");
     assert_eq!(status, 200);
     assert!(body.contains("<section id=\"intro\"") && !body.contains("data-qd="));
+
+    // export through the API (skips the check when no browser is available)
+    let browser = qd(&dir)
+        .args(["browser", "--no-download"])
+        .output()
+        .unwrap()
+        .status
+        .success();
+    if browser {
+        std::fs::write(dir.join("deck.qmd"), BASIC).unwrap();
+        let (status, out) = post(
+            server.port,
+            "/api/op",
+            &host,
+            "application/json",
+            r#"{"op":"export","args":{"pdf":true}}"#,
+        );
+        assert_eq!(status, 200, "{out}");
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["html_href"], "/preview/export/deck.html", "{v}");
+        assert_eq!(v["pdf_href"], "/preview/export/deck.pdf", "{v}");
+        assert_eq!(get(server.port, "/preview/export/deck.pdf").0, 200);
+    }
 }
 
 /// US5 (T046): `qd render` renders the deck itself with Quarto and reports

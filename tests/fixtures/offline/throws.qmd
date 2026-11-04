@@ -1,0 +1,10 @@
+---
+title: "Throws"
+format: revealjs
+---
+
+## Error {#error}
+
+```{=html}
+<script>window.addEventListener("load", () => { throw new Error("boom from deck"); });</script>
+```

@@ -83,6 +83,13 @@ impl Store {
         &self.cache
     }
 
+    /// qd's cache root this store lives under (shared libraries, browser).
+    pub fn root(&self) -> PathBuf {
+        self.cache
+            .parent()
+            .map_or_else(cache_root, Path::to_path_buf)
+    }
+
     fn read_text(&self) -> Result<String> {
         let bytes = fs::read(&self.path)?;
         String::from_utf8(bytes)

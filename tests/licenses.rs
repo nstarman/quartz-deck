@@ -4,6 +4,9 @@
 use std::process::Command;
 
 const ALLOWED: &[&str] = &[
+    // Mozilla's root-certificate data (webpki-roots, for HTTPS downloads):
+    // a permissive data licence.
+    "CDLA-Permissive-2.0",
     "MIT",
     "Apache-2.0",
     "BSD-2-Clause",

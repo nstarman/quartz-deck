@@ -36,6 +36,17 @@ jobs:
         with:
           version: ${{ env.QUARTO_VERSION }}
 
+      # Python + plotly/jupyter so the Plotly export fixtures run (they skip
+      # without them); the runner's preinstalled Google Chrome drives the
+      # offline check and PDF (qd finds it on PATH).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Python packages for Plotly fixtures
+        run: pip install plotly jupyter
+      - name: Browser
+        run: google-chrome --version
+
       - name: Format
         run: cargo fmt --check
 
@@ -47,5 +58,8 @@ jobs:
           quarto --version
           cargo test
 
-      - name: Performance (100-slide deck, SC-004)
+      - name: Performance (100-slide deck, 001 SC-004)
         run: cargo test --release --test cli -- --ignored
+
+      - name: Export timing (30 slides + Plotly, 002 SC-004)
+        run: cargo test --release --test export export_30 -- --ignored --nocapture

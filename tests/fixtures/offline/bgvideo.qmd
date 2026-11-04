@@ -1,0 +1,8 @@
+---
+title: "Background video"
+format: revealjs
+---
+
+## Video {#video background-video="media/clip.mp4" background-video-muted="true"}
+
+Over a video.

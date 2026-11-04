@@ -236,10 +236,10 @@ function hookFrame() {
   const onReady = () => {
     // A narrow preview pane would put Reveal into its scroll view; the editor
     // always wants the normal slide view.
-    if (w.Reveal.isScrollView?.()) {
-      w.Reveal.configure({ scrollActivationWidth: 1 });
-      w.dispatchEvent(new Event('resize'));
-    }
+    // always: the pane may narrow later (panels, window), which would switch
+    // Reveal into scroll view, where hash navigation to the last slide fails
+    w.Reveal.configure({ scrollActivationWidth: 1 });
+    w.dispatchEvent(new Event('resize'));
     if (state.want && w.Reveal.getCurrentSlide()?.id !== state.want) w.location.hash = '#/' + state.want;
     state.want = null;
     if (state.selectIdAfterRender) {
@@ -534,6 +534,63 @@ $('#render').addEventListener('click', async (e) => {
     btn.textContent = 'Render';
   }
 });
+// ---------- export (spec 002 US4) ----------
+
+function renderExportPanel(r) {
+  const view = $('#export-panel').content.cloneNode(true);
+  const status = $('.status', view);
+  const check = r.check || { problems: [], ok: false };
+  status.textContent = r.ok
+    ? `Exported: ${check.slides} slides, works offline${r.pdf ? `; PDF ${r.pdf.pages} pages` : ''}.`
+    : `Not exported: ${check.problems.filter((p) => p.severity === 'error').length} problem(s); the previous export is unchanged.`;
+  status.className = 'status ' + (r.ok ? 'ok' : 'fail');
+  const list = $('.problems', view);
+  for (const p of check.problems) {
+    const li = document.createElement('li');
+    if (p.severity !== 'error') li.className = 'warn';
+    const b = document.createElement('button');
+    b.type = 'button';
+    const code = document.createElement('span');
+    code.className = 'code';
+    code.textContent = p.code + (p.slide ? ` · ${p.slide}` : '');
+    const msg = document.createElement('span');
+    msg.textContent = ' ' + p.message;
+    const hint = document.createElement('span');
+    hint.className = 'phint';
+    hint.textContent = p.hint;
+    b.append(code, msg, hint);
+    if (p.slide) b.addEventListener('click', () => { state.sel = null; go(p.slide); });
+    else b.disabled = true;
+    li.append(b);
+    list.append(li);
+  }
+  const links = $('.links', view);
+  for (const [href, label] of [[r.html_href, 'Open offline deck ↗'], [r.pdf_href, 'Open PDF ↗']]) {
+    if (!href || !r.ok) continue; // a failed export wrote nothing there
+    const a = document.createElement('a');
+    a.href = href + '?v=' + Date.now();
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = label;
+    links.append(a, ' ');
+  }
+  $('[data-act=close]', view).addEventListener('click', () => renderPanel());
+  panel.replaceChildren(view);
+}
+
+$('#export').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  btn.textContent = 'Exporting…';
+  try {
+    const r = await op('export', { pdf: $('#export-pdf').checked });
+    if (r) renderExportPanel(r);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Export';
+  }
+});
+
 $('#undo').addEventListener('click', () => undoRedo('undo'));
 $('#redo').addEventListener('click', () => undoRedo('redo'));
 
