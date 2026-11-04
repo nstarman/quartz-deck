@@ -18,6 +18,9 @@ mod common;
 use common::{have_quarto, qd};
 
 const SRC: &str = "document.querySelector('#srcedit textarea')";
+/// Default wait: generous, since all browser tests (each with Quarto and Chrome) run in parallel.
+const WAIT: u64 = 20;
+
 const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/corpus");
 
 /// Chrome to use, or None (test skips) when Quarto or a browser is missing.
@@ -74,7 +77,7 @@ impl Ed {
             _browser: browser,
             _profile: profile,
         };
-        ed.wait("(() => { const f = document.querySelector('#preview'); return !!(f && f.contentWindow?.Reveal?.isReady?.() && document.querySelector('#slides li') && window.qdSession); })()", 60).await;
+        ed.wait_secs("(() => { const f = document.querySelector('#preview'); return !!(f && f.contentWindow?.Reveal?.isReady?.() && document.querySelector('#slides li') && window.qdSession); })()", 60).await;
         Some(ed)
     }
 
@@ -106,7 +109,12 @@ impl Ed {
         r.value().cloned().unwrap_or(Value::Null)
     }
 
-    async fn wait(&self, cond: &str, secs: u64) {
+    /// Wait (up to `WAIT` s) until the JS condition is true.
+    async fn wait(&self, cond: &str) {
+        self.wait_secs(cond, WAIT).await;
+    }
+
+    async fn wait_secs(&self, cond: &str, secs: u64) {
         // a condition that throws (e.g. the preview is mid-reload after a
         // render) counts as "not yet", not as a failure
         let cond_safe = format!(
@@ -140,7 +148,7 @@ impl Ed {
             "document.querySelector('#preview').contentWindow.location.hash = '#/{anchor}'"
         ))
         .await;
-        self.wait(&format!("document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide()?.id === '{anchor}'"), 20).await;
+        self.wait(&format!("document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide()?.id === '{anchor}'")).await;
         tokio::time::sleep(Duration::from_millis(500)).await; // slide transition
     }
 
@@ -191,7 +199,7 @@ impl Ed {
     /// Put the caret (or a selection of `word`) inside the open edit.
     async fn caret(&self, sel: &str, word: Option<&str>) {
         // the edit opens once the block's source has been fetched
-        self.wait("window.qdSession() !== null", 20).await;
+        self.wait("window.qdSession() !== null").await;
         let w = word.map_or("null".to_string(), |w| format!("{w:?}"));
         let js = format!(
             "(() => {{ const d = document.querySelector('#preview').contentDocument; const el = d.querySelector({sel:?});
@@ -246,7 +254,7 @@ impl Ed {
         self.eval(&format!("(() => {{ const t = {SRC}; t.value = {text:?}; t.dispatchEvent(new Event('input')); t.focus(); }})()")).await;
     }
     async fn idle(&self) {
-        self.wait(
+        self.wait_secs(
             "window.qdSession() === null && !document.querySelector('#pending')?.textContent",
             30,
         )
@@ -255,7 +263,7 @@ impl Ed {
 
     /// Wait until the preview shows the file as it is now (render caught up, no edit open).
     async fn settle(&self) {
-        self.wait(
+        self.wait_secs(
             "(async () => { const v = (await fetch('/api/deck').then((r) => r.json())).version; const st = document.querySelector('#status').textContent; const f = document.querySelector('#preview').contentWindow; return window.qdSession() === null && st === 'rendered ' + v.slice(0, 7) && !!f.Reveal?.isReady?.(); })()",
             60,
         )
@@ -309,26 +317,29 @@ impl Ed {
     async fn hover(&self, sel: &str) {
         let (x, y) = self.slide_point(sel).await;
         self.page.move_mouse(Point { x, y }).await.unwrap();
-        self.wait("!document.querySelector('#hoverbar').hidden", 20)
+        self.wait("!document.querySelector('#hoverbar').hidden")
             .await;
     }
+    async fn src_open(&self) {
+        self.wait("!document.querySelector('#srcedit').hidden")
+            .await;
+    }
+
     async fn close_menu(&self) {
         self.key("Escape", "Escape", 27, 0).await;
-        self.wait("document.querySelector('#ctxmenu').hidden", 20)
-            .await;
+        self.wait("document.querySelector('#ctxmenu').hidden").await;
     }
     /// Select a preview element (right-click it, close the menu) so the element bar shows.
     async fn select(&self, sel: &str) {
         self.right_click(self.slide_point(sel).await).await;
-        self.wait("!document.querySelector('#ctxmenu').hidden", 20)
+        self.wait("!document.querySelector('#ctxmenu').hidden")
             .await;
         self.close_menu().await;
-        self.wait("!document.querySelector('#elbar').hidden", 20)
-            .await;
+        self.wait("!document.querySelector('#elbar').hidden").await;
     }
     /// Labels of the open context menu's top level, with "(disabled)" marks.
     async fn menu_labels(&self) -> Vec<String> {
-        self.wait("!document.querySelector('#ctxmenu').hidden", 20)
+        self.wait("!document.querySelector('#ctxmenu').hidden")
             .await;
         let v = self.eval("[...document.querySelectorAll('#ctxmenu > ul > li[tabindex]')].map((li) => li.firstChild.textContent + (li.getAttribute('aria-disabled') ? ' (disabled)' : ''))").await;
         v.as_array()
@@ -339,7 +350,7 @@ impl Ed {
     }
     /// Click the visible menu item labelled `label` (opening its submenu if it has one).
     async fn click_menu(&self, label: &str) {
-        self.wait(&format!("[...document.querySelectorAll('#ctxmenu li')].some((li) => li.firstChild?.textContent === {label:?} && li.offsetParent)"), 20).await;
+        self.wait(&format!("[...document.querySelectorAll('#ctxmenu li')].some((li) => li.firstChild?.textContent === {label:?} && li.offsetParent)")).await;
         self.click_js(&format!("(() => {{ const li = [...document.querySelectorAll('#ctxmenu li')].find((li) => li.firstChild?.textContent === {label:?} && li.offsetParent); li.dispatchEvent(new MouseEvent('mouseenter')); const r = li.getBoundingClientRect(); return [r.left + 20, r.top + r.height / 2]; }})()")).await;
     }
 }
@@ -602,7 +613,7 @@ async fn render_waits_for_the_open_edit() {
     ed.type_text(" draft").await;
     // an agent edits another slide meanwhile
     ed.cli(&["title", "results", "Findings"]);
-    ed.wait(
+    ed.wait_secs(
         "(document.querySelector('#pending')?.textContent || '').includes('refresh')",
         30,
     )
@@ -617,7 +628,7 @@ async fn render_waits_for_the_open_edit() {
     ed.click_blank().await;
     ed.wait_file(|f| f.contains("here. draft"), "saved").await;
     assert!(ed.file().contains("## Findings {#results}"));
-    ed.wait(
+    ed.wait_secs(
         "document.querySelector('#preview').contentWindow.__marker === undefined",
         30,
     )
@@ -636,7 +647,7 @@ async fn source_editor_opens_over_math_and_refuses_new_slides() {
     };
     ed.go("eq").await;
     ed.click_in_slide("[data-qd=\"eq/0\"]").await;
-    ed.wait(&format!("{SRC}?.value === '$$\\nE = mc^2\\n$$'"), 20)
+    ed.wait(&format!("{SRC}?.value === '$$\\nE = mc^2\\n$$'"))
         .await;
     // drawn over the element it edits
     let over = ed
@@ -652,27 +663,20 @@ async fn source_editor_opens_over_math_and_refuses_new_slides() {
     ed.idle().await;
     ed.go("eq").await;
     ed.click_in_slide("[data-qd=\"eq/0\"]").await;
-    ed.wait("!document.querySelector('#srcedit').hidden", 20)
-        .await;
+    ed.src_open().await;
     let before = ed.file();
     ed.set_source("Text.\n\n## Sneaky\n\nMore.").await;
     ed.key("Enter", "Enter", 13, 2).await;
-    ed.wait(
-        "(document.querySelector('#srcedit .err')?.textContent || '').includes('slide')",
-        20,
-    )
-    .await;
+    ed.wait("(document.querySelector('#srcedit .err')?.textContent || '').includes('slide')")
+        .await;
     assert_eq!(
         ed.eval(&format!("{SRC}.value")).await,
         "Text.\n\n## Sneaky\n\nMore."
     );
     assert_eq!(ed.file(), before);
     ed.key("Escape", "Escape", 27, 0).await;
-    ed.wait(
-        "document.querySelector('#srcedit').hidden && window.qdSession() === null",
-        20,
-    )
-    .await;
+    ed.wait("document.querySelector('#srcedit').hidden && window.qdSession() === null")
+        .await;
     assert_eq!(ed.file(), before);
 }
 
@@ -686,7 +690,7 @@ async fn alt_enter_switches_typing_to_source() {
     ed.caret("[data-qd=\"eq/1\"]", None).await;
     ed.type_text(" more").await;
     ed.key("Enter", "Enter", 13, 1).await; // Alt+Enter
-    ed.wait(&format!("{SRC}?.value === 'Plain words. more'"), 20)
+    ed.wait(&format!("{SRC}?.value === 'Plain words. more'"))
         .await;
     ed.set_source("Plain *words* more.").await;
     ed.key("Enter", "Enter", 13, 2).await;
@@ -709,8 +713,7 @@ async fn same_element_conflict_offers_both_versions() {
     ed.type_into("methods", para, " mine").await;
     ed.cli(&["edit", "methods/0", "--md", "Agent text."]);
     ed.click_blank().await;
-    ed.wait("!document.querySelector('#conflict').hidden", 20)
-        .await;
+    ed.wait("!document.querySelector('#conflict').hidden").await;
     let bar = ed
         .eval("document.querySelector('#conflict').textContent")
         .await;
@@ -729,8 +732,7 @@ async fn same_element_conflict_offers_both_versions() {
     ed.settle().await;
     ed.go("methods").await;
     ed.click_editor("#conflict [data-act=mine]").await;
-    ed.wait("!document.querySelector('#srcedit').hidden", 20)
-        .await;
+    ed.src_open().await;
     assert!(
         ed.eval(&format!("{SRC}.value"))
             .await
@@ -746,18 +748,15 @@ async fn same_element_conflict_offers_both_versions() {
     )
     .await;
     assert!(!ed.file().contains("Agent text."));
-    ed.wait("document.querySelector('#conflict').hidden", 20)
-        .await;
+    ed.wait("document.querySelector('#conflict').hidden").await;
 
     // "Keep theirs": nothing is written
     ed.type_into("methods", para, " again").await;
     ed.cli(&["edit", "methods/0", "--md", "Theirs."]);
     ed.click_blank().await;
-    ed.wait("!document.querySelector('#conflict').hidden", 20)
-        .await;
+    ed.wait("!document.querySelector('#conflict').hidden").await;
     ed.click_editor("#conflict [data-act=theirs]").await;
-    ed.wait("document.querySelector('#conflict').hidden", 20)
-        .await;
+    ed.wait("document.querySelector('#conflict').hidden").await;
     assert!(ed.file().contains("\n\nTheirs.\n\n"));
 
     // an on-slide save is in the same undo history as the CLI
@@ -791,14 +790,12 @@ async fn fifty_interleaved_edits_lose_nothing() {
         }
         ed.click_blank().await;
         if collide {
-            ed.wait("!document.querySelector('#conflict').hidden", 20)
-                .await;
+            ed.wait("!document.querySelector('#conflict').hidden").await;
             collisions += 1;
             ed.settle().await;
             ed.go("methods").await;
             ed.click_editor("#conflict [data-act=mine]").await;
-            ed.wait("!document.querySelector('#srcedit').hidden", 20)
-                .await;
+            ed.src_open().await;
             ed.eval(&format!("{SRC}.focus()")).await;
             ed.key("Enter", "Enter", 13, 2).await;
         }
@@ -908,17 +905,13 @@ async fn bars_set_properties_and_source_panel_is_hidden() {
         "none"
     );
     // slide bar: hidden toggle = visibility attribute
-    ed.wait("!document.querySelector('#slidebar').hidden", 20)
-        .await;
+    ed.wait("!document.querySelector('#slidebar').hidden").await;
     ed.click_editor("#slidebar [name=hidden]").await;
     ed.wait_file(|f| f.contains("## A {#a visibility=hidden}"), "hidden")
         .await;
     ed.settle().await;
-    ed.wait(
-        "document.querySelector('#slidebar [name=hidden]').checked",
-        20,
-    )
-    .await;
+    ed.wait("document.querySelector('#slidebar [name=hidden]').checked")
+        .await;
     ed.click_editor("#slidebar [name=hidden]").await;
     ed.wait_file(|f| f == P2, "unhidden, bytes as before").await;
     // element bar: "On click" = .fragment, and back again byte-identical
@@ -951,7 +944,7 @@ async fn insert_drag_delete_and_empty_slides() {
     ed.hover("[data-qd=\"a/0\"] p").await;
     ed.click_editor("#hoverbar [data-act=insert]").await;
     ed.click_menu("List").await;
-    ed.wait("window.qdSession()?.ref === 'a/1'", 30).await;
+    ed.wait_secs("window.qdSession()?.ref === 'a/1'", 30).await;
     ed.type_text("typed item").await;
     ed.key("Enter", "Enter", 13, 2).await;
     ed.wait_file(
@@ -983,8 +976,7 @@ async fn insert_drag_delete_and_empty_slides() {
     // an empty slide offers its first element
     ed.settle().await;
     ed.go("empty").await;
-    ed.wait("!document.querySelector('#emptyadd').hidden", 20)
-        .await;
+    ed.wait("!document.querySelector('#emptyadd').hidden").await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1033,25 +1025,17 @@ async fn fragments_notes_and_keyboard_selection() {
     let sel =
         "document.querySelector('#preview').contentDocument.querySelector('.qd-sel')?.dataset.qd";
     ed.click_blank().await;
-    ed.key("Tab", "Tab", 9, 0).await;
-    ed.wait(&format!("{sel} === 'f/0'"), 20).await;
-    ed.key("Tab", "Tab", 9, 0).await;
-    ed.wait(&format!("{sel} === 'f/1'"), 20).await;
-    ed.key("Tab", "Tab", 9, 8).await; // Shift+Tab
-    ed.wait(&format!("{sel} === 'f/0'"), 20).await;
-    ed.wait(
-        "document.querySelector('#notice').textContent.startsWith('Selected')",
-        20,
-    )
-    .await;
+    for (shift, want) in [(0, "f/0"), (0, "f/1"), (8, "f/0")] {
+        ed.key("Tab", "Tab", 9, shift).await; // 8 = Shift+Tab
+        ed.wait(&format!("{sel} === '{want}'")).await;
+    }
+    ed.wait("document.querySelector('#notice').textContent.startsWith('Selected')")
+        .await;
     ed.key("Enter", "Enter", 13, 0).await;
-    ed.wait("window.qdSession()?.ref === 'f/0'", 20).await;
+    ed.wait("window.qdSession()?.ref === 'f/0'").await;
     ed.key("Escape", "Escape", 27, 0).await;
-    ed.wait(
-        &format!("window.qdSession() === null && {sel} === 'f/0'"),
-        20,
-    )
-    .await;
+    ed.wait(&format!("window.qdSession() === null && {sel} === 'f/0'"))
+        .await;
 
     // Speaker notes…: created when missing, then edited in the source box
     ed.right_click(ed.editor_point("#slides li[data-id=f]", Some(20.0)).await)
@@ -1062,8 +1046,7 @@ async fn fragments_notes_and_keyboard_selection() {
         "notes added",
     )
     .await;
-    ed.wait("!document.querySelector('#srcedit').hidden", 20)
-        .await;
+    ed.src_open().await;
     assert_eq!(
         ed.eval(&format!("{SRC}.value")).await,
         "::: notes\nSpeaker notes.\n:::"

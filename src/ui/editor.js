@@ -729,7 +729,7 @@ function stepSelection(back) {
   const i = els.findIndex((el) => el.dataset.qd === state.sel);
   const next = els[i < 0 ? (back ? els.length - 1 : 0) : (i + (back ? -1 : 1) + els.length) % els.length];
   select(next.dataset.qd);
-  next.scrollIntoView?.({ block: 'nearest' });
+  next.scrollIntoView({ block: 'nearest' });
   fetchBlock(next.dataset.qd).then((b) => b && say(`Selected ${b.kind} ${next.dataset.qd} — Enter edits, ⇧F10 for actions`));
   return true;
 }
@@ -1396,18 +1396,15 @@ async function pasteAfter(t) {
 /** Speaker notes (`::: notes`): edit them in the source box over the slide, creating them if missing. */
 async function editNotes(t) {
   const sec = frame.contentDocument?.getElementById(t.anchor);
-  if (!sec || state.session) return;
-  let slide = await fetchSlide(t.slideId);
-  let i = slide?.blocks.findIndex((b) => b.kind === 'notes') ?? -1;
+  if (!sec || state.session || !t.full) return;
+  const i = t.full.blocks.findIndex((b) => b.kind === 'notes');
+  let ref = `${t.slideId}/${i}`;
   if (i < 0) {
-    const nl = '\n';
-    const r = await op('block add', { slide: t.slideId, end: true, md: `::: notes${nl}Speaker notes.${nl}:::` });
+    const r = await op('block add', { slide: t.slideId, end: true, md: '::: notes\nSpeaker notes.\n:::' });
     if (!r) return;
     await fetchDeck();
-    slide = await fetchSlide(t.slideId);
-    i = slide.blocks.findIndex((b) => b.kind === 'notes');
+    ref = r.target;
   }
-  const b = slide.blocks[i];
-  startSourceSession({ kind: 'block', mode: 'source', root: sec, ref: `${t.slideId}/${i}`, source: b.text, hash: b.hash }, b.text);
-  say('Speaker notes — ⌘Enter or click elsewhere saves, Esc cancels');
+  const b = await fetchBlock(ref);
+  if (b) startSourceSession({ kind: 'block', mode: 'source', root: sec, ref, source: b.text, hash: b.hash }, b.text);
 }
