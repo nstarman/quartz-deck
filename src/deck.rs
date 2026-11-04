@@ -770,6 +770,15 @@ fn unique(used: &mut HashSet<String>, base: String) -> String {
 fn classify(chunk: Chunk, text: &str, used: &mut HashSet<String>) -> (BlockKind, Option<Attrs>) {
     let first = text.lines().next().unwrap_or("").trim();
     match chunk {
+        // ```{=html} etc.: a raw block, not an executable cell
+        Chunk::Code { cell: true }
+            if first
+                .trim_start_matches(['`', '~'])
+                .trim_start()
+                .starts_with("{=") =>
+        {
+            (BlockKind::Html, None)
+        }
         Chunk::Code { cell: true } => (BlockKind::Cell, None),
         Chunk::Code { cell: false } => (BlockKind::Code, None),
         Chunk::Math => (BlockKind::Math, None),
@@ -955,6 +964,13 @@ mod tests {
                 ("b/3", BlockKind::Image)
             ]
         );
+    }
+
+    #[test]
+    fn raw_blocks_are_html() {
+        let d = deck("## A\n\n```{=html}\n<p>raw</p>\n```\n\n```{python}\nx\n```\n");
+        let kinds: Vec<_> = d.slides[0].blocks.iter().map(|b| b.kind).collect();
+        assert_eq!(kinds, vec![BlockKind::Html, BlockKind::Cell]);
     }
 
     #[test]

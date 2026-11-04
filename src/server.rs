@@ -56,7 +56,7 @@ struct St {
 struct App {
     store: Store,
     out: PathBuf,
-    /// URL path of the preview HTML, e.g. `/preview/.deck.qd-preview.html`.
+    /// URL path of the preview HTML, e.g. `/preview/deck.qd-preview.html`.
     html: String,
     tx: broadcast::Sender<Ev>,
     st: Mutex<St>,
@@ -207,7 +207,8 @@ async fn render_loop(app: Shared) {
         let Ok(d) = app.store.read() else { continue };
         let _ = app.tx.send(Ev::Rendering);
         let (path, out, copy) = (app.store.path.clone(), app.out.clone(), preview_copy(&d));
-        let res = tokio::task::spawn_blocking(move || render(&path, &copy, "preview", &out)).await;
+        let res =
+            tokio::task::spawn_blocking(move || render(&path, &copy, "preview", &out, true)).await;
         let ev = match res {
             Ok(Ok(_)) => {
                 let mut st = app.st.lock().unwrap();
@@ -282,7 +283,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
         let (tx, _) = broadcast::channel(64);
         let session_file = store.cache_dir().join("session.json");
         let app = Arc::new(App {
-            html: format!("/preview/.{stem}.qd-preview.html"),
+            html: format!("/preview/{stem}.qd-preview.html"),
             out: out.clone(),
             tx,
             st: Mutex::new(St { version: d.version.clone(), ..Default::default() }),

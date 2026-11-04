@@ -65,6 +65,19 @@ pub fn preview_copy(d: &Deck) -> String {
             SlideKind::Implicit if !s.id_explicit => {
                 out += &format!("{} {{#{pid}}}{nl}{nl}", "#".repeat(d.slide_level as usize));
             }
+            // hidden slides are dropped by Quarto; show them in the editor, marked
+            _ if s.attrs.as_ref().and_then(|a| a.get("visibility")) == Some("hidden") => {
+                let head = &d.text[s.span.start..s.content_start()];
+                out += &[
+                    "visibility=\"hidden\"",
+                    "visibility='hidden'",
+                    "visibility=hidden",
+                ]
+                .iter()
+                .fold(head.to_string(), |h, pat| {
+                    h.replace(pat, "data-qd-hidden=\"true\"")
+                });
+            }
             _ => out += &d.text[s.span.start..s.content_start()],
         }
         let mut pos = s.content_start();
@@ -117,14 +130,24 @@ pub fn preview_copy(d: &Deck) -> String {
     out
 }
 
-/// Render `text` as if it were the deck at `deck_path` (same directory, so
-/// relative paths and `_quarto.yml` apply) into `out_dir`. The temporary copy
-/// `.<stem>.qd-<tag>.qmd` is removed afterwards. Returns the HTML path.
-pub fn render(deck_path: &Path, text: &str, tag: &str, out_dir: &Path) -> Result<PathBuf> {
+/// Render `text` as if it were the deck at `deck_path` into `out_dir`. The
+/// temporary copy `<stem>.qd-<tag>.qmd` sits next to the deck so relative paths
+/// and a `_quarto.yml` project apply (Quarto leaves `.`/`_`-prefixed files out
+/// of a project, so the name must not be hidden); it is removed afterwards.
+/// `preview` turns off `embed-resources`: inlining (MathJax, plotly.js, …) on
+/// every edit is slow, and the preview is served over HTTP anyway.
+/// Returns the HTML path.
+pub fn render(
+    deck_path: &Path,
+    text: &str,
+    tag: &str,
+    out_dir: &Path,
+    preview: bool,
+) -> Result<PathBuf> {
     let quarto = quarto()?;
     let dir = deck_path.parent().unwrap_or(Path::new("."));
     let stem = deck_path.file_stem().unwrap_or_default().to_string_lossy();
-    let name = format!(".{stem}.qd-{tag}");
+    let name = format!("{stem}.qd-{tag}");
     let copy = dir.join(format!("{name}.qmd"));
     std::fs::create_dir_all(out_dir)?;
     std::fs::write(&copy, text)?;
@@ -133,6 +156,11 @@ pub fn render(deck_path: &Path, text: &str, tag: &str, out_dir: &Path) -> Result
         .arg(&copy)
         .args(["--to", "revealjs", "--output-dir"])
         .arg(out_dir)
+        .args(if preview {
+            &["-M", "embed-resources:false"][..]
+        } else {
+            &[]
+        })
         .current_dir(dir)
         .output();
     let _ = std::fs::remove_file(&copy);
@@ -162,12 +190,7 @@ fn clean_log(log: &str, temp_name: &str) -> String {
     let plain = plain.split("Stack trace:").next().unwrap_or("").trim();
     let lines: Vec<&str> = plain.lines().collect();
     let start = lines.len().saturating_sub(40);
-    let deck = temp_name
-        .trim_start_matches('.')
-        .split(".qd-")
-        .next()
-        .unwrap_or("")
-        .to_string();
+    let deck = temp_name.split(".qd-").next().unwrap_or("").to_string();
     lines[start..].join("\n").replace(temp_name, &deck)
 }
 
@@ -242,13 +265,13 @@ mod tests {
 
     #[test]
     fn render_errors_are_cleaned() {
-        let log = "\x1b[91mERROR: YAMLException: bad (3:1)\x1b[39m\n\n 1 | title: [x\n\nStack trace:\n    at foo (quarto.js:1:2)\nin .talk.qd-preview.qmd";
+        let log = "\x1b[91mERROR: YAMLException: bad (3:1)\x1b[39m\n\n 1 | title: [x\n\nStack trace:\n    at foo (quarto.js:1:2)\nin talk.qd-preview.qmd";
         assert_eq!(
-            clean_log(log, ".talk.qd-preview"),
+            clean_log(log, "talk.qd-preview"),
             "ERROR: YAMLException: bad (3:1)\n\n 1 | title: [x"
         );
         assert_eq!(
-            clean_log("rendering .talk.qd-check.qmd failed", ".talk.qd-check"),
+            clean_log("rendering talk.qd-check.qmd failed", "talk.qd-check"),
             "rendering talk.qmd failed"
         );
     }
@@ -275,6 +298,72 @@ mod tests {
         );
     }
 
+    #[test]
+    fn preview_shows_hidden_slides() {
+        let d = Deck::parse(
+            "## Draft {#draft visibility=\"hidden\"}\n\nx\n\n## B {visibility=hidden .c}\n".into(),
+        );
+        let c = preview_copy(&d);
+        assert!(
+            c.contains("## Draft {#draft data-qd-hidden=\"true\"}"),
+            "{c}"
+        );
+        assert!(c.contains("## B {data-qd-hidden=\"true\" .c}"), "{c}");
+        assert!(!c.contains("visibility"), "{c}");
+    }
+
+    /// A deck inside a Quarto project (the `quarto-revealjs` skill's folder
+    /// layout: `_quarto.yml` with `output-dir`, `embed-resources`,
+    /// `include-in-header`) renders, gets the project settings, and leaves the
+    /// project's `_output/` untouched. Needs Quarto.
+    #[test]
+    fn renders_inside_a_quarto_project() {
+        if quarto().is_err() {
+            eprintln!("quarto not found: skipping");
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+        std::fs::write(
+            p.join("_quarto.yml"),
+            "project:\n  output-dir: _output\nformat:\n  revealjs:\n    embed-resources: true\n    include-in-header: _deck/header.html\n",
+        )
+        .unwrap();
+        std::fs::create_dir(p.join("_deck")).unwrap();
+        std::fs::write(
+            p.join("_deck/header.html"),
+            "<meta name=\"qd-test\" content=\"from-project\">\n",
+        )
+        .unwrap();
+        let deck = p.join("talk.qmd");
+        std::fs::write(&deck, BASIC).unwrap();
+        let d = Deck::parse(BASIC.to_string());
+        let out = p.join("cache");
+        let html = render(&deck, &preview_copy(&d), "preview", &out, true).unwrap();
+        let h = std::fs::read_to_string(&html).unwrap();
+        assert!(
+            h.contains("from-project"),
+            "project include-in-header not applied"
+        );
+        assert!(h.contains("data-qd=\"intro/0\""));
+        assert!(
+            !p.join("_output").exists(),
+            "must not write the project's output dir"
+        );
+        // the final render (check) keeps the project's embed-resources
+        let html = render(&deck, &d.text, "check", &p.join("check"), false).unwrap();
+        assert!(
+            !html.with_file_name("talk.qd-check_files").exists(),
+            "embed-resources should inline everything"
+        );
+        let left: Vec<_> = std::fs::read_dir(p)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.contains(".qd-"))
+            .collect();
+        assert!(left.is_empty(), "temp copies left: {left:?}");
+    }
+
     /// Rendered preview keeps slide count and carries the markers (needs Quarto).
     #[test]
     fn renders_with_quarto() {
@@ -286,7 +375,14 @@ mod tests {
         let deck = dir.path().join("deck.qmd");
         std::fs::write(&deck, BASIC).unwrap();
         let d = Deck::parse(BASIC.to_string());
-        let html = render(&deck, &preview_copy(&d), "preview", &dir.path().join("out")).unwrap();
+        let html = render(
+            &deck,
+            &preview_copy(&d),
+            "preview",
+            &dir.path().join("out"),
+            true,
+        )
+        .unwrap();
         let h = std::fs::read_to_string(html).unwrap();
         let sections = h.matches("<section id=").count();
         assert_eq!(sections, d.slides.len() + 1, "slides + title slide");
