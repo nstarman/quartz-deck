@@ -246,6 +246,21 @@ enum Cmd {
         #[command(subcommand)]
         action: BoxCmd,
     },
+    /// Replace the one occurrence of some text in the deck (refused if missing or repeated)
+    Replace {
+        /// Text to replace (`-` reads stdin)
+        #[arg(long, allow_hyphen_values = true, required_unless_present = "old_file")]
+        old: Option<String>,
+        /// Read the text to replace from a file
+        #[arg(long, conflicts_with = "old")]
+        old_file: Option<PathBuf>,
+        /// Replacement text (`-` reads stdin)
+        #[arg(long, allow_hyphen_values = true, required_unless_present = "new_file")]
+        new: Option<String>,
+        /// Read the replacement from a file
+        #[arg(long, conflicts_with = "new")]
+        new_file: Option<PathBuf>,
+    },
     /// Single elements of a slide: add, move, remove, duplicate (ref: <slide>/<index> or #id)
     Block {
         #[command(subcommand)]
@@ -546,7 +561,22 @@ fn attrs_json(a: Option<&crate::attrs::Attrs>) -> Value {
 fn block_json(d: &Deck, b: &Block) -> Value {
     let text = d.slice(b.span);
     let mut v = json!({"id": b.id, "explicit": b.id_explicit, "kind": b.kind, "text": text,
-        "hash": crate::deck::version_of(text.as_bytes()), "attrs": attrs_json(b.attrs.as_ref())});
+        "hash": crate::deck::version_of(text.as_bytes()), "lines": d.lines(b.span), "attrs": attrs_json(b.attrs.as_ref())});
+    if matches!(b.kind, BlockKind::Cell | BlockKind::Code) {
+        // ```{python} (kind "cell", executable) or ```python (kind "code", shown) → "python"
+        let info = text
+            .lines()
+            .next()
+            .and_then(crate::deck::code_open)
+            .map_or("", |(_, _, i)| i);
+        v["lang"] = json!(
+            info.trim()
+                .trim_start_matches('{')
+                .split(['}', ' ', ','])
+                .next()
+                .unwrap_or("")
+        );
+    }
     if b.kind == BlockKind::Box
         && let Some(a) = &b.attrs
     {
@@ -594,7 +624,7 @@ pub fn slides_json(d: &Deck) -> Value {
         .map(|s| {
             json!({
                 "id": s.id, "explicit": s.id_explicit, "index": s.index, "kind": s.kind, "title": s.title,
-                "summary": summary(d, s), "blocks": s.blocks.len(),
+                "summary": summary(d, s), "blocks": s.blocks.len(), "lines": d.lines(s.span),
                 "boxes": s.blocks.iter().filter(|b| b.kind == BlockKind::Box).count(), "opaque": s.opaque,
                 "anchor": crate::render::preview_id(s),
                 "hidden": s.attrs.as_ref().and_then(|a| a.get("visibility")) == Some("hidden"),
@@ -608,6 +638,7 @@ pub fn slides_json(d: &Deck) -> Value {
 pub fn show_json(d: &Deck, s: &Slide) -> Value {
     json!({"version": d.version, "slide": {
         "id": s.id, "explicit": s.id_explicit, "index": s.index, "kind": s.kind, "level": s.level, "title": s.title,
+        "lines": d.lines(s.span),
         "title_hash": s.title.as_ref().map(|t| crate::deck::version_of(t.as_bytes())),
         "attrs": attrs_json(s.attrs.as_ref()), "opaque": s.opaque, "source": d.slice(s.span),
         "blocks": s.blocks.iter().map(|b| block_json(d, b)).collect::<Vec<_>>(),
@@ -722,6 +753,7 @@ const API_OPS: &[&str] = &[
     "box move",
     "box resize",
     "box rm",
+    "replace",
     "block add",
     "block move",
     "block rm",
@@ -822,7 +854,13 @@ pub fn run_op(store: &Store, op: &str, args: &Value, expect: Option<&str>) -> Re
             "the API does not take file paths ('html'/'out')".into(),
         ));
     }
-    if obj.contains_key("file") || obj.get("md").is_some_and(|m| m == "-") {
+    let reads_input = ["file", "old-file", "new-file"]
+        .iter()
+        .any(|k| obj.contains_key(*k))
+        || ["md", "old", "new"]
+            .iter()
+            .any(|k| obj.get(*k).is_some_and(|m| m == "-"));
+    if reads_input {
         return Err(QdError::InvalidArg(
             "the API takes markdown inline via 'md' only".into(),
         ));
@@ -1092,6 +1130,24 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             }
             BoxCmd::Rm { bx } => ctx.edit(|d| ops::box_rm(d, bx)),
         },
+        Cmd::Replace {
+            old,
+            old_file,
+            new,
+            new_file,
+        } => {
+            let old = read_input(&Input {
+                md: old.clone(),
+                file: old_file.clone(),
+            })?
+            .unwrap_or_default();
+            let new = read_input(&Input {
+                md: new.clone(),
+                file: new_file.clone(),
+            })?
+            .unwrap_or_default();
+            ctx.edit(|d| ops::replace(d, &old, &new))
+        }
         Cmd::Block { action } => match action {
             BlockCmd::Add { slide, at, input } => {
                 let md = required_input(input)?;

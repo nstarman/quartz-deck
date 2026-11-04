@@ -224,14 +224,20 @@ export function align(S, T) {
 }
 
 /** New source for `T` after the rendered markdown changed from S0 to S1. */
+/** Changed part of a→b: `start`, its end in a (`endA`) and in b (`endB`). */
+export function diffRegion(a, b) {
+  let p = 0;
+  while (p < a.length && p < b.length && a[p] === b[p]) p++;
+  let q = 0;
+  while (q < a.length - p && q < b.length - p && a[a.length - 1 - q] === b[b.length - 1 - q]) q++;
+  return { start: p, endA: a.length - q, endB: b.length - q };
+}
+
 export function splice(T, S0, S1, pos) {
   if (S0 === S1) return T;
-  let p = 0;
-  while (p < S0.length && p < S1.length && S0[p] === S1[p]) p++;
-  let q = 0;
-  while (q < S0.length - p && q < S1.length - p && S0[S0.length - 1 - q] === S1[S1.length - 1 - q]) q++;
-  let a = p;
-  let b = S0.length - q;
+  const r = diffRegion(S0, S1);
+  let a = r.start;
+  let b = r.endA;
   // widen to whole tokens so a mapped source sequence is never split
   while (a > 0 && pos[a] === -1) a--;
   while (b < S0.length && pos[b] === -1) b++;

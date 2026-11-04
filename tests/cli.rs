@@ -2,7 +2,7 @@
 //! stable codes and exit statuses, file untouched on error/dry-run.
 
 use assert_cmd::Command;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::fs;
 use std::path::PathBuf;
 
@@ -881,4 +881,105 @@ fn block_class_toggles_round_trip() {
         "E_INVALID_ARG",
         1,
     );
+}
+
+// ---------- spec 004: line ranges, code cells, qd replace (T004, T006) ----------
+
+const RUN: &str = include_str!("fixtures/run/basic.qmd");
+
+#[test]
+fn show_reports_line_ranges_and_code_cells() {
+    let e = Env::with(RUN);
+    let lines: Vec<&str> = RUN.lines().collect();
+    let at = |v: &Value| lines[v.as_u64().unwrap() as usize - 1];
+    let v = e.ok(&["show", "plot"]);
+    let s = &v["slide"];
+    assert_eq!(at(&s["lines"][0]), "## Plot {#plot}");
+    assert!(
+        matches!(at(&s["lines"][1]), "" | "```"),
+        "{}",
+        at(&s["lines"][1])
+    );
+    let cell = &s["blocks"][0];
+    assert_eq!(at(&cell["lines"][0]), "```{python}");
+    assert_eq!(at(&cell["lines"][1]), "```");
+    assert_eq!(cell["lang"], "python");
+    assert_eq!(cell["kind"], "cell"); // executable; its `hash` is the cell's fingerprint
+    // a plain ```python block is code but not a cell; an R cell is a cell in another language
+    assert_eq!(
+        e.ok(&["show", "plain"])["slide"]["blocks"][0]["kind"],
+        "code"
+    );
+    assert_eq!(e.ok(&["show", "r"])["slide"]["blocks"][0]["lang"], "r");
+    // slide listings carry lines too (for source ↔ slide sync)
+    assert_eq!(
+        at(&e.ok(&["slides"])["slides"][0]["lines"][0]),
+        "## Print {#print}"
+    );
+}
+
+#[test]
+fn line_ranges_count_crlf_lines() {
+    let e = Env::with("## A {#a}\r\n\r\nText.\r\n\r\n## B {#b}\r\n\r\nMore.\r\n");
+    let v = e.ok(&["show", "b"]);
+    assert_eq!(v["slide"]["lines"][0], 5);
+    assert_eq!(v["slide"]["blocks"][0]["lines"], json!([7, 7]));
+}
+
+#[test]
+fn replace_swaps_one_unique_occurrence() {
+    use quartz_deck::cli::run_op;
+    let e = Env::with(DECK);
+    let v = e.ok(&[
+        "replace",
+        "--old",
+        "across two lines.\n\n- one",
+        "--new",
+        "across 2 lines.\n\n- one",
+    ]);
+    assert_eq!(v["op"], "replace");
+    assert_eq!(
+        e.text(),
+        DECK.replace("across two lines.", "across 2 lines.")
+    );
+    // not found → the text changed elsewhere; found twice → add context
+    e.err(
+        &["replace", "--old", "across two lines.", "--new", "x"],
+        "E_CONFLICT",
+        1,
+    );
+    let twice = Env::with("## A {#a}\n\nSame.\n\n## B {#b}\n\nSame.\n");
+    twice.err(
+        &["replace", "--old", "Same.", "--new", "x"],
+        "E_AMBIGUOUS",
+        1,
+    );
+    // the source pane may add slides; undo restores the bytes
+    let before = e.text();
+    e.ok(&[
+        "replace",
+        "--old",
+        "- two\n",
+        "--new",
+        "- two\n\n## Added {#added}\n\nNew slide.\n",
+    ]);
+    e.ok(&["show", "added"]);
+    e.ok(&["undo"]);
+    assert_eq!(e.text(), before);
+    // the API never reads files or the server's stdin
+    for bad in [
+        json!({"old": "-", "new": "x"}),
+        json!({"old-file": "/etc/hosts", "new": "x"}),
+    ] {
+        assert_eq!(
+            run_op(&e.store(), "replace", &bad, None)
+                .unwrap_err()
+                .code(),
+            "E_INVALID_ARG"
+        );
+    }
+    // through the API too
+    let args = json!({"old": "Some \"quoted\"", "new": "Some 'quoted'"});
+    run_op(&e.store(), "replace", &args, None).unwrap();
+    assert!(e.text().contains("Some 'quoted' text"));
 }
