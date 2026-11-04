@@ -68,6 +68,18 @@ aside .hint { color: var(--muted); font-size: 12px; }
 aside h3 { font-size: 13px; margin: 8px 0 6px; }
 aside .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; }
 aside form.add-box { border-top: 1px solid var(--line); margin-top: 8px; }
+header label.inline { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+aside ul.problems { list-style: none; padding: 0; margin: 0 0 12px; }
+aside ul.problems li { margin: 0 0 8px; }
+aside ul.problems button { all: unset; box-sizing: border-box; display: block; width: 100%; padding: 6px 8px;
+  border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+aside ul.problems button:hover { border-color: var(--muted); }
+aside ul.problems button:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+aside ul.problems .code { font: 11px ui-monospace, monospace; color: var(--danger); }
+aside ul.problems .warn .code { color: var(--muted); }
+aside ul.problems .phint { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+aside .status.ok { color: var(--accent); }
+aside .status.fail { color: var(--danger); }
 
 @media (max-width: 1000px) { aside { width: 260px; } nav { width: 180px; } }
 @media (max-width: 700px) {

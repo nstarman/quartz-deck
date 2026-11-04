@@ -11,13 +11,14 @@ presentations, written in Rust.
   (e.g. Claude Code) can edit the deck in-session and watch the same
   browser preview.
 
-Status: spec [001](specs/001-core-editor/spec.md) implemented (all five user
-stories). See [`specs/`](specs/) and the
+Status: specs [001](specs/001-core-editor/spec.md) (editor) and
+[002](specs/002-offline-export/spec.md) (offline export + PDF) implemented. See [`specs/`](specs/) and the
 [constitution](.specify/memory/constitution.md).
 
 ## Install
 
-Needs Rust ≥ 1.89 and, for preview/render, [Quarto](https://quarto.org/docs/get-started/) ≥ 1.4.
+Needs Rust ≥ 1.89; for preview/render [Quarto](https://quarto.org/docs/get-started/) ≥ 1.4;
+for offline check/export/PDF a Chrome or Chromium (or qd downloads Chrome for Testing).
 
 ```bash
 cargo install --path .
@@ -42,6 +43,21 @@ The deck is the only `*.qmd` in the current folder, or `--deck PATH` /
 `$QD_DECK`. `qd schema` describes every command and output; errors are JSON on
 stderr with a stable `code` and a `hint`. Decks inside a Quarto project
 (`_quarto.yml`, e.g. the `quarto-revealjs` skill's offline setup) work as is.
+
+### Offline export (spec [002](specs/002-offline-export/spec.md))
+
+```bash
+qd check --offline        # will it work with no network? problems per slide, with hints
+qd export --pdf           # export/<deck>.html (self-contained) + .pdf, checked offline
+qd pdf --notes            # re-print with speaker notes on separate pages
+qd browser                # which Chrome is used (qd can download a pinned one)
+```
+
+Export renders a copy of the deck with MathJax (and plotly.js) loaded from
+local, SHA-256-verified copies, ships background videos/iframes beside the
+HTML, and only replaces the previous export if the offline check passes. The
+deck and `_quarto.yml` are never modified. The first export needs the network
+once (MathJax; Chrome for Testing if no Chrome is installed).
 
 The editor and the CLI can be used at the same time; edits carry a version
 (`--expect`) and are refused rather than lost if the file changed underneath.

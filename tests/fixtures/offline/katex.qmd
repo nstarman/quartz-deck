@@ -1,0 +1,10 @@
+---
+title: "KaTeX"
+format:
+  revealjs:
+    html-math-method: katex
+---
+
+## Math {#math}
+
+$$\sum_{i=1}^n i = \frac{n(n+1)}{2}$$

@@ -11,6 +11,8 @@ One failure mode (or setup) per deck, from the quarto-revealjs guide
 | bgvideo.qmd + media/clip.mp4 | background video must ship beside the export (tiny stand-in file) |
 | bgiframe.qmd + apps/app.html | background iframe must ship beside the export |
 | missing.qmd | background video that does not exist → P_MISSING_FILE |
+| missing-iframe.qmd | background iframe that does not exist → P_MISSING_FILE |
+| katex.qmd | `html-math-method: katex` (never embedded) → P_RAW_TEX + P_NETWORK |
 | chalkboard.qmd | cannot be a single offline file → P_OFFLINE_INCOMPATIBLE |
 | shownotes.qmd | `show-notes` in YAML shows notes to the audience → P_NOTES_VISIBLE |
 | throws.qmd | script error → P_PAGE_ERROR |

@@ -72,7 +72,12 @@ fn err_response(e: QdError) -> Response {
             StatusCode::BAD_REQUEST
         }
         QdError::Conflict(_) | QdError::NoUndo(_) => StatusCode::CONFLICT,
-        QdError::UnsafeEdit(_) => StatusCode::UNPROCESSABLE_ENTITY,
+        QdError::UnsafeEdit(_) | QdError::OfflineIncompatible(_) => {
+            StatusCode::UNPROCESSABLE_ENTITY
+        }
+        QdError::NoBrowser(_) | QdError::Download(_) | QdError::NoQuarto => {
+            StatusCode::SERVICE_UNAVAILABLE
+        }
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     };
     (status, Json(e.to_json())).into_response()
@@ -174,16 +179,36 @@ async fn api_op(
     .await;
     match res {
         Ok(Ok(mut v)) => {
-            // a render inside the deck folder can be opened through /preview/'s fallback
-            let deck_dir = app.store.path.parent().map(PathBuf::from);
-            if let (Some(out), Some(dir)) = (v["output"].as_str(), deck_dir)
-                && let Ok(rel) = std::path::Path::new(out).strip_prefix(&dir)
-            {
+            // outputs inside the deck folder can be opened through /preview/'s fallback
+            let deck_dir = app
+                .store
+                .path
+                .parent()
+                .map(PathBuf::from)
+                .unwrap_or_default();
+            let href = |p: &Value| {
+                let path = std::path::Path::new(p.as_str()?);
+                if !matches!(
+                    path.extension().and_then(|e| e.to_str()),
+                    Some("html" | "pdf")
+                ) {
+                    return None;
+                }
+                let rel = path.strip_prefix(&deck_dir).ok()?;
                 let parts: Vec<String> = rel
                     .iter()
                     .map(|p| url_encode(&p.to_string_lossy()))
                     .collect();
-                v["href"] = json!(format!("/preview/{}", parts.join("/")));
+                Some(json!(format!("/preview/{}", parts.join("/"))))
+            };
+            for (key, from) in [
+                ("href", v["output"].clone()),
+                ("html_href", v["html"].clone()),
+                ("pdf_href", v["pdf"]["path"].clone()),
+            ] {
+                if let Some(h) = href(&from) {
+                    v[key] = h;
+                }
             }
             Json(v).into_response()
         }

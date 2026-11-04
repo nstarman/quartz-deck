@@ -17,6 +17,10 @@
   <span id="status">connecting…</span>
   <a href="/present/" target="_blank" rel="noopener" title="The live preview without the editor (includes hidden slides)">Preview ↗</a>
   <button type="button" id="render" title="Run quarto render on the deck (final output)">Render</button>
+  <span class="tools">
+    <button type="button" id="export" title="Self-contained offline HTML, checked with the network blocked">Export</button>
+    <label class="inline"><input type="checkbox" id="export-pdf"> PDF</label>
+  </span>
   <a id="rendered" target="_blank" rel="noopener" hidden>Open ↗</a>
 </header>
 <div id="banner" role="alert" hidden></div>
@@ -79,6 +83,15 @@
     <div class="buttons"><button type="submit" class="primary">Apply</button></div>
   </form>
   <p class="hint">Author, date and other options live in the YAML front matter (<code>qd meta</code>).</p>
+</template>
+
+<template id="export-panel">
+  <h2>Export</h2>
+  <p class="status"></p>
+  <ul class="problems"></ul>
+  <p class="links"></p>
+  <div class="buttons"><button type="button" data-act="close">Back to slide</button></div>
+  <p class="hint">Problems link to their slide. The first export downloads MathJax (and a browser if none is installed); later exports work offline.</p>
 </template>
 
 <template id="element-panel">

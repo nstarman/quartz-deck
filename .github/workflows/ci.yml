@@ -58,5 +58,8 @@ jobs:
           quarto --version
           cargo test
 
-      - name: Performance (100-slide deck, SC-004)
+      - name: Performance (100-slide deck, 001 SC-004)
         run: cargo test --release --test cli -- --ignored
+
+      - name: Export timing (30 slides + Plotly, 002 SC-004)
+        run: cargo test --release --test export export_30 -- --ignored --nocapture

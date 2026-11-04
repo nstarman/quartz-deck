@@ -53,7 +53,11 @@ pub fn download_verified(url: &str, dest: &Path, sha256: &str) -> Result<()> {
     if let Some(dir) = dest.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let part = dest.with_extension("part");
+    // unique per download so concurrent qd processes never share a partial file
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let part = dest.with_extension(format!("part-{}-{nanos}", std::process::id()));
     let fetch = || -> std::result::Result<(), String> {
         let mut resp = ureq::get(url).call().map_err(|e| format!("{url}: {e}"))?;
         let mut file = std::fs::File::create(&part).map_err(|e| e.to_string())?;
