@@ -66,7 +66,9 @@ preserved; printing back an unmodified Attrs yields the original text.
 
 `{ ts, op, version_before, version_after, before_text }`, appended JSONL in
 the cache dir. State transition: `undo` valid only when file version ==
-last entry's `version_after`; restoring pops the entry.
+last entry's `version_after`; restoring moves the entry (plus `after_text`)
+to `redo.jsonl`. `redo` valid only when file version == top redo entry's
+`version_before`. Any new edit clears `redo.jsonl`.
 
 ## Editor session
 

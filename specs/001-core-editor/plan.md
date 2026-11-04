@@ -22,8 +22,9 @@ feedback and writes `.absolute` attributes on release. A bundled Skill
 1.99.1). Quarto 1.11.9 / Pandoc 3.10 on dev machine.
 
 **Primary Dependencies**: `clap` (CLI), `serde`/`serde_json` (I/O),
-`schemars` (`qd schema`), `axum` + `tokio` (server, SSE), `notify` (file
-watch), `sha2` (version tokens), `similar` (diffs for dry-run). UI is plain
+`schemars` (`qd schema`), `axum` + `tokio` + `tower-http` (server, SSE,
+static files), `notify` (file watch), `sha2` (version tokens), `similar`
+(diffs for dry-run), `serde_yaml_ng` (front matter), `thiserror` (errors). UI is plain
 HTML/CSS/JS embedded with `include_str!`; reveal.js comes from Quarto's own
 render output. Dev: `insta` (snapshots), `assert_cmd` (CLI tests),
 `tempfile`. See research.md R8 for license review.

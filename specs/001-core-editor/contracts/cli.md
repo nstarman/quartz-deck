@@ -50,6 +50,7 @@ a test keeps both in sync.
 | `qd box rm <box>` | delete box |
 | `qd meta set <key> <yaml-value>` / `qd meta unset <key>` | front matter |
 | `qd undo` | revert last qd edit (only if file unchanged since) |
+| `qd redo` | re-apply last undone edit (only if file unchanged since the undo) |
 | `qd new <path> [--title T]` | create minimal reveal.js deck |
 
 ## Render / serve

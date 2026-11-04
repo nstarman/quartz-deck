@@ -116,7 +116,9 @@ renders `<section id="untitled-x" class="slide level2">`; a
 | clap | MIT OR Apache-2.0 | CLI |
 | serde, serde_json | MIT OR Apache-2.0 | JSON |
 | schemars | MIT | `qd schema` |
-| axum, tokio | MIT | server |
+| axum, tokio, tower-http | MIT | server |
+| serde_yaml_ng | MIT | front matter |
+| thiserror | MIT OR Apache-2.0 | errors |
 | notify | verify at add time (recent releases MIT OR Apache-2.0; older CC0-1.0) | file watch |
 | sha2 | MIT OR Apache-2.0 | version token |
 | similar | Apache-2.0 | diffs |
