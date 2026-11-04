@@ -1,0 +1,18 @@
+---
+title: "Basic Deck"
+author: "N. Starkman"
+format: revealjs
+---
+
+## Introduction
+
+Welcome to the talk.
+
+## Results
+
+- First result
+- Second result
+
+## Conclusion
+
+Thanks!

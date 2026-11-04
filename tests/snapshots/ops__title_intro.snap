@@ -1,0 +1,13 @@
+---
+source: tests/ops.rs
+expression: "ops::diff(&d.text, &after)"
+---
+--- before
++++ after
+@@ -4,5 +4,5 @@
+ ---
+ 
+-## Intro
++## Introduction {#intro}
+ 
+ Hello world.

@@ -1,0 +1,13 @@
+---
+source: tests/roundtrip.rs
+expression: "Deck::parse(text).outline()"
+---
+slide_level=2 size=1050x700 front_matter=true title_slide=true nl="\n"
+@1 animate (auto) Heading L2 title=Some("Animate") attrs={auto-animate=true}
+    animate/0 Div "::: {data-id=\"box1\" style=\"background: red; width:"
+@2 animate-1 (auto) Heading L2 title=Some("Animate") attrs={auto-animate=true}
+    animate-1/0 Div "::: {data-id=\"box1\" style=\"background: red; width:"
+@3 duplicate-title (auto) Heading L2 title=Some("Duplicate title")
+    duplicate-title/0 Para "One."
+@4 duplicate-title-1 (auto) Heading L2 title=Some("Duplicate title")
+    duplicate-title-1/0 Para "Two."

@@ -1,0 +1,10 @@
+---
+source: tests/roundtrip.rs
+expression: "Deck::parse(text).outline()"
+---
+slide_level=2 size=1050x700 front_matter=true title_slide=true nl="\n"
+@1 included-content (auto) Heading L2 title=Some("Included content")
+    included-content/0 Para "{{< include _snippet.qmd >}}"
+@2 shortcodes (auto) Heading L2 title=Some("Shortcodes")
+    shortcodes/0 Para "{{< video https://example.com/v.mp4 width=\"100%\" >"
+    shortcodes/1 Para "{{< pagebreak >}}"

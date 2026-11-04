@@ -1,0 +1,13 @@
+---
+source: tests/roundtrip.rs
+expression: "Deck::parse(text).outline()"
+---
+slide_level=2 size=1050x700 front_matter=true title_slide=false nl="\n"
+@1 titled (auto) Heading L2 title=Some("Titled")
+    titled/0 Para "Some text."
+@2 @2 (auto) Rule L2 title=None
+    @2/0 Para "An untitled slide made with a rule."
+@3 @3 (auto) Rule L2 title=None
+    @3/0 Para "Another one."
+@4 @4 (auto) Rule L2 title=None
+    @4/0 Para "Rule with asterisks."

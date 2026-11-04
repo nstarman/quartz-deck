@@ -1,0 +1,20 @@
+---
+title: HTML
+format: revealjs
+---
+
+## Raw HTML
+
+<div class="custom">
+<p>Hello</p>
+</div>
+
+<!--
+## A commented-out slide
+
+with blank lines
+-->
+
+## Embed
+
+<iframe src="https://example.com" width="100%" height="400"></iframe>

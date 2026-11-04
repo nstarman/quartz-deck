@@ -1,0 +1,13 @@
+---
+source: tests/ops.rs
+expression: "ops::diff(&d.text, &after)"
+---
+--- before
++++ after
+@@ -26,2 +26,6 @@
+ Bye.
+ :::
++
++## New {#new}
++
++Body.

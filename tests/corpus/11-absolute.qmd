@@ -1,0 +1,16 @@
+---
+title: Positioned
+format: revealjs
+---
+
+## Boxes {#boxes}
+
+![](figures/logo.png){#b-logo .absolute top=200 left=0 width="350" height="300"}
+
+::: {#b-note .absolute top="50" left="600" width="400" height="120"}
+A positioned note.
+:::
+
+::: {.absolute bottom=10 right=10 width=20%}
+Corner, percent width.
+:::
