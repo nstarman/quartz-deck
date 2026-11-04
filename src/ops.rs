@@ -426,6 +426,34 @@ pub fn rm(d: &Deck, slide: &str) -> Result<Patch> {
     ))
 }
 
+/// Source edits (`edit`, `body`) may not change the slide structure: refuse a
+/// patch that adds or removes a slide (a slide-level heading or `---`) or
+/// leaves slide `index` with an unclosed ``` / `:::` fence (spec 003 FR-008).
+fn keep_structure(d: &Deck, p: Patch, index: usize) -> Result<Patch> {
+    let after = Deck::parse(apply(&d.text, &p)?);
+    if after.slides.len() != d.slides.len() {
+        return Err(QdError::InvalidArg(
+            "the text would start or remove a slide (a slide-level heading or `---`); add slides with `qd add`".into(),
+        ));
+    }
+    let was = d
+        .slides
+        .iter()
+        .find(|s| s.index == index)
+        .is_some_and(|s| s.opaque);
+    let now = after
+        .slides
+        .iter()
+        .find(|s| s.index == index)
+        .is_some_and(|s| s.opaque);
+    if now && !was {
+        return Err(QdError::InvalidArg(
+            "the text leaves a fence open (``` or :::); close it before saving".into(),
+        ));
+    }
+    Ok(p)
+}
+
 /// `--expect-text`: refuse unless `current` still hashes to `expected`.
 fn check_expect(what: &str, current: &str, expected: Option<&str>) -> Result<()> {
     let hash = crate::deck::version_of(current.as_bytes());
@@ -507,14 +535,14 @@ pub fn body(d: &Deck, slide: &str, md: &str) -> Result<Patch> {
     };
     let mut assigned = Vec::new();
     let (new, id) = ctx.rewrite(s, None, None, Some(rest), &mut assigned);
-    Ok(patch("body", id, vec![(s.span, new)], assigned))
+    keep_structure(d, patch("body", id, vec![(s.span, new)], assigned), s.index)
 }
 
 /// Replace one element's source. Only the element's span is written: the slide
 /// heading is left as it is (no id pinning; editing a block can't change the
 /// slide's id), so the file changes nowhere else (spec 003 FR-002).
 pub fn edit(d: &Deck, element: &str, md: &str, expect_text: Option<&str>) -> Result<Patch> {
-    let (_, b) = d.element(element)?;
+    let (slide, b) = d.element(element)?;
     check_expect(&format!("element '{}'", b.id), d.slice(b.span), expect_text)?;
     let md = norm(md, d.nl);
     if md.is_empty() {
@@ -522,7 +550,11 @@ pub fn edit(d: &Deck, element: &str, md: &str, expect_text: Option<&str>) -> Res
             "replacement text is empty; to delete use `qd body` or edit the file".into(),
         ));
     }
-    Ok(patch("edit", b.id.clone(), vec![(b.span, md)], Vec::new()))
+    keep_structure(
+        d,
+        patch("edit", b.id.clone(), vec![(b.span, md)], Vec::new()),
+        slide.index,
+    )
 }
 
 // ---------- front matter ----------

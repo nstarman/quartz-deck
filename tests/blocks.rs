@@ -156,3 +156,40 @@ fn body_of_an_empty_slide_keeps_the_next_slide_separate() {
     e.ok(&["body", "a", "--md", "- one\n- two\n"]);
     assert_eq!(e.text(), "## A {#a}\n\n- one\n- two\n\n## B {#b}\n\ntext\n");
 }
+
+#[test]
+fn source_that_breaks_slide_structure_is_refused() {
+    let e = Env::new(DECK);
+    for (args, why) in [
+        (
+            vec!["edit", "methods/0", "--md", "Text.\n\n## Sneaky\n\nMore."],
+            "new slide heading",
+        ),
+        (
+            vec!["edit", "methods/0", "--md", "::: {.callout-note}\nopen"],
+            "unclosed div",
+        ),
+        (
+            vec!["edit", "methods/0", "--md", "```python\nprint(1)"],
+            "unclosed code fence",
+        ),
+        (
+            vec!["body", "methods", "--md", "a\n\n---\n\nb"],
+            "horizontal rule starts a slide",
+        ),
+    ] {
+        let before = e.text();
+        let (ok, _, err) = e.run(&args);
+        assert!(!ok, "{why} should be refused");
+        assert_eq!(err["error"]["code"], "E_INVALID_ARG", "{why}: {err}");
+        assert_eq!(e.text(), before, "{why}: file must be unchanged");
+    }
+    // balanced constructs and sub-headings are fine
+    e.ok(&[
+        "edit",
+        "methods/0",
+        "--md",
+        "::: {.callout-note}\nNote.\n:::",
+    ]);
+    e.ok(&["edit", "results/0", "--md", "### Sub\n\nText."]);
+}

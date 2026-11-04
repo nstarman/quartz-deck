@@ -2,6 +2,7 @@
 // can do nothing the CLI cannot (FR-010). The .qmd file stays the only state.
 import { region, hintsFor, gate, reserialize, splice } from '/ui/inline.js';
 import { showToolbar, hideToolbar, formatKey, place as placeToolbar } from '/ui/toolbar.js';
+import { openSource, closeSource, sourceError, sourceText } from '/ui/source.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const frame = $('#preview');
@@ -81,6 +82,7 @@ async function op(name, args = {}, { fileExpect = true } = {}) {
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     const e = body.error || { code: res.status, message: res.statusText };
+    op.lastError = e;
     if (e.code === 'E_CONFLICT' && !fileExpect) {
       say(`${name}: this text was changed elsewhere meanwhile — your version is kept; Esc discards it`, true);
     } else if (e.code === 'E_CONFLICT') {
@@ -241,12 +243,17 @@ function hookFrame() {
     }
     const el = e.target.closest('[data-qd]');
     const target = editTarget(e.target);
-    if (!el && !target) return;
+    const sec = e.target.closest('section');
+    if (!el && !target && !(e.altKey && sec)) return;
     e.preventDefault();
     e.stopPropagation();
+    // Alt+click: always the source (an element's, or the whole slide's)
+    if (e.altKey) { (el ? beginSource(el) : beginSlideSource(sec)); return; }
     const point = { x: e.clientX, y: e.clientY };
     (target ? beginEdit(target, point) : Promise.resolve(false)).then((ok) => {
-      if (!ok && el) select(el.dataset.qd);
+      if (ok || !el) return;
+      // a positioned box selects for dragging; anything else opens its source
+      if (el.classList.contains('absolute')) select(el.dataset.qd); else beginSource(el);
     });
   }, true);
   doc.addEventListener('dblclick', (e) => {
@@ -256,7 +263,7 @@ function hookFrame() {
     e.preventDefault();
     // a positioned text box: single click selects it for dragging, double click types
     beginEdit({ kind: 'block', root: el }, { x: e.clientX, y: e.clientY }).then((ok) => {
-      if (!ok) select(el.dataset.qd).then(() => $('textarea', panel)?.focus());
+      if (!ok) beginSource(el);
     });
   }, true);
   doc.addEventListener('keydown', onKey, true);
@@ -782,6 +789,7 @@ async function beginEdit(target, point) {
   const g = gate(s.root, s.reg, s.hints);
   if (!g) return false;
   if (state.session) return false; // another edit started meanwhile
+  s.mode = 'typed';
   Object.assign(s, g, { html: s.root.innerHTML, align: null });
   beginSession(s, point);
   return true;
@@ -821,6 +829,14 @@ function beginSession(s, point) {
 function sessionKey(e, s) {
   e.stopPropagation(); // keep Reveal and the editor's own keys out of the edit
   if (e.key === 'Escape') { e.preventDefault(); endSession(s, false); return; }
+  if (e.key === 'Enter' && e.altKey && s.kind === 'block') {
+    // switch to the source, carrying over what was typed so far
+    e.preventDefault();
+    const draft = draftSource(s) ?? s.source;
+    endSession(s, false, { keepPending: true });
+    beginSource(s.root, draft, s);
+    return;
+  }
   const mod = e.metaKey || e.ctrlKey;
   if ((e.key === 'Enter' && (mod || s.reg.mode === 'inline')) || (e.key === 'Tab' && !inList(s))) {
     e.preventDefault();
@@ -863,6 +879,7 @@ function draftSource(s) {
 async function saveSession() {
   const s = state.session;
   if (!s || s.saving) return;
+  if (s.mode === 'source') return saveSource(s);
   const md = draftSource(s);
   if (md === null) {
     s.failed = true;
@@ -882,19 +899,23 @@ async function saveSession() {
 }
 
 /** Close the edit; `saved` keeps the typed text visible until the new render loads. */
-function endSession(s, saved) {
+function endSession(s, saved, { keepPending = false } = {}) {
   if (state.session !== s) return;
-  s.root.removeEventListener('keydown', s.onKey);
-  s.root.removeEventListener('focusout', s.onBlur);
-  s.root.removeEventListener('paste', s.onPaste);
-  s.root.removeEventListener('input', s.onInput);
-  s.root.removeAttribute('contenteditable');
   s.root.classList.remove('qd-editing');
-  if (!saved) { s.root.innerHTML = s.html; s.root.style.textAlign = ''; }
-  s.root.blur();
-  hideToolbar();
+  if (s.mode === 'source') {
+    closeSource();
+  } else {
+    s.root.removeEventListener('keydown', s.onKey);
+    s.root.removeEventListener('focusout', s.onBlur);
+    s.root.removeEventListener('paste', s.onPaste);
+    s.root.removeEventListener('input', s.onInput);
+    s.root.removeAttribute('contenteditable');
+    if (!saved) { s.root.innerHTML = s.html; s.root.style.textAlign = ''; }
+    s.root.blur();
+    hideToolbar();
+  }
   state.session = null;
-  if (state.pendingRender) {
+  if (state.pendingRender && !keepPending) {
     const html = state.pendingRender;
     state.pendingRender = null;
     pendingBadge(false);
@@ -902,5 +923,68 @@ function endSession(s, saved) {
   }
 }
 
+// ---------- source editing in place (spec 003 US2) ----------
+
+function pageRect(el) {
+  const f = frame.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  return { left: f.left + r.left, top: f.top + r.top, width: r.width, height: r.height };
+}
+
+function startSourceSession(s, text) {
+  state.session = s;
+  state.sel = null;
+  highlight();
+  s.root.classList.add('qd-editing');
+  openSource(pageRect(s.root), text, { save: () => saveSession(), cancel: () => endSession(s, false) });
+  say('Editing source — ⌘Enter or click elsewhere saves, Esc cancels');
+}
+
+/** Edit one element's markdown over it; `draft` and `base` carry over a typing session. */
+async function beginSource(el, draft = null, base = null) {
+  if (state.session) return false;
+  const ref = el.dataset.qd;
+  let source = base?.source;
+  let hash = base?.hash;
+  if (!base) {
+    const cut = ref.lastIndexOf('/');
+    const slide = await fetchSlide(ref.slice(0, cut));
+    const block = slide?.blocks[Number(ref.slice(cut + 1))];
+    if (!block || state.session) return false;
+    source = block.text;
+    hash = block.hash;
+  }
+  startSourceSession({ kind: 'block', mode: 'source', root: el, ref, source, hash }, draft ?? source);
+  return true;
+}
+
+/** Edit a whole slide's content (positioned boxes are kept, as with `qd body`). */
+async function beginSlideSource(sec) {
+  if (state.session || !sec) return false;
+  const cur = slideByAnchor(sec.id);
+  const slide = cur && (await fetchSlide(cur.id));
+  if (!slide || slide.opaque || state.session) return false;
+  const text = blockOfBody(slide);
+  startSourceSession({ kind: 'slide', mode: 'source', root: sec, slide: slide.id, source: text }, text);
+  return true;
+}
+
+async function saveSource(s) {
+  const md = sourceText();
+  if (md.trim() === s.source.trim()) { endSession(s, false); return; }
+  s.saving = true;
+  const r = s.kind === 'slide'
+    ? await op('body', { slide: s.slide, md })
+    : await op('edit', { element: s.ref, md, 'expect-text': s.hash }, { fileExpect: false });
+  s.saving = false;
+  if (!r) { sourceError(op.lastError?.message || 'not saved'); return; }
+  endSession(s, true);
+  await fetchDeck();
+}
+
 // test/automation hook (tests/onslide.rs): read-only view of the open edit
-window.qdSession = () => (state.session ? { kind: state.session.kind, ref: state.session.ref || null, draft: draftSource(state.session) } : null);
+window.qdSession = () => {
+  const s = state.session;
+  if (!s) return null;
+  return { kind: s.kind, mode: s.mode || 'typed', ref: s.ref || null, draft: s.mode === 'source' ? sourceText() : draftSource(s) };
+};

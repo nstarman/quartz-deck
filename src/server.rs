@@ -29,6 +29,7 @@ const EDITOR_CSS: &str = include_str!("ui/editor.css");
 const UI_MODULES: &[(&str, &str)] = &[
     ("inline.js", include_str!("ui/inline.js")),
     ("toolbar.js", include_str!("ui/toolbar.js")),
+    ("source.js", include_str!("ui/source.js")),
 ];
 
 #[derive(Clone, Debug)]

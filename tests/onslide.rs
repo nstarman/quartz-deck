@@ -531,3 +531,92 @@ async fn render_waits_for_the_open_edit() {
     )
     .await;
 }
+
+// ---------- US2: source editing in place (T016) ----------
+
+const MATH: &str =
+    "---\ntitle: T\nformat: revealjs\n---\n\n## Eq {#eq}\n\n$$\nE = mc^2\n$$\n\nPlain words.\n";
+
+const SRC: &str = "document.querySelector('#srcedit textarea')";
+
+impl Ed {
+    async fn set_source(&self, text: &str) {
+        self.eval(&format!("(() => {{ const t = {SRC}; t.value = {text:?}; t.dispatchEvent(new Event('input')); t.focus(); }})()")).await;
+    }
+    async fn idle(&self) {
+        self.wait(
+            "window.qdSession() === null && !document.querySelector('#pending')?.textContent",
+            30,
+        )
+        .await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn source_editor_opens_over_math_and_refuses_new_slides() {
+    let Some(ed) = Ed::open(MATH).await else {
+        return;
+    };
+    ed.go("eq").await;
+    ed.click_in_slide("[data-qd=\"eq/0\"]").await;
+    ed.wait(&format!("{SRC}?.value === '$$\\nE = mc^2\\n$$'"), 10)
+        .await;
+    // drawn over the element it edits
+    let over = ed
+        .eval("(() => { const f = document.querySelector('#preview').getBoundingClientRect(); const e = document.querySelector('#preview').contentDocument.querySelector('[data-qd=\"eq/0\"]').getBoundingClientRect(); const b = document.querySelector('#srcedit').getBoundingClientRect(); return Math.abs(b.top - (f.top + e.top)) < 40; })()")
+        .await;
+    assert_eq!(over, Value::Bool(true));
+    ed.set_source("$$\nE = m c^2\n$$").await;
+    ed.key("Enter", "Enter", 13, 2).await; // Ctrl+Enter saves
+    ed.wait_file(|f| f.contains("E = m c^2"), "saved").await;
+    assert_eq!(ed.file(), MATH.replace("mc^2", "m c^2"));
+
+    // a slide heading in the source is refused; the text stays for fixing
+    ed.idle().await;
+    ed.go("eq").await;
+    ed.click_in_slide("[data-qd=\"eq/0\"]").await;
+    ed.wait("!document.querySelector('#srcedit').hidden", 10)
+        .await;
+    let before = ed.file();
+    ed.set_source("Text.\n\n## Sneaky\n\nMore.").await;
+    ed.key("Enter", "Enter", 13, 2).await;
+    ed.wait(
+        "(document.querySelector('#srcedit .err')?.textContent || '').includes('slide')",
+        10,
+    )
+    .await;
+    assert_eq!(
+        ed.eval(&format!("{SRC}.value")).await,
+        "Text.\n\n## Sneaky\n\nMore."
+    );
+    assert_eq!(ed.file(), before);
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait(
+        "document.querySelector('#srcedit').hidden && window.qdSession() === null",
+        10,
+    )
+    .await;
+    assert_eq!(ed.file(), before);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn alt_enter_switches_typing_to_source() {
+    let Some(ed) = Ed::open(MATH).await else {
+        return;
+    };
+    ed.go("eq").await;
+    ed.click_in_slide("[data-qd=\"eq/1\"] p").await;
+    ed.caret("[data-qd=\"eq/1\"]", None).await;
+    ed.type_text(" more").await;
+    ed.key("Enter", "Enter", 13, 1).await; // Alt+Enter
+    ed.wait(&format!("{SRC}?.value === 'Plain words. more'"), 10)
+        .await;
+    ed.set_source("Plain *words* more.").await;
+    ed.key("Enter", "Enter", 13, 2).await;
+    ed.wait_file(|f| f.contains("Plain *words* more."), "saved")
+        .await;
+    assert_eq!(
+        ed.file(),
+        MATH.replace("Plain words.", "Plain *words* more.")
+    );
+}
