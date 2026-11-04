@@ -30,6 +30,8 @@ const UI_MODULES: &[(&str, &str)] = &[
     ("inline.js", include_str!("ui/inline.js")),
     ("toolbar.js", include_str!("ui/toolbar.js")),
     ("source.js", include_str!("ui/source.js")),
+    ("actions.js", include_str!("ui/actions.js")),
+    ("menu.js", include_str!("ui/menu.js")),
 ];
 
 #[derive(Clone, Debug)]

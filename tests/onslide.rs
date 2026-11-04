@@ -3,7 +3,8 @@
 //! Skipped (with a message) when Quarto or a browser is missing; CI has both.
 
 use chromiumoxide::cdp::browser_protocol::input::{
-    DispatchKeyEventParams, DispatchKeyEventType, InsertTextParams,
+    DispatchKeyEventParams, DispatchKeyEventType, DispatchMouseEventParams, DispatchMouseEventType,
+    InsertTextParams, MouseButton,
 };
 use chromiumoxide::cdp::js_protocol::runtime::EvaluateParams;
 use chromiumoxide::layout::Point;
@@ -718,4 +719,318 @@ async fn fifty_interleaved_edits_lose_nothing() {
     assert_eq!(collisions, 5);
     let f = ed.file();
     assert!(f.contains("- two 24"), "{f}");
+}
+
+// ---------- P2: menus, bars, insert, drag, clipboard (T022, T027, T029, T031) ----------
+
+const P2: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## A {#a}\n\nFirst para.\n\nSecond para.\n\n- x\n- y\n\n## B {#b}\n\nOther slide.\n\n## Empty {#empty}\n";
+
+impl Ed {
+    /// Page point `[x, y]` of an element in the preview (centre, or left edge + 4 px).
+    async fn slide_point(&self, sel: &str) -> (f64, f64) {
+        let pt = self.eval(&format!("(() => {{ const f = document.querySelector('#preview'); const el = f.contentDocument.querySelector({sel:?}); const a = f.getBoundingClientRect(); const r = el.getBoundingClientRect(); return [a.left + r.left + r.width / 2, a.top + r.top + r.height / 2]; }})()")).await;
+        (pt[0].as_f64().unwrap(), pt[1].as_f64().unwrap())
+    }
+    async fn mouse(&self, t: DispatchMouseEventType, (x, y): (f64, f64), button: MouseButton) {
+        let pressed = !matches!(t, DispatchMouseEventType::MouseReleased);
+        let mut b = DispatchMouseEventParams::builder()
+            .r#type(t.clone())
+            .x(x)
+            .y(y)
+            .button(button.clone());
+        if matches!(
+            t,
+            DispatchMouseEventType::MousePressed | DispatchMouseEventType::MouseReleased
+        ) {
+            b = b.click_count(1);
+        }
+        if pressed && !matches!(button, MouseButton::None) {
+            b = b.buttons(if matches!(button, MouseButton::Right) {
+                2
+            } else {
+                1
+            });
+        }
+        self.page.execute(b.build().unwrap()).await.unwrap();
+    }
+    async fn right_click(&self, at: (f64, f64)) {
+        self.mouse(DispatchMouseEventType::MousePressed, at, MouseButton::Right)
+            .await;
+        self.mouse(
+            DispatchMouseEventType::MouseReleased,
+            at,
+            MouseButton::Right,
+        )
+        .await;
+    }
+    /// Right-click and wait for the menu (it opens once the element's details are fetched).
+    async fn open_menu(&self, at: (f64, f64)) {
+        self.right_click(at).await;
+        self.wait("!document.querySelector('#ctxmenu').hidden", 20)
+            .await;
+    }
+    /// Labels of the open context menu's top level, with "(disabled)" marks.
+    async fn menu_labels(&self) -> Vec<String> {
+        self.wait("!document.querySelector('#ctxmenu').hidden", 20)
+            .await;
+        let v = self.eval("[...document.querySelectorAll('#ctxmenu > ul > li[tabindex]')].map((li) => li.firstChild.textContent + (li.getAttribute('aria-disabled') ? ' (disabled)' : ''))").await;
+        v.as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x.as_str().unwrap().to_string())
+            .collect()
+    }
+    /// Click the visible menu item labelled `label` (opening its submenu if it has one).
+    async fn click_menu(&self, label: &str) {
+        self.wait(&format!("[...document.querySelectorAll('#ctxmenu li')].some((li) => li.firstChild?.textContent === {label:?} && li.offsetParent)"), 10).await;
+        self.click_js(&format!("(() => {{ const li = [...document.querySelectorAll('#ctxmenu li')].find((li) => li.firstChild?.textContent === {label:?} && li.offsetParent); li.dispatchEvent(new MouseEvent('mouseenter')); const r = li.getBoundingClientRect(); return [r.left + 20, r.top + r.height / 2]; }})()")).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn context_menus_list_and_run_actions() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    ed.go("a").await;
+    let first = ed.slide_point("[data-qd=\"a/0\"] p").await;
+    ed.right_click(first).await;
+    let labels = ed.menu_labels().await;
+    for l in [
+        "Edit text",
+        "Edit source",
+        "Cut",
+        "Copy",
+        "Paste after",
+        "Duplicate",
+        "Delete",
+        "Move up (disabled)",
+        "Move down",
+        "Insert before",
+        "Insert after",
+        "Appears on click",
+        "Appearance",
+    ] {
+        assert!(labels.iter().any(|x| x == l), "{l} missing from {labels:?}");
+    }
+    // keyboard: arrows move, Escape closes
+    ed.key("ArrowDown", "ArrowDown", 40, 0).await;
+    assert_eq!(
+        ed.eval("document.activeElement.firstChild.textContent")
+            .await,
+        "Edit source"
+    );
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("document.querySelector('#ctxmenu').hidden", 5)
+        .await;
+    // each action is the qd command: Duplicate = `qd block dup`
+    ed.right_click(first).await;
+    ed.click_menu("Duplicate").await;
+    ed.wait_file(|f| f.matches("First para.").count() == 2, "duplicated")
+        .await;
+    assert!(
+        ed.file()
+            .contains("First para.\n\nFirst para.\n\nSecond para.")
+    );
+
+    // the slide list: Transition ▸ Fade = `qd set b --attr transition=fade`
+    ed.settle().await;
+    let li = ed.eval("(() => { const r = document.querySelector('#slides li[data-id=b]').getBoundingClientRect(); return [r.left + 20, r.top + r.height / 2]; })()").await;
+    ed.right_click((li[0].as_f64().unwrap(), li[1].as_f64().unwrap()))
+        .await;
+    let labels = ed.menu_labels().await;
+    assert!(
+        labels.iter().any(|x| x == "Hidden in the presentation"),
+        "{labels:?}"
+    );
+    ed.click_menu("Transition").await;
+    ed.click_menu("Fade").await;
+    ed.wait_file(
+        |f| f.contains("## B {#b transition=fade}"),
+        "transition set",
+    )
+    .await;
+
+    // Shift+F10 opens the menu for the selected element
+    ed.settle().await;
+    ed.go("a").await;
+    ed.right_click(ed.slide_point("[data-qd=\"a/3\"]").await)
+        .await; // the list, now last
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("document.querySelector('#ctxmenu').hidden", 5)
+        .await;
+    ed.key("F10", "F10", 121, 8).await;
+    assert!(
+        ed.menu_labels()
+            .await
+            .iter()
+            .any(|x| x == "Move down (disabled)"),
+        "last element"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn bars_set_properties_and_source_panel_is_hidden() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    ed.go("a").await;
+    assert_eq!(
+        ed.eval("document.querySelector('main').classList.contains('panel-open')")
+            .await,
+        false
+    );
+    assert_eq!(
+        ed.eval("getComputedStyle(document.querySelector('#panel')).display")
+            .await,
+        "none"
+    );
+    // slide bar: hidden toggle = visibility attribute
+    ed.wait("!document.querySelector('#slidebar').hidden", 20)
+        .await;
+    ed.click_editor("#slidebar [name=hidden]").await;
+    ed.wait_file(|f| f.contains("## A {#a visibility=hidden}"), "hidden")
+        .await;
+    ed.settle().await;
+    ed.wait(
+        "document.querySelector('#slidebar [name=hidden]').checked",
+        20,
+    )
+    .await;
+    ed.click_editor("#slidebar [name=hidden]").await;
+    ed.wait_file(|f| f == P2, "unhidden, bytes as before").await;
+    // element bar: "On click" = .fragment, and back again byte-identical
+    ed.settle().await;
+    ed.go("a").await;
+    ed.open_menu(ed.slide_point("[data-qd=\"a/1\"] p").await)
+        .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("!document.querySelector('#elbar').hidden", 20)
+        .await;
+    ed.click_editor("#elbar [data-act=fragment]").await;
+    ed.wait_file(
+        |f| f.contains("::: {.fragment}\nSecond para.\n:::"),
+        "fragment",
+    )
+    .await;
+    ed.settle().await;
+    ed.go("a").await;
+    ed.open_menu(ed.slide_point("[data-qd=\"a/1\"]").await)
+        .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("!document.querySelector('#elbar').hidden", 20)
+        .await;
+    ed.click_editor("#elbar [data-act=fragment]").await;
+    ed.wait_file(|f| f == P2, "fragment removed, bytes as before")
+        .await;
+    // the Source button shows the panel
+    ed.click_editor("#toggle-source").await;
+    assert_eq!(
+        ed.eval("getComputedStyle(document.querySelector('#panel')).display")
+            .await,
+        "block"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn insert_drag_delete_and_empty_slides() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    ed.go("a").await;
+    // hover → + → List: a new list opens for typing with its placeholder selected
+    // (between the paragraphs: a list right after a list would join it, as in markdown)
+    let first = ed.slide_point("[data-qd=\"a/0\"] p").await;
+    ed.mouse(DispatchMouseEventType::MouseMoved, first, MouseButton::None)
+        .await;
+    ed.wait("!document.querySelector('#hoverbar').hidden", 20)
+        .await;
+    ed.click_editor("#hoverbar [data-act=insert]").await;
+    ed.click_menu("List").await;
+    ed.wait("window.qdSession()?.ref === 'a/1'", 30).await;
+    ed.type_text("typed item").await;
+    ed.key("Enter", "Enter", 13, 2).await;
+    ed.wait_file(
+        |f| f.contains("First para.\n\n- typed item\n\nSecond para."),
+        "inserted",
+    )
+    .await;
+
+    // drag the x/y list (a/3) above the first paragraph
+    ed.settle().await;
+    ed.go("a").await;
+    let list = ed.slide_point("[data-qd=\"a/3\"]").await;
+    ed.mouse(DispatchMouseEventType::MouseMoved, list, MouseButton::None)
+        .await;
+    ed.wait("!document.querySelector('#hoverbar').hidden", 20)
+        .await;
+    let h = ed.eval("(() => { const r = document.querySelector('#hoverbar [data-act=drag]').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()").await;
+    let handle = (h[0].as_f64().unwrap(), h[1].as_f64().unwrap());
+    let (fx, fy) = ed.slide_point("[data-qd=\"a/0\"]").await;
+    ed.mouse(
+        DispatchMouseEventType::MousePressed,
+        handle,
+        MouseButton::Left,
+    )
+    .await;
+    ed.mouse(
+        DispatchMouseEventType::MouseMoved,
+        (fx, fy - 8.0),
+        MouseButton::Left,
+    )
+    .await;
+    ed.mouse(
+        DispatchMouseEventType::MouseReleased,
+        (fx, fy - 8.0),
+        MouseButton::Left,
+    )
+    .await;
+    ed.wait_file(
+        |f| f.contains("## A {#a}\n\n- x\n- y\n\nFirst para."),
+        "moved",
+    )
+    .await;
+
+    // Delete key on the selected element = `qd block rm`
+    ed.settle().await;
+    ed.go("a").await;
+    ed.open_menu(ed.slide_point("[data-qd=\"a/0\"]").await)
+        .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("!document.querySelector('#elbar').hidden", 20)
+        .await;
+    ed.key("Delete", "Delete", 46, 0).await;
+    ed.wait_file(|f| !f.contains("- x\n- y"), "deleted").await;
+
+    // an empty slide offers its first element
+    ed.settle().await;
+    ed.go("empty").await;
+    ed.wait("!document.querySelector('#emptyadd').hidden", 20)
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn copy_and_paste_carry_the_markdown() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    ed.go("a").await;
+    ed.right_click(ed.slide_point("[data-qd=\"a/2\"]").await)
+        .await;
+    ed.click_menu("Copy").await;
+    ed.go("b").await;
+    ed.right_click(ed.slide_point("[data-qd=\"b/0\"] p").await)
+        .await;
+    ed.click_menu("Paste after").await;
+    ed.wait_file(
+        |f| f.contains("Other slide.\n\n- x\n- y\n\n## Empty"),
+        "pasted byte-for-byte",
+    )
+    .await;
+    // cut = copy + remove
+    ed.settle().await;
+    ed.go("a").await;
+    ed.right_click(ed.slide_point("[data-qd=\"a/0\"] p").await)
+        .await;
+    ed.click_menu("Cut").await;
+    ed.wait_file(|f| !f.contains("First para."), "cut").await;
+    assert_eq!(
+        ed.eval("navigator.clipboard.readText().catch(() => null)")
+            .await
+            .as_str()
+            .unwrap_or("First para."),
+        "First para."
+    );
 }

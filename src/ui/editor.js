@@ -3,6 +3,8 @@
 import { region, hintsFor, gate, reserialize, splice } from '/ui/inline.js';
 import { showToolbar, hideToolbar, formatKey, place as placeToolbar } from '/ui/toolbar.js';
 import { openSource, closeSource, sourceError, sourceText } from '/ui/source.js';
+import { makeActions } from '/ui/actions.js';
+import { openMenu, closeMenu, menuOpen } from '/ui/menu.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const frame = $('#preview');
@@ -22,6 +24,8 @@ const state = {
   selectIdAfterRender: null, // element id (e.g. a new box) to select once rendered
   session: null, // open on-slide edit (spec 003), see beginSession
   pendingRender: null, // newest render that arrived while editing (applied when it ends)
+  editAfterRender: null, // {ref, mode}: open a just-inserted element for editing once rendered
+  clip: null, // last copied element markdown (fallback when the clipboard can't be read)
 };
 
 // ---------- helpers ----------
@@ -61,6 +65,7 @@ async function fetchDeck() {
   state.deck = await res.json();
   state.version = state.deck.version;
   renderList();
+  renderSlidebar();
 }
 
 async function fetchSlide(ref) {
@@ -151,11 +156,13 @@ function highlight() {
   if (!doc) return;
   doc.querySelectorAll('.qd-sel').forEach((el) => el.classList.remove('qd-sel'));
   doc.querySelectorAll('.qd-overlay').forEach((el) => el.remove());
+  placeElbar();
   if (!state.sel) return;
   const els = doc.querySelectorAll(`[data-qd="${CSS.escape(state.sel)}"]`);
   els.forEach((el) => el.classList.add('qd-sel'));
   const box = [...els].find((el) => el.classList.contains('absolute'));
   if (box) attachOverlay(box);
+  placeElbar();
 }
 
 // ---------- drag / resize positioned boxes (US4) ----------
@@ -257,7 +264,7 @@ function hookFrame() {
     const el = e.target.closest('[data-qd]');
     const target = editTarget(e.target);
     const sec = e.target.closest('section');
-    if (!el && !target && !(e.altKey && sec)) return;
+    if (!el && !target && !(e.altKey && sec)) { if (state.sel) select(null); return; }
     e.preventDefault();
     e.stopPropagation();
     // Alt+click: always the source (an element's, or the whole slide's)
@@ -280,6 +287,16 @@ function hookFrame() {
     });
   }, true);
   doc.addEventListener('keydown', onKey, true);
+  doc.addEventListener('contextmenu', (e) => {
+    if (state.session) return; // the browser's own menu (spelling) while typing
+    const sec = e.target.closest('section');
+    if (!sec) return;
+    e.preventDefault();
+    const f = frame.getBoundingClientRect();
+    contextMenuAt(e.target.closest('[data-qd]'), sec, f.left + e.clientX, f.top + e.clientY);
+  });
+  doc.addEventListener('mousemove', (e) => hoverAt(e.target), { passive: true });
+  doc.addEventListener('mousedown', () => closeMenu());
 
   const onReady = () => {
     // A narrow preview pane would put Reveal into its scroll view; the editor
@@ -295,6 +312,7 @@ function hookFrame() {
       state.selectIdAfterRender = null;
       if (el?.dataset.qd) state.sel = el.dataset.qd;
     }
+    if (state.editAfterRender) openInserted(state.editAfterRender);
     onSlide();
   };
   const onSlide = () => {
@@ -306,6 +324,7 @@ function hookFrame() {
     if (state.sel && s && !state.sel.startsWith(s.id + '/')) state.sel = null;
     renderList();
     renderPanel();
+    renderSlidebar();
   };
   if (w.Reveal?.isReady?.()) onReady();
   else w.Reveal?.on?.('ready', onReady);
@@ -398,6 +417,11 @@ function renderList() {
     b.addEventListener('click', () => { hidePeek(); state.sel = null; go(s.anchor); });
     li.append(b);
     li.addEventListener('mouseenter', () => { if (!dragId && !state.session) showPeek(li, s.anchor); });
+    li.addEventListener('contextmenu', async (e) => {
+      e.preventDefault();
+      hidePeek();
+      openMenu(actions.slide(await slideTarget(s.id)), e.clientX, e.clientY);
+    });
     li.addEventListener('mouseleave', hidePeek);
 
     li.addEventListener('dragstart', (e) => {
@@ -690,10 +714,33 @@ $('#export').addEventListener('click', async (e) => {
 $('#undo').addEventListener('click', () => undoRedo('undo'));
 $('#redo').addEventListener('click', () => undoRedo('redo'));
 
+const ELEMENT_KEYS = [
+  [(e) => e.key === 'Enter' && !e.altKey, 'edit'],
+  [(e) => e.key === 'Enter' && e.altKey, 'source'],
+  [(e, mod) => mod && e.key.toLowerCase() === 'c', 'copy'],
+  [(e, mod) => mod && e.key.toLowerCase() === 'x', 'cut'],
+  [(e, mod) => mod && e.key.toLowerCase() === 'v', 'paste'],
+  [(e, mod) => mod && !e.shiftKey && e.key.toLowerCase() === 'd', 'dup'],
+  [(e) => e.key === 'Backspace' || e.key === 'Delete', 'delete'],
+  [(e) => e.altKey && e.key === 'ArrowUp', 'up'],
+  [(e) => e.altKey && e.key === 'ArrowDown', 'down'],
+];
+
 function onKey(e) {
-  if (state.session) return; // the open edit handles its own keys (sessionKey)
-  if (e.key === 'Escape' && state.sel) { e.preventDefault(); select(null); return; }
+  if (menuOpen()) { if (e.key === 'Escape') { e.preventDefault(); closeMenu(); } return; }
+  if (state.session || editing()) return; // edits and form fields handle their own keys
   const mod = e.metaKey || e.ctrlKey;
+  if ((e.shiftKey && e.key === 'F10') || e.key === 'ContextMenu') { e.preventDefault(); keyboardMenu(); return; }
+  if (state.sel) {
+    const hit = ELEMENT_KEYS.find(([test]) => test(e, mod));
+    if (hit) { e.preventDefault(); elementTarget(state.sel).then((t) => t && actions.run(hit[1], t)); return; }
+  }
+  if (mod && e.shiftKey && (e.key.toLowerCase() === 'n' || e.key.toLowerCase() === 'd')) {
+    const cur = slideByAnchor(state.anchor);
+    if (cur) { e.preventDefault(); slideTarget(cur.id).then((t) => openMenuAction(actions.slide(t), e.key.toLowerCase() === 'n' ? 'slide-after' : 'slide-dup')); }
+    return;
+  }
+  if (e.key === 'Escape' && state.sel) { e.preventDefault(); select(null); return; }
   if (!mod || e.key.toLowerCase() !== 'z' || editing()) return;
   e.preventDefault();
   undoRedo(e.shiftKey ? 'redo' : 'undo');
@@ -798,6 +845,8 @@ async function beginEdit(target, point) {
 /** Common start of a typing or source session. */
 function openSession(s) {
   hidePeek();
+  hoverbar.hidden = true;
+  emptyadd.hidden = true;
   state.session = s;
   state.sel = null;
   highlight();
@@ -810,6 +859,7 @@ function beginSession(s, point) {
   s.root.contentEditable = 'true';
   doc.execCommand('styleWithCSS', false, false);
   doc.execCommand('defaultParagraphSeparator', false, 'p');
+  frame.focus(); // keyboard input must reach the iframe (e.g. after a menu in the page had focus)
   s.root.focus();
   const r = point && doc.caretRangeFromPoint?.(point.x, point.y);
   if (r && s.root.contains(r.startContainer)) {
@@ -832,7 +882,7 @@ function beginSession(s, point) {
 
 function sessionKey(e, s) {
   e.stopPropagation(); // keep Reveal and the editor's own keys out of the edit
-  if (e.key === 'Escape') { e.preventDefault(); endSession(s, false); return; }
+  if (e.key === 'Escape') { e.preventDefault(); endSession(s, false); if (s.ref) select(s.ref); return; }
   if (e.key === 'Enter' && e.altKey && s.kind === 'block') {
     // switch to the source, carrying over what was typed so far
     e.preventDefault();
@@ -1043,3 +1093,296 @@ window.qdSession = () => {
   if (!s) return null;
   return { kind: s.kind, mode: s.mode || 'typed', ref: s.ref || null, draft: s.mode === 'source' ? sourceText() : draftSource(s) };
 };
+
+// ---------- menus, bars, insert, drag, clipboard (spec 003 US3/US4/US6) ----------
+
+/** What actions act on: an element (`<slide>/<i>`) … */
+async function elementTarget(ref) {
+  const cut = ref.lastIndexOf('/');
+  const slideId = ref.slice(0, cut);
+  const slide = await fetchSlide(slideId);
+  const index = Number(ref.slice(cut + 1));
+  const block = slide?.blocks[index];
+  if (!block) return null;
+  const el = frame.contentDocument?.querySelector(`[data-qd="${CSS.escape(ref)}"]`);
+  return { ref, block, slideId, index, count: slide.blocks.length, el };
+}
+
+/** … or a slide. */
+async function slideTarget(slideId) {
+  const listed = slideById(slideId);
+  const full = await fetchSlide(slideId);
+  return { slideId, anchor: listed?.anchor || slideId, title: full?.title, full };
+}
+
+const actions = makeActions({
+  op: async (name, args) => {
+    const r = await op(name, args);
+    if (!r) return null;
+    if (name === 'add' || name === 'dup') state.goAfterRender = r.target;
+    if (name.startsWith('block') && name !== 'block rm' && r.target?.includes('/')) state.sel = r.target;
+    if (name === 'block rm' || name === 'rm') state.sel = null;
+    await fetchDeck();
+    await renderPanel();
+    renderSlidebar();
+    return r;
+  },
+  beginEditRef: (t) => t.el && beginEdit({ kind: 'block', root: t.el }, null).then((ok) => ok || beginSource(t.el)),
+  beginSourceEl: (t) => t.el && beginSource(t.el),
+  beginSlideSource: (t) => beginSlideSource(frame.contentDocument?.getElementById(t.anchor)),
+  insert: insertBlock,
+  copy: copyElement,
+  paste: pasteAfter,
+  say,
+  slideUrl: (anchor) => `${location.origin}/#/${anchor}`,
+});
+
+function openMenuAction(items, id) {
+  items.find((i) => i.id === id)?.run?.();
+}
+
+/** Right-click in the preview: the element's menu, or the slide's (empty area). */
+async function contextMenuAt(el, sec, x, y) {
+  if (el) {
+    await select(el.dataset.qd);
+    const t = await elementTarget(el.dataset.qd);
+    if (t) openMenu(actions.element(t), x, y);
+    return;
+  }
+  const cur = slideByAnchor(sec.id);
+  if (!cur) return; // the title slide has no slide-level actions
+  openMenu(actions.empty(await slideTarget(cur.id)), x, y);
+}
+
+/** Shift+F10 / ContextMenu key: menu for the selected element, else the slide. */
+async function keyboardMenu() {
+  const f = frame.getBoundingClientRect();
+  const el = state.sel && frame.contentDocument?.querySelector(`[data-qd="${CSS.escape(state.sel)}"]`);
+  if (el) {
+    const r = el.getBoundingClientRect();
+    const t = await elementTarget(state.sel);
+    if (t) openMenu(actions.element(t), f.left + r.left, f.top + r.bottom);
+    return;
+  }
+  const cur = slideByAnchor(state.anchor);
+  if (cur) openMenu(actions.empty(await slideTarget(cur.id)), f.left + 40, f.top + 40);
+}
+
+// element bar: the common actions for the selected element (US3)
+const elbar = document.createElement('div');
+elbar.id = 'elbar';
+elbar.setAttribute('role', 'toolbar');
+elbar.setAttribute('aria-label', 'Element');
+elbar.hidden = true;
+for (const [id, label, title] of [['edit', 'Edit', 'Edit text (Enter)'], ['source', 'Source', 'Edit source (⌥Enter)'],
+  ['fragment', 'On click', 'Appears on click'], ['delete', 'Delete', 'Delete (⌫)'], ['more', '⋯', 'More (right-click, ⇧F10)']]) {
+  const b = Object.assign(document.createElement('button'), { type: 'button', textContent: label, title });
+  b.dataset.act = id;
+  b.setAttribute('aria-label', title);
+  elbar.append(b);
+}
+document.body.append(elbar);
+elbar.addEventListener('click', async (e) => {
+  const id = e.target.closest('button')?.dataset.act;
+  const t = id && state.sel && (await elementTarget(state.sel));
+  if (!t) return;
+  if (id === 'more') { const r = e.target.getBoundingClientRect(); openMenu(actions.element(t), r.left, r.bottom + 4); return; }
+  if (id === 'fragment') { openMenuAction(actions.element(t), 'fragment'); return; }
+  actions.run(id, t);
+});
+
+async function placeElbar() {
+  const el = !state.session && state.sel && frame.contentDocument?.querySelector(`[data-qd="${CSS.escape(state.sel)}"]`);
+  if (!el) { elbar.hidden = true; return; }
+  const t = await elementTarget(state.sel);
+  $('[data-act=fragment]', elbar).setAttribute('aria-pressed', String(!!t?.block.attrs?.classes?.includes('fragment')));
+  const f = frame.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  elbar.hidden = false;
+  elbar.style.left = Math.max(4, Math.min(f.left + r.left, innerWidth - elbar.offsetWidth - 4)) + 'px';
+  elbar.style.top = Math.max(f.top + 2, f.top + r.top - elbar.offsetHeight - 10) + 'px';
+}
+
+// slide bar: the slide's common properties (US3)
+const slidebar = $('#slidebar');
+async function renderSlidebar() {
+  const cur = slideByAnchor(state.anchor);
+  slidebar.hidden = !cur;
+  if (!cur) return;
+  const full = await fetchSlide(cur.id);
+  const kv = full?.attrs?.kv || {};
+  slidebar.bg.value = /^#[0-9a-f]{6}$/i.test(kv['background-color'] || '') ? kv['background-color'] : '#ffffff';
+  slidebar.querySelector('[name=transition]').value = kv.transition || '';
+  slidebar.querySelector('[name=hidden]').checked = kv.visibility === 'hidden';
+  placeEmptyadd();
+}
+slidebar.bg = slidebar.querySelector('[name=bg]');
+const slideOp = async (args) => {
+  const cur = slideByAnchor(state.anchor);
+  if (cur && (await op('set', { slide: cur.id, ...args }))) { await fetchDeck(); renderSlidebar(); }
+};
+slidebar.bg.addEventListener('change', () => slideOp({ attr: [`background-color=${slidebar.bg.value}`] }));
+slidebar.querySelector('[name=transition]').addEventListener('change', (e) => slideOp(e.target.value ? { attr: [`transition=${e.target.value}`] } : { unset: ['transition'] }));
+slidebar.querySelector('[name=hidden]').addEventListener('change', (e) => slideOp(e.target.checked ? { attr: ['visibility=hidden'] } : { unset: ['visibility'] }));
+slidebar.addEventListener('click', async (e) => {
+  const act = e.target.closest('button')?.dataset.act;
+  const cur = slideByAnchor(state.anchor);
+  if (!act || !cur) return;
+  const t = await slideTarget(cur.id);
+  if (act === 'bg-clear') slideOp({ unset: ['background-color'] });
+  else if (act === 'bg-image') openMenuAction(actions.slide(t), 'slide-bgimg');
+  else if (act === 'more') { const r = e.target.getBoundingClientRect(); openMenu(actions.slide(t), r.left, r.bottom + 4); }
+});
+
+// the Source panel (the old form) is hidden by default (FR-018)
+const toggleSource = $('#toggle-source');
+function setPanel(open) {
+  document.querySelector('main').classList.toggle('panel-open', open);
+  toggleSource.setAttribute('aria-pressed', String(open));
+  try { localStorage.setItem('qd.panel', open ? '1' : ''); } catch { /* storage unavailable */ }
+}
+toggleSource.addEventListener('click', () => setPanel(toggleSource.getAttribute('aria-pressed') !== 'true'));
+try { setPanel(localStorage.getItem('qd.panel') === '1'); } catch { setPanel(false); }
+
+// insert (+) and drag (⠿) handles beside the element under the mouse (US4)
+const hoverbar = document.createElement('div');
+hoverbar.id = 'hoverbar';
+hoverbar.hidden = true;
+hoverbar.innerHTML = '<button type="button" data-act="insert" title="Insert after" aria-label="Insert after">+</button>'
+  + '<button type="button" data-act="drag" title="Drag to move" aria-label="Drag to move">⠿</button>';
+document.body.append(hoverbar);
+let hovered = null;
+
+function hoverAt(node) {
+  if (state.session || menuOpen() || dragging) return;
+  const el = node.closest?.('[data-qd]');
+  if (!el || el.classList.contains('absolute')) return;
+  hovered = el;
+  const f = frame.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  hoverbar.hidden = false;
+  hoverbar.style.left = Math.max(2, f.left + r.left - hoverbar.offsetWidth - 6) + 'px';
+  hoverbar.style.top = f.top + r.top + 'px';
+}
+frame.addEventListener('mouseleave', (e) => { if (!hoverbar.contains(e.relatedTarget)) hoverbar.hidden = true; });
+
+hoverbar.querySelector('[data-act=insert]').addEventListener('click', async (e) => {
+  const t = hovered && (await elementTarget(hovered.dataset.qd));
+  if (!t) return;
+  const r = e.target.getBoundingClientRect();
+  openMenu(actions.element(t).find((i) => i.id === 'insert-after').items, r.right + 4, r.top);
+});
+
+let dragging = false;
+const dropline = Object.assign(document.createElement('div'), { id: 'dropline', hidden: true });
+document.body.append(dropline);
+hoverbar.querySelector('[data-act=drag]').addEventListener('pointerdown', (e) => {
+  if (!hovered) return;
+  e.preventDefault();
+  const handle = e.currentTarget;
+  handle.setPointerCapture(e.pointerId);
+  dragging = true;
+  const from = hovered.dataset.qd;
+  const slideId = from.slice(0, from.lastIndexOf('/'));
+  let drop = null; // { ref, before }
+  const onMove = (ev) => {
+    const f = frame.getBoundingClientRect();
+    const hit = frame.contentDocument.elementFromPoint(ev.clientX - f.left, ev.clientY - f.top)?.closest?.('[data-qd]');
+    const ref = hit?.dataset.qd;
+    if (!hit || ref === from || ref.slice(0, ref.lastIndexOf('/')) !== slideId) { dropline.hidden = true; drop = null; return; }
+    const r = hit.getBoundingClientRect();
+    const before = ev.clientY - f.top < r.top + r.height / 2;
+    drop = { ref, before };
+    Object.assign(dropline.style, { left: f.left + r.left + 'px', width: r.width + 'px', top: f.top + (before ? r.top - 4 : r.bottom + 2) + 'px' });
+    dropline.hidden = false;
+  };
+  const onUp = async () => {
+    handle.removeEventListener('pointermove', onMove);
+    handle.removeEventListener('pointerup', onUp);
+    dragging = false;
+    dropline.hidden = true;
+    hoverbar.hidden = true;
+    if (!drop) return;
+    const r = await op('block move', { element: from, [drop.before ? 'before' : 'after']: drop.ref });
+    if (r) { state.sel = r.target; await fetchDeck(); }
+  };
+  handle.addEventListener('pointermove', onMove);
+  handle.addEventListener('pointerup', onUp);
+});
+
+// an empty slide offers its first element
+const emptyadd = Object.assign(document.createElement('button'), { type: 'button', id: 'emptyadd', textContent: '+ Add content', hidden: true });
+document.body.append(emptyadd);
+emptyadd.addEventListener('click', async () => {
+  const cur = slideByAnchor(state.anchor);
+  if (!cur) return;
+  const r = emptyadd.getBoundingClientRect();
+  openMenu(actions.empty(await slideTarget(cur.id)).find((i) => i.id === 'insert-end').items, r.left, r.bottom + 4);
+});
+function placeEmptyadd() {
+  const cur = slideByAnchor(state.anchor);
+  emptyadd.hidden = !cur || cur.blocks > 0 || cur.opaque || !!state.session;
+  if (emptyadd.hidden) return;
+  const f = frame.getBoundingClientRect();
+  emptyadd.style.left = f.left + f.width / 2 - emptyadd.offsetWidth / 2 + 'px';
+  emptyadd.style.top = f.top + f.height / 2 + 'px';
+}
+
+/** Insert a new element of `kind` on a slide; it opens for editing once rendered. */
+async function insertBlock(slideId, where, kind) {
+  if (kind.box) {
+    const r = await op('box add', { slide: slideId, text: 'Text' });
+    if (r) { state.selectIdAfterRender = r.target; await fetchDeck(); }
+    return;
+  }
+  let md = kind.md;
+  if (kind.image) {
+    const path = prompt('Image path (relative to the deck) or URL');
+    if (!path?.trim()) return;
+    md = `![](${path.trim()})`;
+  }
+  const r = await op('block add', { slide: slideId, ...where, md });
+  if (!r) return;
+  if (kind.edit) state.editAfterRender = { ref: r.target, mode: kind.edit };
+  else state.sel = r.target;
+  await fetchDeck();
+}
+
+function openInserted({ ref, mode }) {
+  state.editAfterRender = null;
+  const el = frame.contentDocument?.querySelector(`[data-qd="${CSS.escape(ref)}"]`);
+  if (!el) return;
+  if (mode === 'source') { beginSource(el); return; }
+  beginEdit({ kind: 'block', root: el }, null).then((ok) => {
+    if (!ok) return;
+    // select the placeholder text so typing replaces it
+    const d = el.ownerDocument;
+    const r = d.createRange();
+    r.selectNodeContents(el.querySelector('li') || el.querySelector('p') || el);
+    d.getSelection().removeAllRanges();
+    d.getSelection().addRange(r);
+  });
+}
+
+async function copyElement(t) {
+  state.clip = t.block.text;
+  try {
+    const html = t.el?.innerHTML || '';
+    await navigator.clipboard.write([new ClipboardItem({
+      'text/plain': new Blob([t.block.text], { type: 'text/plain' }),
+      'text/html': new Blob([html], { type: 'text/html' }),
+    })]);
+  } catch {
+    try { await navigator.clipboard.writeText(t.block.text); } catch { /* kept in state.clip */ }
+  }
+  say('Copied');
+}
+
+async function pasteAfter(t) {
+  let text = null;
+  try { text = await navigator.clipboard.readText(); } catch { /* not allowed: use our own copy */ }
+  text = text?.trim() ? text : state.clip;
+  if (!text) { say('Nothing to paste', true); return; }
+  const r = await op('block add', { slide: t.slideId, after: t.ref, md: text });
+  if (r) { state.sel = r.target; await fetchDeck(); }
+}
