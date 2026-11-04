@@ -43,8 +43,9 @@ material was consulted (CLEANROOM.md).
   `"explicit": false`), else positional `@N`. Any edit that needs to address
   a slide by a non-explicit ID first writes `{#id}` to that slide's heading
   (`---` untitled slides become `## {#id}`, which Quarto treats as an
-  untitled slide). New slides/boxes always get explicit IDs
-  (`s-<4 hex>`, `b-<4 hex>`). Elements without IDs are addressed as
+  untitled slide; an untitled heading's Pandoc id is `section`, `section-1`…).
+  New slides get an explicit id from the slug of their title (unique,
+  e.g. `results-1`), or `s-<4 hex>` if untitled; copied boxes `b-<4 hex>`. Elements without IDs are addressed as
   `<slide>/<index>` (index among top-level blocks).
 - **Rationale**: Gives agents stable handles while touching only the slide
   being edited (FR-003).
@@ -89,6 +90,12 @@ renders `<section id="untitled-x" class="slide level2">`; a
 `::: {data-qd="intro/0"}` wrapper passes `data-qd` through to HTML;
 `.absolute top=100 left=200 …` renders `style="top: 100px; left: 200px; …"`;
 `.notes` still becomes `<aside class="notes">`.
+
+**Verified (corpus vs. Quarto 1.11.9)**: slide ids computed by qd match the
+`<section id>`s Quarto emits for every corpus deck that renders. Found and
+handled: a slide-level heading *inside* a fenced div still splits a slide in
+Quarto — qd marks that slide opaque (structural edits refused, `qd check`
+warns) rather than modelling the split.
 
 ## R6. Live update channel
 

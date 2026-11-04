@@ -1,0 +1,13 @@
+---
+title: CRLF
+format: revealjs
+---
+
+## One
+
+Windows line endings.
+
+## Two
+
+- a
+- b

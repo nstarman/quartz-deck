@@ -10,14 +10,14 @@
 ```bash
 qd new /tmp/qd-demo/deck.qmd --title "Demo"
 cd /tmp/qd-demo
-qd add --title "Intro" --body "Hello."
-qd add --after intro --title "Results" --body "- one\n- two"
-qd slides                       # 2 slides, explicit IDs, JSON
+qd add --title "Intro" --md "Hello."                     # target: "intro"
+qd add --after intro --title "Results" --md $'- one\n- two'
+qd slides                       # 3 slides, explicit IDs, JSON
 qd set results --attr background-color=aquamarine --dry-run   # diff only
 qd set results --attr background-color=aquamarine
 qd move results --before intro
 qd check                        # {"ok": true, ...}
-git diff --no-index …           # each step touches one slide only
+qd --human slides               # order: first-slide, results, intro
 ```
 
 Expected: every command prints JSON with `"ok": true`; `qd show nope`

@@ -1,0 +1,19 @@
+---
+format: revealjs
+---
+
+## Titled
+
+Some text.
+
+---
+
+An untitled slide made with a rule.
+
+---
+
+Another one.
+
+* * *
+
+Rule with asterisks.

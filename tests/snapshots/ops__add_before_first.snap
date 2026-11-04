@@ -1,0 +1,14 @@
+---
+source: tests/ops.rs
+expression: "ops::diff(&d.text, &after)"
+---
+--- before
++++ after
+@@ -4,4 +4,8 @@
+ ---
+ 
++## {#s-1b63}
++
++Untitled first.
++
+ ## Intro

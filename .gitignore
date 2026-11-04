@@ -1,0 +1,13 @@
+/target
+*.rs.bk
+.DS_Store
+.env*
+.idea/
+.vscode/
+*.log
+# Quarto render outputs inside tests/
+tests/**/*.html
+tests/**/*_files/
+# qd temp/preview files
+.*.qd-tmp-*
+.*.qd-preview.qmd

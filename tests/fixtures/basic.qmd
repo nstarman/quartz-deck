@@ -1,0 +1,27 @@
+---
+title: "Fixture"
+format: revealjs
+---
+
+## Intro
+
+Hello world.
+
+## Results {#results .smaller}
+
+- one
+- two
+
+![](plot.png){#b-plot .absolute top=10 left=20 width=300 height=200}
+
+---
+
+A rule slide.
+
+## Conclusion
+
+Thanks.
+
+::: {.notes}
+Bye.
+:::

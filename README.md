@@ -11,8 +11,21 @@ presentations, written in Rust.
   (e.g. Claude Code) can edit the deck in-session and watch the same
   browser preview.
 
-Status: specification. See [`specs/`](specs/) and the
+Status: **MVP — CLI editing works** (US1). The browser preview/GUI (`qd serve`)
+is next. See [`specs/`](specs/) and the
 [constitution](.specify/memory/constitution.md).
+
+## Install & try
+
+```bash
+cargo install --path .
+qd new demo/deck.qmd --title "Demo" && cd demo
+qd add --title "Results" --md $'- one\n- two'
+qd --human slides
+qd skill --install ~/.claude/skills/quartz-deck   # teach Claude Code to use qd
+```
+
+`qd schema` lists every command; `cargo test` runs the suite.
 
 Built with [spec-kit](https://github.com/github/spec-kit): run
 `/speckit-plan`, `/speckit-tasks`, `/speckit-implement` from Claude Code.

@@ -1,0 +1,14 @@
+---
+title: Includes
+format: revealjs
+---
+
+## Included content
+
+{{< include _snippet.qmd >}}
+
+## Shortcodes
+
+{{< video https://example.com/v.mp4 width="100%" >}}
+
+{{< pagebreak >}}

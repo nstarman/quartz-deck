@@ -1,0 +1,9 @@
+---
+source: tests/roundtrip.rs
+expression: "Deck::parse(text).outline()"
+---
+slide_level=2 size=1050x700 front_matter=true title_slide=false nl="\n"
+@1 @1 (auto) Implicit L2 title=None
+    @1/0 Para "Text before any heading becomes an untitled slide."
+@2 then-a-real-slide (auto) Heading L2 title=Some("Then a real slide")
+    then-a-real-slide/0 Para "Content."

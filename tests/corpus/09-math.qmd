@@ -1,0 +1,23 @@
+---
+title: Math
+format: revealjs
+---
+
+## Equations
+
+Inline $E = mc^2$.
+
+$$
+\int_0^\infty e^{-x}\,dx = 1
+$$
+
+$$ a^2 + b^2 = c^2 $$
+
+## More math
+
+$$
+\begin{aligned}
+# not a heading
+f(x) &= x^2
+\end{aligned}
+$$
