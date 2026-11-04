@@ -148,9 +148,9 @@ paths are relative to the repo root.
 
 **Independent Test**: `qd render` output equals `quarto render` output path; `PATH=/usr/bin:/bin qd render` → `E_NO_QUARTO`, while `qd slides` still works.
 
-- [ ] T046 [P] [US5] Tests in `tests/cli.rs`: `qd render` returns `{"ok","output","log"}` and output file exists (gated on quarto); with quarto removed from PATH, `render`/`serve` → `E_NO_QUARTO` with hint and `slides`/`add` succeed (FR-031)
-- [ ] T047 [US5] Implement `qd render [--to FORMAT]` in `src/cli.rs` using `src/render.rs` on the original file (not the preview copy) (FR-030)
-- [ ] T048 [US5] Render button + "Open presentation" link (`/present/`) in `src/ui/index.html`
+- [X] T046 [P] [US5] Tests in `tests/cli.rs`: `qd render` returns `{"ok","output","log"}` and output file exists (gated on quarto); with quarto removed from PATH, `render`/`serve` → `E_NO_QUARTO` with hint and `slides`/`add` succeed (FR-031)
+- [X] T047 [US5] Implement `qd render [--to FORMAT]` in `src/cli.rs` using `src/render.rs` on the original file (not the preview copy) (FR-030) — done: runs `quarto render <deck> [--to F]` in the deck's folder (project settings apply); output path from Quarto's `Output created:`; `{"ok","op","output","format","log"}`; format names validated
+- [X] T048 [US5] Render button + "Open presentation" link (`/present/`) in `src/ui/index.html` — done: Render button + "Open ↗" link to the final output (served via /preview/ fallback); the old Present link is now "Preview ↗" (the preview shows hidden slides, so it is not for the audience)
 
 ---
 

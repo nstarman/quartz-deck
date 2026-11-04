@@ -66,6 +66,7 @@ when the current directory has exactly one `.qmd`.
 | positioned image | `qd box add results --image figures/plot.png --at 100,150 --size 600,400` |
 | move / resize / delete box | `qd box move #b-1a2b --by 0,40`, `qd box resize #b-1a2b --size 400,300`, `qd box rm #b-1a2b` |
 | validate | `qd check` (add `--render` to run Quarto) |
+| final output | `qd render` (→ `output` path; `--to pdf` etc. for other formats) |
 | live preview | `qd serve --detach`, then `qd url results`; `qd stop` when done |
 | undo / redo | `qd undo` / `qd redo` |
 | new deck | `qd new talk.qmd --title "My talk"` |

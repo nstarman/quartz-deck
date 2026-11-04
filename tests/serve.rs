@@ -291,23 +291,39 @@ fn check_render_reports_quarto_errors() {
 #[test]
 fn render_commands_without_quarto() {
     let (_tmp, dir) = setup();
-    let out = qd(&dir)
-        .env("QD_QUARTO", "/nonexistent/quarto")
-        .args(["check", "--render"])
-        .output()
-        .unwrap();
-    assert!(!out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("E_NO_QUARTO"));
-    // pure edits still work
-    assert!(
-        qd(&dir)
+    for args in [
+        &["check", "--render"][..],
+        &["render"][..],
+        &["serve", "--port", "0"][..],
+    ] {
+        let out = qd(&dir)
             .env("QD_QUARTO", "/nonexistent/quarto")
-            .args(["title", "intro", "x"])
+            .args(args)
             .output()
-            .unwrap()
-            .status
-            .success()
-    );
+            .unwrap();
+        assert!(!out.status.success(), "{args:?}");
+        let err: Value = serde_json::from_slice(&out.stderr).unwrap();
+        assert_eq!(err["error"]["code"], "E_NO_QUARTO", "{args:?}");
+        assert!(
+            err["error"]["hint"]
+                .as_str()
+                .unwrap()
+                .contains("quarto.org")
+        );
+    }
+    // pure edits still work (FR-031)
+    for args in [
+        &["slides"][..],
+        &["title", "intro", "x"][..],
+        &["add", "--title", "Y"][..],
+    ] {
+        let out = qd(&dir)
+            .env("QD_QUARTO", "/nonexistent/quarto")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{args:?}");
+    }
 }
 
 /// T033 over HTTP: POST /api/op edits the deck; non-JSON and foreign hosts are refused.
@@ -375,5 +391,80 @@ fn api_op_over_http() {
     assert_eq!(
         std::fs::read_to_string(dir.join("deck.qmd")).unwrap(),
         BASIC
+    );
+
+    // render through the API: the reply links the final output for the browser
+    let (status, out) = post(
+        server.port,
+        "/api/op",
+        &host,
+        "application/json",
+        r#"{"op":"render"}"#,
+    );
+    assert_eq!(status, 200, "{out}");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["href"], "/preview/deck.html");
+    let (status, body) = get(server.port, "/preview/deck.html");
+    assert_eq!(status, 200);
+    assert!(body.contains("<section id=\"intro\"") && !body.contains("data-qd="));
+}
+
+/// US5 (T046): `qd render` renders the deck itself with Quarto and reports
+/// where the output went — next to the deck, or in a project's output-dir.
+#[test]
+fn render_reports_output() {
+    if !have_quarto() {
+        return;
+    }
+    let (_tmp, dir) = setup();
+    let (ok, v) = qd_json(&dir, &["render"]);
+    assert!(ok, "{v}");
+    assert_eq!(v["ok"], true);
+    assert_eq!(v["format"], "revealjs");
+    let out = PathBuf::from(v["output"].as_str().unwrap());
+    assert!(out.is_absolute() && out.exists(), "{out:?}");
+    assert_eq!(out.file_name().unwrap(), "deck.html");
+    let html = std::fs::read_to_string(&out).unwrap();
+    assert!(html.contains("<section id=\"intro\""));
+    assert!(
+        !html.contains("data-qd="),
+        "final render must not carry editor markers"
+    );
+    assert!(v["log"].is_string());
+
+    let (ok, v) = qd_json(&dir, &["render", "--to", "html"]);
+    assert!(ok, "{v}");
+    assert_eq!(v["format"], "html");
+    let (ok, v) = qd_json(&dir, &["render", "--to", "--evil"]);
+    assert!(!ok);
+    assert_eq!(v["error"]["code"], "E_USAGE");
+    let (ok, v) = qd_json(&dir, &["render", "--to", "x;y"]);
+    assert!(!ok);
+    assert_eq!(v["error"]["code"], "E_INVALID_ARG");
+
+    // in a Quarto project the output goes to its output-dir
+    std::fs::write(
+        dir.join("_quarto.yml"),
+        "project:\n  output-dir: _output\nformat: revealjs\n",
+    )
+    .unwrap();
+    let (ok, v) = qd_json(&dir, &["render"]);
+    assert!(ok, "{v}");
+    let out = PathBuf::from(v["output"].as_str().unwrap());
+    assert!(
+        out.starts_with(std::fs::canonicalize(&dir).unwrap().join("_output")),
+        "{out:?}"
+    );
+    assert!(out.exists());
+
+    // a broken deck: E_RENDER with the Quarto log in details
+    std::fs::remove_file(dir.join("_quarto.yml")).unwrap();
+    std::fs::write(dir.join("deck.qmd"), "---\ntitle: [unclosed\n---\n\n## X\n").unwrap();
+    let (ok, v) = qd_json(&dir, &["render"]);
+    assert!(!ok);
+    assert_eq!(v["error"]["code"], "E_RENDER");
+    assert!(
+        v["error"]["details"].as_str().unwrap().contains("YAML"),
+        "{v}"
     );
 }

@@ -11,10 +11,10 @@ presentations, written in Rust.
   (e.g. Claude Code) can edit the deck in-session and watch the same
   browser preview.
 
-Status: **CLI editing (US1), live preview (US2), GUI editing (US3) and
-positioned boxes (US4) work**: reorder slides by drag, click an element to edit
-its source, set slide properties, add/drag/resize `.absolute` boxes, undo/redo.
-Render/export (US5) is next. See [`specs/`](specs/) and the
+Status: **all five user stories of spec 001 work**: CLI editing, live preview,
+GUI editing (reorder by drag, click-to-edit, slide properties, undo/redo),
+drag/resize `.absolute` boxes, and `qd render`. Remaining: the polish phase
+(concurrency stress test, layout-drift check, agent evaluation). See [`specs/`](specs/) and the
 [constitution](.specify/memory/constitution.md).
 
 ## Install & try

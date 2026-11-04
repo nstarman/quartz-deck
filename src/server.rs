@@ -131,6 +131,17 @@ struct OpBody {
     expect: Option<String>,
 }
 
+fn url_encode(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
 fn local_host(h: &str) -> bool {
     let host = h.rsplit_once(':').map_or(h, |(h, _)| h);
     matches!(host, "127.0.0.1" | "localhost")
@@ -162,7 +173,20 @@ async fn api_op(
     })
     .await;
     match res {
-        Ok(Ok(v)) => Json(v).into_response(),
+        Ok(Ok(mut v)) => {
+            // a render inside the deck folder can be opened through /preview/'s fallback
+            let deck_dir = app.store.path.parent().map(PathBuf::from);
+            if let (Some(out), Some(dir)) = (v["output"].as_str(), deck_dir)
+                && let Ok(rel) = std::path::Path::new(out).strip_prefix(&dir)
+            {
+                let parts: Vec<String> = rel
+                    .iter()
+                    .map(|p| url_encode(&p.to_string_lossy()))
+                    .collect();
+                v["href"] = json!(format!("/preview/{}", parts.join("/")));
+            }
+            Json(v).into_response()
+        }
         Ok(Err(e)) => err_response(e),
         Err(e) => err_response(QdError::Io(std::io::Error::other(e))),
     }
