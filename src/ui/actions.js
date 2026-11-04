@@ -81,11 +81,17 @@ export function makeActions(api) {
     run: a.run && (() => a.run(t)),
   }));
 
+  const tables = { element, slide };
   return {
     element: (t) => resolve(element, t),
     slide: (t) => resolve(slide, t),
     empty: (t) => resolve(emptyArea, t),
-    /** Run element action `id` on `t` (keyboard shortcuts, element bar). */
-    run: (id, t) => { const a = element.find((x) => x.id === id); if (a && (!a.enabled || a.enabled(t))) return a.run(t); return null; },
+    insert: insertMenu,
+    setAttr,
+    /** Run action `id` of a table on `t` (keyboard shortcuts, bars). */
+    run: (id, t, table = 'element') => {
+      const a = tables[table].find((x) => x.id === id);
+      return a && (!a.enabled || a.enabled(t)) ? a.run(t) : null;
+    },
   };
 }

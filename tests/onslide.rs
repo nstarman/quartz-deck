@@ -144,21 +144,43 @@ impl Ed {
         tokio::time::sleep(Duration::from_millis(500)).await; // slide transition
     }
 
-    /// Trusted click on an element of the preview (`sel` is a CSS selector in the iframe).
-    /// Trusted click at the page point `[x, y]` that `js` evaluates to.
-    async fn click_js(&self, js: &str) {
+    /// Page point `[x, y]` that `js` evaluates to.
+    async fn point(&self, js: &str) -> (f64, f64) {
         let pt = self.eval(js).await;
-        let (x, y) = (pt[0].as_f64().unwrap(), pt[1].as_f64().unwrap());
+        (pt[0].as_f64().unwrap(), pt[1].as_f64().unwrap())
+    }
+
+    /// Trusted click at the page point `js` evaluates to.
+    async fn click_js(&self, js: &str) {
+        let (x, y) = self.point(js).await;
         self.page.click(Point { x, y }).await.unwrap();
     }
 
-    /// Click an element of the preview (`sel` is a CSS selector in the iframe).
+    /// Page point of a preview element (`sel` in the iframe): `x` is a JS
+    /// expression over its rect `r` (e.g. `r.width / 2`), y its middle.
+    async fn slide_at(&self, sel: &str, x: &str) -> (f64, f64) {
+        self.point(&format!("(() => {{ const f = document.querySelector('#preview'); const el = f.contentDocument.querySelector({sel:?}); const a = f.getBoundingClientRect(); const r = el.getBoundingClientRect(); return [a.left + r.left + {x}, a.top + r.top + r.height / 2]; }})()")).await
+    }
+
+    async fn slide_point(&self, sel: &str) -> (f64, f64) {
+        self.slide_at(sel, "r.width / 2").await
+    }
+
+    /// Click an element of the preview near its left edge (where text starts).
     async fn click_in_slide(&self, sel: &str) {
-        self.click_js(&format!("(() => {{ const f = document.querySelector('#preview'); const el = f.contentDocument.querySelector({sel:?}); const a = f.getBoundingClientRect(); const r = el.getBoundingClientRect(); return [a.left + r.left + 4, a.top + r.top + r.height / 2]; }})()")).await;
+        let (x, y) = self.slide_at(sel, "4").await;
+        self.page.click(Point { x, y }).await.unwrap();
+    }
+
+    /// Centre of an element of the editor page (`dx` from its left edge instead, if given).
+    async fn editor_point(&self, sel: &str, dx: Option<f64>) -> (f64, f64) {
+        let x = dx.map_or("r.width / 2".to_string(), |d| d.to_string());
+        self.point(&format!("(() => {{ const r = document.querySelector({sel:?}).getBoundingClientRect(); return [r.left + {x}, r.top + r.height / 2]; }})()")).await
     }
 
     async fn click_editor(&self, sel: &str) {
-        self.click_js(&format!("(() => {{ const r = document.querySelector({sel:?}).getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }})()")).await;
+        let (x, y) = self.editor_point(sel, None).await;
+        self.page.click(Point { x, y }).await.unwrap();
     }
 
     /// Click somewhere on the slide that is not an element (ends an edit).
@@ -246,6 +268,79 @@ impl Ed {
         self.click_in_slide(&format!("{sel} p")).await;
         self.caret(sel, None).await;
         self.type_text(text).await;
+    }
+
+    async fn mouse(&self, t: DispatchMouseEventType, (x, y): (f64, f64), right: bool) {
+        let up = matches!(t, DispatchMouseEventType::MouseReleased);
+        let p = DispatchMouseEventParams::builder()
+            .r#type(t)
+            .x(x)
+            .y(y)
+            .button(if right {
+                MouseButton::Right
+            } else {
+                MouseButton::Left
+            })
+            .buttons(if up {
+                0
+            } else if right {
+                2
+            } else {
+                1
+            })
+            .click_count(1)
+            .build()
+            .unwrap();
+        self.page.execute(p).await.unwrap();
+    }
+    async fn right_click(&self, at: (f64, f64)) {
+        self.mouse(DispatchMouseEventType::MousePressed, at, true)
+            .await;
+        self.mouse(DispatchMouseEventType::MouseReleased, at, true)
+            .await;
+    }
+    async fn drag(&self, from: (f64, f64), to: (f64, f64)) {
+        use DispatchMouseEventType::*;
+        for (t, at) in [(MousePressed, from), (MouseMoved, to), (MouseReleased, to)] {
+            self.mouse(t, at, false).await;
+        }
+    }
+    /// Hover a preview element until its + / drag handles show.
+    async fn hover(&self, sel: &str) {
+        let (x, y) = self.slide_point(sel).await;
+        self.page.move_mouse(Point { x, y }).await.unwrap();
+        self.wait("!document.querySelector('#hoverbar').hidden", 20)
+            .await;
+    }
+    async fn close_menu(&self) {
+        self.key("Escape", "Escape", 27, 0).await;
+        self.wait("document.querySelector('#ctxmenu').hidden", 20)
+            .await;
+    }
+    /// Select a preview element (right-click it, close the menu) so the element bar shows.
+    async fn select(&self, sel: &str) {
+        self.right_click(self.slide_point(sel).await).await;
+        self.wait("!document.querySelector('#ctxmenu').hidden", 20)
+            .await;
+        self.close_menu().await;
+        self.wait("!document.querySelector('#elbar').hidden", 20)
+            .await;
+    }
+    /// Labels of the open context menu's top level, with "(disabled)" marks.
+    async fn menu_labels(&self) -> Vec<String> {
+        self.wait("!document.querySelector('#ctxmenu').hidden", 20)
+            .await;
+        let v = self.eval("[...document.querySelectorAll('#ctxmenu > ul > li[tabindex]')].map((li) => li.firstChild.textContent + (li.getAttribute('aria-disabled') ? ' (disabled)' : ''))").await;
+        v.as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x.as_str().unwrap().to_string())
+            .collect()
+    }
+    /// Click the visible menu item labelled `label` (opening its submenu if it has one).
+    async fn click_menu(&self, label: &str) {
+        self.wait(&format!("[...document.querySelectorAll('#ctxmenu li')].some((li) => li.firstChild?.textContent === {label:?} && li.offsetParent)"), 20).await;
+        self.click_js(&format!("(() => {{ const li = [...document.querySelectorAll('#ctxmenu li')].find((li) => li.firstChild?.textContent === {label:?} && li.offsetParent); li.dispatchEvent(new MouseEvent('mouseenter')); const r = li.getBoundingClientRect(); return [r.left + 20, r.top + r.height / 2]; }})()")).await;
     }
 }
 
@@ -725,68 +820,6 @@ async fn fifty_interleaved_edits_lose_nothing() {
 
 const P2: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## A {#a}\n\nFirst para.\n\nSecond para.\n\n- x\n- y\n\n## B {#b}\n\nOther slide.\n\n## Empty {#empty}\n";
 
-impl Ed {
-    /// Page point `[x, y]` of an element in the preview (centre, or left edge + 4 px).
-    async fn slide_point(&self, sel: &str) -> (f64, f64) {
-        let pt = self.eval(&format!("(() => {{ const f = document.querySelector('#preview'); const el = f.contentDocument.querySelector({sel:?}); const a = f.getBoundingClientRect(); const r = el.getBoundingClientRect(); return [a.left + r.left + r.width / 2, a.top + r.top + r.height / 2]; }})()")).await;
-        (pt[0].as_f64().unwrap(), pt[1].as_f64().unwrap())
-    }
-    async fn mouse(&self, t: DispatchMouseEventType, (x, y): (f64, f64), button: MouseButton) {
-        let pressed = !matches!(t, DispatchMouseEventType::MouseReleased);
-        let mut b = DispatchMouseEventParams::builder()
-            .r#type(t.clone())
-            .x(x)
-            .y(y)
-            .button(button.clone());
-        if matches!(
-            t,
-            DispatchMouseEventType::MousePressed | DispatchMouseEventType::MouseReleased
-        ) {
-            b = b.click_count(1);
-        }
-        if pressed && !matches!(button, MouseButton::None) {
-            b = b.buttons(if matches!(button, MouseButton::Right) {
-                2
-            } else {
-                1
-            });
-        }
-        self.page.execute(b.build().unwrap()).await.unwrap();
-    }
-    async fn right_click(&self, at: (f64, f64)) {
-        self.mouse(DispatchMouseEventType::MousePressed, at, MouseButton::Right)
-            .await;
-        self.mouse(
-            DispatchMouseEventType::MouseReleased,
-            at,
-            MouseButton::Right,
-        )
-        .await;
-    }
-    /// Right-click and wait for the menu (it opens once the element's details are fetched).
-    async fn open_menu(&self, at: (f64, f64)) {
-        self.right_click(at).await;
-        self.wait("!document.querySelector('#ctxmenu').hidden", 20)
-            .await;
-    }
-    /// Labels of the open context menu's top level, with "(disabled)" marks.
-    async fn menu_labels(&self) -> Vec<String> {
-        self.wait("!document.querySelector('#ctxmenu').hidden", 20)
-            .await;
-        let v = self.eval("[...document.querySelectorAll('#ctxmenu > ul > li[tabindex]')].map((li) => li.firstChild.textContent + (li.getAttribute('aria-disabled') ? ' (disabled)' : ''))").await;
-        v.as_array()
-            .unwrap()
-            .iter()
-            .map(|x| x.as_str().unwrap().to_string())
-            .collect()
-    }
-    /// Click the visible menu item labelled `label` (opening its submenu if it has one).
-    async fn click_menu(&self, label: &str) {
-        self.wait(&format!("[...document.querySelectorAll('#ctxmenu li')].some((li) => li.firstChild?.textContent === {label:?} && li.offsetParent)"), 10).await;
-        self.click_js(&format!("(() => {{ const li = [...document.querySelectorAll('#ctxmenu li')].find((li) => li.firstChild?.textContent === {label:?} && li.offsetParent); li.dispatchEvent(new MouseEvent('mouseenter')); const r = li.getBoundingClientRect(); return [r.left + 20, r.top + r.height / 2]; }})()")).await;
-    }
-}
-
 #[tokio::test(flavor = "multi_thread")]
 async fn context_menus_list_and_run_actions() {
     let Some(ed) = Ed::open(P2).await else { return };
@@ -818,9 +851,7 @@ async fn context_menus_list_and_run_actions() {
             .await,
         "Edit source"
     );
-    ed.key("Escape", "Escape", 27, 0).await;
-    ed.wait("document.querySelector('#ctxmenu').hidden", 5)
-        .await;
+    ed.close_menu().await;
     // each action is the qd command: Duplicate = `qd block dup`
     ed.right_click(first).await;
     ed.click_menu("Duplicate").await;
@@ -833,8 +864,7 @@ async fn context_menus_list_and_run_actions() {
 
     // the slide list: Transition ▸ Fade = `qd set b --attr transition=fade`
     ed.settle().await;
-    let li = ed.eval("(() => { const r = document.querySelector('#slides li[data-id=b]').getBoundingClientRect(); return [r.left + 20, r.top + r.height / 2]; })()").await;
-    ed.right_click((li[0].as_f64().unwrap(), li[1].as_f64().unwrap()))
+    ed.right_click(ed.editor_point("#slides li[data-id=b]", Some(20.0)).await)
         .await;
     let labels = ed.menu_labels().await;
     assert!(
@@ -852,11 +882,7 @@ async fn context_menus_list_and_run_actions() {
     // Shift+F10 opens the menu for the selected element
     ed.settle().await;
     ed.go("a").await;
-    ed.right_click(ed.slide_point("[data-qd=\"a/3\"]").await)
-        .await; // the list, now last
-    ed.key("Escape", "Escape", 27, 0).await;
-    ed.wait("document.querySelector('#ctxmenu').hidden", 5)
-        .await;
+    ed.select("[data-qd=\"a/3\"]").await; // the list, now last
     ed.key("F10", "F10", 121, 8).await;
     assert!(
         ed.menu_labels()
@@ -896,29 +922,17 @@ async fn bars_set_properties_and_source_panel_is_hidden() {
     ed.click_editor("#slidebar [name=hidden]").await;
     ed.wait_file(|f| f == P2, "unhidden, bytes as before").await;
     // element bar: "On click" = .fragment, and back again byte-identical
-    ed.settle().await;
-    ed.go("a").await;
-    ed.open_menu(ed.slide_point("[data-qd=\"a/1\"] p").await)
-        .await;
-    ed.key("Escape", "Escape", 27, 0).await;
-    ed.wait("!document.querySelector('#elbar').hidden", 20)
-        .await;
-    ed.click_editor("#elbar [data-act=fragment]").await;
-    ed.wait_file(
-        |f| f.contains("::: {.fragment}\nSecond para.\n:::"),
-        "fragment",
-    )
-    .await;
-    ed.settle().await;
-    ed.go("a").await;
-    ed.open_menu(ed.slide_point("[data-qd=\"a/1\"]").await)
-        .await;
-    ed.key("Escape", "Escape", 27, 0).await;
-    ed.wait("!document.querySelector('#elbar').hidden", 20)
-        .await;
-    ed.click_editor("#elbar [data-act=fragment]").await;
-    ed.wait_file(|f| f == P2, "fragment removed, bytes as before")
-        .await;
+    for (sel, want) in [
+        ("[data-qd=\"a/1\"] p", "::: {.fragment}\nSecond para.\n:::"),
+        ("[data-qd=\"a/1\"]", "\n\nSecond para.\n\n"),
+    ] {
+        ed.settle().await;
+        ed.go("a").await;
+        ed.select(sel).await;
+        ed.click_editor("#elbar [data-act=fragment]").await;
+        ed.wait_file(|f| f.contains(want), "fragment toggled").await;
+    }
+    assert_eq!(ed.file(), P2, "fragment removed, bytes as before");
     // the Source button shows the panel
     ed.click_editor("#toggle-source").await;
     assert_eq!(
@@ -934,11 +948,7 @@ async fn insert_drag_delete_and_empty_slides() {
     ed.go("a").await;
     // hover → + → List: a new list opens for typing with its placeholder selected
     // (between the paragraphs: a list right after a list would join it, as in markdown)
-    let first = ed.slide_point("[data-qd=\"a/0\"] p").await;
-    ed.mouse(DispatchMouseEventType::MouseMoved, first, MouseButton::None)
-        .await;
-    ed.wait("!document.querySelector('#hoverbar').hidden", 20)
-        .await;
+    ed.hover("[data-qd=\"a/0\"] p").await;
     ed.click_editor("#hoverbar [data-act=insert]").await;
     ed.click_menu("List").await;
     ed.wait("window.qdSession()?.ref === 'a/1'", 30).await;
@@ -953,32 +963,10 @@ async fn insert_drag_delete_and_empty_slides() {
     // drag the x/y list (a/3) above the first paragraph
     ed.settle().await;
     ed.go("a").await;
-    let list = ed.slide_point("[data-qd=\"a/3\"]").await;
-    ed.mouse(DispatchMouseEventType::MouseMoved, list, MouseButton::None)
-        .await;
-    ed.wait("!document.querySelector('#hoverbar').hidden", 20)
-        .await;
-    let h = ed.eval("(() => { const r = document.querySelector('#hoverbar [data-act=drag]').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()").await;
-    let handle = (h[0].as_f64().unwrap(), h[1].as_f64().unwrap());
+    ed.hover("[data-qd=\"a/3\"]").await;
+    let handle = ed.editor_point("#hoverbar [data-act=drag]", None).await;
     let (fx, fy) = ed.slide_point("[data-qd=\"a/0\"]").await;
-    ed.mouse(
-        DispatchMouseEventType::MousePressed,
-        handle,
-        MouseButton::Left,
-    )
-    .await;
-    ed.mouse(
-        DispatchMouseEventType::MouseMoved,
-        (fx, fy - 8.0),
-        MouseButton::Left,
-    )
-    .await;
-    ed.mouse(
-        DispatchMouseEventType::MouseReleased,
-        (fx, fy - 8.0),
-        MouseButton::Left,
-    )
-    .await;
+    ed.drag(handle, (fx, fy - 8.0)).await;
     ed.wait_file(
         |f| f.contains("## A {#a}\n\n- x\n- y\n\nFirst para."),
         "moved",
@@ -988,11 +976,7 @@ async fn insert_drag_delete_and_empty_slides() {
     // Delete key on the selected element = `qd block rm`
     ed.settle().await;
     ed.go("a").await;
-    ed.open_menu(ed.slide_point("[data-qd=\"a/0\"]").await)
-        .await;
-    ed.key("Escape", "Escape", 27, 0).await;
-    ed.wait("!document.querySelector('#elbar').hidden", 20)
-        .await;
+    ed.select("[data-qd=\"a/0\"]").await;
     ed.key("Delete", "Delete", 46, 0).await;
     ed.wait_file(|f| !f.contains("- x\n- y"), "deleted").await;
 
@@ -1026,11 +1010,8 @@ async fn copy_and_paste_carry_the_markdown() {
         .await;
     ed.click_menu("Cut").await;
     ed.wait_file(|f| !f.contains("First para."), "cut").await;
-    assert_eq!(
-        ed.eval("navigator.clipboard.readText().catch(() => null)")
-            .await
-            .as_str()
-            .unwrap_or("First para."),
-        "First para."
-    );
+    let clip = ed
+        .eval("navigator.clipboard.readText().catch(() => null)")
+        .await;
+    assert_eq!(clip.as_str().unwrap_or("First para."), "First para.");
 }

@@ -3,7 +3,7 @@
 //! any targeted slide without an explicit id gets one written (research R3).
 
 use crate::attrs::{Attrs, valid_name};
-use crate::deck::{BlockKind, Deck, Slide, SlideKind, Span};
+use crate::deck::{Block, BlockKind, Deck, Slide, SlideKind, Span};
 use crate::error::{QdError, Result};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -356,13 +356,7 @@ pub fn dup(d: &Deck, slide: &str, after: Option<&str>) -> Result<Patch> {
     let mut pos = s.content_start();
     for b in &s.blocks {
         rest.push_str(&d.text[pos..b.span.start]);
-        let mut t = d.slice(b.span).to_string();
-        if b.id_explicit {
-            let nid = ctx.fresh(if b.kind == BlockKind::Box { "b" } else { "e" });
-            t = t.replacen(&format!("#{}", b.id), &format!("#{nid}"), 1);
-            assigned.push(nid);
-        }
-        rest.push_str(&t);
+        rest.push_str(&renew_id(&mut ctx, b, d.slice(b.span), &mut assigned));
         pos = b.span.end;
     }
     rest.push_str(&d.text[pos..s.span.end]);
@@ -550,14 +544,6 @@ pub fn edit(d: &Deck, element: &str, md: &str, expect_text: Option<&str>) -> Res
 
 // ---------- single elements: qd block (spec 003 US4) ----------
 
-/// Where `qd block add` puts new blocks on a slide.
-pub enum BlockPos<'a> {
-    Start,
-    End,
-    After(&'a str),
-    Before(&'a str),
-}
-
 /// Rewrite the run of blocks of `s` (first block to last) after `f` has
 /// rearranged their texts and the separators between them. Bytes outside that
 /// run — the heading, blank lines around it — are untouched.
@@ -581,12 +567,10 @@ fn rearrange(
         .map(|w| d.text[w[0].span.end..w[1].span.start].to_string())
         .collect();
     f(&mut texts, &mut seps);
-    let mut out = String::new();
-    for (i, t) in texts.iter().enumerate() {
-        if i > 0 {
-            out.push_str(&seps[i - 1]);
-        }
-        out.push_str(t);
+    let mut out = texts[0].clone(); // never empty: removing a slide's last block goes via `body`
+    for (sep, t) in seps.iter().zip(&texts[1..]) {
+        out += sep;
+        out += t;
     }
     (span, out)
 }
@@ -602,7 +586,7 @@ fn on_slide(d: &Deck, s: &Slide, r: &str) -> Result<usize> {
     Ok(s.blocks.iter().position(|x| x.span == b.span).unwrap())
 }
 
-pub fn block_add(d: &Deck, slide: &str, at: BlockPos, md: &str) -> Result<Patch> {
+pub fn block_add(d: &Deck, slide: &str, at: Pos, md: &str) -> Result<Patch> {
     let ctx = Ctx::new(d);
     let s = ctx.slide(slide)?;
     let md = norm(md, d.nl);
@@ -617,10 +601,9 @@ pub fn block_add(d: &Deck, slide: &str, at: BlockPos, md: &str) -> Result<Patch>
         return Ok(p);
     }
     let i = match at {
-        BlockPos::Start => 0,
-        BlockPos::End => s.blocks.len(),
-        BlockPos::After(r) => on_slide(d, s, r)? + 1,
-        BlockPos::Before(r) => on_slide(d, s, r)?,
+        Pos::End => s.blocks.len(),
+        Pos::After(r) => on_slide(d, s, r)? + 1,
+        Pos::Before(r) => on_slide(d, s, r)?,
     };
     let blank = format!("{0}{0}", d.nl);
     let (span, new) = rearrange(d, s, |texts, seps| {
@@ -688,28 +671,25 @@ pub fn block_rm(d: &Deck, element: &str) -> Result<Patch> {
     ))
 }
 
-pub fn block_dup(d: &Deck, element: &str) -> Result<Patch> {
-    let mut ctx = Ctx::new(d);
-    let (s, b) = d.element(element)?;
-    let i = on_slide(d, s, element)?;
-    let mut copy = d.slice(b.span).to_string();
-    let mut assigned = Vec::new();
-    if b.id_explicit {
-        let nid = ctx.fresh(if b.kind == BlockKind::Box { "b" } else { "e" });
-        copy = copy.replacen(&format!("#{}", b.id), &format!("#{nid}"), 1);
-        assigned.push(nid);
+/// A copy's text: an explicit id is replaced by a fresh one.
+fn renew_id(ctx: &mut Ctx, b: &Block, text: &str, assigned: &mut Vec<String>) -> String {
+    if !b.id_explicit {
+        return text.to_string();
     }
-    let blank = format!("{0}{0}", d.nl);
-    let (span, new) = rearrange(d, s, |texts, seps| {
-        texts.insert(i + 1, copy);
-        seps.insert(i.min(seps.len()), blank);
-    });
-    Ok(patch(
-        "block dup",
-        format!("{}/{}", s.id, i + 1),
-        vec![(span, new)],
-        assigned,
-    ))
+    let nid = ctx.fresh(if b.kind == BlockKind::Box { "b" } else { "e" });
+    let t = text.replacen(&format!("#{}", b.id), &format!("#{nid}"), 1);
+    assigned.push(nid);
+    t
+}
+
+pub fn block_dup(d: &Deck, element: &str) -> Result<Patch> {
+    let (s, b) = d.element(element)?;
+    let mut assigned = Vec::new();
+    let copy = renew_id(&mut Ctx::new(d), b, d.slice(b.span), &mut assigned);
+    let mut p = block_add(d, &s.id, Pos::After(element), &copy)?;
+    p.op = "block dup".into();
+    p.assigned_ids = assigned;
+    Ok(p)
 }
 
 /// Add/remove classes on one element (spec 003 US3/US6: "Appears on click",
@@ -727,11 +707,7 @@ pub fn block_class(d: &Deck, element: &str, add: &[String], remove: &[String]) -
         && lines[lines.len() - 1].trim().chars().all(|c| c == ':');
     // (line index, byte range of `{...}` in that line) of the element's attributes
     let found = if fenced {
-        let l = lines[0];
-        match (l.find('{'), l.rfind('}')) {
-            (Some(o), Some(c)) if c > o => Some((0, o, c + 1)),
-            _ => None,
-        }
+        box_attrs_range(text, false).map(|(o, c)| (0, o, c))
     } else {
         let i = if b.kind == BlockKind::Heading {
             0
@@ -765,20 +741,14 @@ pub fn block_class(d: &Deck, element: &str, add: &[String], remove: &[String]) -
                 // our own `::: {.x}` wrapper, now empty: unwrap it
                 lines[1..lines.len() - 1].join(nl)
             } else {
-                let rendered = if a.items.is_empty() {
-                    String::new()
+                // splice the new `{...}` (or nothing, with the space before it) into the text
+                let off: usize = lines[..i].iter().map(|l| l.len() + nl.len()).sum();
+                let (left, right) = (&text[..off + o], &text[off + c..]);
+                if a.items.is_empty() {
+                    format!("{}{right}", left.trim_end())
                 } else {
-                    a.render()
-                };
-                let line = format!("{}{rendered}{}", &lines[i][..o], &lines[i][c..]);
-                let line = if rendered.is_empty() {
-                    line.trim_end().to_string()
-                } else {
-                    line
-                };
-                let mut out: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
-                out[i] = line;
-                out.join(nl)
+                    format!("{left}{}{right}", a.render())
+                }
             }
         }
         None => {
@@ -1128,7 +1098,7 @@ pub fn box_rm(d: &Deck, r: &str) -> Result<Patch> {
         )));
     }
     let s = ctx.slide(&format!("@{}", s.index))?;
-    let i = s.blocks.iter().position(|x| x.span == b.span).unwrap();
+    let i = on_slide(d, s, r)?;
     // drop the box and the blank lines that separate it from its neighbour
     let (cut0, cut1) = match (i.checked_sub(1).map(|j| &s.blocks[j]), s.blocks.get(i + 1)) {
         (_, Some(next)) => (b.span.start, next.span.start),
