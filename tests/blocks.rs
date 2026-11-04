@@ -193,3 +193,13 @@ fn source_that_breaks_slide_structure_is_refused() {
     ]);
     e.ok(&["edit", "results/0", "--md", "### Sub\n\nText."]);
 }
+
+#[test]
+fn deck_discovery_ignores_qds_render_copies() {
+    // `qd serve` renders through `<stem>.qd-<tag>.qmd` next to the deck; an agent
+    // running qd in that folder meanwhile must still find the one real deck
+    let e = Env::new(DECK);
+    fs::write(e.dir.path().join("deck.qd-preview.qmd"), "## copy\n").unwrap();
+    let v = e.ok(&["slides"]);
+    assert_eq!(v["slides"][0]["id"], "methods");
+}

@@ -84,7 +84,7 @@ async function op(name, args = {}, { fileExpect = true } = {}) {
     const e = body.error || { code: res.status, message: res.statusText };
     op.lastError = e;
     if (e.code === 'E_CONFLICT' && !fileExpect) {
-      say(`${name}: this text was changed elsewhere meanwhile — your version is kept; Esc discards it`, true);
+      say(`${name}: changed elsewhere while you were editing — choose a version`, true);
     } else if (e.code === 'E_CONFLICT') {
       say('The file changed elsewhere — reloaded; please retry.', true);
       await fetchDeck();
@@ -384,7 +384,7 @@ function renderList() {
     if (cur && s.id === cur.id) b.setAttribute('aria-current', 'true');
     b.addEventListener('click', () => { hidePeek(); state.sel = null; go(s.anchor); });
     li.append(b);
-    li.addEventListener('mouseenter', () => { if (!dragId) showPeek(li, s.anchor); });
+    li.addEventListener('mouseenter', () => { if (!dragId && !state.session) showPeek(li, s.anchor); });
     li.addEventListener('mouseleave', hidePeek);
 
     li.addEventListener('dragstart', (e) => {
@@ -797,6 +797,7 @@ async function beginEdit(target, point) {
 
 function beginSession(s, point) {
   const doc = s.root.ownerDocument;
+  hidePeek();
   state.session = s;
   state.sel = null;
   highlight();
@@ -893,7 +894,12 @@ async function saveSession() {
   else if (s.kind === 'title') r = await op('title', { slide: s.slide, text: md, 'expect-text': s.hash }, { fileExpect: false });
   else r = await op('meta set', { key: s.key, value: JSON.stringify(md) }, { fileExpect: false });
   s.saving = false;
-  if (!r) { s.failed = true; s.root.focus(); return; }
+  if (!r) {
+    if (op.lastError?.code === 'E_CONFLICT') { await conflict(s, md, op.lastError.details); return; }
+    s.failed = true;
+    s.root.focus();
+    return;
+  }
   endSession(s, true);
   await fetchDeck();
 }
@@ -932,6 +938,7 @@ function pageRect(el) {
 }
 
 function startSourceSession(s, text) {
+  hidePeek();
   state.session = s;
   state.sel = null;
   highlight();
@@ -959,15 +966,65 @@ async function beginSource(el, draft = null, base = null) {
 }
 
 /** Edit a whole slide's content (positioned boxes are kept, as with `qd body`). */
-async function beginSlideSource(sec) {
+async function beginSlideSource(sec, draft = null) {
   if (state.session || !sec) return false;
   const cur = slideByAnchor(sec.id);
   const slide = cur && (await fetchSlide(cur.id));
   if (!slide || slide.opaque || state.session) return false;
+  await fetchDeck(); // the save checks the whole file against this version
   const text = blockOfBody(slide);
-  startSourceSession({ kind: 'slide', mode: 'source', root: sec, slide: slide.id, source: text }, text);
+  startSourceSession({ kind: 'slide', mode: 'source', root: sec, slide: slide.id, source: text }, draft ?? text);
   return true;
 }
+
+// ---------- conflicts with edits made elsewhere (spec 003 US5) ----------
+
+const conflictBar = document.createElement('div');
+conflictBar.id = 'conflict';
+conflictBar.setAttribute('role', 'alert');
+conflictBar.hidden = true;
+conflictBar.innerHTML = '<strong>This was changed elsewhere while you were editing it.</strong>'
+  + '<div class="cols"><div><span class="lbl">Now in the file</span><pre class="theirs"></pre></div>'
+  + '<div><span class="lbl">Your version</span><pre class="mine"></pre></div></div>'
+  + '<div class="buttons"><button type="button" data-act="mine" class="primary">Use mine…</button>'
+  + '<button type="button" data-act="theirs">Keep theirs</button></div>';
+banner.after(conflictBar);
+
+/**
+ * A save was refused because the element changed meanwhile: close the edit
+ * (the file keeps the other version) and let the person choose (FR-015).
+ */
+async function conflict(s, mine, details) {
+  let theirs = details?.current_source;
+  if (theirs === undefined && s.kind === 'slide') theirs = blockOfBody((await fetchSlide(s.slide)) || { blocks: [] });
+  endSession(s, false);
+  state.conflict = { kind: s.kind, ref: s.ref, slide: s.slide, anchor: s.root.closest?.('section')?.id || s.anchor, mine, theirs: theirs ?? '', hash: details?.current_hash };
+  $('.theirs', conflictBar).textContent = theirs ?? '(see the slide)';
+  $('.mine', conflictBar).textContent = mine;
+  conflictBar.hidden = false;
+  await fetchDeck();
+}
+
+conflictBar.addEventListener('click', async (e) => {
+  const act = e.target.dataset?.act;
+  const c = state.conflict;
+  if (!act || !c) return;
+  conflictBar.hidden = true;
+  state.conflict = null;
+  if (act === 'theirs') { say('Kept the version in the file'); return; }
+  const doc = frame.contentDocument;
+  if (c.kind === 'block') {
+    const el = doc?.querySelector(`[data-qd="${CSS.escape(c.ref)}"]`);
+    if (el && (await beginSource(el, c.mine, { source: c.theirs, hash: c.hash }))) return;
+  } else if (c.kind === 'slide') {
+    if (await beginSlideSource(doc?.getElementById(c.anchor), c.mine)) return;
+  } else if (c.kind === 'title') {
+    if (await op('title', { slide: c.slide, text: c.mine, 'expect-text': c.hash }, { fileExpect: false })) { await fetchDeck(); return; }
+  }
+  // the element is gone (or changed again): keep the text safe on the clipboard
+  try { await navigator.clipboard.writeText(c.mine); } catch { /* not allowed */ }
+  say('Could not reopen that element — your version is on the clipboard', true);
+});
 
 async function saveSource(s) {
   const md = sourceText();
@@ -977,7 +1034,11 @@ async function saveSource(s) {
     ? await op('body', { slide: s.slide, md })
     : await op('edit', { element: s.ref, md, 'expect-text': s.hash }, { fileExpect: false });
   s.saving = false;
-  if (!r) { sourceError(op.lastError?.message || 'not saved'); return; }
+  if (!r) {
+    if (op.lastError?.code === 'E_CONFLICT') { await conflict(s, md, op.lastError.details); return; }
+    sourceError(op.lastError?.message || 'not saved');
+    return;
+  }
   endSession(s, true);
   await fetchDeck();
 }

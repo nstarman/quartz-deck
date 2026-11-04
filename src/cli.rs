@@ -428,8 +428,11 @@ fn find_deck(arg: &Option<PathBuf>) -> Result<PathBuf> {
     let qmds: Vec<PathBuf> = std::fs::read_dir(".")?
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| {
+            let name = p.file_name().unwrap().to_string_lossy();
+            // qd's own render copies (`<stem>.qd-<tag>.qmd`) are not decks
             p.extension().is_some_and(|e| e == "qmd")
-                && !p.file_name().unwrap().to_string_lossy().starts_with('.')
+                && !name.starts_with('.')
+                && !name.contains(".qd-")
         })
         .collect();
     match qmds.as_slice() {

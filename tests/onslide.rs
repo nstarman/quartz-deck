@@ -620,3 +620,140 @@ async fn alt_enter_switches_typing_to_source() {
         MATH.replace("Plain words.", "Plain *words* more.")
     );
 }
+
+// ---------- US5: editing together with an agent (T019, T021) ----------
+
+impl Ed {
+    /// Wait until the preview shows the file as it is now (render caught up, no edit open).
+    async fn settle(&self) {
+        self.wait(
+            "(async () => { const v = (await fetch('/api/deck').then((r) => r.json())).version; const st = document.querySelector('#status').textContent; const f = document.querySelector('#preview').contentWindow; return window.qdSession() === null && st === 'rendered ' + v.slice(0, 7) && !!f.Reveal?.isReady?.(); })()",
+            60,
+        )
+        .await;
+    }
+    /// Type `text` at the end of a paragraph-like element and leave it.
+    async fn type_into(&self, anchor: &str, sel: &str, text: &str) {
+        self.settle().await;
+        self.go(anchor).await;
+        self.click_in_slide(&format!("{sel} p")).await;
+        self.caret(sel, None).await;
+        self.type_text(text).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn same_element_conflict_offers_both_versions() {
+    let Some(ed) = Ed::open(DECK).await else {
+        return;
+    };
+    let para = "[data-qd=\"methods/0\"]";
+    ed.type_into("methods", para, " mine").await;
+    ed.cli(&["edit", "methods/0", "--md", "Agent text."]);
+    ed.click_blank().await;
+    ed.wait("!document.querySelector('#conflict').hidden", 10)
+        .await;
+    let bar = ed
+        .eval("document.querySelector('#conflict').textContent")
+        .await;
+    let bar = bar.as_str().unwrap();
+    assert!(
+        bar.contains("Agent text.") && bar.contains("here. mine"),
+        "{bar}"
+    );
+    assert!(
+        ed.file().contains("\n\nAgent text.\n\n"),
+        "agent's version stays until the person chooses"
+    );
+    assert_eq!(ed.session().await, Value::Null);
+
+    // "Use mine…": the person's text opens as source over the element, based on the agent's version
+    ed.settle().await;
+    ed.go("methods").await;
+    ed.click_editor("#conflict [data-act=mine]").await;
+    ed.wait("!document.querySelector('#srcedit').hidden", 10)
+        .await;
+    assert!(
+        ed.eval(&format!("{SRC}.value"))
+            .await
+            .as_str()
+            .unwrap()
+            .ends_with("here. mine")
+    );
+    ed.eval(&format!("{SRC}.focus()")).await;
+    ed.key("Enter", "Enter", 13, 2).await;
+    ed.wait_file(
+        |f| f.contains("here. mine"),
+        "saved with the person's version",
+    )
+    .await;
+    assert!(!ed.file().contains("Agent text."));
+    ed.wait("document.querySelector('#conflict').hidden", 10)
+        .await;
+
+    // "Keep theirs": nothing is written
+    ed.type_into("methods", para, " again").await;
+    ed.cli(&["edit", "methods/0", "--md", "Theirs."]);
+    ed.click_blank().await;
+    ed.wait("!document.querySelector('#conflict').hidden", 10)
+        .await;
+    ed.click_editor("#conflict [data-act=theirs]").await;
+    ed.wait("document.querySelector('#conflict').hidden", 10)
+        .await;
+    assert!(ed.file().contains("\n\nTheirs.\n\n"));
+
+    // an on-slide save is in the same undo history as the CLI
+    ed.type_into("methods", para, " last").await;
+    ed.click_blank().await;
+    ed.wait_file(|f| f.contains("Theirs. last"), "saved").await;
+    ed.cli(&["undo"]);
+    assert!(ed.file().contains("\n\nTheirs.\n\n"));
+}
+
+/// SC-005: 50 interleaved edits from the person (on slide A) and an agent (on
+/// slides A and B); nothing is lost and every same-element collision is reported.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "slow (~1-2 min): run with --ignored; runs in CI"]
+async fn fifty_interleaved_edits_lose_nothing() {
+    let Some(ed) = Ed::open(DECK).await else {
+        return;
+    };
+    let para = "[data-qd=\"methods/0\"]";
+    let mut collisions = 0;
+    for i in 0..25 {
+        ed.type_into("methods", para, &format!(" p{i}")).await;
+        // the agent edits another slide every time, and the same slide's list often
+        ed.cli(&["edit", "results/0", "--md", &format!("Agent {i}.")]);
+        if i % 3 == 0 {
+            ed.cli(&["edit", "methods/1", "--md", &format!("- one\n- two {i}")]);
+        }
+        let collide = i % 5 == 4;
+        if collide {
+            ed.cli(&["edit", "methods/0", "--md", &format!("Agent rewrote {i}.")]);
+        }
+        ed.click_blank().await;
+        if collide {
+            ed.wait("!document.querySelector('#conflict').hidden", 15)
+                .await;
+            collisions += 1;
+            ed.settle().await;
+            ed.go("methods").await;
+            ed.click_editor("#conflict [data-act=mine]").await;
+            ed.wait("!document.querySelector('#srcedit').hidden", 10)
+                .await;
+            ed.eval(&format!("{SRC}.focus()")).await;
+            ed.key("Enter", "Enter", 13, 2).await;
+        }
+        let want = format!(" p{i}");
+        ed.wait_file(|f| f.contains(&want), "has the person's edit")
+            .await;
+        assert!(
+            ed.file().contains(&format!("Agent {i}.")),
+            "agent's edit {i} lost:\n{}",
+            ed.file()
+        );
+    }
+    assert_eq!(collisions, 5);
+    let f = ed.file();
+    assert!(f.contains("- two 24"), "{f}");
+}

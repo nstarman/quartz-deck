@@ -80,9 +80,9 @@ US6. Paths relative to repo root.
 
 **Independent Test**: spec US5 Independent Test; quickstart §5.
 
-- [ ] T019 [US5] Write failing browser tests in `tests/onslide.rs` for US5 acceptance 1–3: mid-edit, `qd title` on another slide → no reload, caret and draft kept, save succeeds; mid-edit, `qd edit` on the same element → save returns conflict, the agent's text is shown and the person's draft is still available ("Re-apply mine" / "Discard"); an on-slide save is undone by `qd undo`
-- [ ] T020 [US5] Implement conflict UI in `src/ui/editor.js`/`inline.js`/`source.js`: on `E_CONFLICT` end the session as `conflict`, show the current source and a small bar with "Re-apply mine" (opens a new session on the fresh element with the draft) and "Discard" — T019 passes
-- [ ] T021 [US5] Stress test SC-005 in `tests/onslide.rs` (`#[ignore]`, run in CI): 50 interleaved edits (browser on slide A elements, CLI on slides A and B), assert none lost and every same-element collision reported
+- [X] T019 [US5] Write failing browser tests in `tests/onslide.rs` for US5 acceptance 1–3: mid-edit, `qd title` on another slide → no reload, caret and draft kept, save succeeds; mid-edit, `qd edit` on the same element → save returns conflict, the agent's text is shown and the person's draft is still available ("Re-apply mine" / "Discard"); an on-slide save is undone by `qd undo` — done (`same_element_conflict_offers_both_versions`; the other-slide case is `render_waits_for_the_open_edit`)
+- [X] T020 [US5] Implement conflict UI in `src/ui/editor.js`/`inline.js`/`source.js`: on `E_CONFLICT` end the session as `conflict`, show the current source and a small bar with "Re-apply mine" (opens a new session on the fresh element with the draft) and "Discard" — T019 passes — done: conflict bar under the header with both texts; **Use mine…** opens the person’s text as source over the element, based on the current version (titles re-apply directly); **Keep theirs** discards; if the element is gone the text goes to the clipboard
+- [X] T021 [US5] Stress test SC-005 in `tests/onslide.rs` (`#[ignore]`, run in CI): 50 interleaved edits (browser on slide A elements, CLI on slides A and B), assert none lost and every same-element collision reported — done (`fifty_interleaved_edits_lose_nothing`, CI step): 25 person + 39 agent edits, 5 collisions, nothing lost, 65 s; found and fixed: `qd` run in the deck folder during a render saw qd’s own `deck.qd-preview.qmd` and failed with `E_NO_DECK`
 
 **Checkpoint**: P1 complete — on-slide text and source editing, safe with an agent.
 
