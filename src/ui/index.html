@@ -19,7 +19,7 @@
   <button type="button" id="render" title="Run quarto render on the deck (final output)">Render</button>
   <span class="tools">
     <button type="button" id="export" title="Self-contained offline HTML, checked with the network blocked">Export</button>
-    <label class="inline"><input type="checkbox" id="export-pdf"> PDF</label>
+    <label class="inline"><input type="checkbox" id="export-pdf" aria-label="Also make a PDF"> PDF</label>
   </span>
   <a id="rendered" target="_blank" rel="noopener" hidden>Open ↗</a>
   <button type="button" id="toggle-source" aria-pressed="false" aria-controls="panel" title="Show the markdown source and advanced properties">Source</button>
@@ -35,11 +35,11 @@
       <label class="inline">Background <input type="color" name="bg" aria-label="Background colour"></label>
       <button type="button" data-act="bg-clear" title="Remove the background colour">⌀</button>
       <button type="button" data-act="bg-image">Image…</button>
-      <label class="inline">Transition <select name="transition">
+      <label class="inline">Transition <select name="transition" aria-label="Transition">
         <option value="">default</option><option>none</option><option>fade</option><option>slide</option>
         <option>convex</option><option>concave</option><option>zoom</option>
       </select></label>
-      <label class="inline"><input type="checkbox" name="hidden"> Hidden</label>
+      <label class="inline"><input type="checkbox" name="hidden" aria-label="Hidden in the presentation"> Hidden</label>
       <button type="button" data-act="more" aria-haspopup="menu" title="More slide actions (or right-click the slide)">⋯</button>
     </div>
     <iframe id="preview" title="Slide preview"></iframe>
