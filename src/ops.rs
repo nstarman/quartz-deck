@@ -436,17 +436,8 @@ fn keep_structure(d: &Deck, p: Patch, index: usize) -> Result<Patch> {
             "the text would start or remove a slide (a slide-level heading or `---`); add slides with `qd add`".into(),
         ));
     }
-    let was = d
-        .slides
-        .iter()
-        .find(|s| s.index == index)
-        .is_some_and(|s| s.opaque);
-    let now = after
-        .slides
-        .iter()
-        .find(|s| s.index == index)
-        .is_some_and(|s| s.opaque);
-    if now && !was {
+    // `index` is 1-based position, and both decks have the same slide count
+    if after.slides[index - 1].opaque && !d.slides[index - 1].opaque {
         return Err(QdError::InvalidArg(
             "the text leaves a fence open (``` or :::); close it before saving".into(),
         ));

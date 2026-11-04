@@ -10,7 +10,7 @@ bar.hidden = true;
 document.body.append(bar);
 
 const SWATCHES = ['#c0392b', '#d35400', '#b7950b', '#1e8449', '#2a5bd7', '#7d3c98', '#555555'];
-const SIZES = [0.6, 0.8, 1.2, 1.5, 2];
+const SIZES = [0.6, 0.8, 1, 1.2, 1.5, 2]; // em; 1 = no size span
 
 let session = null;
 const doc = () => session?.root.ownerDocument;
@@ -74,11 +74,13 @@ function setStyle(prop, value) {
 function stepSize(dir) {
   const existing = enclosing(styled('fontSize'));
   const cur = existing ? parseFloat(existing.style.fontSize) : 1;
-  const steps = [...SIZES, 1].sort((a, b) => a - b);
-  const i = steps.indexOf(cur) === -1 ? steps.indexOf(1) : steps.indexOf(cur);
-  const next = steps[Math.max(0, Math.min(steps.length - 1, i + dir))];
+  let i = SIZES.indexOf(cur);
+  if (i < 0) i = SIZES.indexOf(1);
+  const next = SIZES[Math.max(0, Math.min(SIZES.length - 1, i + dir))];
   setStyle('fontSize', next === 1 ? null : `${next}em`);
 }
+
+const code = () => wrap((n) => n.tagName === 'CODE', (d) => d.createElement('code'));
 
 function exec(cmd, value) {
   doc().execCommand(cmd, false, value);
@@ -114,7 +116,7 @@ const BUTTONS = [
   ['italic', 'I', 'Italic (⌘I)', () => toggle('italic')],
   ['underline', 'U', 'Underline (⌘U)', () => toggle('underline')],
   ['strike', 'S', 'Strikethrough (⇧⌘X)', () => toggle('strikeThrough')],
-  ['code', '</>', 'Inline code (⌘E)', () => wrap((n) => n.tagName === 'CODE', (d) => d.createElement('code'))],
+  ['code', '</>', 'Inline code (⌘E)', code],
   ['link', '🔗', 'Link (⌘K)', link],
   '|',
   ['ul', '•', 'Bulleted list (⇧⌘8)', () => exec('insertUnorderedList')],
@@ -197,7 +199,7 @@ export function formatKey(e) {
     i: !e.shiftKey && (() => toggle('italic')),
     u: !e.shiftKey && (() => toggle('underline')),
     x: e.shiftKey && (() => toggle('strikeThrough')),
-    e: !e.shiftKey && BUTTONS.find((b) => b[0] === 'code')[3],
+    e: !e.shiftKey && code,
     k: !e.shiftKey && link,
     8: e.shiftKey && block && (() => exec('insertUnorderedList')),
     '*': e.shiftKey && block && (() => exec('insertUnorderedList')),

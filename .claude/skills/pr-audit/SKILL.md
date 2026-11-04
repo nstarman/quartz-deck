@@ -5,9 +5,6 @@ description: Concision audit before a quartz-deck PR is marked ready (constituti
 
 # PR concision audit
 
-Goal: every PR leaves the codebase as short as it can be while doing the same
-thing. Small and cheap: at most four sub-agents, one pass, then you verify.
-
 ## 1. Scope the diff
 
 ```bash
@@ -59,13 +56,13 @@ preserves behaviour; otherwise mark it skipped with a reason. After applying:
 cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test
 ```
 
-All must pass, including the browser tests (`tests/onslide.rs`); if a change
-breaks anything, revert that change and mark it skipped.
+All must pass; if a change breaks anything, revert that change and mark it
+skipped.
 
 Commit the applied findings as one commit: `Concision audit: <n> findings
 applied (−<lines> lines)`.
 
-## 4. Record it in the PR
+## 4. Record it in the PR (required before it is marked ready)
 
 Add to the PR description:
 
@@ -75,6 +72,3 @@ Add to the PR description:
 - Skipped: <finding> — <reason> …
 - Net: −N lines; tests, fmt, clippy pass.
 ```
-
-The audit is advisory on design but mandatory as a step: a PR is not marked
-ready until this section exists.
