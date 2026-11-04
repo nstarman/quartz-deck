@@ -32,10 +32,11 @@ cargo test --test roundtrip     # every tests/corpus/*.qmd byte-identical
 ## 3. Live preview (US2)
 
 ```bash
-qd serve --detach               # prints {"url": "http://127.0.0.1:PORT/"}
+qd serve --detach               # prints {"url": "http://127.0.0.1:PORT/", "port", "pid"}
 qd url results                  # URL opening on that slide
 qd title results "Findings"     # preview updates in < 3 s, stays on slide
-echo 'broken ```' >> deck.qmd   # preview keeps last render, shows error
+printf -- '---\ntitle: [x\n---\n' > deck.qmd   # banner shows the Quarto error, last render kept
+qd stop
 ```
 
 ## 4. GUI (US3, US4)

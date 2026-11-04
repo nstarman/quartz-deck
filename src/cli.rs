@@ -68,7 +68,27 @@ enum Cmd {
         action: Option<MetaCmd>,
     },
     /// Validate the deck (duplicate ids, unsafe constructs, missing files)
-    Check,
+    Check {
+        /// Also render with Quarto and report render errors (slower)
+        #[arg(long)]
+        render: bool,
+    },
+    /// Serve the live preview/editor on 127.0.0.1 (Ctrl-C to stop)
+    Serve {
+        /// Port (0 = pick a free one)
+        #[arg(long, default_value_t = 0)]
+        port: u16,
+        /// Open the browser
+        #[arg(long)]
+        open: bool,
+        /// Start in the background and return immediately
+        #[arg(long)]
+        detach: bool,
+    },
+    /// URL of the running preview (optionally opening on a slide)
+    Url { slide: Option<String> },
+    /// Stop the running preview server for this deck
+    Stop,
     /// Print the machine-readable description of every command
     Schema,
     /// Print the agent Skill, or install it into a directory
@@ -176,7 +196,7 @@ fn parse_kv(s: &str) -> std::result::Result<(String, String), String> {
 fn output_of(cmd: &str) -> &'static str {
     match cmd {
         "slides" => {
-            r#"{"version","slide_level","title_slide","slides":[{"id","explicit","index","kind","title","summary","blocks","boxes","opaque"}]}"#
+            r#"{"version","slide_level","title_slide","slides":[{"id","explicit","index","kind","title","summary","blocks","boxes","opaque","anchor"}]}"#
         }
         "show" => {
             r#"{"version","slide":{"id","explicit","index","kind","level","title","attrs":{"id","classes","kv"},"opaque","source","blocks":[{"id","explicit","kind","text","attrs"}]}}"#
@@ -185,6 +205,9 @@ fn output_of(cmd: &str) -> &'static str {
         "check" => {
             r#"{"ok","version","problems":[{"severity":"error|warning","code","slide","message"}]}"#
         }
+        "serve" => r#"{"url","port","pid"} (one line, then serves until stopped)"#,
+        "url" => r#"{"url"}"#,
+        "stop" => r#"{"ok","pid"}"#,
         "schema" => r#"{"commands":[...],"errors":[...]}"#,
         "skill" => r#"{"skill":"<markdown>"} or {"ok","path"} with --install"#,
         "undo" | "redo" => r#"{"ok","op","undone|redone","version"}"#,
@@ -331,7 +354,7 @@ fn summary(d: &Deck, s: &Slide) -> String {
     }
 }
 
-fn slides_json(d: &Deck) -> Value {
+pub fn slides_json(d: &Deck) -> Value {
     let slides: Vec<Value> = d
         .slides
         .iter()
@@ -340,13 +363,14 @@ fn slides_json(d: &Deck) -> Value {
                 "id": s.id, "explicit": s.id_explicit, "index": s.index, "kind": s.kind, "title": s.title,
                 "summary": summary(d, s), "blocks": s.blocks.len(),
                 "boxes": s.blocks.iter().filter(|b| b.kind == BlockKind::Box).count(), "opaque": s.opaque,
+                "anchor": crate::render::preview_id(s),
             })
         })
         .collect();
     json!({"version": d.version, "slide_level": d.slide_level, "title_slide": d.has_title_slide(), "slides": slides})
 }
 
-fn show_json(d: &Deck, s: &Slide) -> Value {
+pub fn show_json(d: &Deck, s: &Slide) -> Value {
     json!({"version": d.version, "slide": {
         "id": s.id, "explicit": s.id_explicit, "index": s.index, "kind": s.kind, "level": s.level, "title": s.title,
         "attrs": attrs_json(s.attrs.as_ref()), "opaque": s.opaque, "source": d.slice(s.span),
@@ -463,9 +487,43 @@ pub fn run(cli: &Cli) -> Result<Value> {
         Cmd::Meta {
             action: Some(MetaCmd::Unset { key }),
         } => ctx.edit(|d| ops::meta_unset(d, key)),
-        Cmd::Check => {
+        Cmd::Check { render } => {
             let (s, d) = read()?;
-            Ok(check(&d, s.path.parent().unwrap_or(Path::new("."))))
+            let mut v = check(&d, s.path.parent().unwrap_or(Path::new(".")));
+            if *render {
+                let out = s.cache_dir().join("check");
+                let res = crate::render::render(&s.path, &d.text, "check", &out);
+                let _ = std::fs::remove_dir_all(&out);
+                match res {
+                    Ok(_) => {}
+                    Err(QdError::Render(log)) => {
+                        v["ok"] = json!(false);
+                        v["problems"].as_array_mut().unwrap().push(
+                            json!({"severity": "error", "code": "E_RENDER", "slide": null, "message": log}),
+                        );
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+            Ok(v)
+        }
+        Cmd::Serve { port, open, detach } => serve(&ctx.store()?, *port, *open, *detach),
+        Cmd::Url { slide } => {
+            let (s, d) = read()?;
+            let url = crate::server::running_url(&s)?;
+            Ok(match slide {
+                Some(r) => {
+                    json!({"url": format!("{url}#/{}", crate::render::preview_id(d.slide(r)?))})
+                }
+                None => json!({"url": url}),
+            })
+        }
+        Cmd::Stop => {
+            let pid = crate::server::running_pid(&ctx.store()?)?;
+            std::process::Command::new("kill")
+                .arg(pid.to_string())
+                .status()?;
+            Ok(json!({"ok": true, "pid": pid}))
         }
         Cmd::Schema => Ok(schema()),
         Cmd::Skill { install: None } => Ok(json!({"skill": SKILL})),
@@ -558,6 +616,52 @@ pub fn run(cli: &Cli) -> Result<Value> {
     }
 }
 
+fn open_browser(url: &str) {
+    let opener = if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    let _ = std::process::Command::new(opener).arg(url).status();
+}
+
+fn serve(store: &Store, port: u16, open: bool, detach: bool) -> Result<Value> {
+    crate::render::quarto()?;
+    if detach {
+        use std::io::BufRead;
+        let mut child = std::process::Command::new(std::env::current_exe()?)
+            .arg("--deck")
+            .arg(&store.path)
+            .args(["serve", "--port", &port.to_string()])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()?;
+        let mut line = String::new();
+        std::io::BufReader::new(child.stdout.take().unwrap()).read_line(&mut line)?;
+        let v: Value = serde_json::from_str(&line).map_err(|_| {
+            QdError::Io(std::io::Error::other(
+                "preview server failed to start (port in use?)",
+            ))
+        })?;
+        if open {
+            open_browser(v["url"].as_str().unwrap_or_default());
+        }
+        return Ok(v);
+    }
+    crate::server::serve(Store::open(&store.path)?, port, |s| {
+        use std::io::Write;
+        let line = json!({"url": s.url, "port": s.port, "pid": std::process::id()});
+        let mut out = std::io::stdout();
+        let _ = writeln!(out, "{line}");
+        let _ = out.flush();
+        if open {
+            open_browser(&s.url);
+        }
+    })?;
+    Ok(json!({"ok": true, "stopped": true}))
+}
+
 fn human(v: &Value) -> String {
     if let Some(slides) = v["slides"].as_array() {
         return slides
@@ -615,11 +719,14 @@ pub fn main() -> i32 {
     };
     match run(&cli) {
         Ok(v) => {
-            if cli.human {
-                print!("{}", human(&v));
+            use std::io::Write;
+            // a detached server's stdout pipe may be gone: ignore write errors
+            let mut out = std::io::stdout();
+            let _ = if cli.human {
+                write!(out, "{}", human(&v))
             } else {
-                println!("{v}");
-            }
+                writeln!(out, "{v}")
+            };
             0
         }
         Err(e) => {

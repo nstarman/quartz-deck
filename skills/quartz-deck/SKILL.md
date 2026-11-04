@@ -21,10 +21,14 @@ edits, detects concurrent changes and supports undo.
 2. **Edit** — one command per change. Pass `--expect <version>` from step 1
    so an edit fails instead of clobbering a change made meanwhile. Add
    `--dry-run` to see the diff first.
-3. **Check** — `qd check` (duplicate ids, unsafe constructs, missing files).
-   To see the result, render with `quarto render <deck>.qmd` (a live
-   preview command is planned).
-4. **Undo** if needed — `qd undo` (and `qd redo`).
+3. **Check** — `qd check` (duplicate ids, unsafe constructs, missing files);
+   `qd check --render` also runs Quarto and reports render errors.
+4. **Look** — start the live preview once with `qd serve --detach` (prints
+   `{"url","port","pid"}`), then open `qd url <slide>` in your browser tool.
+   The page re-renders by itself after every edit (about 1–2 s) and stays on
+   the current slide; a red banner shows Quarto errors while the last good
+   render stays visible. Stop it with `qd stop`.
+5. **Undo** if needed — `qd undo` (and `qd redo`).
 
 Pick the deck with `--deck path/to/talk.qmd` (or `QD_DECK`); it is implicit
 when the current directory has exactly one `.qmd`.
@@ -56,7 +60,8 @@ when the current directory has exactly one `.qmd`.
 | slide attributes | `qd set results --attr background-color=aquamarine --class center` |
 | remove attribute/class | `qd set results --unset background-color --unclass center` |
 | front matter key | `qd meta set theme dark` / `qd meta unset theme` |
-| validate | `qd check` |
+| validate | `qd check` (add `--render` to run Quarto) |
+| live preview | `qd serve --detach`, then `qd url results`; `qd stop` when done |
 | undo / redo | `qd undo` / `qd redo` |
 | new deck | `qd new talk.qmd --title "My talk"` |
 | all commands + output shapes | `qd schema` |
@@ -76,6 +81,8 @@ Multi-line markdown: pass real newlines, or use `--md -` with stdin, or
 | `E_USAGE` | wrong flags | `qd schema` or `qd <cmd> --help` |
 | `E_NO_UNDO` | nothing to undo, or file changed since | edit forward instead |
 | `E_NO_DECK` | no/several decks | pass `--deck PATH` |
+| `E_NO_SERVER` | no preview running | `qd serve --detach` |
+| `E_NO_QUARTO` | Quarto missing (preview/render only) | install Quarto; edits still work |
 
 ## Worked examples
 
