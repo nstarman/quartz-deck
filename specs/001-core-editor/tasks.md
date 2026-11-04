@@ -128,15 +128,15 @@ paths are relative to the repo root.
 
 ### Tests
 
-- [ ] T040 [P] [US4] Op snapshot tests in `tests/ops.rs`: `box add` (text → `::: {#b-xxxx .absolute left=… top=… width=… height=…}`; image → `![](path){#b-xxxx .absolute …}`), `box move --at`/`--by`, `box resize`, `box rm`; values written as unitless integers; box with `%`/`em` units is converted to px on move and result includes `"converted_units": true` (research.md R4); geometry parse treats unitless as px
-- [ ] T041 [P] [US4] Position fidelity test (gated on quarto) in `tests/serve.rs`: render a deck with a box at 200,100 size 300×50 and assert inline style `top: 100px; left: 200px; width: 300px; height: 50px` (SC-006, spike in research.md R5)
+- [X] T040 [P] [US4] Op snapshot tests in `tests/ops.rs`: `box add` (text → `::: {#b-xxxx .absolute left=… top=… width=… height=…}`; image → `![](path){#b-xxxx .absolute …}`), `box move --at`/`--by`, `box resize`, `box rm`; values written as unitless integers; box with `%`/`em` units is converted to px on move and result includes `"converted_units": true` (research.md R4); geometry parse treats unitless as px
+- [X] T041 [P] [US4] Position fidelity test (gated on quarto) in `tests/serve.rs`: render a deck with a box at 200,100 size 300×50 and assert inline style `top: 100px; left: 200px; width: 300px; height: 50px` (SC-006, spike in research.md R5)
 
 ### Implementation
 
-- [ ] T042 [US4] Implement `Geom { top, left, width, height, bottom, right: Option<Length> }`, `Length { value: f64, unit }` and box ops in `src/ops.rs`; add `box add|move|resize|rm` to `src/cli.rs` and `qd show` output `geom` — T040 passes
-- [ ] T043 [US4] Drag/resize in `src/ui/editor.js`: on `.absolute` elements show 8 handles; pointer events move/resize the element's inline style live; delta_slide_px = delta_screen_px / `Reveal.getScale()` (from iframe window); Shift keeps aspect ratio; on pointerup send `box move`/`box resize` with rounded ints
-- [ ] T044 [US4] "Add box" buttons (text, image path prompt) in properties panel → `box add` at slide centre, 300×100 default
-- [ ] T045 [US4] Browser verification per quickstart §4 bullets 3–4, plus `quarto render` stock comparison (±1 px); record in `specs/001-core-editor/checklists/gui.md`
+- [X] T042 [US4] Implement `Geom { top, left, width, height, bottom, right: Option<Length> }`, `Length { value: f64, unit }` and box ops in `src/ops.rs`; add `box add|move|resize|rm` to `src/cli.rs` and `qd show` output `geom` — T040 passes — done; `box resize` also takes `--at` so a corner drag is one undo step; `box add` defaults to 300x100 centred; boxes without an id get one on first edit
+- [X] T043 [US4] Drag/resize in `src/ui/editor.js`: on `.absolute` elements show 8 handles; pointer events move/resize the element's inline style live; delta_slide_px = delta_screen_px / `Reveal.getScale()` (from iframe window); Shift keeps aspect ratio; on pointerup send `box move`/`box resize` with rounded ints — done; plus Left/Top/Width/Height fields in the box panel (precise + keyboard-accessible)
+- [X] T044 [US4] "Add box" buttons (text, image path prompt) in properties panel → `box add` at slide centre, 300×100 default — done; image path entered in the panel (no dialog)
+- [X] T045 [US4] Browser verification per quickstart §4 bullets 3–4, plus `quarto render` stock comparison (±1 px); record in `specs/001-core-editor/checklists/gui.md`
 
 **Checkpoint**: free layout works and renders identically with stock Quarto.
 

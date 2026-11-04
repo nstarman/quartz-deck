@@ -16,6 +16,8 @@ pub struct Patch {
     pub replacements: Vec<(Span, String)>,
     pub assigned_ids: Vec<String>,
     pub target: String,
+    /// A box's non-px position/size was rewritten in px (research R4).
+    pub converted_units: bool,
 }
 
 /// Apply non-overlapping replacements (right to left).
@@ -293,6 +295,7 @@ fn patch(
         replacements,
         assigned_ids,
         target,
+        converted_units: false,
     }
 }
 
@@ -591,4 +594,264 @@ pub fn new_deck(title: Option<&str>) -> String {
     format!(
         "---\ntitle: {quoted}\nformat: revealjs\n---\n\n## First slide {{#first-slide}}\n\nHello.\n"
     )
+}
+
+// ---------- positioned boxes (US4, research R4) ----------
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Length {
+    pub value: f64,
+    pub unit: String,
+}
+
+impl Length {
+    /// `100`, `100px`, `20%`, `1.5em`; a unitless number is px (Quarto).
+    pub fn parse(s: &str) -> Option<Length> {
+        let s = s.trim();
+        let n = s
+            .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
+            .unwrap_or(s.len());
+        let value: f64 = s[..n].parse().ok()?;
+        let unit = if n == s.len() { "px" } else { &s[n..] };
+        Some(Length {
+            value,
+            unit: unit.into(),
+        })
+    }
+
+    fn px(&self) -> Option<f64> {
+        (self.unit == "px").then_some(self.value)
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct Geom {
+    pub left: Option<Length>,
+    pub top: Option<Length>,
+    pub width: Option<Length>,
+    pub height: Option<Length>,
+    pub right: Option<Length>,
+    pub bottom: Option<Length>,
+}
+
+pub fn geom(a: &Attrs) -> Geom {
+    let g = |k| a.get(k).and_then(Length::parse);
+    Geom {
+        left: g("left"),
+        top: g("top"),
+        width: g("width"),
+        height: g("height"),
+        right: g("right"),
+        bottom: g("bottom"),
+    }
+}
+
+pub enum BoxContent<'a> {
+    Text(&'a str),
+    Image(&'a str),
+}
+
+fn px(v: f64) -> String {
+    format!("{}", v.round() as i64)
+}
+
+fn check_size(w: f64, h: f64) -> Result<()> {
+    if !(w >= 1.0 && h >= 1.0 && w.is_finite() && h.is_finite()) {
+        return Err(QdError::InvalidArg(format!(
+            "box size must be at least 1x1 px, got {w}x{h}"
+        )));
+    }
+    Ok(())
+}
+
+/// Byte range of a box block's `{...}` attribute text (div: first line; image: trailing).
+fn box_attrs_range(text: &str, image: bool) -> Option<(usize, usize)> {
+    if image {
+        let start = text.rfind("){")? + 1;
+        Some((start, text.trim_end().len()))
+    } else {
+        let first = &text[..text.find(['\n', '\r']).unwrap_or(text.len())];
+        Some((first.find('{')?, first.rfind('}')? + 1))
+    }
+}
+
+/// Insert a positioned box at the end of a slide.
+pub fn box_add(
+    d: &Deck,
+    slide: &str,
+    content: BoxContent,
+    at: Option<(f64, f64)>,
+    size: Option<(f64, f64)>,
+) -> Result<Patch> {
+    let mut ctx = Ctx::new(d);
+    let s = ctx.slide(slide)?;
+    let nl = ctx.nl();
+    let (w, h) = size.unwrap_or((300.0, 100.0));
+    check_size(w, h)?;
+    let (l, t) = at.unwrap_or(((d.width as f64 - w) / 2.0, (d.height as f64 - h) / 2.0));
+    let id = ctx.fresh("b");
+    let attrs = format!(
+        "{{#{id} .absolute left={} top={} width={} height={}}}",
+        px(l),
+        px(t),
+        px(w),
+        px(h)
+    );
+    let block = match content {
+        BoxContent::Text(md) => {
+            let md = norm(md, nl);
+            if md.is_empty() {
+                return Err(QdError::InvalidArg("box text is empty".into()));
+            }
+            format!("::: {attrs}{nl}{md}{nl}:::")
+        }
+        BoxContent::Image(path) => {
+            single_line(path, "image path")?;
+            format!("![]({}){attrs}", path.trim())
+        }
+    };
+    let (before, trailing) = match s.blocks.last() {
+        Some(b) => (
+            &d.text[s.content_start()..b.span.end],
+            &d.text[b.span.end..s.span.end],
+        ),
+        None => ("", &d.text[s.content_start()..s.span.end]),
+    };
+    let trailing = if trailing.is_empty() { nl } else { trailing };
+    let rest = format!("{before}{nl}{nl}{block}{trailing}");
+    let rest = if s.blocks.is_empty() {
+        format!("{nl}{block}{trailing}")
+    } else {
+        rest
+    };
+    let mut assigned = Vec::new();
+    let (new, _) = ctx.rewrite(s, None, None, Some(rest), &mut assigned);
+    assigned.push(id.clone());
+    Ok(patch("box add", id, vec![(s.span, new)], assigned))
+}
+
+/// Edit a box's attributes; gives an id to boxes that lack one.
+fn edit_box(
+    d: &Deck,
+    r: &str,
+    op: &str,
+    f: impl FnOnce(&mut Attrs) -> Result<bool>,
+) -> Result<Patch> {
+    let mut ctx = Ctx::new(d);
+    let (s, b) = d.element(r)?;
+    if b.kind != BlockKind::Box {
+        return Err(QdError::InvalidArg(format!(
+            "'{r}' is a {:?} block, not a positioned (.absolute) box",
+            b.kind
+        )));
+    }
+    let s = ctx.slide(&format!("@{}", s.index))?;
+    let text = d.slice(b.span);
+    let image = text.trim_start().starts_with("![");
+    let (a0, a1) = box_attrs_range(text, image)
+        .ok_or_else(|| QdError::UnsafeEdit(format!("cannot locate attributes of '{r}'")))?;
+    let mut attrs = Attrs::parse(&text[a0..a1])
+        .ok_or_else(|| QdError::UnsafeEdit(format!("cannot parse attributes of '{r}'")))?;
+    let mut assigned = Vec::new();
+    let id = match attrs.id() {
+        Some(id) => id.to_string(),
+        None => {
+            let id = ctx.fresh("b");
+            attrs.set_id(&id);
+            assigned.push(id.clone());
+            id
+        }
+    };
+    let converted = f(&mut attrs)?;
+    let new_block = format!("{}{}{}", &text[..a0], attrs.render(), &text[a1..]);
+    let rest = format!(
+        "{}{new_block}{}",
+        &d.text[s.content_start()..b.span.start],
+        &d.text[b.span.end..s.span.end]
+    );
+    let (new, _) = ctx.rewrite(s, None, None, Some(rest), &mut assigned);
+    let mut p = patch(op, id, vec![(s.span, new)], assigned);
+    p.converted_units = converted;
+    Ok(p)
+}
+
+/// Write px `left`/`top` (dropping `right`/`bottom`). Returns whether units changed.
+fn set_position(a: &mut Attrs, l: f64, t: f64) -> bool {
+    let g = geom(a);
+    let converted = g.right.is_some()
+        || g.bottom.is_some()
+        || [&g.left, &g.top]
+            .iter()
+            .any(|v| v.as_ref().is_some_and(|v| v.unit != "px"));
+    a.unset("right");
+    a.unset("bottom");
+    a.set("left", &px(l));
+    a.set("top", &px(t));
+    converted
+}
+
+/// Move a box to `at` (px), or by `by` (px; needs px `left`/`top`).
+pub fn box_move(
+    d: &Deck,
+    r: &str,
+    at: Option<(f64, f64)>,
+    by: Option<(f64, f64)>,
+) -> Result<Patch> {
+    edit_box(d, r, "box move", |a| match (at, by) {
+        (Some((l, t)), _) => Ok(set_position(a, l, t)),
+        (None, Some((dx, dy))) => {
+            let g = geom(a);
+            let (Some(l), Some(t)) = (g.left.and_then(|v| v.px()), g.top.and_then(|v| v.px()))
+            else {
+                return Err(QdError::InvalidArg(
+                    "--by needs the box to have px left/top; use --at".into(),
+                ));
+            };
+            Ok(set_position(a, l + dx, t + dy))
+        }
+        (None, None) => Err(QdError::Usage("box move needs --at or --by".into())),
+    })
+}
+
+/// Set a box's size (px), optionally moving it too (e.g. resizing from the top-left).
+pub fn box_resize(d: &Deck, r: &str, size: (f64, f64), at: Option<(f64, f64)>) -> Result<Patch> {
+    check_size(size.0, size.1)?;
+    edit_box(d, r, "box resize", |a| {
+        let g = geom(a);
+        let mut converted = [&g.width, &g.height]
+            .iter()
+            .any(|v| v.as_ref().is_some_and(|v| v.unit != "px"));
+        if let Some((l, t)) = at {
+            converted |= set_position(a, l, t);
+        }
+        a.set("width", &px(size.0));
+        a.set("height", &px(size.1));
+        Ok(converted)
+    })
+}
+
+pub fn box_rm(d: &Deck, r: &str) -> Result<Patch> {
+    let mut ctx = Ctx::new(d);
+    let (s, b) = d.element(r)?;
+    if b.kind != BlockKind::Box {
+        return Err(QdError::InvalidArg(format!(
+            "'{r}' is not a positioned box"
+        )));
+    }
+    let s = ctx.slide(&format!("@{}", s.index))?;
+    let i = s.blocks.iter().position(|x| x.span == b.span).unwrap();
+    // drop the box and the blank lines that separate it from its neighbour
+    let (cut0, cut1) = match (i.checked_sub(1).map(|j| &s.blocks[j]), s.blocks.get(i + 1)) {
+        (_, Some(next)) => (b.span.start, next.span.start),
+        (Some(prev), None) => (prev.span.end, b.span.end),
+        (None, None) => (b.span.start, b.span.end),
+    };
+    let rest = format!(
+        "{}{}",
+        &d.text[s.content_start()..cut0],
+        &d.text[cut1..s.span.end]
+    );
+    let mut assigned = Vec::new();
+    let (new, _) = ctx.rewrite(s, None, None, Some(rest), &mut assigned);
+    Ok(patch("box rm", b.id.clone(), vec![(s.span, new)], assigned))
 }

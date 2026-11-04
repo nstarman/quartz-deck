@@ -62,6 +62,9 @@ when the current directory has exactly one `.qmd`.
 | slide attributes | `qd set results --attr background-color=aquamarine --class center` |
 | remove attribute/class | `qd set results --unset background-color --unclass center` |
 | front matter key | `qd meta set theme dark` / `qd meta unset theme` |
+| positioned text box | `qd box add results --text "Note" --at 700,80 --size 300,100` |
+| positioned image | `qd box add results --image figures/plot.png --at 100,150 --size 600,400` |
+| move / resize / delete box | `qd box move #b-1a2b --by 0,40`, `qd box resize #b-1a2b --size 400,300`, `qd box rm #b-1a2b` |
 | validate | `qd check` (add `--render` to run Quarto) |
 | live preview | `qd serve --detach`, then `qd url results`; `qd stop` when done |
 | undo / redo | `qd undo` / `qd redo` |
@@ -105,12 +108,14 @@ qd title @3 "Key findings"                  # result.target is now its stable id
 qd set <target> --attr background-color="#1a1a2e" --class center
 ```
 
-**Positioned image** — boxes are Quarto `.absolute` blocks (px on a
-1050×700 slide):
+**Positioned image** — boxes are Quarto `.absolute` blocks, in px on the
+slide (1050×700 unless the deck sets `width`/`height`; `qd slides` reports it):
 
 ```bash
-qd add --title "Architecture" --md '![](figures/arch.png){.absolute top=120 left=100 width=850 height=500}'
-qd show last                                # the image block is kind "box"
+qd add --title "Architecture"               # target: "architecture"
+qd box add architecture --image figures/arch.png --at 100,120 --size 850,500
+qd show architecture                        # block kind "box", geom {left, top, width, height}
+qd box move #b-xxxx --by 0,-20              # use the id from the add result's target
 ```
 
 ## Notes

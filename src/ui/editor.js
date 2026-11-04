@@ -17,6 +17,7 @@ const state = {
   sel: null, // selected element ref "<slide>/<i>"
   goAfterRender: null, // anchor to show once the next render lands
   want: null, // anchor the freshly loaded preview should open on
+  selectIdAfterRender: null, // element id (e.g. a new box) to select once rendered
 };
 
 // ---------- helpers ----------
@@ -108,6 +109,10 @@ const PREVIEW_CSS = `
   [data-qd] { cursor: pointer; }
   [data-qd]:hover { outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; }
   .qd-sel, .qd-sel:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 2px; }
+  .qd-overlay { position: absolute; box-sizing: border-box; border: 2px solid #2a5bd7; cursor: move;
+    touch-action: none; z-index: 1000; }
+  .qd-handle { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; background: #fff;
+    border: 2px solid #2a5bd7; border-radius: 3px; box-sizing: border-box; }
   section[data-qd-hidden]::after { content: "hidden slide (visibility=hidden): not in the rendered deck";
     position: absolute; top: 0; right: 0; font: 14px system-ui, sans-serif; padding: 2px 8px;
     background: #fff3c4; color: #5c4400; border-radius: 4px; }
@@ -117,7 +122,92 @@ function highlight() {
   const doc = frame.contentDocument;
   if (!doc) return;
   doc.querySelectorAll('.qd-sel').forEach((el) => el.classList.remove('qd-sel'));
-  if (state.sel) doc.querySelectorAll(`[data-qd="${CSS.escape(state.sel)}"]`).forEach((el) => el.classList.add('qd-sel'));
+  doc.querySelectorAll('.qd-overlay').forEach((el) => el.remove());
+  if (!state.sel) return;
+  const els = doc.querySelectorAll(`[data-qd="${CSS.escape(state.sel)}"]`);
+  els.forEach((el) => el.classList.add('qd-sel'));
+  const box = [...els].find((el) => el.classList.contains('absolute'));
+  if (box) attachOverlay(box);
+}
+
+// ---------- drag / resize positioned boxes (US4) ----------
+
+const HANDLES = { nw: [0, 0], n: [0.5, 0], ne: [1, 0], e: [1, 0.5], se: [1, 1], s: [0.5, 1], sw: [0, 1], w: [0, 0.5] };
+
+function rectOf(el) {
+  return { l: el.offsetLeft, t: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight };
+}
+
+function place(el, r) {
+  Object.assign(el.style, { left: r.l + 'px', top: r.t + 'px', width: r.w + 'px', height: r.h + 'px', right: 'auto', bottom: 'auto' });
+}
+
+function attachOverlay(box) {
+  const doc = box.ownerDocument;
+  const parent = box.offsetParent;
+  if (!parent) return;
+  const ov = doc.createElement('div');
+  ov.className = 'qd-overlay';
+  ov.title = 'Drag to move';
+  for (const [name, [x, y]] of Object.entries(HANDLES)) {
+    const h = doc.createElement('div');
+    h.className = 'qd-handle';
+    h.dataset.dir = name;
+    Object.assign(h.style, { left: x * 100 + '%', top: y * 100 + '%', cursor: name + '-resize' });
+    ov.append(h);
+  }
+  place(ov, rectOf(box));
+  parent.append(ov);
+
+  ov.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const dir = e.target.dataset.dir || null;
+    const scale = frameWin().Reveal?.getScale?.() || 1;
+    const start = rectOf(box);
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    let cur = start;
+    ov.setPointerCapture(e.pointerId);
+    const onMove = (ev) => {
+      const dx = (ev.clientX - x0) / scale;
+      const dy = (ev.clientY - y0) / scale;
+      const r = { ...start };
+      if (!dir) { r.l += dx; r.t += dy; } else {
+        if (dir.includes('e')) r.w = start.w + dx;
+        if (dir.includes('s')) r.h = start.h + dy;
+        if (dir.includes('w')) { r.w = start.w - dx; r.l = start.l + dx; }
+        if (dir.includes('n')) { r.h = start.h - dy; r.t = start.t + dy; }
+        if (ev.shiftKey && start.h > 0) {
+          const ratio = start.w / start.h;
+          if (dir === 'n' || dir === 's') r.w = r.h * ratio; else r.h = r.w / ratio;
+          if (dir.includes('n')) r.t = start.t + start.h - r.h;
+          if (dir.includes('w')) r.l = start.l + start.w - r.w;
+        }
+        r.w = Math.max(1, r.w);
+        r.h = Math.max(1, r.h);
+      }
+      cur = { l: Math.round(r.l), t: Math.round(r.t), w: Math.round(r.w), h: Math.round(r.h) };
+      place(box, cur);
+      place(ov, cur);
+    };
+    const onUp = async () => {
+      ov.removeEventListener('pointermove', onMove);
+      ov.removeEventListener('pointerup', onUp);
+      ov.removeEventListener('pointercancel', onUp);
+      const moved = cur.l !== start.l || cur.t !== start.t;
+      const resized = cur.w !== start.w || cur.h !== start.h;
+      if (!moved && !resized) return;
+      const ref = state.sel;
+      const r = resized
+        ? await op('box resize', { box: ref, size: `${cur.w},${cur.h}`, at: `${cur.l},${cur.t}` })
+        : await op('box move', { box: ref, at: `${cur.l},${cur.t}` });
+      if (r) { await fetchDeck(); await renderPanel(); } else { place(box, start); place(ov, start); }
+    };
+    ov.addEventListener('pointermove', onMove);
+    ov.addEventListener('pointerup', onUp);
+    ov.addEventListener('pointercancel', onUp);
+  });
 }
 
 function hookFrame() {
@@ -152,6 +242,11 @@ function hookFrame() {
     }
     if (state.want && w.Reveal.getCurrentSlide()?.id !== state.want) w.location.hash = '#/' + state.want;
     state.want = null;
+    if (state.selectIdAfterRender) {
+      const el = frame.contentDocument.getElementById(state.selectIdAfterRender);
+      state.selectIdAfterRender = null;
+      if (el?.dataset.qd) state.sel = el.dataset.qd;
+    }
     onSlide();
   };
   const onSlide = () => {
@@ -265,7 +360,7 @@ async function renderPanel() {
   const slide = await fetchSlide(cur.id);
   if (!slide) return;
   const view = $('#slide-panel').content.cloneNode(true);
-  const f = $('form', view);
+  const f = $('form.slide-form', view);
   const kv = slide.attrs?.kv || {};
   $('.ref', view).textContent = slide.id;
   f.title.value = slide.title || '';
@@ -279,7 +374,18 @@ async function renderPanel() {
   f.addEventListener('reset', (e) => { e.preventDefault(); renderPanel(); });
   f.addEventListener('submit', (e) => { e.preventDefault(); applySlide(slide, f); });
   view.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => slideAction(b.dataset.act, slide)));
+  const addBox = $('form.add-box', view);
+  addBox.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const path = addBox.image.value.trim();
+    if (path) newBox(slide, { image: path });
+  });
   panel.replaceChildren(view);
+}
+
+async function newBox(slide, source) {
+  const r = await op('box add', { slide: slide.id, ...source });
+  if (r) { state.selectIdAfterRender = r.target; await fetchDeck(); }
 }
 
 async function renderTitlePanel() {
@@ -337,6 +443,7 @@ async function slideAction(act, slide) {
   const slides = state.deck.slides;
   const i = slides.findIndex((s) => s.id === slide.id);
   let res = null;
+  if (act === 'textbox') return newBox(slide, { text: 'Text' });
   if (act === 'up' && i > 0) res = await op('move', { slide: slide.id, before: slides[i - 1].id });
   if (act === 'down' && i < slides.length - 1) res = await op('move', { slide: slide.id, after: slides[i + 1].id });
   if (act === 'dup') {
@@ -365,7 +472,7 @@ async function renderElementPanel() {
   const block = slide?.blocks[Number(ref.slice(cut + 1))];
   if (!block) { state.sel = null; return renderPanel(); }
   const view = $('#element-panel').content.cloneNode(true);
-  const f = $('form', view);
+  const f = $('form.element-form', view);
   $('.kind', view).textContent = block.kind[0].toUpperCase() + block.kind.slice(1);
   $('.ref', view).textContent = ref;
   f.md.value = block.text;
@@ -379,6 +486,26 @@ async function renderElementPanel() {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); f.requestSubmit(); }
   });
   $('[data-act=deselect]', view).addEventListener('click', () => select(null));
+  if (block.kind === 'box') {
+    const g = $('form.geom-form', view);
+    g.hidden = false;
+    const el = frame.contentDocument?.querySelector(`[data-qd="${CSS.escape(ref)}"]`);
+    const r = el ? rectOf(el) : null;
+    const val = (k, measured) => (typeof block.geom?.[k] === 'number' ? block.geom[k] : measured ?? '');
+    g.left.value = val('left', r?.l);
+    g.top.value = val('top', r?.t);
+    g.width.value = val('width', r?.w);
+    g.height.value = val('height', r?.h);
+    g.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const res = await op('box resize', { box: ref, size: `${g.width.value},${g.height.value}`, at: `${g.left.value},${g.top.value}` });
+      if (res) { await fetchDeck(); await renderPanel(); }
+    });
+    $('[data-act=rmbox]', g).addEventListener('click', async () => {
+      const res = await op('box rm', { box: ref });
+      if (res) { await select(null); await fetchDeck(); }
+    });
+  }
   panel.replaceChildren(view);
 }
 

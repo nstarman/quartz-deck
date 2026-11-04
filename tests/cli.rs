@@ -357,6 +357,10 @@ fn schema_lists_every_command() {
         "undo",
         "redo",
         "new",
+        "box add",
+        "box move",
+        "box resize",
+        "box rm",
     ] {
         assert!(
             names.contains(&c.to_string()),
@@ -465,6 +469,28 @@ fn run_op_matches_cli() {
             json!({"key": "theme", "value": "dark"}),
         ),
         (&["show", "results"], "show", json!({"slide": "results"})),
+        (
+            &[
+                "box", "add", "intro", "--text", "- n", "--at", "10,20", "--size", "30,40",
+            ],
+            "box add",
+            json!({"slide": "intro", "text": "- n", "at": "10,20", "size": "30,40"}),
+        ),
+        (
+            &["box", "move", "#b-plot", "--by", "-5,5"],
+            "box move",
+            json!({"box": "#b-plot", "by": "-5,5"}),
+        ),
+        (
+            &["box", "resize", "#b-plot", "--size", "1,2", "--at", "3,4"],
+            "box resize",
+            json!({"box": "#b-plot", "size": "1,2", "at": "3,4"}),
+        ),
+        (
+            &["box", "rm", "#b-plot"],
+            "box rm",
+            json!({"box": "#b-plot"}),
+        ),
         (&["slides"], "slides", json!({})),
     ];
     for (argv, op, args) in cases {
@@ -523,4 +549,63 @@ fn run_op_rejects_unsafe_or_unknown() {
         "E_CONFLICT"
     );
     assert_eq!(e.text(), BASIC);
+}
+
+/// US4 CLI: box commands, geometry in `show`, unit conversion flag, errors.
+#[test]
+fn box_commands() {
+    let e = Env::new();
+    let v = e.ok(&[
+        "box", "add", "intro", "--image", "fig.png", "--at", "-10,20", "--size", "300,200",
+    ]);
+    assert_edit(&v, "box add");
+    let id = v["target"].as_str().unwrap().to_string();
+    let show = e.ok(&["show", "intro"]);
+    let b = show["slide"]["blocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|b| b["id"] == id.as_str())
+        .unwrap()
+        .clone();
+    assert_eq!(b["kind"], "box");
+    assert_eq!(
+        b["geom"],
+        serde_json::json!({"left": -10.0, "top": 20.0, "width": 300.0, "height": 200.0, "right": null, "bottom": null})
+    );
+    assert_edit(
+        &e.ok(&["box", "move", &format!("#{id}"), "--by", "15,5"]),
+        "box move",
+    );
+    assert_edit(
+        &e.ok(&["box", "resize", &format!("#{id}"), "--size", "100,50"]),
+        "box resize",
+    );
+    assert!(
+        e.text().contains(&format!(
+            "![](fig.png){{#{id} .absolute left=5 top=25 width=100 height=50}}"
+        )),
+        "{}",
+        e.text()
+    );
+    assert_edit(&e.ok(&["box", "rm", &format!("#{id}")]), "box rm");
+    assert!(!e.text().contains("fig.png"));
+    assert_eq!(e.ok(&["slides"])["width"], 1050);
+
+    e.err(&["box", "move", "#b-plot"], "E_USAGE", 2);
+    e.err(&["box", "add", "intro"], "E_USAGE", 2);
+    e.err(
+        &["box", "add", "intro", "--text", "x", "--at", "1"],
+        "E_USAGE",
+        2,
+    );
+    e.err(
+        &["box", "move", "intro/0", "--at", "1,1"],
+        "E_INVALID_ARG",
+        1,
+    );
+
+    std::fs::write(e.path(), include_str!("corpus/11-absolute.qmd")).unwrap();
+    let v = e.ok(&["box", "move", "boxes/2", "--at", "1,2"]);
+    assert_eq!(v["converted_units"], true);
 }
