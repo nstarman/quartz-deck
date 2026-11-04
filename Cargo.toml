@@ -2,7 +2,7 @@
 name = "quartz-deck"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.89"
 description = "Local GUI + LLM-friendly CLI editor for Quarto reveal.js decks"
 license-file = "LICENSE"
 publish = false
