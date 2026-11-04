@@ -426,10 +426,15 @@ fn check(d: &Deck, dir: &Path) -> Value {
 
 struct Ctx<'a> {
     cli: &'a Cli,
+    /// Set by `run_op` (server): use this store instead of resolving `--deck`.
+    store: Option<&'a Store>,
 }
 
 impl Ctx<'_> {
     fn store(&self) -> Result<Store> {
+        if let Some(s) = self.store {
+            return Ok(s.clone());
+        }
         Store::open(&find_deck(&self.cli.deck)?)
     }
 
@@ -462,8 +467,113 @@ impl Ctx<'_> {
     }
 }
 
+/// Commands the HTTP API may run (FR-010). No server control, no file I/O
+/// beyond the deck itself.
+const API_OPS: &[&str] = &[
+    "slides",
+    "show",
+    "meta",
+    "meta set",
+    "meta unset",
+    "check",
+    "add",
+    "dup",
+    "move",
+    "rm",
+    "title",
+    "body",
+    "set",
+    "edit",
+    "undo",
+    "redo",
+];
+
+/// Run a CLI command given as `{op, args}` (the body of `POST /api/op`).
+/// `args` keys are the command's positional names and long flags; arrays
+/// repeat a flag, `true` sets a switch. The command line is rebuilt and parsed
+/// by clap, so the API cannot drift from the CLI.
+pub fn run_op(store: &Store, op: &str, args: &Value, expect: Option<&str>) -> Result<Value> {
+    if !API_OPS.contains(&op) {
+        return Err(QdError::InvalidArg(format!(
+            "unknown or disallowed op '{op}'"
+        )));
+    }
+    let empty = serde_json::Map::new();
+    let obj = match args {
+        Value::Object(m) => m,
+        Value::Null => &empty,
+        _ => return Err(QdError::InvalidArg("args must be an object".into())),
+    };
+    let root = Cli::command();
+    let mut cmd = &root;
+    for w in op.split(' ') {
+        cmd = cmd.find_subcommand(w).expect("API_OPS are subcommands");
+    }
+    let mut argv: Vec<String> = vec!["qd".into()];
+    if let Some(e) = expect {
+        argv.extend(["--expect".into(), e.into()]);
+    }
+    if obj.get("dry_run") == Some(&Value::Bool(true)) {
+        argv.push("--dry-run".into());
+    }
+    argv.extend(op.split(' ').map(String::from));
+    let scalar = |k: &str, v: &Value| -> Result<String> {
+        match v {
+            Value::String(s) => Ok(s.clone()),
+            Value::Number(n) => Ok(n.to_string()),
+            _ => Err(QdError::InvalidArg(format!(
+                "'{k}' must be a string or number"
+            ))),
+        }
+    };
+    let mut known = vec!["dry_run".to_string()];
+    let mut positionals: Vec<&clap::Arg> = cmd.get_positionals().collect();
+    positionals.sort_by_key(|a| a.get_index());
+    for a in positionals {
+        let id = a.get_id().as_str();
+        known.push(id.into());
+        if let Some(v) = obj.get(id) {
+            argv.push(scalar(id, v)?);
+        }
+    }
+    for a in cmd
+        .get_arguments()
+        .filter(|a| !a.is_positional() && !a.is_global_set())
+    {
+        let Some(long) = a.get_long() else { continue };
+        known.push(long.into());
+        match obj.get(long) {
+            None | Some(Value::Bool(false)) | Some(Value::Null) => {}
+            Some(Value::Bool(true)) => argv.push(format!("--{long}")),
+            Some(Value::Array(items)) => {
+                for it in items {
+                    argv.extend([format!("--{long}"), scalar(long, it)?]);
+                }
+            }
+            Some(v) => argv.extend([format!("--{long}"), scalar(long, v)?]),
+        }
+    }
+    if let Some(k) = obj.keys().find(|k| !known.contains(k)) {
+        return Err(QdError::InvalidArg(format!(
+            "unknown argument '{k}' for '{op}'"
+        )));
+    }
+    if obj.contains_key("file") || obj.get("md").is_some_and(|m| m == "-") {
+        return Err(QdError::InvalidArg(
+            "the API takes markdown inline via 'md' only".into(),
+        ));
+    }
+    let cli = Cli::try_parse_from(&argv)
+        .map_err(|e| QdError::Usage(e.render().to_string().trim().to_string()))?;
+    run_with(&cli, Some(store))
+}
+
 pub fn run(cli: &Cli) -> Result<Value> {
-    let ctx = Ctx { cli };
+    run_with(cli, None)
+}
+
+fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
+    let ctx = Ctx { cli, store };
     let read = || -> Result<(Store, Deck)> {
         let s = ctx.store()?;
         let d = s.read()?;

@@ -21,6 +21,10 @@ impl Env {
     fn path(&self) -> PathBuf {
         self.dir.path().join("deck.qmd")
     }
+    /// Store using the same cache root the CLI gets via QD_CACHE_DIR.
+    fn store(&self) -> quartz_deck::store::Store {
+        quartz_deck::store::Store::open_in(&self.path(), &self.dir.path().join(".cache")).unwrap()
+    }
     fn text(&self) -> String {
         fs::read_to_string(self.path()).unwrap()
     }
@@ -404,4 +408,112 @@ fn perf_100_slides() {
         let ms = t.elapsed().as_millis();
         assert!(ms < 200, "qd {args:?} took {ms} ms");
     }
+}
+
+/// FR-010 / T033: `run_op` (behind POST /api/op) gives byte-identical JSON and
+/// file results to the CLI for every editing op.
+#[test]
+fn run_op_matches_cli() {
+    use quartz_deck::cli::run_op;
+    use serde_json::json;
+    let cases: Vec<(&[&str], &str, Value)> = vec![
+        (
+            &[
+                "add", "--after", "intro", "--title", "Mid", "--md", "- a", "--attr", "x=1",
+                "--class", "c",
+            ],
+            "add",
+            json!({"after": "intro", "title": "Mid", "md": "- a", "attr": ["x=1"], "class": ["c"]}),
+        ),
+        (&["dup", "results"], "dup", json!({"slide": "results"})),
+        (
+            &["move", "intro", "--after", "last"],
+            "move",
+            json!({"slide": "intro", "after": "last"}),
+        ),
+        (&["rm", "@3"], "rm", json!({"slide": "@3"})),
+        (
+            &["title", "intro", "-New"],
+            "title",
+            json!({"slide": "intro", "text": "-New"}),
+        ),
+        (
+            &["body", "intro", "--md", "Body."],
+            "body",
+            json!({"slide": "intro", "md": "Body."}),
+        ),
+        (
+            &["set", "results", "--attr", "a=b", "--unclass", "smaller"],
+            "set",
+            json!({"slide": "results", "attr": ["a=b"], "unclass": ["smaller"]}),
+        ),
+        (
+            &["edit", "results/0", "--md", "- z"],
+            "edit",
+            json!({"element": "results/0", "md": "- z"}),
+        ),
+        (
+            &["meta", "set", "theme", "dark"],
+            "meta set",
+            json!({"key": "theme", "value": "dark"}),
+        ),
+        (&["show", "results"], "show", json!({"slide": "results"})),
+        (&["slides"], "slides", json!({})),
+    ];
+    for (argv, op, args) in cases {
+        let a = Env::new();
+        let b = Env::new();
+        let cli = a.ok(argv);
+        let api = run_op(&b.store(), op, &args, None).unwrap_or_else(|e| panic!("{op}: {e}"));
+        assert_eq!(cli, api, "{op}: JSON differs");
+        assert_eq!(a.text(), b.text(), "{op}: file differs");
+    }
+    // undo through the API uses the same journal as the CLI
+    let e = Env::new();
+    e.ok(&["title", "intro", "Changed"]);
+    let v = run_op(&e.store(), "undo", &json!({}), None).unwrap();
+    assert_eq!(v["undone"], "title");
+    assert_eq!(e.text(), BASIC);
+}
+
+#[test]
+fn run_op_rejects_unsafe_or_unknown() {
+    use quartz_deck::cli::run_op;
+    use serde_json::json;
+    let e = Env::new();
+    let p = e.store();
+    let code = |op: &str, args: Value| run_op(&p, op, &args, None).unwrap_err().code();
+    assert_eq!(code("serve", json!({})), "E_INVALID_ARG");
+    assert_eq!(code("new", json!({"path": "x.qmd"})), "E_INVALID_ARG");
+    assert_eq!(code("skill", json!({"install": "/tmp/x"})), "E_INVALID_ARG");
+    assert_eq!(code("frob", json!({})), "E_INVALID_ARG");
+    assert_eq!(
+        code("body", json!({"slide": "intro", "file": "/etc/passwd"})),
+        "E_INVALID_ARG"
+    );
+    assert_eq!(
+        code("body", json!({"slide": "intro", "md": "-"})),
+        "E_INVALID_ARG"
+    );
+    assert_eq!(
+        code("title", json!({"slide": "intro", "bogus": "x"})),
+        "E_INVALID_ARG"
+    );
+    assert_eq!(code("title", json!({"slide": "intro"})), "E_USAGE");
+    assert_eq!(
+        code("title", json!({"slide": "nope", "text": "x"})),
+        "E_NOT_FOUND"
+    );
+    assert_eq!(
+        run_op(
+            &p,
+            "title",
+            &json!({"slide": "intro", "text": "x"}),
+            Some("0000000000000000")
+        )
+        .unwrap_err()
+        .code(),
+        "E_CONFLICT"
+    );
+    assert_eq!(e.text(), BASIC);
 }
