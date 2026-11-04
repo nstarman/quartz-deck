@@ -157,6 +157,7 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] TXXX [P] Additional unit tests (if requested) in tests/unit/
 - [ ] TXXX Security hardening
 - [ ] TXXX Run quickstart.md validation
+- [ ] TXXX Concision audit with `/pr-audit` (constitution, Development Workflow): sub-agents review the PR's code and infrastructure for redundancy; apply verified findings, record skipped ones in the PR description — last task before each PR is marked ready
 
 ---
 
