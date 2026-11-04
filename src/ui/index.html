@@ -22,7 +22,7 @@
     <label class="inline"><input type="checkbox" id="export-pdf" aria-label="Also make a PDF"> PDF</label>
   </span>
   <a id="rendered" target="_blank" rel="noopener" hidden>Open ↗</a>
-  <button type="button" id="toggle-source" aria-pressed="false" aria-controls="panel" title="Show the markdown source and advanced properties">Source</button>
+  <button type="button" id="toggle-source" aria-pressed="false" aria-controls="panel" title="Show the deck source (.qmd) beside the slides">Source</button>
 </header>
 <div id="banner" role="alert" hidden></div>
 <main>
@@ -43,6 +43,20 @@
       <button type="button" data-act="more" aria-haspopup="menu" title="More slide actions (or right-click the slide)">⋯</button>
     </div>
     <iframe id="preview" title="Slide preview"></iframe>
+  </section>
+  <div id="splitter" role="separator" aria-orientation="vertical" aria-label="Resize the source pane" tabindex="0"></div>
+  <section id="srcpane" aria-label="Source" hidden>
+    <div class="srcbar">
+      <strong>Source</strong>
+      <span class="hint">saves as you pause · ⌘S saves now</span>
+      <button type="button" data-act="full" aria-pressed="false" title="Use the full width">Full width</button>
+      <button type="button" data-act="form" title="Slide/element properties form">Form</button>
+    </div>
+    <div class="srcwrap">
+      <pre aria-hidden="true"></pre>
+      <div class="band" aria-hidden="true"></div>
+      <textarea spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Deck source (.qmd)"></textarea>
+    </div>
   </section>
   <aside id="panel" aria-label="Properties"></aside>
 </main>

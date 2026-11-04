@@ -882,3 +882,118 @@ fn block_class_toggles_round_trip() {
         1,
     );
 }
+
+// ---------- spec 004: line ranges, code cells, qd replace (T004, T006) ----------
+
+const RUN: &str = include_str!("fixtures/run/basic.qmd");
+
+#[test]
+fn show_reports_line_ranges_and_code_cells() {
+    let e = Env::with(RUN);
+    let lines: Vec<&str> = RUN.lines().collect();
+    let v = e.ok(&["show", "plot"]);
+    let s = &v["slide"];
+    let [a, b] = [
+        s["lines"][0].as_u64().unwrap(),
+        s["lines"][1].as_u64().unwrap(),
+    ];
+    assert_eq!(lines[a as usize - 1], "## Plot {#plot}");
+    assert!(
+        lines[b as usize - 1].is_empty() || lines[b as usize - 1] == "```",
+        "{}",
+        lines[b as usize - 1]
+    );
+    let cell = &s["blocks"][0];
+    let [c0, c1] = [
+        cell["lines"][0].as_u64().unwrap() as usize,
+        cell["lines"][1].as_u64().unwrap() as usize,
+    ];
+    assert_eq!(lines[c0 - 1], "```{python}");
+    assert_eq!(lines[c1 - 1], "```");
+    assert_eq!(cell["lang"], "python");
+    assert_eq!(cell["exec"], true);
+    assert_eq!(cell["fingerprint"], cell["hash"]);
+    // a plain ```python block is code but not a cell; an R cell is a cell in another language
+    assert_eq!(
+        e.ok(&["show", "plain"])["slide"]["blocks"][0]["exec"],
+        false
+    );
+    assert_eq!(e.ok(&["show", "r"])["slide"]["blocks"][0]["lang"], "r");
+    // slide listings carry lines too (for source ↔ slide sync)
+    let first = &e.ok(&["slides"])["slides"][0];
+    assert_eq!(
+        lines[first["lines"][0].as_u64().unwrap() as usize - 1],
+        "## Print {#print}"
+    );
+}
+
+#[test]
+fn line_ranges_count_crlf_lines() {
+    let e = Env::with("## A {#a}\r\n\r\nText.\r\n\r\n## B {#b}\r\n\r\nMore.\r\n");
+    let v = e.ok(&["show", "b"]);
+    assert_eq!(v["slide"]["lines"][0], 5);
+    assert_eq!(v["slide"]["blocks"][0]["lines"], serde_json::json!([7, 7]));
+}
+
+#[test]
+fn replace_swaps_one_unique_occurrence() {
+    let e = Env::with(DECK);
+    let v = e.ok(&[
+        "replace",
+        "--old",
+        "across two lines.\n\n- one",
+        "--new",
+        "across 2 lines.\n\n- one",
+    ]);
+    assert_eq!(v["op"], "replace");
+    assert_eq!(
+        e.text(),
+        DECK.replace("across two lines.", "across 2 lines.")
+    );
+    // not found → the text changed elsewhere; found twice → add context
+    e.err(
+        &["replace", "--old", "across two lines.", "--new", "x"],
+        "E_CONFLICT",
+        1,
+    );
+    let twice = Env::with("## A {#a}\n\nSame.\n\n## B {#b}\n\nSame.\n");
+    twice.err(
+        &["replace", "--old", "Same.", "--new", "x"],
+        "E_AMBIGUOUS",
+        1,
+    );
+    // the source pane may add slides; undo restores the bytes
+    let before = e.text();
+    e.ok(&[
+        "replace",
+        "--old",
+        "- two\n",
+        "--new",
+        "- two\n\n## Added {#added}\n\nNew slide.\n",
+    ]);
+    assert!(
+        e.ok(&["slides"])["slides"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["id"] == "added")
+    );
+    e.ok(&["undo"]);
+    assert_eq!(e.text(), before);
+    // the API never reads files or the server's stdin
+    for bad in [
+        serde_json::json!({"old": "-", "new": "x"}),
+        serde_json::json!({"old-file": "/etc/hosts", "new": "x"}),
+    ] {
+        assert_eq!(
+            quartz_deck::cli::run_op(&e.store(), "replace", &bad, None)
+                .unwrap_err()
+                .code(),
+            "E_INVALID_ARG"
+        );
+    }
+    // through the API too
+    let args = serde_json::json!({"old": "Some \"quoted\"", "new": "Some 'quoted'"});
+    quartz_deck::cli::run_op(&e.store(), "replace", &args, None).unwrap();
+    assert!(e.text().contains("Some 'quoted' text"));
+}

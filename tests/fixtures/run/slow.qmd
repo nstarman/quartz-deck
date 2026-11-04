@@ -1,0 +1,12 @@
+---
+title: "Slow"
+format: revealjs
+jupyter: python3
+---
+
+## Forever {#forever}
+
+```{python}
+while True:
+    pass
+```

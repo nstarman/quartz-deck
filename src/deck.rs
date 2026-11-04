@@ -465,6 +465,12 @@ fn yaml_u64(meta: &Yaml, key: &str) -> Option<u64> {
 // ---------- deck ----------
 
 impl Deck {
+    /// 1-based line range `[first, last]` of a span (spec 004: source ↔ slide sync).
+    pub fn lines(&self, span: Span) -> [usize; 2] {
+        let line = |pos: usize| self.text[..pos].matches('\n').count() + 1;
+        [line(span.start), line(span.end.max(span.start + 1) - 1)]
+    }
+
     pub fn parse(text: String) -> Deck {
         let ls = lines(&text);
         let nl = if text.contains("\r\n") { "\r\n" } else { "\n" };

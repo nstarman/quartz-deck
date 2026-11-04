@@ -22,18 +22,18 @@ P3: US5. Paths relative to repo root.
 
 ## Phase 1: Setup
 
-- [ ] T001 [P] CI in `.github/workflows/ci.yml`: install **uv** (official installer) and **pixi**; keep Python for existing Plotly tests; add the gated tests to the normal `cargo test` step
-- [ ] T002 [P] Fixtures `tests/fixtures/run/`: `basic.qmd` (Python cell printing a value, a matplotlib figure cell, a cell using a variable from the first, a failing cell `1/0`, an `eval: false` cell, an R cell), `slow.qmd` (a `while True` cell), `nocode.qmd`; `README.md` per file
-- [ ] T003 Module skeletons wired into `src/lib.rs`: `src/env.rs`, `src/kernel.rs`, `src/outputs.rs`, `src/kernel_bridge.py` (embedded with `include_str!`); editor modules `src/ui/pane.js`, `src/ui/run.js` added to the `/ui/<name>` table in `src/server.rs`
+- [X] T001 [P] CI in `.github/workflows/ci.yml`: install **uv** (official installer) and **pixi**; keep Python for existing Plotly tests; add the gated tests to the normal `cargo test` step — done (installer scripts; `$HOME/.local/bin`, `$HOME/.pixi/bin` on PATH)
+- [X] T002 [P] Fixtures `tests/fixtures/run/`: `basic.qmd` (Python cell printing a value, a matplotlib figure cell, a cell using a variable from the first, a failing cell `1/0`, an `eval: false` cell, an R cell), `slow.qmd` (a `while True` cell), `nocode.qmd`; `README.md` per file — done
+- [X] T003 Module skeletons wired into `src/lib.rs`: `src/env.rs`, `src/kernel.rs`, `src/outputs.rs`, `src/kernel_bridge.py` (embedded with `include_str!`); editor modules `src/ui/pane.js`, `src/ui/run.js` added to the `/ui/<name>` table in `src/server.rs` — done for the MVP (`pane.js` served); `env.rs`, `kernel.rs`, `outputs.rs`, `kernel_bridge.py`, `run.js` are created by their phases rather than as empty files
 
 ---
 
 ## Phase 2: Foundational (blocks every story)
 
-- [ ] T004 [P] Write failing tests in `tests/cli.rs`: `qd show`/`qd slides` report `lines: [start, end]` (1-based, inclusive) for slides and blocks, correct across front matter, CRLF files and fenced code containing `##`; code blocks report `lang`, `fingerprint` (contracts/cli.md)
-- [ ] T005 Implement line ranges in `src/deck.rs` (from spans) and code-cell fields (`lang` from the fence `{python}`, `#|` options, fingerprint = SHA-256 16 hex of the block text) in `src/cli.rs` JSON — T004 passes
-- [ ] T006 [P] Write failing tests in `tests/cli.rs` for `qd replace --old --new` (contracts/cli.md): unique match replaced byte-exactly; zero matches → `E_CONFLICT`; two matches → `E_AMBIGUOUS`; replacement may add a slide; undo restores bytes; `--old-file`/`--new-file`/stdin; via `run_op` (`replace` op)
-- [ ] T007 Implement `ops::replace` in `src/ops.rs` and `qd replace` in `src/cli.rs` (add to `API_OPS`, `qd schema`, skill) — T006 passes
+- [X] T004 [P] Write failing tests in `tests/cli.rs`: `qd show`/`qd slides` report `lines: [start, end]` (1-based, inclusive) for slides and blocks, correct across front matter, CRLF files and fenced code containing `##`; code blocks report `lang`, `fingerprint` (contracts/cli.md) — done (`show_reports_line_ranges_and_code_cells`, `line_ranges_count_crlf_lines`)
+- [X] T005 Implement line ranges in `src/deck.rs` (from spans) and code-cell fields (`lang` from the fence `{python}`, `#|` options, fingerprint = SHA-256 16 hex of the block text) in `src/cli.rs` JSON — T004 passes — done: `Deck::lines`; `lang`, `exec` (cell vs. shown code), `fingerprint`
+- [X] T006 [P] Write failing tests in `tests/cli.rs` for `qd replace --old --new` (contracts/cli.md): unique match replaced byte-exactly; zero matches → `E_CONFLICT`; two matches → `E_AMBIGUOUS`; replacement may add a slide; undo restores bytes; `--old-file`/`--new-file`/stdin; via `run_op` (`replace` op) — done (`replace_swaps_one_unique_occurrence`, incl. the API refusing file/stdin input)
+- [X] T007 Implement `ops::replace` in `src/ops.rs` and `qd replace` in `src/cli.rs` (add to `API_OPS`, `qd schema`, skill) — T006 passes — done; CRLF decks: `\n` from the browser is matched as the deck’s line ending; `/api/op` refuses `old-file`/`new-file` and `-` (stdin)
 
 **Checkpoint**: line ranges and `qd replace` exist; stories can start.
 
@@ -45,9 +45,9 @@ P3: US5. Paths relative to repo root.
 
 **Independent Test**: spec US1 Independent Test; quickstart §2 (first half).
 
-- [ ] T008 [P] [US1] Write failing browser tests in `tests/onslide.rs`: Source split opens beside the slides with the whole file (front matter included); typing a word in a paragraph and a YAML value, then pausing, saves only those bytes (file diff) and the slides re-render; ⌘Z restores identical bytes; full-width toggle; an agent's `qd edit` elsewhere appears in the pane without losing the cursor or unsaved text; same-region collision shows both versions (conflict bar); a save leaving a fence open keeps the last good render with the error
-- [ ] T009 [US1] Implement `src/ui/pane.js` (research R8): textarea over a highlighted `<pre>` (front matter/YAML, headings, fenced divs, code cells and `#|` options, emphasis, links), visible-lines highlighting per frame; debounced save (pause ≥ 700 ms or blur) computing the changed region expanded to whole lines + one context line each side → `replace` op (widen and retry on `E_AMBIGUOUS`; conflict bar on `E_CONFLICT`); merge external changes into the pane by the same region logic keeping cursor and unsaved text — T008 typing/conflict parts pass
-- [ ] T010 [US1] Layout in `src/ui/index.html`/`editor.css`/`editor.js` (FR-006): resizable split (drag handle) between slides and source, Source toggle (replaces the old hidden form panel button; the form stays reachable inside the pane's ⋯ menu), full-width button; layout in `localStorage` (try/catch) — remaining T008 parts pass
+- [X] T008 [P] [US1] Write failing browser tests in `tests/onslide.rs`: Source split opens beside the slides with the whole file (front matter included); typing a word in a paragraph and a YAML value, then pausing, saves only those bytes (file diff) and the slides re-render; ⌘Z restores identical bytes; full-width toggle; an agent's `qd edit` elsewhere appears in the pane without losing the cursor or unsaved text; same-region collision shows both versions (conflict bar); a save leaving a fence open keeps the last good render with the error — done (`source_pane_saves_minimal_changes`)
+- [X] T009 [US1] Implement `src/ui/pane.js` (research R8): textarea over a highlighted `<pre>` (front matter/YAML, headings, fenced divs, code cells and `#|` options, emphasis, links), visible-lines highlighting per frame; debounced save (pause ≥ 700 ms or blur) computing the changed region expanded to whole lines + one context line each side → `replace` op (widen and retry on `E_AMBIGUOUS`; conflict bar on `E_CONFLICT`); merge external changes into the pane by the same region logic keeping cursor and unsaved text — T008 typing/conflict parts pass — done: textarea over highlighted `<pre>`; saves after 700 ms / blur / ⌘S as one `replace` of the changed lines + 1 context line (widened on `E_AMBIGUOUS`); line-granular 3-way merge with changes from elsewhere; same-line edits → conflict bar (Use mine / Keep theirs); `GET /api/source`
+- [X] T010 [US1] Layout in `src/ui/index.html`/`editor.css`/`editor.js` (FR-006): resizable split (drag handle) between slides and source, Source toggle (replaces the old hidden form panel button; the form stays reachable inside the pane's ⋯ menu), full-width button; layout in `localStorage` (try/catch) — remaining T008 parts pass — done: resizable split (drag or ←/→ on the divider), Source toggle, Full width, Form button for the old panel; all remembered per browser
 
 ---
 
@@ -57,8 +57,8 @@ P3: US5. Paths relative to repo root.
 
 **Independent Test**: spec US2 Independent Test; quickstart §2 (second half).
 
-- [ ] T011 [P] [US2] Write failing browser tests: cursor moved into slide 3's text shows slide 3 within 0.5 s and keeps focus in the pane; selecting or editing an element on slide 5 scrolls the pane to its line range and highlights it
-- [ ] T012 [US2] Implement in `src/ui/pane.js`/`editor.js` using `/api/deck` line ranges (research R10): caret line → slide anchor → `go()` without stealing focus; `select()`/edit sessions → `pane.reveal(lines)` with a highlight band — T011 passes
+- [X] T011 [P] [US2] Write failing browser tests: cursor moved into slide 3's text shows slide 3 within 0.5 s and keeps focus in the pane; selecting or editing an element on slide 5 scrolls the pane to its line range and highlights it — done (`source_and_slides_follow_each_other`)
+- [X] T012 [US2] Implement in `src/ui/pane.js`/`editor.js` using `/api/deck` line ranges (research R10): caret line → slide anchor → `go()` without stealing focus; `select()`/edit sessions → `pane.reveal(lines)` with a highlight band — T011 passes — done: caret line → slide (front matter → title slide), focus stays in the pane; element selection / edit session → highlighted line band
 
 **Checkpoint**: the source-pane MVP (US1 + US2) is usable without any environment.
 

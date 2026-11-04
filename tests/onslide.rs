@@ -85,6 +85,11 @@ impl Ed {
         std::fs::read_to_string(self.dir.path().join("deck.qmd")).unwrap()
     }
 
+    fn cli_json(&self, args: &[&str]) -> Value {
+        let out = qd(self.dir.path()).args(args).output().unwrap();
+        serde_json::from_slice(&out.stdout).unwrap()
+    }
+
     fn cli(&self, args: &[&str]) {
         let out = qd(self.dir.path()).args(args).output().unwrap();
         assert!(
@@ -926,8 +931,10 @@ async fn bars_set_properties_and_source_panel_is_hidden() {
         ed.wait_file(|f| f.contains(want), "fragment toggled").await;
     }
     assert_eq!(ed.file(), P2, "fragment removed, bytes as before");
-    // the Source button shows the panel
+    // the Source button shows the source pane; its Form button the old properties panel
     ed.click_editor("#toggle-source").await;
+    ed.wait("!document.querySelector('#srcpane').hidden").await;
+    ed.click_editor("#srcpane [data-act=form]").await;
     assert_eq!(
         ed.eval("getComputedStyle(document.querySelector('#panel')).display")
             .await,
@@ -1055,4 +1062,125 @@ async fn fragments_notes_and_keyboard_selection() {
     ed.key("Enter", "Enter", 13, 2).await;
     ed.wait_file(|f| f.contains("Say hello first."), "notes saved")
         .await;
+}
+
+// ---------- spec 004: source pane and sync (T008, T011) ----------
+
+const PANE: &str = "document.querySelector('#srcpane textarea')";
+
+impl Ed {
+    async fn open_source(&self) {
+        self.click_editor("#toggle-source").await;
+        self.wait(&format!(
+            "{PANE}.value.length > 0 && !document.querySelector('#srcpane').hidden"
+        ))
+        .await;
+    }
+    /// Put the caret right after `after` in the source pane (or select `after` itself).
+    async fn pane_caret(&self, after: &str, select: bool) {
+        let js = format!(
+            "(() => {{ const t = {PANE}; const i = t.value.indexOf({after:?}); t.focus(); if ({select}) t.setSelectionRange(i, i + {len}); else t.setSelectionRange(i + {len}, i + {len}); t.dispatchEvent(new KeyboardEvent('keyup')); return i >= 0; }})()",
+            len = after.chars().count()
+        );
+        assert_eq!(
+            self.eval(&js).await,
+            Value::Bool(true),
+            "{after:?} not in the pane"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn source_pane_saves_minimal_changes() {
+    let Some(ed) = Ed::open(DECK).await else {
+        return;
+    };
+    ed.open_source().await;
+    assert_eq!(
+        ed.eval(&format!("{PANE}.value")).await.as_str().unwrap(),
+        DECK
+    );
+    // a word in a paragraph and a value in the YAML, each saved after a pause
+    ed.pane_caret("two", true).await;
+    ed.type_text("2").await;
+    ed.wait_file(|f| f.contains("across 2 \"quoted\""), "paragraph saved")
+        .await;
+    ed.pane_caret("title: T", false).await;
+    ed.type_text("alk").await;
+    ed.wait_file(|f| f.contains("title: Talk\n"), "yaml saved")
+        .await;
+    assert_eq!(
+        ed.file(),
+        DECK.replace("across two", "across 2")
+            .replace("title: T\n", "title: Talk\n")
+    );
+    // undo restores the bytes, and the pane follows
+    ed.click_editor("#undo").await;
+    ed.wait_file(|f| f.contains("title: T\n"), "undone").await;
+    ed.wait(&format!("{PANE}.value.includes('title: T\\n')"))
+        .await;
+    // an agent's edit elsewhere merges into unsaved text without losing it
+    ed.pane_caret("- one", false).await;
+    ed.type_text(" (mine)").await;
+    ed.cli(&["title", "results", "Findings"]);
+    ed.wait_file(
+        |f| f.contains("- one (mine)") && f.contains("## Findings {#results}"),
+        "both kept",
+    )
+    .await;
+    ed.wait(&format!(
+        "{PANE}.value.includes('## Findings') && {PANE}.value.includes('- one (mine)')"
+    ))
+    .await;
+    // the same line changed by both: the conflict bar shows both versions
+    ed.settle().await;
+    ed.pane_caret("- two", false).await;
+    ed.type_text(" (pane)").await;
+    ed.cli(&["replace", "--old", "- two\n", "--new", "- two (agent)\n"]);
+    ed.wait("!document.querySelector('#conflict').hidden").await;
+    let bar = ed
+        .eval("document.querySelector('#conflict').textContent")
+        .await;
+    assert!(
+        bar.as_str().unwrap().contains("(agent)") && bar.as_str().unwrap().contains("(pane)"),
+        "{bar}"
+    );
+    ed.click_editor("#conflict [data-act=mine]").await;
+    ed.wait_file(
+        |f| f.contains("- two (pane)\n") && !f.contains("(agent)"),
+        "mine applied",
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn source_and_slides_follow_each_other() {
+    let Some(ed) = Ed::open(DECK).await else {
+        return;
+    };
+    ed.open_source().await;
+    // caret in the Results slide's text shows that slide; focus stays in the pane
+    ed.pane_caret("Text.", false).await;
+    ed.wait("document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide().id === 'results'").await;
+    assert_eq!(
+        ed.eval("document.activeElement === document.querySelector('#srcpane textarea')")
+            .await,
+        true
+    );
+    // selecting an element on a slide highlights its lines in the pane
+    ed.go("methods").await;
+    let lines = ed.cli_json(&["show", "methods"])["slide"]["blocks"][1]["lines"].clone();
+    ed.select("[data-qd=\"methods/1\"]").await;
+    let want = format!("{}-{}", lines[0], lines[1]);
+    ed.wait(&format!(
+        "document.querySelector('#srcpane .band').dataset.lines === {want:?}"
+    ))
+    .await;
+    // full width hides the slides
+    ed.click_editor("#srcpane [data-act=full]").await;
+    assert_eq!(
+        ed.eval("getComputedStyle(document.querySelector('#stage')).display")
+            .await,
+        "none"
+    );
 }
