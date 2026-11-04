@@ -5,7 +5,7 @@ Conventions as in [001 contracts/cli.md](../../001-core-editor/contracts/cli.md)
 
 | Command | Output |
 |---|---|
-| `qd check --offline [--html FILE] [--no-download]` | `CheckReport` (data-model.md). Without `--html`, renders the deck as `qd render` would (to a temp folder) and checks that. Exit 1 with `E_OFFLINE` when `ok` is false (report still on stdout). |
+| `qd check --offline [--html FILE] [--no-download]` | `CheckReport` (data-model.md) with `"kind": "offline_check"`; `html` is the checked file (the `.qmd` when qd rendered it). Without `--html`, renders the deck as `qd render` would (to a temp folder) and checks that. Exit 1 with `E_OFFLINE` when `ok` is false (report still on stdout). |
 | `qd export [--out DIR] [--pdf] [--notes] [--per-slide] [--no-download]` | `ExportResult`. Exit 1 with `E_OFFLINE` if the check fails (previous export kept; staging path in `details`), `E_OFFLINE_INCOMPATIBLE` if a feature cannot work offline. |
 | `qd pdf [--html FILE] [--out FILE] [--notes] [--per-slide] [--no-download]` | `PdfResult`. Default `--html`: the deck's export HTML; error `E_NOT_FOUND` with hint `qd export` if none. |
 | `qd browser [--install \| --remove] [--no-download]` | `{"path","source","version"}`; `--install` downloads if none is found; `--remove` deletes qd's cached browser. |

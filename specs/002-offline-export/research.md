@@ -46,7 +46,8 @@ Testing docs. Spikes below were run 2026-11-04 with Quarto 1.11.9 and Chrome
 
 ## R3. Driving Chrome: check
 
-- **Decision**: `headless_chrome` with Fetch-domain interception on `*`:
+- **Decision**: `chromiumoxide` (async, on tokio) with Fetch-domain interception on `*`
+  (the spike used `headless_chrome`; same protocol calls):
   continue `file:`, `data:`, `blob:` and `about:blank` (with any query —
   the math plugin requests `about:blank?config=TeX-AMS_HTML-full`, FR-003),
   fail everything else with `InternetDisconnected` and record it. Listen for
@@ -94,9 +95,17 @@ Testing docs. Spikes below were run 2026-11-04 with Quarto 1.11.9 and Chrome
 
 ## R6. Libraries and licenses
 
+Chrome for Testing pins (T008, 2026-11-04): version 157.0.8103.38,
+`chrome-headless-shell` zips — mac-arm64 `e6a6b135…16ce82` (105 MB), mac-x64
+`79821745…186de3`, linux64 `deafffa7…a4ba2d`, linux-arm64 `b9b910a5…6c42fd6c`
+(full hashes in `src/browser.rs`). The real download, verification, unpack and
+`--version` run were tested once on macOS (`QD_TEST_BROWSER_DOWNLOAD=1`).
+
 | Item | License | Use |
 |---|---|---|
-| headless_chrome 1.0 | MIT | DevTools client |
+| chromiumoxide 0.9 | MIT OR Apache-2.0 (whole tree permissive, 139 crates) | DevTools client |
+| ~~headless_chrome 1.0~~ | MIT, but its build-dependency `auto_generate_cdp` 0.4.6 is **GPL-3.0** | rejected by the license check (T001) |
+| webpki-roots (via ureq) | CDLA-Permissive-2.0 (Mozilla root certificates) | HTTPS trust roots; added to the license allowlist |
 | ureq | MIT OR Apache-2.0 | downloads |
 | zip | MIT | unpack browser |
 | MathJax 3.2.2 (`es5/tex-svg-full.js`, sha256 `a4354ff94fd868aea0cc6eaaa79a57fda0588646fc46ee3700a349ee0a11cbe6`) | Apache-2.0 | offline math (downloaded, not vendored) |

@@ -1,0 +1,12 @@
+---
+title: "Plotly"
+format: revealjs
+jupyter: python3
+---
+
+## Figure {#figure}
+
+```{python}
+import plotly.express as px
+px.scatter(x=[1, 2, 3], y=[3, 1, 2], title=r"$y = f(x)$")
+```
