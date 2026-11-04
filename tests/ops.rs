@@ -173,7 +173,7 @@ fn remove_slide() {
 #[test]
 fn retitle_assigns_explicit_id() {
     let d = deck();
-    let p = ops::title(&d, "intro", "Introduction").unwrap();
+    let p = ops::title(&d, "intro", "Introduction", None).unwrap();
     snap("title_intro", &d, &p);
     assert_eq!(p.assigned_ids, vec!["intro"]);
     let a = run(&d, p, &["intro"]);
@@ -182,7 +182,7 @@ fn retitle_assigns_explicit_id() {
         Some("Introduction")
     );
 
-    let p = ops::title(&d, "results", "").unwrap();
+    let p = ops::title(&d, "results", "", None).unwrap();
     let a = run(&d, p, &["results"]);
     assert!(a.text.contains("\n## {#results .smaller}\n"));
     assert!(a.slide("results").unwrap().title.is_none());
@@ -191,7 +191,7 @@ fn retitle_assigns_explicit_id() {
 #[test]
 fn rule_slide_becomes_heading_when_targeted() {
     let d = deck();
-    let p = ops::title(&d, "@3", "Ruled").unwrap();
+    let p = ops::title(&d, "@3", "Ruled", None).unwrap();
     snap("title_rule_slide", &d, &p);
     let a = run(&d, p.clone(), &["@3"]);
     let s = a.slide(&p.target).unwrap();
@@ -223,7 +223,7 @@ fn rule_slide_becomes_heading_when_targeted() {
 fn implicit_and_setext_slides() {
     let d =
         Deck::parse("---\nformat: revealjs\n---\n\nPreamble.\n\nSetext\n------\n\nbody\n".into());
-    let p = ops::title(&d, "@1", "Now titled").unwrap();
+    let p = ops::title(&d, "@1", "Now titled", None).unwrap();
     let out = ops::apply(&d.text, &p).unwrap();
     assert!(
         out.contains(&format!("\n## Now titled {{#{}}}\n\nPreamble.\n", p.target)),
@@ -289,7 +289,7 @@ fn set_attrs_and_classes() {
 #[test]
 fn edit_element() {
     let d = deck();
-    let p = ops::edit(&d, "results/0", "- three\n- four").unwrap();
+    let p = ops::edit(&d, "results/0", "- three\n- four", None).unwrap();
     snap("edit_results_list", &d, &p);
     let a = run(&d, p, &["results"]);
     assert_eq!(
@@ -301,12 +301,13 @@ fn edit_element() {
         &d,
         "#b-plot",
         "![](other.png){#b-plot .absolute top=0 left=0 width=10 height=10}",
+        None,
     )
     .unwrap();
     let a = run(&d, p, &["results"]);
     assert!(a.text.contains("other.png"));
     assert_eq!(
-        ops::edit(&d, "results/9", "x").unwrap_err().code(),
+        ops::edit(&d, "results/9", "x", None).unwrap_err().code(),
         "E_NOT_FOUND"
     );
 }
@@ -366,7 +367,7 @@ fn meta_set_unset() {
 fn refusals_leave_deck_untouched() {
     let broken = Deck::parse(include_str!("corpus/21-unterminated.qmd").into());
     for err in [
-        ops::title(&broken, "broken-slide", "x").unwrap_err(),
+        ops::title(&broken, "broken-slide", "x", None).unwrap_err(),
         ops::body(&broken, "broken-slide", "x").unwrap_err(),
         ops::rm(&broken, "broken-slide").unwrap_err(),
         ops::add(&broken, &spec(Some("x"), None), Pos::End).unwrap_err(),
@@ -375,7 +376,7 @@ fn refusals_leave_deck_untouched() {
         assert_eq!(err.code(), "E_UNSAFE_EDIT");
     }
     // the good slide stays editable
-    ops::title(&broken, "good-slide", "Fine").unwrap();
+    ops::title(&broken, "good-slide", "Fine", None).unwrap();
 
     let d = deck();
     let bad = AttrChange {
@@ -395,11 +396,13 @@ fn refusals_leave_deck_untouched() {
         "E_INVALID_ARG"
     );
     assert_eq!(
-        ops::title(&d, "nope", "x").unwrap_err().code(),
+        ops::title(&d, "nope", "x", None).unwrap_err().code(),
         "E_NOT_FOUND"
     );
     assert_eq!(
-        ops::title(&d, "intro", "two\nlines").unwrap_err().code(),
+        ops::title(&d, "intro", "two\nlines", None)
+            .unwrap_err()
+            .code(),
         "E_INVALID_ARG"
     );
 }

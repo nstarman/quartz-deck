@@ -1,6 +1,8 @@
 // quartz-deck editor. Every change is a CLI op sent to POST /api/op, so the GUI
 // can do nothing the CLI cannot (FR-010). The .qmd file stays the only state.
-'use strict';
+import { region, hintsFor, gate, reserialize, splice } from '/ui/inline.js';
+import { showToolbar, hideToolbar, formatKey, place as placeToolbar } from '/ui/toolbar.js';
+import { openSource, closeSource, sourceError, sourceText } from '/ui/source.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const frame = $('#preview');
@@ -18,6 +20,8 @@ const state = {
   goAfterRender: null, // anchor to show once the next render lands
   want: null, // anchor the freshly loaded preview should open on
   selectIdAfterRender: null, // element id (e.g. a new box) to select once rendered
+  session: null, // open on-slide edit (spec 003), see beginSession
+  pendingRender: null, // newest render that arrived while editing (applied when it ends)
 };
 
 // ---------- helpers ----------
@@ -64,17 +68,37 @@ async function fetchSlide(ref) {
   return res.ok ? (await res.json()).slide : null;
 }
 
-/** Run one CLI op. Returns the result object, or null after reporting the error. */
-async function op(name, args = {}) {
+/** The block for an element ref `<slide>/<i>`, or null. */
+async function fetchBlock(ref) {
+  const cut = ref.lastIndexOf('/');
+  const slide = await fetchSlide(ref.slice(0, cut));
+  return slide?.blocks[Number(ref.slice(cut + 1))] || null;
+}
+
+/** The deck's front matter (without op()'s status message). */
+async function fetchMeta() {
+  const res = await fetch('/api/op', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: 'meta' }) });
+  return res.ok ? (await res.json()).front_matter || {} : {};
+}
+
+/**
+ * Run one CLI op. Returns the result object, or null after reporting the error.
+ * `fileExpect: false` skips the whole-file version check (on-slide saves check
+ * just their element with `expect-text`, so edits elsewhere don't block them).
+ */
+async function op(name, args = {}, { fileExpect = true } = {}) {
   const res = await fetch('/api/op', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ op: name, args, expect: state.version }),
+    body: JSON.stringify({ op: name, args, ...(fileExpect ? { expect: state.version } : {}) }),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     const e = body.error || { code: res.status, message: res.statusText };
-    if (e.code === 'E_CONFLICT') {
+    op.lastError = e;
+    if (e.code === 'E_CONFLICT' && !fileExpect) {
+      say(`${name}: changed elsewhere while you were editing — choose a version`, true);
+    } else if (e.code === 'E_CONFLICT') {
       say('The file changed elsewhere — reloaded; please retry.', true);
       await fetchDeck();
       await renderPanel();
@@ -109,6 +133,10 @@ const PREVIEW_CSS = `
   [data-qd] { cursor: pointer; }
   [data-qd]:hover { outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; }
   .qd-sel, .qd-sel:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 2px; }
+  .qd-editing, .qd-editing:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 4px; cursor: text; }
+  .qd-editing:focus { outline-style: solid; }
+  section > h1:hover, section > h2:hover, section > h3:hover, #title-slide :is(.title, .subtitle, .date):hover {
+    outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; cursor: text; }
   .qd-overlay { position: absolute; box-sizing: border-box; border: 2px solid #2a5bd7; cursor: move;
     touch-action: none; z-index: 1000; }
   .qd-handle { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; background: #fff;
@@ -219,17 +247,37 @@ function hookFrame() {
   doc.head.append(style);
 
   doc.addEventListener('click', (e) => {
+    if (state.session) {
+      if (state.session.root.contains(e.target)) return; // caret moves inside the edit
+      saveSession(); // clicking elsewhere ends the edit
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     const el = e.target.closest('[data-qd]');
-    if (!el) return;
+    const target = editTarget(e.target);
+    const sec = e.target.closest('section');
+    if (!el && !target && !(e.altKey && sec)) return;
     e.preventDefault();
     e.stopPropagation();
-    select(el.dataset.qd);
+    // Alt+click: always the source (an element's, or the whole slide's)
+    if (e.altKey) { (el ? beginSource(el) : beginSlideSource(sec)); return; }
+    const point = { x: e.clientX, y: e.clientY };
+    (target ? beginEdit(target, point) : Promise.resolve(false)).then((ok) => {
+      if (ok || !el) return;
+      // a positioned box selects for dragging; anything else opens its source
+      if (el.classList.contains('absolute')) select(el.dataset.qd); else beginSource(el);
+    });
   }, true);
   doc.addEventListener('dblclick', (e) => {
-    const el = e.target.closest('[data-qd]');
+    if (state.session) return;
+    const el = e.target.closest('[data-qd]') || doc.querySelector(`[data-qd="${CSS.escape(state.sel || '')}"]`);
     if (!el) return;
     e.preventDefault();
-    select(el.dataset.qd).then(() => $('textarea', panel)?.focus());
+    // a positioned text box: single click selects it for dragging, double click types
+    beginEdit({ kind: 'block', root: el }, { x: e.clientX, y: e.clientY }).then((ok) => {
+      if (!ok) beginSource(el);
+    });
   }, true);
   doc.addEventListener('keydown', onKey, true);
 
@@ -349,7 +397,7 @@ function renderList() {
     if (cur && s.id === cur.id) b.setAttribute('aria-current', 'true');
     b.addEventListener('click', () => { hidePeek(); state.sel = null; go(s.anchor); });
     li.append(b);
-    li.addEventListener('mouseenter', () => { if (!dragId) showPeek(li, s.anchor); });
+    li.addEventListener('mouseenter', () => { if (!dragId && !state.session) showPeek(li, s.anchor); });
     li.addEventListener('mouseleave', hidePeek);
 
     li.addEventListener('dragstart', (e) => {
@@ -444,10 +492,7 @@ async function newBox(slide, source) {
 async function renderTitlePanel() {
   const view = $('#title-panel').content.cloneNode(true);
   const f = $('form', view);
-  const res = await fetch('/api/op', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: 'meta' }),
-  });
-  const meta = res.ok ? (await res.json()).front_matter || {} : {};
+  const meta = await fetchMeta();
   const before = typeof meta.title === 'string' ? meta.title : '';
   f.title.value = before;
   f.addEventListener('submit', async (e) => {
@@ -520,9 +565,7 @@ async function select(ref) {
 
 async function renderElementPanel() {
   const ref = state.sel;
-  const cut = ref.lastIndexOf('/');
-  const slide = await fetchSlide(ref.slice(0, cut));
-  const block = slide?.blocks[Number(ref.slice(cut + 1))];
+  const block = await fetchBlock(ref);
   if (!block) { state.sel = null; return renderPanel(); }
   const view = $('#element-panel').content.cloneNode(true);
   const f = $('form.element-form', view);
@@ -648,6 +691,7 @@ $('#undo').addEventListener('click', () => undoRedo('undo'));
 $('#redo').addEventListener('click', () => undoRedo('redo'));
 
 function onKey(e) {
+  if (state.session) return; // the open edit handles its own keys (sessionKey)
   if (e.key === 'Escape' && state.sel) { e.preventDefault(); select(null); return; }
   const mod = e.metaKey || e.ctrlKey;
   if (!mod || e.key.toLowerCase() !== 'z' || editing()) return;
@@ -674,7 +718,13 @@ es.addEventListener('rendered', (e) => {
   const d = JSON.parse(e.data);
   statusEl.textContent = 'rendered ' + d.version.slice(0, 7);
   banner.hidden = true;
-  load(d.html);
+  if (state.session) {
+    // reloading now would throw away the open edit (research R4)
+    state.pendingRender = d.html;
+    pendingBadge(true);
+  } else {
+    load(d.html);
+  }
 });
 es.addEventListener('render_error', (e) => {
   const d = JSON.parse(e.data);
@@ -682,3 +732,314 @@ es.addEventListener('render_error', (e) => {
   banner.textContent = d.message;
   banner.hidden = false;
 });
+
+// ---------- on-slide editing (spec 003 US1) ----------
+
+const NOT_TYPEABLE = new Set(['code', 'math', 'html', 'table', 'image', 'notes', 'pause', 'raw']);
+const META_FIELDS = [['title', '.title'], ['subtitle', '.subtitle'], ['author', '.quarto-title-author-name'], ['date', '.date']];
+
+function pendingBadge(on) {
+  let b = $('#pending');
+  if (!b) {
+    b = Object.assign(document.createElement('span'), { id: 'pending' });
+    statusEl.after(b);
+  }
+  b.textContent = on ? 'updated — will refresh when you finish editing' : '';
+}
+
+/** What a click on `node` would edit: a block, a slide title, or a title-slide field. */
+function editTarget(node) {
+  const el = node.closest?.('[data-qd]');
+  if (el) return el.classList.contains('absolute') ? null : { kind: 'block', root: el };
+  const sec = node.closest?.('section');
+  if (!sec) return null;
+  if (sec.id === 'title-slide') {
+    for (const [key, sel] of META_FIELDS) {
+      const f = node.closest(sel);
+      if (f && sec.contains(f)) return { kind: 'meta', key, root: f };
+    }
+    return null;
+  }
+  const h = node.closest('h1, h2, h3');
+  if (h && h.parentElement === sec) return { kind: 'title', root: h, anchor: sec.id };
+  return null;
+}
+
+/** Start typing into `target` if its rendering round-trips to its source. */
+async function beginEdit(target, point) {
+  let s = null;
+  if (target.kind === 'block') {
+    const ref = target.root.dataset.qd;
+    const block = await fetchBlock(ref);
+    if (!block || NOT_TYPEABLE.has(block.kind)) return false;
+    const reg = region(block.kind, block.text);
+    if (!reg) return false;
+    s = { ...target, ref, source: block.text, hash: block.hash, reg, hints: hintsFor(block.text) };
+  } else if (target.kind === 'title') {
+    const slide = slideByAnchor(target.anchor);
+    const full = slide && (await fetchSlide(slide.id));
+    if (!full?.title) return false;
+    s = { ...target, slide: full.id, source: full.title, hash: full.title_hash,
+      reg: { mode: 'inline', prefix: '', inner: full.title, suffix: '' }, hints: {} };
+  } else {
+    const value = (await fetchMeta())[target.key];
+    if (typeof value !== 'string') return false;
+    s = { ...target, source: value, reg: { mode: 'inline', prefix: '', inner: value, suffix: '' }, hints: {} };
+  }
+  const g = gate(s.root, s.reg, s.hints);
+  if (!g) return false;
+  if (state.session) return false; // another edit started meanwhile
+  s.mode = 'typed';
+  Object.assign(s, g, { html: s.root.innerHTML, align: null });
+  beginSession(s, point);
+  return true;
+}
+
+/** Common start of a typing or source session. */
+function openSession(s) {
+  hidePeek();
+  state.session = s;
+  state.sel = null;
+  highlight();
+  s.root.classList.add('qd-editing');
+}
+
+function beginSession(s, point) {
+  const doc = s.root.ownerDocument;
+  openSession(s);
+  s.root.contentEditable = 'true';
+  doc.execCommand('styleWithCSS', false, false);
+  doc.execCommand('defaultParagraphSeparator', false, 'p');
+  s.root.focus();
+  const r = point && doc.caretRangeFromPoint?.(point.x, point.y);
+  if (r && s.root.contains(r.startContainer)) {
+    const sel = doc.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
+  s.ac = new AbortController(); // removes all of these listeners in endSession
+  const on = (type, fn) => s.root.addEventListener(type, fn, { signal: s.ac.signal });
+  on('keydown', (e) => sessionKey(e, s));
+  on('focusout', () => { if (!s.hold && !s.failed) setTimeout(() => { if (state.session === s && !s.root.contains(doc.activeElement)) saveSession(); }, 0); });
+  on('paste', (e) => {
+    e.preventDefault(); // plain text only (formatting from other apps is dropped)
+    doc.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+  });
+  on('input', () => { s.failed = false; placeToolbar(frame); });
+  showToolbar(s, frame);
+  say(s.reg.mode === 'inline' ? 'Editing — Enter or click elsewhere saves, Esc cancels' : 'Editing — ⌘Enter, Tab or click elsewhere saves, Esc cancels');
+}
+
+function sessionKey(e, s) {
+  e.stopPropagation(); // keep Reveal and the editor's own keys out of the edit
+  if (e.key === 'Escape') { e.preventDefault(); endSession(s, false); return; }
+  if (e.key === 'Enter' && e.altKey && s.kind === 'block') {
+    // switch to the source, carrying over what was typed so far
+    e.preventDefault();
+    const draft = draftSource(s) ?? s.source;
+    endSession(s, false, { keepPending: true });
+    beginSource(s.root, draft, s);
+    return;
+  }
+  const mod = e.metaKey || e.ctrlKey;
+  if ((e.key === 'Enter' && (mod || s.reg.mode === 'inline')) || (e.key === 'Tab' && !inList(s))) {
+    e.preventDefault();
+    saveSession();
+    return;
+  }
+  if (e.key === 'Tab') { // indent/outdent inside a list
+    e.preventDefault();
+    s.root.ownerDocument.execCommand(e.shiftKey ? 'outdent' : 'indent');
+    return;
+  }
+  formatKey(e);
+}
+
+function inList(s) {
+  const sel = s.root.ownerDocument.getSelection();
+  const n = sel?.anchorNode;
+  return !!(n && (n.nodeType === 1 ? n : n.parentElement)?.closest('li'));
+}
+
+/** Markdown the session would write, or null if the edit can't be expressed. */
+function draftSource(s) {
+  let S1;
+  try { S1 = reserialize(s.root, s.reg, s.hints); } catch { return null; }
+  let inner = splice(s.reg.inner, s.S0, S1, s.pos);
+  let { prefix, suffix } = s.reg;
+  if (s.align) {
+    const fenced = prefix.match(/^(\s*:{3,})\s*\{style="text-align:\s*\w+;?"\}\s*(\r?\n)$/);
+    if (fenced) {
+      if (s.align === 'left') { prefix = ''; suffix = ''; } else prefix = `${fenced[1]} {style="text-align:${s.align}"}${fenced[2]}`;
+    } else if (!prefix && s.align !== 'left' && s.kind === 'block') {
+      const nl = s.source.includes('\r\n') ? '\r\n' : '\n';
+      prefix = `::: {style="text-align:${s.align}"}${nl}`;
+      suffix = `${nl}:::`;
+    }
+  }
+  return prefix + inner + suffix;
+}
+
+async function saveSession() {
+  const s = state.session;
+  if (!s || s.saving) return;
+  if (s.mode === 'source') return saveSource(s);
+  const md = draftSource(s);
+  if (md === null) {
+    s.failed = true;
+    say('This formatting can’t be written as markdown here — undo it (⌘Z) or press Esc to cancel', true);
+    return;
+  }
+  if (md === s.source) { endSession(s, false); return; }
+  s.saving = true;
+  let r;
+  if (s.kind === 'block') r = await op('edit', { element: s.ref, md, 'expect-text': s.hash }, { fileExpect: false });
+  else if (s.kind === 'title') r = await op('title', { slide: s.slide, text: md, 'expect-text': s.hash }, { fileExpect: false });
+  else r = await op('meta set', { key: s.key, value: JSON.stringify(md) }, { fileExpect: false });
+  s.saving = false;
+  if (!r) {
+    if (op.lastError?.code === 'E_CONFLICT') { await conflict(s, md, op.lastError.details); return; }
+    s.failed = true;
+    s.root.focus();
+    return;
+  }
+  endSession(s, true);
+  await fetchDeck();
+}
+
+/** Close the edit; `saved` keeps the typed text visible until the new render loads. */
+function endSession(s, saved, { keepPending = false } = {}) {
+  if (state.session !== s) return;
+  s.root.classList.remove('qd-editing');
+  if (s.mode === 'source') {
+    closeSource();
+  } else {
+    s.ac.abort();
+    s.root.removeAttribute('contenteditable');
+    if (!saved) { s.root.innerHTML = s.html; s.root.style.textAlign = ''; }
+    s.root.blur();
+    hideToolbar();
+  }
+  state.session = null;
+  if (state.pendingRender && !keepPending) {
+    const html = state.pendingRender;
+    state.pendingRender = null;
+    pendingBadge(false);
+    load(html);
+  }
+}
+
+// ---------- source editing in place (spec 003 US2) ----------
+
+function pageRect(el) {
+  const f = frame.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  return { left: f.left + r.left, top: f.top + r.top, width: r.width, height: r.height };
+}
+
+function startSourceSession(s, text) {
+  openSession(s);
+  openSource(pageRect(s.root), text, { save: () => saveSession(), cancel: () => endSession(s, false) });
+  say('Editing source — ⌘Enter or click elsewhere saves, Esc cancels');
+}
+
+/** Edit one element's markdown over it; `draft` and `base` carry over a typing session. */
+async function beginSource(el, draft = null, base = null) {
+  if (state.session) return false;
+  const ref = el.dataset.qd;
+  let source = base?.source;
+  let hash = base?.hash;
+  if (!base) {
+    const block = await fetchBlock(ref);
+    if (!block || state.session) return false;
+    source = block.text;
+    hash = block.hash;
+  }
+  startSourceSession({ kind: 'block', mode: 'source', root: el, ref, source, hash }, draft ?? source);
+  return true;
+}
+
+/** Edit a whole slide's content (positioned boxes are kept, as with `qd body`). */
+async function beginSlideSource(sec, draft = null) {
+  if (state.session || !sec) return false;
+  const cur = slideByAnchor(sec.id);
+  const slide = cur && (await fetchSlide(cur.id));
+  if (!slide || slide.opaque || state.session) return false;
+  await fetchDeck(); // the save checks the whole file against this version
+  const text = blockOfBody(slide);
+  startSourceSession({ kind: 'slide', mode: 'source', root: sec, slide: slide.id, source: text }, draft ?? text);
+  return true;
+}
+
+// ---------- conflicts with edits made elsewhere (spec 003 US5) ----------
+
+const conflictBar = document.createElement('div');
+conflictBar.id = 'conflict';
+conflictBar.setAttribute('role', 'alert');
+conflictBar.hidden = true;
+conflictBar.innerHTML = '<strong>This was changed elsewhere while you were editing it.</strong>'
+  + '<div class="cols"><div><span class="lbl">Now in the file</span><pre class="theirs"></pre></div>'
+  + '<div><span class="lbl">Your version</span><pre class="mine"></pre></div></div>'
+  + '<div class="buttons"><button type="button" data-act="mine" class="primary">Use mine…</button>'
+  + '<button type="button" data-act="theirs">Keep theirs</button></div>';
+banner.after(conflictBar);
+
+/**
+ * A save was refused because the element changed meanwhile: close the edit
+ * (the file keeps the other version) and let the person choose (FR-015).
+ */
+async function conflict(s, mine, details) {
+  let theirs = details?.current_source;
+  if (theirs === undefined && s.kind === 'slide') theirs = blockOfBody((await fetchSlide(s.slide)) || { blocks: [] });
+  endSession(s, false);
+  state.conflict = { kind: s.kind, ref: s.ref, slide: s.slide, anchor: s.root.closest?.('section')?.id || s.anchor, mine, theirs: theirs ?? '', hash: details?.current_hash };
+  $('.theirs', conflictBar).textContent = theirs ?? '(see the slide)';
+  $('.mine', conflictBar).textContent = mine;
+  conflictBar.hidden = false;
+  await fetchDeck();
+}
+
+conflictBar.addEventListener('click', async (e) => {
+  const act = e.target.dataset?.act;
+  const c = state.conflict;
+  if (!act || !c) return;
+  conflictBar.hidden = true;
+  state.conflict = null;
+  if (act === 'theirs') { say('Kept the version in the file'); return; }
+  const doc = frame.contentDocument;
+  if (c.kind === 'block') {
+    const el = doc?.querySelector(`[data-qd="${CSS.escape(c.ref)}"]`);
+    if (el && (await beginSource(el, c.mine, { source: c.theirs, hash: c.hash }))) return;
+  } else if (c.kind === 'slide') {
+    if (await beginSlideSource(doc?.getElementById(c.anchor), c.mine)) return;
+  } else if (c.kind === 'title') {
+    if (await op('title', { slide: c.slide, text: c.mine, 'expect-text': c.hash }, { fileExpect: false })) { await fetchDeck(); return; }
+  }
+  // the element is gone (or changed again): keep the text safe on the clipboard
+  try { await navigator.clipboard.writeText(c.mine); } catch { /* not allowed */ }
+  say('Could not reopen that element — your version is on the clipboard', true);
+});
+
+async function saveSource(s) {
+  const md = sourceText();
+  if (md.trim() === s.source.trim()) { endSession(s, false); return; }
+  s.saving = true;
+  const r = s.kind === 'slide'
+    ? await op('body', { slide: s.slide, md })
+    : await op('edit', { element: s.ref, md, 'expect-text': s.hash }, { fileExpect: false });
+  s.saving = false;
+  if (!r) {
+    if (op.lastError?.code === 'E_CONFLICT') { await conflict(s, md, op.lastError.details); return; }
+    sourceError(op.lastError?.message || 'not saved');
+    return;
+  }
+  endSession(s, true);
+  await fetchDeck();
+}
+
+// test/automation hook (tests/onslide.rs): read-only view of the open edit
+window.qdSession = () => {
+  const s = state.session;
+  if (!s) return null;
+  return { kind: s.kind, mode: s.mode || 'typed', ref: s.ref || null, draft: s.mode === 'source' ? sourceText() : draftSource(s) };
+};

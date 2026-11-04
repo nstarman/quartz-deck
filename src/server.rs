@@ -25,6 +25,12 @@ use tower_http::services::ServeDir;
 const INDEX: &str = include_str!("ui/index.html");
 const EDITOR_JS: &str = include_str!("ui/editor.js");
 const EDITOR_CSS: &str = include_str!("ui/editor.css");
+/// Editor ES modules imported by `editor.js`, served at `/ui/<name>`.
+const UI_MODULES: &[(&str, &str)] = &[
+    ("inline.js", include_str!("ui/inline.js")),
+    ("toolbar.js", include_str!("ui/toolbar.js")),
+    ("source.js", include_str!("ui/source.js")),
+];
 
 #[derive(Clone, Debug)]
 enum Ev {
@@ -71,7 +77,9 @@ fn err_response(e: QdError) -> Response {
         QdError::Ambiguous(_) | QdError::InvalidArg(_) | QdError::Usage(_) => {
             StatusCode::BAD_REQUEST
         }
-        QdError::Conflict(_) | QdError::NoUndo(_) => StatusCode::CONFLICT,
+        QdError::Conflict(_) | QdError::StaleElement { .. } | QdError::NoUndo(_) => {
+            StatusCode::CONFLICT
+        }
         QdError::UnsafeEdit(_) | QdError::OfflineIncompatible(_) => {
             StatusCode::UNPROCESSABLE_ENTITY
         }
@@ -104,6 +112,13 @@ async fn editor_js() -> impl IntoResponse {
 
 async fn editor_css() -> impl IntoResponse {
     asset("text/css; charset=utf-8", EDITOR_CSS)
+}
+
+async fn ui_module(UrlPath(name): UrlPath<String>) -> Response {
+    match UI_MODULES.iter().find(|(n, _)| *n == name) {
+        Some((_, body)) => asset("text/javascript; charset=utf-8", body).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 async fn present(State(app): State<Shared>) -> Redirect {
@@ -343,6 +358,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             .route("/", get(index))
             .route("/editor.js", get(editor_js))
             .route("/editor.css", get(editor_css))
+            .route("/ui/{name}", get(ui_module))
             .route("/present/", get(present))
             .route("/api/deck", get(api_deck))
             .route("/api/slide/{r}", get(api_slide))

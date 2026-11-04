@@ -16,6 +16,13 @@ pub enum QdError {
     UnsafeEdit(String),
     #[error("file changed since it was read: {0}")]
     Conflict(String),
+    /// `--expect-text`: the element changed since the caller read it.
+    #[error("{what} changed since it was read")]
+    StaleElement {
+        what: String,
+        current_source: String,
+        current_hash: String,
+    },
     #[error("invalid argument: {0}")]
     InvalidArg(String),
     #[error("nothing to undo/redo: {0}")]
@@ -49,7 +56,7 @@ impl QdError {
             Self::NotFound(_) => "E_NOT_FOUND",
             Self::Ambiguous(_) => "E_AMBIGUOUS",
             Self::UnsafeEdit(_) => "E_UNSAFE_EDIT",
-            Self::Conflict(_) => "E_CONFLICT",
+            Self::Conflict(_) | Self::StaleElement { .. } => "E_CONFLICT",
             Self::InvalidArg(_) => "E_INVALID_ARG",
             Self::NoUndo(_) => "E_NO_UNDO",
             Self::NoQuarto => "E_NO_QUARTO",
@@ -80,6 +87,9 @@ impl QdError {
             Self::Conflict(_) => {
                 "re-read with `qd slides` / `qd show` and retry with the new --expect version"
             }
+            Self::StaleElement { .. } => {
+                "details hold the current source and hash; re-apply your change to it and retry"
+            }
             Self::InvalidArg(_) => "see `qd schema` for argument formats",
             Self::NoUndo(_) => {
                 "undo/redo only works right after a qd edit, before the file is changed elsewhere"
@@ -108,8 +118,17 @@ impl QdError {
 
     pub fn to_json(&self) -> Value {
         let mut e = json!({"code": self.code(), "message": self.to_string(), "hint": self.hint()});
-        if let Self::Render(log) = self {
-            e["details"] = json!(log);
+        match self {
+            Self::Render(log) => e["details"] = json!(log),
+            Self::StaleElement {
+                current_source,
+                current_hash,
+                ..
+            } => {
+                e["details"] =
+                    json!({"current_source": current_source, "current_hash": current_hash})
+            }
+            _ => {}
         }
         json!({ "error": e })
     }

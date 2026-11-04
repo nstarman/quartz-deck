@@ -1,10 +1,13 @@
 <!--
 Sync Impact Report
-- Version: none → 1.0.0 (initial ratification)
-- Principles added: I–VII (all new)
-- Sections added: Constraints, Development Workflow, Governance
-- Templates: plan/spec/tasks templates read this at runtime; no edits needed
+- Version: 1.0.0 → 1.1.0 (MINOR: workflow gate added)
+- Development Workflow: added the pre-PR concision audit (`/pr-audit`),
+  which enforces Principle VII on every PR's code and infrastructure
+- Templates: tasks-template.md gains a standard final "Concision audit" task;
+  new repo skill `.claude/skills/pr-audit/SKILL.md`
 - Deferred TODOs: none
+- Previous: none → 1.0.0 (initial ratification: Principles I–VII,
+  Constraints, Development Workflow, Governance)
 -->
 
 # quartz-deck Constitution
@@ -87,6 +90,15 @@ Tracking table.
   implement. Specs live in `specs/NNN-name/`.
 - Each plan includes a Constitution Check against Principles I–VII.
 - Small, atomic commits; tests pass before merge.
+- Before a PR is marked ready, it passes a **concision audit** (`/pr-audit`):
+  a few sub-agents review the PR's diff with the ponytail review rules —
+  source code and infrastructure alike (CI, Cargo dependencies, test
+  harnesses, fixtures, scripts) — looking for redundancy, reinvented library
+  features, unneeded dependencies and speculative abstraction. Findings are
+  verified; those that hold are applied without changing behaviour (tests,
+  fmt, clippy still pass), the rest are recorded as skipped with a reason in
+  the PR description. The audit never removes tests, safety checks,
+  validation at trust boundaries, or anything a principle above requires.
 
 ## Governance
 
@@ -96,4 +108,4 @@ with semantic versioning (MAJOR: principle removed or redefined; MINOR:
 principle or section added; PATCH: wording). Every plan and review verifies
 compliance.
 
-**Version**: 1.0.0 | **Ratified**: 2026-11-03 | **Last Amended**: 2026-11-03
+**Version**: 1.1.0 | **Ratified**: 2026-11-03 | **Last Amended**: 2026-11-04
