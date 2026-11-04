@@ -73,8 +73,12 @@ I — no slides.com material used; all sources are Quarto/reveal.js/Pandoc docs 
 our own corpus. II — 23-deck byte-identical round trip; every op snapshot-tested
 to touch only its target. III — every GUI action goes through `run_op`, which
 parses a CLI command line (11-op parity test); Skill/CLI sync test. IV — live
-preview via Quarto, 0 px layout drift on 21 decks. V — inter-process lock +
-detect-and-restore; stress test lossless. VI — ops/CLI/server tests were written
+preview via Quarto, 0 px layout drift on 21 decks. V — qd writers (CLI,
+editor server) are serialized by an inter-process lock: no lost edits (CI
+stress test). Non-qd writers are detected before writing (`E_CONFLICT`) and
+most mid-write collisions are backed out, but a writer racing at sub-ms scale
+can still lose data (opt-in probe, ~10% under artificial load on Linux): a
+known limit, not airtight. VI — ops/CLI/server tests were written
 before their code and seen failing; the attribute parser and segmenter tests
 were written alongside the code. VII — one crate, 13 runtime deps, plain JS UI.
 
