@@ -94,9 +94,9 @@ US6. Paths relative to repo root.
 
 **Independent Test**: spec US3 Independent Test.
 
-- [ ] T022 [P] [US3] Write failing browser tests: slide toolbar sets `background-color`, `background-image`, `transition`, `visibility=hidden` (and unhide) on the heading; element toolbar "Appears on click" adds/removes `.fragment` (wrapping a paragraph in a `:::` div only if it can't take attributes); preview reflects each change; with the Source panel closed every action works
-- [ ] T023 [US3] Implement the property toolbar in `src/ui/toolbar.js` (selection mode, not typing): slide controls (colour picker, image path field, transition menu, hidden toggle) and element controls (fragment toggle, class chips, delete) from the action table — T022 passes
-- [ ] T024 [US3] Hide the side panel by default behind a "Source" header toggle (FR-018); open state in `localStorage` (try/catch); panel shows the selected slide/element's source and advanced properties; existing `tests/serve.rs`/browser tests adjusted
+- [X] T022 [P] [US3] Write failing browser tests: slide toolbar sets `background-color`, `background-image`, `transition`, `visibility=hidden` (and unhide) on the heading; element toolbar "Appears on click" adds/removes `.fragment` (wrapping a paragraph in a `:::` div only if it can't take attributes); preview reflects each change; with the Source panel closed every action works — done (`bars_set_properties_and_source_panel_is_hidden`)
+- [X] T023 [US3] Implement the property toolbar in `src/ui/toolbar.js` (selection mode, not typing): slide controls (colour picker, image path field, transition menu, hidden toggle) and element controls (fragment toggle, class chips, delete) from the action table — T022 passes — done: slide bar above the preview (background colour/image, transition, hidden, ⋯) and an element bar on the selection (Edit, Source, On click, Delete, ⋯); "On click" uses the new `qd block class`
+- [X] T024 [US3] Hide the side panel by default behind a "Source" header toggle (FR-018); open state in `localStorage` (try/catch); panel shows the selected slide/element's source and advanced properties; existing `tests/serve.rs`/browser tests adjusted — done: "Source" header button, state in `localStorage`
 
 ---
 
@@ -106,10 +106,10 @@ US6. Paths relative to repo root.
 
 **Independent Test**: spec US4 Independent Test.
 
-- [ ] T025 [P] [US4] Write failing tests in `tests/blocks.rs` per contracts/cli.md: `block add` (`--after/--before/--start/--end`, blank-line handling, refuses slide headings), `block move` (same slide only, bytes identical), `block rm` (removes one adjoining blank line; undo restores byte-for-byte), `block dup`; JSON `target`; `run_op` parity; snapshots in `tests/snapshots/`
-- [ ] T026 [US4] Implement `block_add/move/rm/dup` in `src/ops.rs` and `qd block …` in `src/cli.rs`; add to `API_OPS` and `qd schema`; skill sync test updated — T025 passes
-- [ ] T027 [P] [US4] Write failing browser tests: insert control between elements → pick List → typing creates the block in that place; drag an element above another → `block move`; Delete key on a selected element → `block rm`; empty slide shows the insert control
-- [ ] T028 [US4] Implement in `src/ui/editor.js`/`toolbar.js`: "+" insert control on hover between elements and on empty slides (paragraph, list, image, text box, equation — FR-019; image asks for a path, text box uses `box add`); a new block starts a typed session; drag handle on the selected element with drop indicator (vertical) → `block move` — T027 passes
+- [X] T025 [P] [US4] Write failing tests in `tests/blocks.rs` per contracts/cli.md: `block add` (`--after/--before/--start/--end`, blank-line handling, refuses slide headings), `block move` (same slide only, bytes identical), `block rm` (removes one adjoining blank line; undo restores byte-for-byte), `block dup`; JSON `target`; `run_op` parity; snapshots in `tests/snapshots/` — done (`tests/cli.rs` `block_*`), plus `qd block class` (`block_class_toggles_round_trip`)
+- [X] T026 [US4] Implement `block_add/move/rm/dup` in `src/ops.rs` and `qd block …` in `src/cli.rs`; add to `API_OPS` and `qd schema`; skill sync test updated — T025 passes — done; also fixed `Attrs` re-quoting untouched items once a block changes (002 agent-eval finding)
+- [X] T027 [P] [US4] Write failing browser tests: insert control between elements → pick List → typing creates the block in that place; drag an element above another → `block move`; Delete key on a selected element → `block rm`; empty slide shows the insert control — done (`insert_drag_delete_and_empty_slides`)
+- [X] T028 [US4] Implement in `src/ui/editor.js`/`toolbar.js`: "+" insert control on hover between elements and on empty slides (paragraph, list, image, text box, equation — FR-019; image asks for a path, text box uses `box add`); a new block starts a typed session; drag handle on the selected element with drop indicator (vertical) → `block move` — T027 passes — done: + and ⠿ handles beside the hovered element (insert menu; pointer drag with drop line); "+ Add content" on empty slides; inserted text/list opens for typing with its placeholder selected, an equation opens as source
 
 ---
 
@@ -119,9 +119,9 @@ US6. Paths relative to repo root.
 
 **Independent Test**: spec US6 Independent Test.
 
-- [ ] T029 [P] [US6] Write failing browser tests: right-click a paragraph, a slide in the list and an empty slide area → menus list exactly the actions of contracts/ui.md for that target, inapplicable ones disabled (Move up on first element); arrows/Enter/Escape work; Shift+F10 opens the menu for the selection; menu stays inside the window near edges; each action's effect equals its `qd` command (compare file after menu action vs. after the CLI on a copy)
-- [ ] T030 [US6] Implement `src/ui/menu.js` (research R6): one menu component (ARIA `menu`/`menuitem`, submenus for Insert/Appearance/Transition, shortcuts right-aligned, disabled state), opened from `contextmenu` in the iframe document, the slide list and the stage; items from `actionsFor(target)` — T029 passes
-- [ ] T031 [US6] Clipboard (FR-022, research R7): Copy/Cut put the element's markdown as `text/plain` (+ rendered `text/html`); Paste after inserts with `block add`; cut = copy + `block rm`; browser test round-trips an element through copy/paste to another slide byte-for-byte
+- [X] T029 [P] [US6] Write failing browser tests: right-click a paragraph, a slide in the list and an empty slide area → menus list exactly the actions of contracts/ui.md for that target, inapplicable ones disabled (Move up on first element); arrows/Enter/Escape work; Shift+F10 opens the menu for the selection; menu stays inside the window near edges; each action's effect equals its `qd` command (compare file after menu action vs. after the CLI on a copy) — done (`context_menus_list_and_run_actions`)
+- [X] T030 [US6] Implement `src/ui/menu.js` (research R6): one menu component (ARIA `menu`/`menuitem`, submenus for Insert/Appearance/Transition, shortcuts right-aligned, disabled state), opened from `contextmenu` in the iframe document, the slide list and the stage; items from `actionsFor(target)` — T029 passes — done (`src/ui/menu.js`); right-click in the slide, the slide list or an empty slide area; Shift+F10 / ContextMenu key; menus take keyboard focus from the preview
+- [X] T031 [US6] Clipboard (FR-022, research R7): Copy/Cut put the element's markdown as `text/plain` (+ rendered `text/html`); Paste after inserts with `block add`; cut = copy + `block rm`; browser test round-trips an element through copy/paste to another slide byte-for-byte — done (`copy_and_paste_carry_the_markdown`); keyboard ⌘C/⌘X/⌘V/⌘D, ⌫, ⌥↑/⌥↓, Enter, ⌥Enter on the selected element
 
 ---
 
