@@ -1,0 +1,12 @@
+---
+title: "Plotly"
+format: revealjs
+jupyter: python3
+---
+
+## Figure {#figure}
+
+```{python}
+import plotly.graph_objects as go
+go.Figure(go.Scatter(x=[1, 2, 3], y=[3, 1, 2]), layout_title_text=r"$y = f(x)$")
+```

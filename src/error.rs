@@ -28,6 +28,15 @@ pub enum QdError {
     NoServer,
     #[error("usage: {0}")]
     Usage(String),
+    #[error("no browser available: {0}")]
+    NoBrowser(String),
+    #[error("download failed: {0}")]
+    Download(String),
+    /// The offline check failed; the report is printed on stdout.
+    #[error("the deck does not work offline ({0} problem(s))")]
+    Offline(usize),
+    #[error("cannot be exported as one offline file: {0}")]
+    OfflineIncompatible(String),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -47,6 +56,10 @@ impl QdError {
             Self::Render(_) => "E_RENDER",
             Self::NoServer => "E_NO_SERVER",
             Self::Usage(_) => "E_USAGE",
+            Self::NoBrowser(_) => "E_NO_BROWSER",
+            Self::Download(_) => "E_DOWNLOAD",
+            Self::Offline(_) => "E_OFFLINE",
+            Self::OfflineIncompatible(_) => "E_OFFLINE_INCOMPATIBLE",
             Self::Io(_) => "E_IO",
         }
     }
@@ -75,6 +88,16 @@ impl QdError {
             Self::Render(_) => "see details for the Quarto log",
             Self::NoServer => "start one with `qd serve`",
             Self::Usage(_) => "run `qd --help` or `qd schema`",
+            Self::NoBrowser(_) => {
+                "install Google Chrome, set QD_CHROME to a Chrome/Chromium binary, or allow qd to download one (drop --no-download / QD_NO_DOWNLOAD)"
+            }
+            Self::Download(_) => {
+                "check the network connection and retry; a file that fails its checksum is never used"
+            }
+            Self::Offline(_) => "see the problems in the report on stdout; each has a hint",
+            Self::OfflineIncompatible(_) => {
+                "remove the feature from the deck (or render that deck as a folder instead)"
+            }
             Self::Io(_) => "check the path and permissions",
         }
     }

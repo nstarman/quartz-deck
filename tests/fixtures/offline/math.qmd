@@ -1,0 +1,14 @@
+---
+title: "Math"
+format: revealjs
+---
+
+## Math {#math}
+
+Inline $E = mc^2$ and display:
+
+$$\int_0^1 x\,dx = \tfrac12$$
+
+## Plain {#plain}
+
+No math here.
