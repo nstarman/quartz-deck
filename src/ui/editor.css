@@ -121,3 +121,11 @@ aside .status.fail { color: var(--danger); }
 #srcedit .bar { display: flex; gap: 8px; justify-content: space-between; margin-top: 4px; font-size: 12px; }
 #srcedit .err { color: var(--danger); }
 #srcedit .hint { color: var(--muted); margin-left: auto; }
+#conflict { padding: 8px 16px; background: var(--error-bg); color: var(--text); border-bottom: 1px solid var(--line); }
+#conflict[hidden] { display: none; }
+#conflict .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 6px 0; }
+#conflict .lbl { font-size: 12px; color: var(--muted); }
+#conflict pre { margin: 2px 0 0; max-height: 8em; overflow: auto; padding: 6px; border-radius: 6px;
+  background: var(--panel); white-space: pre-wrap; font: 12px/1.4 ui-monospace, monospace; }
+#conflict .buttons { display: flex; gap: 6px; }
+@media (max-width: 700px) { #conflict .cols { grid-template-columns: 1fr; } }
