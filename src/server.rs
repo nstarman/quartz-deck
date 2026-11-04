@@ -32,6 +32,7 @@ const UI_MODULES: &[(&str, &str)] = &[
     ("source.js", include_str!("ui/source.js")),
     ("actions.js", include_str!("ui/actions.js")),
     ("menu.js", include_str!("ui/menu.js")),
+    ("pane.js", include_str!("ui/pane.js")),
 ];
 
 #[derive(Clone, Debug)]
@@ -125,6 +126,14 @@ async fn ui_module(UrlPath(name): UrlPath<String>) -> Response {
 
 async fn present(State(app): State<Shared>) -> Redirect {
     Redirect::to(&app.html)
+}
+
+/// The whole deck text (spec 004 source pane).
+async fn api_source(State(app): State<Shared>) -> Response {
+    match app.store.read() {
+        Ok(d) => Json(json!({"text": d.text, "version": d.version})).into_response(),
+        Err(e) => err_response(e),
+    }
 }
 
 async fn api_deck(State(app): State<Shared>) -> Response {
@@ -363,6 +372,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             .route("/ui/{name}", get(ui_module))
             .route("/present/", get(present))
             .route("/api/deck", get(api_deck))
+            .route("/api/source", get(api_source))
             .route("/api/slide/{r}", get(api_slide))
             .route("/api/op", post(api_op))
             .route("/events", get(events))

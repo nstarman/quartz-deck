@@ -274,14 +274,15 @@ fn single_line(s: &str, what: &str) -> Result<()> {
 }
 
 /// Normalize user markdown: trim surrounding blank lines, match the deck's line endings.
-fn norm(md: &str, nl: &str) -> String {
+/// `md` with the deck's line endings.
+fn with_nl(md: &str, nl: &str) -> String {
     let md = md.replace("\r\n", "\n");
-    let md = md.trim_matches('\n').trim_end();
-    if nl == "\n" {
-        md.to_string()
-    } else {
-        md.replace('\n', nl)
-    }
+    if nl == "\n" { md } else { md.replace('\n', nl) }
+}
+
+/// `md` trimmed of surrounding blank lines, with the deck's line endings.
+fn norm(md: &str, nl: &str) -> String {
+    with_nl(md.replace("\r\n", "\n").trim_matches('\n').trim_end(), nl)
 }
 
 fn patch(
@@ -765,6 +766,39 @@ pub fn block_class(d: &Deck, element: &str, add: &[String], remove: &[String]) -
         patch("block class", b.id.clone(), vec![(b.span, new)], Vec::new()),
         s.index,
     )
+}
+
+/// Replace the unique occurrence of `old` with `new` (spec 004: source-pane
+/// saves, and a literal search-and-replace for agents). Not found means the
+/// text changed elsewhere (`E_CONFLICT`); found twice needs more context
+/// (`E_AMBIGUOUS`). Line endings follow the deck (a browser textarea sends `\n`).
+pub fn replace(d: &Deck, old: &str, new: &str) -> Result<Patch> {
+    let (old, new) = (with_nl(old, d.nl), with_nl(new, d.nl));
+    if old.is_empty() {
+        return Err(QdError::InvalidArg("the text to replace is empty".into()));
+    }
+    let mut hits = d.text.match_indices(&old).map(|(i, _)| i);
+    let at = hits.next().ok_or_else(|| {
+        QdError::Conflict(
+            "the text to replace is not in the deck (it changed meanwhile?); re-read and retry"
+                .into(),
+        )
+    })?;
+    if hits.next().is_some() {
+        return Err(QdError::Ambiguous(
+            "the text to replace occurs more than once; include more surrounding text".into(),
+        ));
+    }
+    let target = d
+        .slides
+        .iter()
+        .find(|s| s.span.start <= at && at < s.span.end)
+        .map_or("front-matter".to_string(), |s| s.id.clone());
+    let span = Span {
+        start: at,
+        end: at + old.len(),
+    };
+    Ok(patch("replace", target, vec![(span, new)], Vec::new()))
 }
 
 // ---------- front matter ----------
