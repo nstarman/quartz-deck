@@ -14,8 +14,11 @@ struct Env {
 
 impl Env {
     fn new() -> Env {
+        Env::with(BASIC)
+    }
+    fn with(text: &str) -> Env {
         let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("deck.qmd"), BASIC).unwrap();
+        fs::write(dir.path().join("deck.qmd"), text).unwrap();
         Env { dir }
     }
     fn path(&self) -> PathBuf {
@@ -608,4 +611,143 @@ fn box_commands() {
     std::fs::write(e.path(), include_str!("corpus/11-absolute.qmd")).unwrap();
     let v = e.ok(&["box", "move", "boxes/2", "--at", "1,2"]);
     assert_eq!(v["converted_units"], true);
+}
+
+// ---------- spec 003: element hashes, minimal edits, element-level conflicts ----------
+
+const DECK: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## Methods\n\nWe use **bold** words and a [link](https://example.org)\nacross two lines.\n\n- one\n- two\n\n## Results {#results}\n\nSome \"quoted\" text -- here.\n";
+
+fn hash(s: &str) -> String {
+    quartz_deck::deck::version_of(s.as_bytes())
+}
+
+#[test]
+fn show_reports_block_and_title_hashes() {
+    let e = Env::with(DECK);
+    let v = e.ok(&["show", "methods"]);
+    for b in v["slide"]["blocks"].as_array().unwrap() {
+        assert_eq!(b["hash"], hash(b["text"].as_str().unwrap()), "{b}");
+    }
+    assert_eq!(v["slide"]["title_hash"], hash("Methods"));
+}
+
+#[test]
+fn edit_changes_only_the_element_bytes() {
+    let e = Env::with(DECK);
+    let new = "We use **bold** words and a [link](https://example.org)\nacross three lines.";
+    e.ok(&["edit", "methods/0", "--md", new]);
+    // the slide heading has an implicit id: an element edit must not pin it
+    assert_eq!(
+        e.text(),
+        DECK.replace("across two lines.", "across three lines.")
+    );
+}
+
+#[test]
+fn expect_text_is_per_element() {
+    let e = Env::with(DECK);
+    let para = e.ok(&["show", "methods"])["slide"]["blocks"][0]["hash"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    // an unrelated edit elsewhere changes the file version, not this element
+    e.ok(&["edit", "results/0", "--md", "Other text."]);
+    e.ok(&[
+        "edit",
+        "methods/0",
+        "--md",
+        "Changed.",
+        "--expect-text",
+        &para,
+    ]);
+    assert!(e.text().contains("## Methods\n\nChanged.\n\n- one"));
+    // now the element differs from what the caller read: refused
+    let err = e.err(
+        &[
+            "edit",
+            "methods/0",
+            "--md",
+            "Again.",
+            "--expect-text",
+            &para,
+        ],
+        "E_CONFLICT",
+        1,
+    );
+    assert_eq!(err["error"]["details"]["current_source"], "Changed.");
+    assert_eq!(err["error"]["details"]["current_hash"], hash("Changed."));
+}
+
+#[test]
+fn title_expect_text_uses_the_title_source() {
+    let e = Env::with(DECK);
+    e.ok(&[
+        "title",
+        "results",
+        "Findings",
+        "--expect-text",
+        &hash("Results"),
+    ]);
+    e.err(
+        &[
+            "title",
+            "results",
+            "Again",
+            "--expect-text",
+            &hash("Results"),
+        ],
+        "E_CONFLICT",
+        1,
+    );
+}
+
+#[test]
+fn api_maps_expect_text() {
+    let e = Env::with(DECK);
+    let args = serde_json::json!({"element": "methods/0", "md": "Via API.", "expect-text": "0000000000000000"});
+    let r = quartz_deck::cli::run_op(&e.store(), "edit", &args, None);
+    assert_eq!(
+        r.unwrap_err().code(),
+        "E_CONFLICT",
+        "wrong hash must be refused"
+    );
+}
+
+#[test]
+fn body_of_an_empty_slide_keeps_the_next_slide_separate() {
+    // regression: the new body ran into the next heading, which Pandoc then
+    // swallowed into the body's last list item
+    let e = Env::with("## A {#a}\n\n## B {#b}\n\ntext\n");
+    e.ok(&["body", "a", "--md", "- one\n- two\n"]);
+    assert_eq!(e.text(), "## A {#a}\n\n- one\n- two\n\n## B {#b}\n\ntext\n");
+}
+
+#[test]
+fn source_that_breaks_slide_structure_is_refused() {
+    let e = Env::with(DECK);
+    for args in [
+        ["edit", "methods/0", "--md", "Text.\n\n## Sneaky\n\nMore."], // new slide heading
+        ["edit", "methods/0", "--md", "::: {.callout-note}\nopen"],   // unclosed div
+        ["edit", "methods/0", "--md", "```python\nprint(1)"],         // unclosed code fence
+        ["body", "methods", "--md", "a\n\n---\n\nb"],                 // `---` starts a slide
+    ] {
+        e.err(&args, "E_INVALID_ARG", 1);
+    }
+    // balanced constructs and sub-headings are fine
+    e.ok(&[
+        "edit",
+        "methods/0",
+        "--md",
+        "::: {.callout-note}\nNote.\n:::",
+    ]);
+    e.ok(&["edit", "results/0", "--md", "### Sub\n\nText."]);
+}
+
+#[test]
+fn deck_discovery_ignores_qds_render_copies() {
+    // `qd serve` renders through `<stem>.qd-<tag>.qmd` next to the deck; an agent
+    // running qd in that folder meanwhile must still find the one real deck
+    let e = Env::with(DECK);
+    fs::write(e.dir.path().join("deck.qd-preview.qmd"), "## copy\n").unwrap();
+    assert_eq!(e.ok(&["slides"])["slides"][0]["id"], "methods");
 }

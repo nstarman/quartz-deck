@@ -196,6 +196,9 @@ enum Cmd {
         slide: String,
         #[arg(allow_hyphen_values = true)]
         text: String,
+        /// Fail with E_CONFLICT unless the current title hashes to this (`title_hash` in `qd show`)
+        #[arg(long, value_name = "HASH")]
+        expect_text: Option<String>,
     },
     /// Replace a slide's content (positioned boxes are kept)
     Body {
@@ -224,6 +227,9 @@ enum Cmd {
         element: String,
         #[command(flatten)]
         input: Input,
+        /// Fail with E_CONFLICT unless the element's source hashes to this (`hash` in `qd show`)
+        #[arg(long, value_name = "HASH")]
+        expect_text: Option<String>,
     },
     /// Positioned boxes (Quarto `.absolute`; px on the slide, default 1050x700)
     Box {
@@ -422,8 +428,11 @@ fn find_deck(arg: &Option<PathBuf>) -> Result<PathBuf> {
     let qmds: Vec<PathBuf> = std::fs::read_dir(".")?
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| {
+            let name = p.file_name().unwrap().to_string_lossy();
+            // qd's own render copies (`<stem>.qd-<tag>.qmd`) are not decks
             p.extension().is_some_and(|e| e == "qmd")
-                && !p.file_name().unwrap().to_string_lossy().starts_with('.')
+                && !name.starts_with('.')
+                && !name.contains(".qd-")
         })
         .collect();
     match qmds.as_slice() {
@@ -471,7 +480,9 @@ fn attrs_json(a: Option<&crate::attrs::Attrs>) -> Value {
 }
 
 fn block_json(d: &Deck, b: &Block) -> Value {
-    let mut v = json!({"id": b.id, "explicit": b.id_explicit, "kind": b.kind, "text": d.slice(b.span), "attrs": attrs_json(b.attrs.as_ref())});
+    let text = d.slice(b.span);
+    let mut v = json!({"id": b.id, "explicit": b.id_explicit, "kind": b.kind, "text": text,
+        "hash": crate::deck::version_of(text.as_bytes()), "attrs": attrs_json(b.attrs.as_ref())});
     if b.kind == BlockKind::Box
         && let Some(a) = &b.attrs
     {
@@ -533,6 +544,7 @@ pub fn slides_json(d: &Deck) -> Value {
 pub fn show_json(d: &Deck, s: &Slide) -> Value {
     json!({"version": d.version, "slide": {
         "id": s.id, "explicit": s.id_explicit, "index": s.index, "kind": s.kind, "level": s.level, "title": s.title,
+        "title_hash": s.title.as_ref().map(|t| crate::deck::version_of(t.as_bytes())),
         "attrs": attrs_json(s.attrs.as_ref()), "opaque": s.opaque, "source": d.slice(s.span),
         "blocks": s.blocks.iter().map(|b| block_json(d, b)).collect::<Vec<_>>(),
     }})
@@ -966,7 +978,11 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             ctx.edit(|d| ops::mv(d, slide, pos))
         }
         Cmd::Rm { slide } => ctx.edit(|d| ops::rm(d, slide)),
-        Cmd::Title { slide, text } => ctx.edit(|d| ops::title(d, slide, text)),
+        Cmd::Title {
+            slide,
+            text,
+            expect_text,
+        } => ctx.edit(|d| ops::title(d, slide, text, expect_text.as_deref())),
         Cmd::Body { slide, input } => {
             let md = required_input(input)?;
             ctx.edit(|d| ops::body(d, slide, &md))
@@ -986,9 +1002,13 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             };
             ctx.edit(|d| ops::set(d, slide, &change))
         }
-        Cmd::Edit { element, input } => {
+        Cmd::Edit {
+            element,
+            input,
+            expect_text,
+        } => {
             let md = required_input(input)?;
-            ctx.edit(|d| ops::edit(d, element, &md))
+            ctx.edit(|d| ops::edit(d, element, &md, expect_text.as_deref()))
         }
         Cmd::Box { action } => match action {
             BoxCmd::Add {

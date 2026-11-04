@@ -58,8 +58,6 @@ jobs:
           quarto --version
           cargo test
 
-      - name: Performance (100-slide deck, 001 SC-004)
-        run: cargo test --release --test cli -- --ignored
-
-      - name: Export timing (30 slides + Plotly, 002 SC-004)
-        run: cargo test --release --test export export_30 -- --ignored --nocapture
+      - name: Slow checks (001 SC-004 100-slide perf, 002 SC-004 export timing, 003 SC-005 editing together)
+        # `--ignored` alone would also run the opt-in probes (drift, external appender)
+        run: cargo test --release -- --ignored --nocapture perf_100 export_30 fifty

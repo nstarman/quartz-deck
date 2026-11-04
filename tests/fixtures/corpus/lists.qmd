@@ -1,0 +1,50 @@
+---
+title: "Lists"
+format: revealjs
+---
+
+## Tight {#tight}
+
+- one
+- two
+- three
+
+## Nested {#nested}
+
+* alpha
+* beta
+    * beta one
+    * beta two
+* gamma
+
+## Ordered {#ordered}
+
+1. first
+2. second
+3. third
+
+## Start {#start}
+
+3. three
+4. four
+
+## Loose {#loose}
+
+- one paragraph
+
+- two paragraph
+
+## Plus {#plus}
+
++ plus one
++ plus two
+
+## Incremental {.incremental #incr}
+
+- step one
+- step two
+
+## Task {#task}
+
+- [ ] todo
+- [x] done
