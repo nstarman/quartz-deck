@@ -1,0 +1,33 @@
+---
+title: "Inline"
+format: revealjs
+---
+
+## Emphasis {#emph}
+
+Some **strong**, *emphasis*, ~~struck~~, `code`, and ***both*** here.
+
+## Links {#links}
+
+A [link](https://example.org), an autolink <https://example.org>, and a [titled](https://example.org "t") one.
+
+## Spans {#spans}
+
+An [underline]{.underline}, a [mark]{.mark}, [red]{style="color:#c0392b"}, and [big]{style="font-size:1.5em"}.
+
+## Super and sub {#supsub}
+
+H~2~O and E = mc^2^.
+
+## Breaks {#hard}
+
+Line one\
+line two.
+
+## Underscore emphasis {#under}
+
+Some __strong__ and _emphasis_ with underscores.
+
+## Inline math {#imath}
+
+Energy $E = mc^2$ inline.

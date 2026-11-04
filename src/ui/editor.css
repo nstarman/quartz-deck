@@ -98,3 +98,18 @@ aside .status.fail { color: var(--danger); }
   nav li.drop-after { border-right-color: var(--drop); }
   nav button.wide { flex: none; width: auto; margin: 0 8px 0 0; white-space: nowrap; }
 }
+
+/* ---------- on-slide editing (spec 003) ---------- */
+#fmtbar { position: fixed; z-index: 20; display: flex; flex-wrap: wrap; gap: 2px; align-items: center;
+  max-width: calc(100vw - 8px); padding: 4px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2); }
+#fmtbar[hidden] { display: none; }
+#fmtbar button { min-width: 28px; height: 28px; padding: 0 6px; }
+#fmtbar button[hidden] { display: none; }
+#fmtbar button[data-fmt=bold] { font-weight: 700; }
+#fmtbar button[data-fmt=italic] { font-style: italic; }
+#fmtbar button[data-fmt=underline] { text-decoration: underline; }
+#fmtbar button[data-fmt=strike] { text-decoration: line-through; }
+#fmtbar .swatch { min-width: 18px; width: 18px; height: 18px; padding: 0; border-radius: 50%; }
+#fmtbar .sep { width: 1px; height: 20px; margin: 0 3px; background: var(--line); }
+#pending { margin-left: 8px; color: var(--muted); font-size: 12px; }

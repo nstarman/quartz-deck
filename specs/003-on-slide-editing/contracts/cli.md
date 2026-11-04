@@ -22,14 +22,18 @@ qd block dup <EL>
   removed with `qd box rm` (unchanged).
 - `target` in the result is the new/moved element's id.
 
-## `qd edit` (extended)
+## `qd edit` / `qd title` (extended)
 
 ```text
 qd edit <EL> (--md <MD> | --file <F>) [--expect-text <HASH>]
+qd title <SLIDE> <TEXT> [--expect-text <HASH>]
 ```
 
-- Writes only the bytes that differ between the element's source and the new
-  markdown (minimal patch).
+- `edit` replaces only the element's span; the slide heading is left as it
+  is (no id pinning), so nothing else in the file changes. Minimality inside
+  the element comes from the editor, which splices only the changed region
+  into the source before sending it.
+- `title`: `HASH` is the hash of the current title text.
 - `--expect-text`: refuse with `E_CONFLICT` unless the element's current
   source hashes to `HASH`; the error's `details` include the current source
   and hash. Independent of `--expect` (whole file); both may be given.
@@ -49,6 +53,7 @@ Each block gains `"hash": "<16 hex>"`.
 ## HTTP
 
 `/api/op` accepts the new ops (`block add|move|rm|dup`) and the
-`expect_text` key for `edit` (mapped to `--expect-text`), under the existing
+`expect-text` key for `edit`/`title` (the flag's own name, like every other
+argument), under the existing
 rules (JSON only, loopback, no paths). `/api/slide/<ref>` blocks include
 `hash`.

@@ -1,0 +1,80 @@
+---
+title: "Blocks"
+format: revealjs
+---
+
+## Math {#math}
+
+$$
+\int_0^1 x\,dx = \frac{1}{2}
+$$
+
+## Code {#code}
+
+```python
+print("hi")
+```
+
+## Quote {#quote}
+
+> A quoted thought
+> over two lines.
+
+## Callout {#callout}
+
+::: {.callout-note}
+A note.
+:::
+
+## Columns {#cols}
+
+:::: {.columns}
+::: {.column width="50%"}
+Left.
+:::
+::: {.column width="50%"}
+Right.
+:::
+::::
+
+## Aligned {#aligned}
+
+::: {style="text-align:center"}
+Centred text.
+:::
+
+## Box {#box}
+
+::: {.absolute top=100 left=100 width=300}
+Text in a box.
+:::
+
+## Sub-heading {#subhead}
+
+### A smaller heading
+
+Under it.
+
+## Raw HTML {#raw}
+
+<div class="custom">raw</div>
+
+## Table {#table}
+
+| a | b |
+|---|---|
+| 1 | 2 |
+
+## Notes {#notes}
+
+Visible.
+
+::: {.notes}
+Speaker notes.
+:::
+
+## Fragment {#frag}
+
+::: {.fragment}
+Appears later.
+:::

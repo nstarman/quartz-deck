@@ -1,6 +1,7 @@
 // quartz-deck editor. Every change is a CLI op sent to POST /api/op, so the GUI
 // can do nothing the CLI cannot (FR-010). The .qmd file stays the only state.
-'use strict';
+import { region, hintsFor, gate, reserialize, splice } from '/ui/inline.js';
+import { showToolbar, hideToolbar, formatKey, place as placeToolbar } from '/ui/toolbar.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const frame = $('#preview');
@@ -18,6 +19,8 @@ const state = {
   goAfterRender: null, // anchor to show once the next render lands
   want: null, // anchor the freshly loaded preview should open on
   selectIdAfterRender: null, // element id (e.g. a new box) to select once rendered
+  session: null, // open on-slide edit (spec 003), see beginSession
+  pendingRender: null, // newest render that arrived while editing (applied when it ends)
 };
 
 // ---------- helpers ----------
@@ -64,17 +67,23 @@ async function fetchSlide(ref) {
   return res.ok ? (await res.json()).slide : null;
 }
 
-/** Run one CLI op. Returns the result object, or null after reporting the error. */
-async function op(name, args = {}) {
+/**
+ * Run one CLI op. Returns the result object, or null after reporting the error.
+ * `fileExpect: false` skips the whole-file version check (on-slide saves check
+ * just their element with `expect-text`, so edits elsewhere don't block them).
+ */
+async function op(name, args = {}, { fileExpect = true } = {}) {
   const res = await fetch('/api/op', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ op: name, args, expect: state.version }),
+    body: JSON.stringify({ op: name, args, ...(fileExpect ? { expect: state.version } : {}) }),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     const e = body.error || { code: res.status, message: res.statusText };
-    if (e.code === 'E_CONFLICT') {
+    if (e.code === 'E_CONFLICT' && !fileExpect) {
+      say(`${name}: this text was changed elsewhere meanwhile — your version is kept; Esc discards it`, true);
+    } else if (e.code === 'E_CONFLICT') {
       say('The file changed elsewhere — reloaded; please retry.', true);
       await fetchDeck();
       await renderPanel();
@@ -109,6 +118,10 @@ const PREVIEW_CSS = `
   [data-qd] { cursor: pointer; }
   [data-qd]:hover { outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; }
   .qd-sel, .qd-sel:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 2px; }
+  .qd-editing, .qd-editing:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 4px; cursor: text; }
+  .qd-editing:focus { outline-style: solid; }
+  section > h1:hover, section > h2:hover, section > h3:hover, #title-slide :is(.title, .subtitle, .date):hover {
+    outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; cursor: text; }
   .qd-overlay { position: absolute; box-sizing: border-box; border: 2px solid #2a5bd7; cursor: move;
     touch-action: none; z-index: 1000; }
   .qd-handle { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; background: #fff;
@@ -219,17 +232,32 @@ function hookFrame() {
   doc.head.append(style);
 
   doc.addEventListener('click', (e) => {
+    if (state.session) {
+      if (state.session.root.contains(e.target)) return; // caret moves inside the edit
+      saveSession(); // clicking elsewhere ends the edit
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     const el = e.target.closest('[data-qd]');
-    if (!el) return;
+    const target = editTarget(e.target);
+    if (!el && !target) return;
     e.preventDefault();
     e.stopPropagation();
-    select(el.dataset.qd);
+    const point = { x: e.clientX, y: e.clientY };
+    (target ? beginEdit(target, point) : Promise.resolve(false)).then((ok) => {
+      if (!ok && el) select(el.dataset.qd);
+    });
   }, true);
   doc.addEventListener('dblclick', (e) => {
-    const el = e.target.closest('[data-qd]');
+    if (state.session) return;
+    const el = e.target.closest('[data-qd]') || doc.querySelector(`[data-qd="${CSS.escape(state.sel || '')}"]`);
     if (!el) return;
     e.preventDefault();
-    select(el.dataset.qd).then(() => $('textarea', panel)?.focus());
+    // a positioned text box: single click selects it for dragging, double click types
+    beginEdit({ kind: 'block', root: el }, { x: e.clientX, y: e.clientY }).then((ok) => {
+      if (!ok) select(el.dataset.qd).then(() => $('textarea', panel)?.focus());
+    });
   }, true);
   doc.addEventListener('keydown', onKey, true);
 
@@ -648,6 +676,7 @@ $('#undo').addEventListener('click', () => undoRedo('undo'));
 $('#redo').addEventListener('click', () => undoRedo('redo'));
 
 function onKey(e) {
+  if (state.session) return; // the open edit handles its own keys (sessionKey)
   if (e.key === 'Escape' && state.sel) { e.preventDefault(); select(null); return; }
   const mod = e.metaKey || e.ctrlKey;
   if (!mod || e.key.toLowerCase() !== 'z' || editing()) return;
@@ -674,7 +703,13 @@ es.addEventListener('rendered', (e) => {
   const d = JSON.parse(e.data);
   statusEl.textContent = 'rendered ' + d.version.slice(0, 7);
   banner.hidden = true;
-  load(d.html);
+  if (state.session) {
+    // reloading now would throw away the open edit (research R4)
+    state.pendingRender = d.html;
+    pendingBadge(true);
+  } else {
+    load(d.html);
+  }
 });
 es.addEventListener('render_error', (e) => {
   const d = JSON.parse(e.data);
@@ -682,3 +717,190 @@ es.addEventListener('render_error', (e) => {
   banner.textContent = d.message;
   banner.hidden = false;
 });
+
+// ---------- on-slide editing (spec 003 US1) ----------
+
+const NOT_TYPEABLE = new Set(['code', 'math', 'html', 'table', 'image', 'notes', 'pause', 'raw']);
+const META_FIELDS = [['title', '.title'], ['subtitle', '.subtitle'], ['author', '.quarto-title-author-name'], ['date', '.date']];
+
+function pendingBadge(on) {
+  let b = $('#pending');
+  if (!b) {
+    b = Object.assign(document.createElement('span'), { id: 'pending' });
+    statusEl.after(b);
+  }
+  b.textContent = on ? 'updated — will refresh when you finish editing' : '';
+}
+
+async function sha16(text) {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(d)].slice(0, 8).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** What a click on `node` would edit: a block, a slide title, or a title-slide field. */
+function editTarget(node) {
+  const el = node.closest?.('[data-qd]');
+  if (el) return el.classList.contains('absolute') ? null : { kind: 'block', root: el };
+  const sec = node.closest?.('section');
+  if (!sec) return null;
+  if (sec.id === 'title-slide') {
+    for (const [key, sel] of META_FIELDS) {
+      const f = node.closest(sel);
+      if (f && sec.contains(f)) return { kind: 'meta', key, root: f };
+    }
+    return null;
+  }
+  const h = node.closest('h1, h2, h3');
+  if (h && h.parentElement === sec) return { kind: 'title', root: h, anchor: sec.id };
+  return null;
+}
+
+/** Start typing into `target` if its rendering round-trips to its source. */
+async function beginEdit(target, point) {
+  let s = null;
+  if (target.kind === 'block') {
+    const ref = target.root.dataset.qd;
+    const cut = ref.lastIndexOf('/');
+    const slide = await fetchSlide(ref.slice(0, cut));
+    const block = slide?.blocks[Number(ref.slice(cut + 1))];
+    if (!block || NOT_TYPEABLE.has(block.kind)) return false;
+    const reg = region(block.kind, block.text);
+    if (!reg) return false;
+    s = { ...target, ref, source: block.text, hash: block.hash, reg, hints: hintsFor(block.text) };
+  } else if (target.kind === 'title') {
+    const slide = slideByAnchor(target.anchor);
+    const full = slide && (await fetchSlide(slide.id));
+    if (!full?.title) return false;
+    s = { ...target, slide: full.id, source: full.title, hash: await sha16(full.title),
+      reg: { mode: 'inline', prefix: '', inner: full.title, suffix: '' }, hints: {} };
+  } else {
+    const r = await fetch('/api/op', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: 'meta' }) });
+    const value = r.ok ? (await r.json()).front_matter?.[target.key] : null;
+    if (typeof value !== 'string') return false;
+    s = { ...target, source: value, reg: { mode: 'inline', prefix: '', inner: value, suffix: '' }, hints: {} };
+  }
+  const g = gate(s.root, s.reg, s.hints);
+  if (!g) return false;
+  if (state.session) return false; // another edit started meanwhile
+  Object.assign(s, g, { html: s.root.innerHTML, align: null });
+  beginSession(s, point);
+  return true;
+}
+
+function beginSession(s, point) {
+  const doc = s.root.ownerDocument;
+  state.session = s;
+  state.sel = null;
+  highlight();
+  s.root.contentEditable = 'true';
+  s.root.classList.add('qd-editing');
+  doc.execCommand('styleWithCSS', false, false);
+  doc.execCommand('defaultParagraphSeparator', false, 'p');
+  s.root.focus();
+  const r = point && doc.caretRangeFromPoint?.(point.x, point.y);
+  if (r && s.root.contains(r.startContainer)) {
+    const sel = doc.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
+  s.onKey = (e) => sessionKey(e, s);
+  s.onBlur = () => { if (!s.hold && !s.failed) setTimeout(() => { if (state.session === s && !s.root.contains(doc.activeElement)) saveSession(); }, 0); };
+  s.onPaste = (e) => {
+    e.preventDefault(); // plain text only (formatting from other apps is dropped)
+    doc.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+  };
+  s.onInput = () => { s.failed = false; placeToolbar(frame); };
+  s.root.addEventListener('keydown', s.onKey);
+  s.root.addEventListener('focusout', s.onBlur);
+  s.root.addEventListener('paste', s.onPaste);
+  s.root.addEventListener('input', s.onInput);
+  showToolbar(s, frame);
+  say(s.reg.mode === 'inline' ? 'Editing — Enter or click elsewhere saves, Esc cancels' : 'Editing — ⌘Enter, Tab or click elsewhere saves, Esc cancels');
+}
+
+function sessionKey(e, s) {
+  e.stopPropagation(); // keep Reveal and the editor's own keys out of the edit
+  if (e.key === 'Escape') { e.preventDefault(); endSession(s, false); return; }
+  const mod = e.metaKey || e.ctrlKey;
+  if ((e.key === 'Enter' && (mod || s.reg.mode === 'inline')) || (e.key === 'Tab' && !inList(s))) {
+    e.preventDefault();
+    saveSession();
+    return;
+  }
+  if (e.key === 'Tab') { // indent/outdent inside a list
+    e.preventDefault();
+    s.root.ownerDocument.execCommand(e.shiftKey ? 'outdent' : 'indent');
+    return;
+  }
+  formatKey(e);
+}
+
+function inList(s) {
+  const sel = s.root.ownerDocument.getSelection();
+  const n = sel?.anchorNode;
+  return !!(n && (n.nodeType === 1 ? n : n.parentElement)?.closest('li'));
+}
+
+/** Markdown the session would write, or null if the edit can't be expressed. */
+function draftSource(s) {
+  let S1;
+  try { S1 = reserialize(s.root, s.reg, s.hints); } catch { return null; }
+  let inner = splice(s.reg.inner, s.S0, S1, s.pos);
+  let { prefix, suffix } = s.reg;
+  if (s.align) {
+    const fenced = prefix.match(/^(\s*:{3,})\s*\{style="text-align:\s*\w+;?"\}\s*(\r?\n)$/);
+    if (fenced) {
+      if (s.align === 'left') { prefix = ''; suffix = ''; } else prefix = `${fenced[1]} {style="text-align:${s.align}"}${fenced[2]}`;
+    } else if (!prefix && s.align !== 'left' && s.kind === 'block') {
+      const nl = s.source.includes('\r\n') ? '\r\n' : '\n';
+      prefix = `::: {style="text-align:${s.align}"}${nl}`;
+      suffix = `${nl}:::`;
+    }
+  }
+  return prefix + inner + suffix;
+}
+
+async function saveSession() {
+  const s = state.session;
+  if (!s || s.saving) return;
+  const md = draftSource(s);
+  if (md === null) {
+    s.failed = true;
+    say('This formatting can’t be written as markdown here — undo it (⌘Z) or press Esc to cancel', true);
+    return;
+  }
+  if (md === s.source) { endSession(s, false); return; }
+  s.saving = true;
+  let r;
+  if (s.kind === 'block') r = await op('edit', { element: s.ref, md, 'expect-text': s.hash }, { fileExpect: false });
+  else if (s.kind === 'title') r = await op('title', { slide: s.slide, text: md, 'expect-text': s.hash }, { fileExpect: false });
+  else r = await op('meta set', { key: s.key, value: JSON.stringify(md) }, { fileExpect: false });
+  s.saving = false;
+  if (!r) { s.failed = true; s.root.focus(); return; }
+  endSession(s, true);
+  await fetchDeck();
+}
+
+/** Close the edit; `saved` keeps the typed text visible until the new render loads. */
+function endSession(s, saved) {
+  if (state.session !== s) return;
+  s.root.removeEventListener('keydown', s.onKey);
+  s.root.removeEventListener('focusout', s.onBlur);
+  s.root.removeEventListener('paste', s.onPaste);
+  s.root.removeEventListener('input', s.onInput);
+  s.root.removeAttribute('contenteditable');
+  s.root.classList.remove('qd-editing');
+  if (!saved) { s.root.innerHTML = s.html; s.root.style.textAlign = ''; }
+  s.root.blur();
+  hideToolbar();
+  state.session = null;
+  if (state.pendingRender) {
+    const html = state.pendingRender;
+    state.pendingRender = null;
+    pendingBadge(false);
+    load(html);
+  }
+}
+
+// test/automation hook (tests/onslide.rs): read-only view of the open edit
+window.qdSession = () => (state.session ? { kind: state.session.kind, ref: state.session.ref || null, draft: draftSource(state.session) } : null);
