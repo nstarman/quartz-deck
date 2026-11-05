@@ -28,7 +28,9 @@ edits, detects concurrent changes and supports undo.
 3. **Check** — `qd check` (duplicate ids, unsafe constructs, missing files);
    `qd check --render` also runs Quarto and reports render errors.
 4. **Look** — start the live preview once with `qd serve --detach` (prints
-   `{"url","port","pid"}`), then open `qd url <slide>` in your browser tool.
+   `{"url","port","pid"}`), then open `qd url <slide>` in your browser tool
+   (the link carries the token the page needs to run code; share it only with
+   the person you work with).
    The page re-renders by itself after every edit (about 1–2 s) and stays on
    the current slide; a red banner shows Quarto errors while the last good
    render stays visible. Stop it with `qd stop`. The person you work with may
