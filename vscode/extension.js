@@ -9,7 +9,7 @@ const { spawn } = require('node:child_process');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { Sync } = require('./sync.js');
-const { editorUrl, themeKind, html, fromEditor } = require('./panel.js');
+const { editorUrl, themeKind, html, fromEditor, follow } = require('./panel.js');
 
 /** Open decks: fsPath → { panel, doc, dispose() }. */
 const open = new Map();
@@ -145,7 +145,16 @@ async function openDeck(doc, panel) {
     .catch((e) => { if (!stop.signal.aborted) out.appendLine(`events: ${e}`); });
 
   let timer;
+  let moved = null; // the cursor move we made for a reveal: not the person's, don't echo it
   const subs = [
+    vscode.window.onDidChangeTextEditorSelection((e) => {
+      if (e.textEditor.document !== doc) return;
+      const sel = e.selections[0];
+      const ours = moved?.isEqual(sel.active);
+      moved = null;
+      if (ours) return;
+      panel.webview.postMessage(follow(sel, doc.getText(sel)));
+    }),
     vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document !== doc || !e.contentChanges.length) return;
       clearTimeout(timer);
@@ -154,10 +163,19 @@ async function openDeck(doc, panel) {
     vscode.window.onDidChangeActiveColorTheme((t) => panel.webview.postMessage({ type: 'theme', kind: themeKind(t.kind) })),
     panel.webview.onDidReceiveMessage((m) => {
       const msg = fromEditor(m);
-      if (msg?.type === 'reveal') entry.reveal?.(msg.lines);
+      if (msg?.type === 'reveal') reveal(msg.lines);
     }),
     vscode.workspace.onDidCloseTextDocument((d) => { if (d === doc) panel.dispose(); }),
   ];
+  /** A panel selection or an agent's pointing: cursor to the source's start, shown, keyboard focus kept (FR-012). */
+  const reveal = ([first, last]) => {
+    const ed = vscode.window.visibleTextEditors.find((x) => x.document === doc);
+    if (!ed) return;
+    const at = doc.validatePosition(new vscode.Position(first - 1, 0));
+    moved = at;
+    ed.selection = new vscode.Selection(at, at);
+    ed.revealRange(new vscode.Range(at, new vscode.Position(last - 1, 0)), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+  };
   const entry = {
     panel, doc, api, run, sync,
     dispose: async () => {

@@ -43,4 +43,11 @@ function fromEditor(m) {
   return null;
 }
 
-module.exports = { editorUrl, themeKind, html, fromEditor };
+/** A VS Code selection (0-based lines) → the editor's `follow` (1-based, like
+ * its source pane). Text is cut one past qd's 2,000-char limit so qd still
+ * marks it truncated. */
+const follow = ({ start, end, active }, text) => ({
+  type: 'follow', line: active.line + 1, first: start.line + 1, last: end.line + 1, text: text.slice(0, 2001),
+});
+
+module.exports = { editorUrl, themeKind, html, fromEditor, follow };

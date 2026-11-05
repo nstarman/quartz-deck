@@ -1,7 +1,7 @@
 // Spec 006 (T009): the panel's page, theme mapping and message filter.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { editorUrl, themeKind, html, fromEditor } = require('../panel.js');
+const { editorUrl, themeKind, html, fromEditor, follow } = require('../panel.js');
 
 const LINK = 'http://127.0.0.1:5123/#t=abc123';
 
@@ -31,4 +31,10 @@ test('only reveal and ready come through from the editor, well-formed', () => {
   for (const bad of [{ type: 'run' }, { type: 'reveal', lines: ['x', 1] }, { type: 'reveal' }, null, 'reveal', { type: 'op', op: 'rm' }]) {
     assert.equal(fromEditor(bad), null, JSON.stringify(bad));
   }
+});
+
+test("VS Code's selection becomes a follow message: 1-based lines, text bounded", () => {
+  const sel = { start: { line: 4 }, end: { line: 6 }, active: { line: 6 } };
+  assert.deepEqual(follow(sel, 'abc'), { type: 'follow', line: 7, first: 5, last: 7, text: 'abc' });
+  assert.equal(follow(sel, 'x'.repeat(10000)).text.length, 2001, 'qd still sees it was cut');
 });

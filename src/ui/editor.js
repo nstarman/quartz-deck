@@ -795,7 +795,7 @@ function showPoint({ anchor, ref }) {
   offer.hidden = true;
   // where an agent points isn't the person's own focus
   if (anchor !== state.anchor) { state.followed = anchor; go(anchor); }
-  if (!ref.includes('/')) return;
+  if (!ref.includes('/')) return revealSource({ slide: ref });
   revealSource({ ref });
   // flash it (not select it); every slide stays in the DOM, so no need to wait
   for (const el of frame.contentDocument?.querySelectorAll(`[data-qd="${CSS.escape(ref)}"]`) || []) {
@@ -1396,20 +1396,29 @@ setTheme(framed.get('theme'));
 const runExternal = framed.get('run') === 'external';
 document.documentElement.classList.toggle('run-external', runExternal);
 if (!runExternal) run.initRun({ say, flush: pane.save });
-if (framed.get('host') === 'vscode') {
+const inVSCode = framed.get('host') === 'vscode';
+if (inVSCode) {
   // only the panel that framed this page, and only navigation/display — never edits or code
   addEventListener('message', (e) => {
     if (e.source !== window.parent || typeof e.data !== 'object' || !e.data) return;
     if (e.data.type === 'theme') setTheme(e.data.kind);
+    // VS Code's cursor: same as the source pane's caret (US3)
+    const { line, first, last, text } = e.data;
+    if (e.data.type === 'follow' && [line, first, last].every(Number.isInteger) && typeof text === 'string') {
+      sourceFocus({ line, first, last, text });
+    }
   });
   window.parent.postMessage({ type: 'ready' }, '*');
 }
 
-/** Element (or slide title) → its source lines in the pane (US2). */
+/** Element (or slide title) → its source lines, in the pane (US2) and in VS Code's text (006 US3). */
 async function revealSource(s) {
-  if (srcpane.hidden) return;
-  if (s?.ref) { const b = await fetchBlock(s.ref); if (b) pane.reveal(b.lines); return; }
-  if (s?.slide) { const sl = await fetchSlide(s.slide); if (sl) pane.reveal([sl.lines[0], sl.lines[0]]); }
+  if (srcpane.hidden && !inVSCode) return;
+  const sl = !s?.ref && s?.slide && (await fetchSlide(s.slide));
+  const lines = s?.ref ? (await fetchBlock(s.ref))?.lines : sl && [sl.lines[0], sl.lines[0]];
+  if (!lines) return;
+  if (!srcpane.hidden) pane.reveal(lines);
+  if (inVSCode) window.parent.postMessage({ type: 'reveal', lines }, '*');
 }
 
 // insert (+) and drag (⠿) handles beside the element under the mouse (US4)

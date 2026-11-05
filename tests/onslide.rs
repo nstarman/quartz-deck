@@ -1593,6 +1593,27 @@ async fn framed_editor_takes_theme_and_messages() {
     );
     assert_eq!(ed.eval(bg).await, "#000000");
 
+    // VS Code's cursor in slide B's text shows B, and qd focus has it (US3)
+    ed.go("a").await;
+    ed.eval("window.postMessage({type: 'follow', line: 17, first: 17, last: 17, text: ''}, '*')")
+        .await;
+    ed.wait("document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide().id === 'b'")
+        .await;
+    let start = std::time::Instant::now();
+    while ed.cli(&["focus"])["line"] != 17 {
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "focus never got the line"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    // an element chosen on a slide: its source lines go to VS Code
+    ed.eval("window.__reveal = null; addEventListener('message', (e) => { if (e.data?.type === 'reveal') window.__reveal = e.data.lines; })")
+        .await;
+    ed.go("a").await;
+    ed.click_in_slide("[data-qd=\"a/0\"] p").await;
+    ed.wait("JSON.stringify(window.__reveal) === '[8,8]'").await;
+
     // the Quarto extension runs cells: no Run bar, no gutter
     ed.page
         .goto(framed("theme=light&run=external").as_str())

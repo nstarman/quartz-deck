@@ -112,20 +112,28 @@ Paths relative to repo root.
 
 **Independent Test**: spec US3 Independent Test; quickstart §3.
 
-- [ ] T015 [P] [US3] Write failing tests:
+- [X] T015 [P] [US3] Write failing tests:
   - `vscode/test/focus.test.js` for `vscode/focus.js`: a cursor/selection gives a focus snapshot with `where: "text"`, the line, the selected text clamped to 2,000 chars, refs from blocks' line ranges, debounced; a `reveal {lines}` message gives a `revealRange` without focus;
   - `tests/serve.rs`: `/api/focus` accepts `where: "text"`;
   - `src/focus.rs` unit test updated.
-- [ ] T016 [US3] Implement:
+- [X] T016 [US3] Implement:
   - `src/focus.rs`: allow `"text"`;
   - `vscode/focus.js`: snapshot from `onDidChangeTextEditorSelection`; the extension posts it with tab `vscode:<deck>` and sends `follow {line}` to the iframe;
   - `src/ui/editor.js`: on `follow`, show the line's slide (the 004 line → slide mapping) without counting it as the person's focus; post `reveal {lines}` to the parent on element selection when framed;
   - `vscode/extension.js`: on `point` (spec 005), also reveal the source.
 
   T015 passes.
-- [ ] T017 [US3] Browser test addition to `framed_editor_takes_theme_and_messages`: `follow {line}` shows that slide; clicking an element posts `reveal` with its lines to the parent
+- [X] T017 [US3] Browser test addition to `framed_editor_takes_theme_and_messages`: `follow {line}` shows that slide; clicking an element posts `reveal` with its lines to the parent
 
 **Checkpoint**: the two views follow each other; `qd focus` sees the VS Code cursor.
+
+*As built*: simpler than planned. The panel's editor already maps a source
+caret to slide and elements (its source pane does this), so VS Code's cursor is
+sent to it as a `follow {line, first, last, text}` message and goes down the
+same path. The editor tab reports it with `where: "source"`, so there is no
+`vscode/focus.js`, no `vscode:<deck>` tab and no server change. A panel selection
+or an agent's `qd focus --set` posts `reveal {lines}`; the extension moves the
+cursor there without taking keyboard focus.
 
 ---
 
