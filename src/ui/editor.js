@@ -1315,9 +1315,6 @@ function setSource(open, remember) {
   srcpane.hidden = !open;
   if (open) pane.load();
 }
-toggleSource.addEventListener('click', () => setSource(srcpane.hidden));
-$('[data-act=form]', srcpane).addEventListener('click', () => setPanel(!mainEl.classList.contains('panel-open')));
-$('[data-act=full]', srcpane).addEventListener('click', () => setFull(!mainEl.classList.contains('source-full')));
 const splitter = $('#splitter');
 let widthTimer = null;
 const setWidth = (px, remember = true) => {
@@ -1351,13 +1348,19 @@ settings.onChange((v) => {
   pane.setAutosave(v['source.save'] === 'pause');
   for (const el of document.querySelectorAll('[data-key]')) el.title = v['hints.shortcuts'] ? `${el.dataset.hint} (${el.dataset.key})` : el.dataset.hint;
 });
-settings.ready((n) => say(n, true)).then(() => {
+// the saved layout before any button works: arriving late, it would undo a click
+await settings.ready((n) => say(n, true)).catch(() => say('settings could not be loaded; using the defaults', true));
+{
   const v = settings.get;
   if (v('ui.source_width')) setWidth(v('ui.source_width'), false);
   setPanel(v('ui.form_panel'));
   setFull(v('ui.source_full'));
   setSource(v('source.open') === 'open' || (v('source.open') === 'last' && v('ui.source_was_open')), false);
-});
+}
+toggleSource.addEventListener('click', () => setSource(srcpane.hidden));
+$('[data-act=form]', srcpane).addEventListener('click', () => setPanel(!mainEl.classList.contains('panel-open')));
+$('[data-act=full]', srcpane).addEventListener('click', () => setFull(!mainEl.classList.contains('source-full')));
+
 
 pane.initPane({
   op: (name, args) => op(name, args, { fileExpect: false }),
