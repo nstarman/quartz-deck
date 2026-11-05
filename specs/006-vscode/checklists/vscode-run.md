@@ -26,9 +26,15 @@ steps are the person's.
   Fixed in `src/ui/editor.css`: the header wraps; in the narrow layout
   "+ Add slide" comes first in the strip.
 
-## Left for the person (needs the keyboard)
+## Done by hand (the person)
 
-- [ ] Typing in the buffer shows in the panel within 3 s, unsaved (SC-002).
-- [ ] ⌘Z in the text undoes a panel edit (SC-003, VS Code's undo).
-- [ ] ⌘S writes the file; the panel and disk agree.
-- [ ] Switching VS Code to a light theme switches the panel.
+- [x] Typing `gamma` into Methods reached the panel, unsaved (SC-002; not timed).
+- [x] ⌘Z in the text undid the panel's "+ Add slide" (SC-003, VS Code's undo).
+- [x] ⌘S wrote the file.
+- [ ] Theme switch to light: not tried.
+
+## Follow-up
+
+- The panel stayed on its slide while the person typed in Methods; they expect
+  it to follow the cursor like a preview. That is US3 (T015–T017), not in the
+  MVP.

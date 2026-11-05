@@ -100,7 +100,7 @@ Paths relative to repo root.
   - post `ready` when loaded;
   - `?run=external` hides the run bar and gutter (spec 004 UI).
 - [X] T013 [US1] Browser test in `tests/onslide.rs` `framed_editor_takes_theme_and_messages`: the editor page inside a test parent page (iframe, as the webview does) gets dark colours with `?theme=dark`, ignores a message from a non-parent, hides Run with `run=external`, posts `ready` — T012 passes
-- [ ] T014 [US2] VS Code run (quickstart §1–§2) by hand in the real app; record SC-001/SC-002/SC-003 in `specs/006-vscode/checklists/vscode-run.md`; fix what it finds
+- [X] T014 [US2] VS Code run (quickstart §1–§2) by hand in the real app; record SC-001/SC-002/SC-003 in `specs/006-vscode/checklists/vscode-run.md`; fix what it finds
 
 **Checkpoint**: MVP — the panel in VS Code, edits both ways, nothing lost.
 
