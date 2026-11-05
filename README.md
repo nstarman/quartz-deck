@@ -15,8 +15,9 @@ presentations, written in Rust.
 
 Status: specs [001](specs/001-core-editor/spec.md) (editor),
 [002](specs/002-offline-export/spec.md) (offline export + PDF),
-[003](specs/003-on-slide-editing/spec.md) (on-slide editing) and
-[004](specs/004-source-and-run/spec.md) (source pane, running code) implemented; what
+[003](specs/003-on-slide-editing/spec.md) (on-slide editing),
+[004](specs/004-source-and-run/spec.md) (source pane, running code) and
+[005](specs/005-shared-focus/spec.md) (shared focus) implemented; what
 comes next is in [`specs/ROADMAP.md`](specs/ROADMAP.md). See also the
 [constitution](.specify/memory/constitution.md).
 
@@ -71,6 +72,18 @@ stderr with a stable `code` and a `hint`. Decks inside a Quarto project
   Re-renders wait while you type.
 - CLI equivalents: `qd block add|move|rm|dup|class`, `qd edit`, `qd title`,
   `qd set` — see `qd schema`.
+
+### Shared focus (spec [005](specs/005-shared-focus/spec.md))
+
+- **"This" means what you selected:** click an element, select a few words
+  (on the slide or in the source pane) and tell an agent "make this shorter".
+  It runs `qd focus` and gets the slide, the element(s) and the selected text,
+  so it edits exactly that.
+- **Agents can show you things:** `qd focus --set results/1` takes your editor
+  to that slide and flashes the element. While you are typing nothing moves;
+  a "Go there" offer waits instead.
+- The focus stays in the running editor's memory, behind the same session
+  token as running code; no other page can read or set it.
 
 ### Source and run (spec [004](specs/004-source-and-run/spec.md))
 
