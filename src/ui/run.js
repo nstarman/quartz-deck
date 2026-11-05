@@ -6,6 +6,8 @@
 // fragment (`#t=…` or `#/slide&t=…`, from `qd serve` / `qd url`), never in the
 // page: kept for this tab (reloads) and taken out of the address bar.
 
+import * as keys from '/ui/keys.js';
+
 const store = (f) => { try { return f(sessionStorage); } catch { return null; } };
 const given = location.hash.match(/(?:^#|&)t=([0-9a-f]+)/);
 if (given) {
@@ -127,33 +129,39 @@ export function initRun(a) {
   ta.addEventListener('scroll', syncScroll);
   ta.addEventListener('keyup', caretMoved);
   ta.addEventListener('click', caretMoved);
-  ta.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter' || !e.shiftKey) return;
-    const c = cellAt(caretLine());
-    if (!c?.runnable) return;
-    e.preventDefault(); // ⇧Enter runs the cell, as in notebooks
-    runCells([c.cell]);
-  });
   gutter.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-cell]');
     if (b) runCells([b.dataset.cell]);
   });
-  pane.querySelector('.srcbar').addEventListener('click', async (e) => {
-    const act = e.target.closest('button')?.dataset.act;
-    if (act === 'run-all') runAll();
-    else if (act === 'fresh-all') runAll(true);
-    else if (act === 'stop') post('/api/run/interrupt');
-    else if (act === 'restart') post('/api/run/restart');
-    else if (act === 'env') {
+  // the Run menu and the source bar's buttons are the same actions (spec 007)
+  const caretCell = () => { const c = !pane.hidden && cellAt(caretLine()); return c?.runnable ? c.cell : null; };
+  keys.on('run-cell', {
+    key: () => !!caretCell(), // ⇧Enter in the source runs the cell at the caret, as in notebooks
+    enabled: (ctx) => ctx.el?.block.kind === 'cell' || !!caretCell(),
+    run: (ctx) => runCells([!ctx.e && ctx.el?.block.kind === 'cell' ? ctx.el.ref : caretCell()]),
+  });
+  keys.on('run-all', () => runAll());
+  keys.on('run-fresh-all', () => runAll(true));
+  keys.on('run-stop', () => post('/api/run/interrupt'));
+  keys.on('run-restart', () => post('/api/run/restart'));
+  keys.on('run-env', {
+    enabled: () => !envBtn.hidden && !envBtn.disabled,
+    run: async () => {
       envBtn.disabled = true;
       envBtn.textContent = 'Creating…';
       if (await post('/api/env/init')) api.say('Environment created (uv): add packages with “qd env add”');
       envBtn.disabled = false;
       envStatus();
-    } else if (act === 'add-pkg') {
-      const p = prompt('Python packages to add (from PyPI), space-separated');
-      if (p?.trim() && (await post('/api/env/add', { packages: p.trim().split(/\s+/) }))) api.say(`Added ${p.trim()}`);
-    }
+    },
+  });
+  keys.on('run-add-package', async () => {
+    const p = prompt('Python packages to add (from PyPI), space-separated');
+    if (p?.trim() && (await post('/api/env/add', { packages: p.trim().split(/\s+/) }))) api.say(`Added ${p.trim()}`);
+  });
+  const ACT = { 'run-all': 'run-all', 'fresh-all': 'run-fresh-all', stop: 'run-stop', restart: 'run-restart', env: 'run-env', 'add-pkg': 'run-add-package' };
+  pane.querySelector('.srcbar').addEventListener('click', (e) => {
+    const act = ACT[e.target.closest('button')?.dataset.act];
+    if (act) keys.run(act);
   });
   refresh().then(envStatus);
 }

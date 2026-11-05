@@ -38,6 +38,12 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 button.danger { color: var(--danger); }
 button.wide { display: block; width: calc(100% - 16px); margin: 0 8px 8px; }
 
+/* ---------- menu bar (spec 007) ---------- */
+#menubar { display: flex; gap: 2px; padding: 2px 8px; background: var(--panel); border-bottom: 1px solid var(--line); font-size: 13px; }
+#menubar [role=menuitem] { padding: 3px 9px; border-radius: 4px; cursor: default; user-select: none; }
+#menubar [role=menuitem]:hover, #menubar [role=menuitem]:focus, #menubar [aria-expanded=true] { background: var(--accent); color: var(--accent-text); outline: none; }
+#menubar [role=menuitem]:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
+
 header { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 8px 16px;
   border-bottom: 1px solid var(--line); background: var(--panel); }
 header .tools { display: flex; gap: 4px; }
@@ -157,7 +163,7 @@ main:not(.panel-open) > aside { display: none; }
 #ctxmenu li { position: relative; display: flex; gap: 16px; justify-content: space-between; padding: 5px 10px;
   border-radius: 5px; cursor: default; white-space: nowrap; outline: none; }
 #ctxmenu li[role=separator] { height: 1px; padding: 0; margin: 4px 6px; background: var(--line); }
-#ctxmenu li:focus, #ctxmenu li.open { background: var(--accent); color: var(--accent-text); }
+#ctxmenu li:focus, #ctxmenu li.open, #ctxmenu li:not([aria-disabled=true]):hover { background: var(--accent); color: var(--accent-text); }
 #ctxmenu li[aria-disabled=true] { opacity: 0.45; }
 #ctxmenu li[role=menuitemcheckbox] { padding-left: 22px; }
 #ctxmenu li[aria-checked=true]::before { content: "✓"; position: absolute; left: 7px; }

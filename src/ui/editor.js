@@ -1,9 +1,11 @@
 // quartz-deck editor. Every change is a CLI op sent to POST /api/op, so the GUI
 // can do nothing the CLI cannot (FR-010). The .qmd file stays the only state.
 import { region, hintsFor, gate, reserialize, splice } from '/ui/inline.js';
-import { showToolbar, hideToolbar, formatKey, place as placeToolbar } from '/ui/toolbar.js';
+import { showToolbar, hideToolbar, place as placeToolbar } from '/ui/toolbar.js';
 import { openSource, closeSource, sourceError, sourceText } from '/ui/source.js';
-import { makeActions } from '/ui/actions.js';
+import { makeActions, INSERTS, TRANSITIONS } from '/ui/actions.js';
+import * as keys from '/ui/keys.js';
+import '/ui/menubar.js';
 import { openMenu, closeMenu, menuOpen } from '/ui/menu.js';
 import * as pane from '/ui/pane.js';
 import * as run from '/ui/run.js';
@@ -26,7 +28,8 @@ const state = {
   want: null, // anchor the freshly loaded preview should open on
   selectIdAfterRender: null, // element id (e.g. a new box) to select once rendered
   session: null, // open on-slide edit (spec 003), see beginSession
-  pendingRender: null, // newest render that arrived while editing (applied when it ends)
+  pendingRender: null, // newest render {html, version} that arrived while editing (applied when it ends)
+  loading: null, // deck version of the render the preview is loading
   editAfterRender: null, // {ref, mode}: open a just-inserted element for editing once rendered
   clip: null, // last copied element markdown (fallback when the clipboard can't be read)
 };
@@ -75,9 +78,18 @@ async function fetchDeck() {
   renderSlidebar();
 }
 
-async function fetchSlide(ref) {
-  const res = await fetch('/api/slide/' + encodeURIComponent(ref));
-  return res.ok ? (await res.json()).slide : null;
+// slides as of the deck version we last saw: menus and keys resolve their target
+// at once (spec 007 SC-008); any change on disk empties it (the 'changed' event)
+let slides = { version: null, map: new Map() };
+function fetchSlide(ref) {
+  if (slides.version !== state.version) slides = { version: state.version, map: new Map() };
+  let p = slides.map.get(ref);
+  if (!p) {
+    p = fetch('/api/slide/' + encodeURIComponent(ref)).then(async (res) => (res.ok ? (await res.json()).slide : null));
+    p.catch(() => slides.map.delete(ref));
+    slides.map.set(ref, p);
+  }
+  return p;
 }
 
 /** The block for an element ref `<slide>/<i>`, or null. */
@@ -126,7 +138,8 @@ async function op(name, args = {}, { fileExpect = true } = {}) {
 
 // ---------- preview ----------
 
-function load(path) {
+function load(path, version = null) {
+  state.loading = version;
   // Reveal may ignore the initial URL hash (e.g. when it starts in scroll view),
   // so remember where to go and steer it once it reports ready (see hookFrame).
   state.want = state.goAfterRender || state.anchor || location.hash.replace(/^#\//, '') || null;
@@ -330,7 +343,9 @@ function hookFrame() {
       state.selectIdAfterRender = null;
       if (el?.dataset.qd) state.sel = el.dataset.qd;
     }
-    if (state.editAfterRender) openInserted(state.editAfterRender);
+    // only the render that has the inserted element: an older one still loading would
+    // show other text at that ref, and the edit would not open
+    if (state.editAfterRender?.version === state.loading) openInserted(state.editAfterRender);
     onSlide();
   };
   const onSlide = () => {
@@ -728,15 +743,6 @@ $('#export').addEventListener('click', async (e) => {
 $('#undo').addEventListener('click', () => undoRedo('undo'));
 $('#redo').addEventListener('click', () => undoRedo('redo'));
 
-/** Element action for a key press on the selected element (contracts/ui.md), or undefined. */
-function elementKey(e, mod) {
-  if (mod) return e.shiftKey ? undefined : { c: 'copy', x: 'cut', v: 'paste', d: 'dup' }[e.key.toLowerCase()];
-  if (e.key === 'Enter') return e.altKey ? 'source' : 'edit';
-  if (e.key === 'Backspace' || e.key === 'Delete') return 'delete';
-  if (e.altKey) return { ArrowUp: 'up', ArrowDown: 'down' }[e.key];
-  return undefined;
-}
-
 /** Tab / Shift+Tab in the preview: select the next / previous element of the slide (FR-017). */
 function stepSelection(back) {
   const sec = frameWin()?.Reveal?.getCurrentSlide();
@@ -751,31 +757,11 @@ function stepSelection(back) {
 }
 
 function onKey(e) {
+  // widget key: Esc closes an open menu even when focus stayed elsewhere (the preview)
   if (menuOpen()) { if (e.key === 'Escape') { e.preventDefault(); closeMenu(); } return; }
   if (state.session || editing()) return; // edits and form fields handle their own keys
-  // Tab moves between elements only while the slide has focus; elsewhere it moves focus as usual
-  if (e.key === 'Tab' && e.target.ownerDocument === frame.contentDocument && stepSelection(e.shiftKey)) { e.preventDefault(); e.stopPropagation(); return; }
-  const mod = e.metaKey || e.ctrlKey;
-  if ((e.shiftKey && e.key === 'F10') || e.key === 'ContextMenu') { e.preventDefault(); keyboardMenu(); return; }
-  if (state.sel) {
-    const id = elementKey(e, mod);
-    if (id) { e.preventDefault(); e.stopPropagation(); elementTarget(state.sel).then((t) => t && actions.run(id, t)); return; }
-  }
-  if (mod && e.shiftKey && (e.key.toLowerCase() === 'n' || e.key.toLowerCase() === 'd')) {
-    const cur = slideByAnchor(state.anchor);
-    if (cur) { e.preventDefault(); slideTarget(cur.id).then((t) => actions.run(e.key.toLowerCase() === 'n' ? 'slide-after' : 'slide-dup', t, 'slide')); }
-    return;
-  }
-  if (e.key === 'Escape' && state.sel) { e.preventDefault(); e.stopPropagation(); select(null); return; }
-  // in VS Code, Esc with nothing selected or open hands the keyboard back to the text (006)
-  if (e.key === 'Escape' && inVSCode) {
-    e.preventDefault(); e.stopPropagation(); // not reveal.js's overview too
-    window.parent.postMessage({ type: 'focusText' }, '*');
-    return;
-  }
-  if (!mod || e.key.toLowerCase() !== 'z' || editing()) return;
-  e.preventDefault();
-  undoRedo(e.shiftKey ? 'redo' : 'undo');
+  // every other key is an action from the list (spec 007): the selected element first, then the slide
+  keys.dispatch(e, state.sel ? ['element', 'slide'] : [e.target.closest?.('nav') ? 'slides' : 'slide']);
 }
 document.addEventListener('keydown', onKey);
 
@@ -789,6 +775,7 @@ es.addEventListener('changed', async (e) => {
   statusEl.textContent = 'changed…';
   const { version } = JSON.parse(e.data);
   if (version !== state.version) {
+    slides = { version: null, map: new Map() };
     await fetchDeck();
     if (!editing()) await renderPanel();
   }
@@ -830,10 +817,10 @@ es.addEventListener('rendered', (e) => {
   banner.hidden = true;
   if (state.session) {
     // reloading now would throw away the open edit (research R4)
-    state.pendingRender = d.html;
+    state.pendingRender = d;
     pendingBadge(true);
   } else {
-    load(d.html);
+    load(d.html, d.version);
   }
 });
 es.addEventListener('render_error', (e) => {
@@ -967,7 +954,7 @@ function sessionKey(e, s) {
     s.root.ownerDocument.execCommand(e.shiftKey ? 'outdent' : 'indent');
     return;
   }
-  formatKey(e);
+  keys.dispatch(e, ['text']); // formatting keys while typing (the action list)
 }
 
 function inList(s) {
@@ -1038,10 +1025,10 @@ function endSession(s, saved, { keepPending = false } = {}) {
   state.session = null;
   syncFocus();
   if (state.pendingRender && !keepPending) {
-    const html = state.pendingRender;
+    const { html, version } = state.pendingRender;
     state.pendingRender = null;
     pendingBadge(false);
-    load(html);
+    load(html, version);
   }
 }
 
@@ -1520,7 +1507,7 @@ async function insertBlock(slideId, where, kind) {
   }
   const r = await op('block add', { slide: slideId, ...where, md });
   if (!r) return;
-  if (kind.edit) state.editAfterRender = { ref: r.target, mode: kind.edit };
+  if (kind.edit) state.editAfterRender = { ref: r.target, mode: kind.edit, version: r.version };
   else state.sel = r.target;
   await fetchDeck();
 }
@@ -1579,3 +1566,63 @@ async function editNotes(t) {
   const b = await fetchBlock(ref);
   if (b) startSourceSession({ kind: 'block', mode: 'source', root: sec, ref, source: b.text, hash: b.hash }, b.text);
 }
+
+// ---------- what each action in the list does (spec 007) ----------
+
+keys.setContext(async (e) => {
+  const cur = slideByAnchor(state.anchor);
+  return { e, el: state.sel ? await elementTarget(state.sel) : null, slide: cur ? await slideTarget(cur.id) : null };
+});
+keys.on('render', { enabled: () => !$('#render').disabled, run: () => $('#render').click() });
+const exportWith = (pdf) => ({ enabled: () => !$('#export').disabled, run: () => { $('#export-pdf').checked = pdf; $('#export').click(); } });
+keys.on('export', exportWith(false));
+keys.on('export-pdf', exportWith(true));
+keys.on('preview', () => window.open('/present/', '_blank', 'noopener'));
+keys.on('undo', () => undoRedo('undo'));
+keys.on('redo', () => undoRedo('redo'));
+// element and slide actions: the right-click menus' own (actions.js), on what is selected / shown
+const ELEMENT = ['edit', 'source', 'cut', 'copy', 'paste', 'dup', 'delete', 'up', 'down', 'fragment', 'class-smaller', 'class-incremental', 'class-custom'];
+const SLIDE = ['slide-before', 'slide-after', 'slide-dup', 'slide-hide', 'slide-rm', 'slide-bg', 'slide-bgimg', 'slide-notes', 'slide-source', 'slide-link'];
+for (const [ids, on, table] of [[ELEMENT, 'el', 'element'], [SLIDE, 'slide', 'slide']]) {
+  for (const id of ids) {
+    keys.on(id, {
+      // Paste reads the system clipboard on a key press; from a menu it needs our own copy
+      enabled: (ctx) => !!ctx[on] && actions.can(id, ctx[on], table) && (id !== 'paste' || !!ctx.e || !!state.clip),
+      checked: (ctx) => ctx[on] && actions.checked(id, ctx[on], table),
+      run: (ctx) => actions.run(id, ctx[on], table),
+    });
+  }
+}
+const inSlide = (e) => e.target.ownerDocument === frame.contentDocument && !!frameWin()?.Reveal?.getCurrentSlide()?.querySelector('[data-qd]');
+keys.on('next-element', { key: inSlide, enabled: (ctx) => !!ctx.slide, run: () => stepSelection(false) });
+keys.on('prev-element', { key: inSlide, enabled: (ctx) => !!ctx.slide, run: () => stepSelection(true) });
+keys.on('deselect', { enabled: () => !!state.sel, run: () => select(null) });
+keys.on('actions-menu', keyboardMenu);
+keys.on('focus-text', () => window.parent.postMessage({ type: 'focusText' }, '*')); // VS Code's panel only
+for (const kind of INSERTS) {
+  keys.on(`insert-${kind.id}`, {
+    enabled: (ctx) => !!(ctx.el || ctx.slide),
+    run: (ctx) => insertBlock(ctx.el?.slideId ?? ctx.slide.slideId, ctx.el ? { after: ctx.el.ref } : { end: true }, kind),
+  });
+}
+for (const x of ['default', ...TRANSITIONS]) {
+  keys.on(`transition-${x}`, {
+    enabled: (ctx) => !!ctx.slide,
+    checked: (ctx) => (ctx.slide?.full?.attrs?.kv?.transition || 'default') === x,
+    run: (ctx) => actions.setAttr(ctx.slide, 'transition', x === 'default' ? null : x),
+  });
+}
+const neighbour = (ctx, d) => { const ss = state.deck?.slides || []; return ss[ss.findIndex((x) => x.id === ctx.slide?.slideId) + d]; };
+for (const [id, d, where] of [['slide-move-up', -1, 'before'], ['slide-move-down', 1, 'after']]) {
+  keys.on(id, {
+    enabled: (ctx) => !!neighbour(ctx, d),
+    run: async (ctx) => { if (await op('move', { slide: ctx.slide.slideId, [where]: neighbour(ctx, d).id })) { state.goAfterRender = ctx.slide.anchor; await fetchDeck(); } },
+  });
+}
+const toggle = (cls, set) => ({ checked: () => mainEl.classList.contains(cls), run: () => set(!mainEl.classList.contains(cls)) });
+keys.on('toggle-source', { checked: () => !srcpane.hidden, run: () => setSource(srcpane.hidden) });
+keys.on('source-full', toggle('source-full', setFull));
+keys.on('form-panel', toggle('panel-open', setPanel));
+keys.on('about', () => alert('quartz-deck — a slide editor for Quarto reveal.js decks. Personal use only (see LICENSE).'));
+for (const id of ['undo', 'redo']) $(`#${id}`).title = `${keys.action(id).label} (${keys.shortcut(id)})`;
+
