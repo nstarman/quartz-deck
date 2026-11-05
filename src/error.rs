@@ -56,6 +56,9 @@ pub enum QdError {
     NotCode(String),
     #[error("cannot run {0} cells here yet")]
     Engine(String),
+    /// A cell raised or was stopped; the run's result is printed on stdout.
+    #[error("{0} did not finish")]
+    Run(String),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -85,6 +88,7 @@ impl QdError {
             Self::Env(_) => "E_ENV",
             Self::NotCode(_) => "E_NOT_CODE",
             Self::Engine(_) => "E_ENGINE",
+            Self::Run(_) => "E_RUN",
             Self::Io(_) => "E_IO",
         }
     }
@@ -140,6 +144,9 @@ impl QdError {
             Self::NotCode(_) => "only executable cells (```{python}) run; see `kind` in `qd show`",
             Self::Engine(_) => {
                 "only Python cells run for now; `qd render` still executes the others"
+            }
+            Self::Run(_) => {
+                "the outputs in the result on stdout show why; fix the cell (`qd replace`) and run it again"
             }
             Self::Io(_) => "check the path and permissions",
         }

@@ -318,6 +318,11 @@ struct RunBody {
     /// Restart and run from the top through the last requested cell (FR-008b).
     #[serde(default)]
     fresh: bool,
+    /// Answer when the run ends, with its outputs (`qd run`), instead of 202 at once.
+    #[serde(default)]
+    wait: bool,
+    /// Seconds before a cell is interrupted.
+    timeout: Option<u64>,
 }
 
 /// `POST /api/run`: 202 at once; progress and outputs arrive as events.
@@ -329,33 +334,10 @@ async fn api_run(
     if !authorized(&app, &headers) {
         return forbidden();
     }
-    let plan = app.store.read().and_then(|d| {
-        // (ref, fingerprint, code) of each cell to run, in order
-        let mut picked = vec![];
-        for r in &body.cells {
-            let (_, b) = d.element(r)?;
-            cell_code(&d, b)?;
-            picked.push(b.id.clone());
-        }
-        let last = d.blocks().position(|b| picked.last() == Some(&b.id));
-        let mut plan = vec![];
-        for (i, b) in d.blocks().enumerate() {
-            let wanted =
-                body.all || picked.contains(&b.id) || (body.fresh && last.is_some_and(|l| i <= l));
-            if b.kind != BlockKind::Cell || !wanted {
-                continue;
-            }
-            // Run all / fresh skip what can't run here; picked cells were checked above
-            if let Ok(Some(code)) = cell_code(&d, b) {
-                plan.push((b.id.clone(), version_of(d.slice(b.span).as_bytes()), code));
-            }
-        }
-        if !body.all && !body.fresh {
-            // explicitly picked cells run in the order given
-            plan.sort_by_key(|(id, ..)| picked.iter().position(|p| p == id));
-        }
-        Ok(plan)
-    });
+    let plan = app
+        .store
+        .read()
+        .and_then(|d| crate::kernel::plan(&d, &body.cells, body.all, body.fresh));
     let plan = match plan {
         Ok(p) => p,
         Err(e) => return err_response(e),
@@ -364,7 +346,15 @@ async fn api_run(
     let cells: Vec<&String> = plan.iter().map(|(id, ..)| id).collect();
     app.emit("run_started", json!({"run": run, "cells": cells}));
     let a = app.clone();
-    tokio::task::spawn_blocking(move || run_cells(&a, run, plan, body.fresh));
+    let timeout = body.timeout.map(Duration::from_secs);
+    let go = move || run_cells(&a, run, plan, body.fresh, timeout);
+    if body.wait {
+        return blocking(move || {
+            go().map(|(status, runs)| json!({"run": run, "status": status, "runs": runs}))
+        })
+        .await;
+    }
+    tokio::task::spawn_blocking(go);
     (StatusCode::ACCEPTED, Json(json!({"run": run}))).into_response()
 }
 
@@ -383,36 +373,38 @@ fn kernel(app: &App) -> Result<Arc<Kernel>> {
     Ok(s)
 }
 
-/// Run `plan` in order, storing outputs; stops at the first cell that fails
-/// or is stopped (FR-010). The preview re-renders afterwards (R7).
-fn run_cells(app: &App, run: u64, plan: Vec<(String, String, String)>, fresh: bool) {
+/// Run `plan` (`kernel::run_plan`) in the live session, with events for the
+/// editor; the preview re-renders afterwards (R7). Returns the status and
+/// each cell's entry as `qd run` reports it.
+fn run_cells(
+    app: &App,
+    run: u64,
+    plan: Vec<crate::kernel::Planned>,
+    fresh: bool,
+    timeout: Option<Duration>,
+) -> Result<(&'static str, Vec<Value>)> {
     let outputs = Outputs::new(&app.store);
-    let res = (|| -> Result<&'static str> {
-        let k = kernel(app)?;
+    let mut runs = vec![];
+    let res = kernel(app).and_then(|k| {
         if fresh {
             app.state("starting");
             k.restart()?;
         }
-        for (cell, fp, code) in plan {
-            app.state("busy");
-            let reply = k.execute(&code, None);
+        crate::kernel::run_plan(&k, &outputs, plan, timeout, |cell, rec| {
+            let Some(rec) = rec else {
+                return app.state("busy");
+            };
             app.state("idle");
-            let reply = reply?;
-            let rec = with_urls(outputs.save(&cell, &fp, &reply)?);
+            runs.push(outputs.entry(cell, rec));
+            let rec = with_urls(rec.clone());
             app.emit(
                 "cell_output",
                 json!({"run": run, "cell": cell, "counter": rec["counter"],
                 "status": rec["status"], "items": rec["items"]}),
             );
-            match reply["status"].as_str() {
-                Some("ok") => {}
-                Some("stopped") => return Ok("stopped"),
-                _ => return Ok("error"),
-            }
-        }
-        Ok("done")
-    })();
-    let done = match res {
+        })
+    });
+    let done = match &res {
         Ok(status) => json!({"run": run, "status": status}),
         Err(e) => {
             // the session is gone or never started: the next run starts a new one
@@ -423,6 +415,7 @@ fn run_cells(app: &App, run: u64, plan: Vec<(String, String, String)>, fresh: bo
     };
     app.emit("run_done", done);
     app.kick.notify_one();
+    res.map(|s| (s, runs))
 }
 
 /// `POST /api/run/interrupt`: stop the running cell (no-op when idle or starting).
@@ -736,8 +729,9 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
     })
 }
 
-/// URL of the running server for this deck, if it is still answering.
-pub fn running_url(store: &Store) -> Result<String> {
+/// The session file of the running server for this deck (`url`, `port`,
+/// `pid`, `token`), if it is still answering.
+pub fn running(store: &Store) -> Result<Value> {
     let text = std::fs::read_to_string(store.cache_dir().join("session.json"))
         .map_err(|_| QdError::NoServer)?;
     let v: Value = serde_json::from_str(&text).map_err(|_| QdError::NoServer)?;
@@ -745,13 +739,21 @@ pub fn running_url(store: &Store) -> Result<String> {
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
     std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(300))
         .map_err(|_| QdError::NoServer)?;
-    Ok(v["url"].as_str().ok_or(QdError::NoServer)?.to_string())
+    Ok(v)
+}
+
+/// URL of the running server for this deck.
+pub fn running_url(store: &Store) -> Result<String> {
+    running(store)?["url"]
+        .as_str()
+        .map(String::from)
+        .ok_or(QdError::NoServer)
 }
 
 /// pid of the running server for this deck.
 pub fn running_pid(store: &Store) -> Result<u32> {
-    running_url(store)?;
-    let text = std::fs::read_to_string(store.cache_dir().join("session.json"))?;
-    let v: Value = serde_json::from_str(&text).map_err(|_| QdError::NoServer)?;
-    v["pid"].as_u64().map(|p| p as u32).ok_or(QdError::NoServer)
+    running(store)?["pid"]
+        .as_u64()
+        .map(|p| p as u32)
+        .ok_or(QdError::NoServer)
 }

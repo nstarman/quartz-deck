@@ -106,9 +106,11 @@ P3: US5. Paths relative to repo root.
 
 **Independent Test**: spec US4 Independent Test; quickstart §4.
 
-- [ ] T029 [P] [US4] Write failing tests in `tests/run.rs`: with no server, `qd run results/1` runs a one-shot fresh session and returns JSON (contracts/cli.md) with an image `path`; `qd run --all` stops at the first error (exit 1, `E_RUN`); `qd outputs` lists stored outputs with `stale`; `E_NOT_CODE`, `E_ENGINE`; with `qd serve` running, `qd run` uses its session (variables from an editor run are visible) and the editor receives the outputs
-- [ ] T030 [US4] Implement `qd run` / `qd outputs` in `src/cli.rs` (server path with the session token from the session file; one-shot path via `kernel::Session`) — T029 passes
-- [ ] T031 [US4] Skill `skills/quartz-deck/SKILL.md`: environment (`qd env init/add/sync`, lockfiles are part of the deck), `qd run`, `qd outputs`, `qd replace`; skill sync test passes
+- [X] T029 [P] [US4] Write failing tests in `tests/run.rs`: with no server, `qd run results/1` runs a one-shot fresh session and returns JSON (contracts/cli.md) with an image `path`; `qd run --all` stops at the first error (exit 1, `E_RUN`); `qd outputs` lists stored outputs with `stale`; `E_NOT_CODE`, `E_ENGINE`; with `qd serve` running, `qd run` uses its session (variables from an editor run are visible) and the editor receives the outputs
+- [X] T030 [US4] Implement `qd run` / `qd outputs` in `src/cli.rs` (server path with the session token from the session file; one-shot path via `kernel::Session`) — T029 passes
+- [X] T031 [US4] Skill `skills/quartz-deck/SKILL.md`: environment (`qd env init/add/sync`, lockfiles are part of the deck), `qd run`, `qd outputs`, `qd replace`; skill sync test passes
+
+**Deviations (US4)**: tests in `tests/run_cli.rs` (the session test in `tests/run.rs` sets process env). No `--restart` flag: `--fresh` covers it. With a server, `qd run` posts with `"wait": true` and the server answers when the run ends; the plan and the run loop are shared (`kernel::plan`, `kernel::run_plan`), so both paths report the same entries.
 
 ---
 
