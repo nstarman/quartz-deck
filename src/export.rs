@@ -37,7 +37,7 @@ pio.renderers.default = "qd-deck"
 
 /// Does the deck have Python cells that import Plotly?
 pub fn uses_plotly(d: &Deck) -> bool {
-    d.slides.iter().flat_map(|s| &s.blocks).any(|b| {
+    d.blocks().any(|b| {
         let t = d.slice(b.span);
         b.kind == crate::deck::BlockKind::Cell
             && t.lines().next().is_some_and(|l| l.contains("{python"))
