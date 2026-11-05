@@ -9,18 +9,9 @@
 <body>
 <header>
   <strong>quartz-deck</strong>
-  <div class="tools" role="toolbar" aria-label="History">
-    <button type="button" id="undo" title="Undo (⌘Z)">Undo</button>
-    <button type="button" id="redo" title="Redo (⇧⌘Z)">Redo</button>
-  </div>
+  <!-- undo/redo, preview, render and export live in the menu bar (spec 007) -->
   <span id="notice" role="status" aria-live="polite"></span>
   <span id="status">connecting…</span>
-  <a href="/present/" target="_blank" rel="noopener" title="The live preview without the editor (includes hidden slides)">Preview ↗</a>
-  <button type="button" id="render" title="Run quarto render on the deck (final output)">Render</button>
-  <span class="tools">
-    <button type="button" id="export" title="Self-contained offline HTML, checked with the network blocked">Export</button>
-    <label class="inline"><input type="checkbox" id="export-pdf" aria-label="Also make a PDF"> PDF</label>
-  </span>
   <a id="rendered" target="_blank" rel="noopener" hidden>Open ↗</a>
   <button type="button" id="toggle-source" aria-pressed="false" aria-controls="panel" title="Show the deck source (.qmd) beside the slides">Source</button>
 </header>

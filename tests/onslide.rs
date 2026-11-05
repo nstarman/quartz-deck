@@ -580,7 +580,7 @@ async fn typing_writes_only_the_element() {
     assert_eq!(ed.file(), before);
 
     // undo restores the file byte-for-byte (shared history with the CLI)
-    ed.click_editor("#undo").await;
+    ed.menu("Edit", "Undo").await;
     ed.wait_file(|f| f == DECK, "restored by undo").await;
 }
 
@@ -1158,7 +1158,7 @@ async fn source_pane_saves_minimal_changes() {
             .replace("title: T\n", "title: Talk\n")
     );
     // undo restores the bytes, and the pane follows
-    ed.click_editor("#undo").await;
+    ed.menu("Edit", "Undo").await;
     ed.wait_file(|f| f.contains("title: T\n"), "undone").await;
     ed.wait(&format!("{PANE}.value.includes('title: T\\n')"))
         .await;
