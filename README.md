@@ -14,8 +14,9 @@ presentations, written in Rust.
   browser preview.
 
 Status: specs [001](specs/001-core-editor/spec.md) (editor),
-[002](specs/002-offline-export/spec.md) (offline export + PDF) and
-[003](specs/003-on-slide-editing/spec.md) (on-slide editing) implemented; what
+[002](specs/002-offline-export/spec.md) (offline export + PDF),
+[003](specs/003-on-slide-editing/spec.md) (on-slide editing) and
+[004](specs/004-source-and-run/spec.md) (source pane, running code) implemented; what
 comes next is in [`specs/ROADMAP.md`](specs/ROADMAP.md). See also the
 [constitution](.specify/memory/constitution.md).
 
@@ -70,6 +71,32 @@ stderr with a stable `code` and a `hint`. Decks inside a Quarto project
   Re-renders wait while you type.
 - CLI equivalents: `qd block add|move|rm|dup|class`, `qd edit`, `qd title`,
   `qd set` — see `qd schema`.
+
+### Source and run (spec [004](specs/004-source-and-run/spec.md))
+
+- **Source pane:** the **Source** button shows the `.qmd` beside the slides
+  (resizable, or full width), with highlighting. Typing saves as you pause,
+  under the same conflict rules as every other edit; the caret shows its
+  slide, and clicking a slide element scrolls the source to it.
+- **Environments:** each deck has its own locked Python environment —
+  `qd env init` (uv; `--tool pixi` for pixi with PyPI packages), `qd env add
+  numpy matplotlib`, `qd env sync` on a new machine. The manifest and lockfile
+  sit beside the deck (or at the Quarto project root): commit them. Never
+  `pip install`. `qd render` runs the cells inside that environment.
+- **Run:** a ▶ beside each Python cell, ⇧Enter on the cell under the caret,
+  Run all / Stop / Restart / Restart & run all in the source bar. Text,
+  figures, tables and tracebacks show in the dock below the source and on the
+  slide. Outputs live in qd's cache, never in the `.qmd`; they come back when
+  the deck is reopened and are dimmed as stale once their cell changes.
+- **Agents:** `qd run results/1` (or `--all`, `--fresh`, `--timeout`) returns
+  each output as JSON, figures as file paths; with the editor open it uses the
+  same live session and you see the outputs. `qd outputs` lists the stored
+  ones.
+- **Safety:** code runs only when you click Run (or press ⇧Enter) or call
+  `qd run`. The server answers only to `127.0.0.1`/`localhost`, and running
+  code needs the session token, which comes in the editor link that `qd
+  serve` prints / `qd url` returns, never in the page. No other web page or
+  link can make it run anything.
 
 ### Offline export (spec [002](specs/002-offline-export/spec.md))
 
