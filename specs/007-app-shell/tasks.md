@@ -27,8 +27,8 @@ Paths relative to repo root.
 
 ## Phase 1: Setup
 
-- [ ] T001 Inventory today's actions and keys in `specs/007-app-shell/checklists/action-inventory.md`. List every header button, right-click item (element, slide, empty area), property-toolbar control, formatting-toolbar button and source-pane bar button. Also list every key the editor handles: `onKey`, `sessionKey`, the toolbar's typing keys, the source pane, the splitter and the slide list. Give each a proposed action id, menu and key. This is the baseline for SC-001.
-- [ ] T002 [P] Add `store::config_root()` next to `cache_root()` in `src/store.rs`: `$QD_CONFIG_DIR`, else `~/Library/Application Support/quartz-deck` on macOS, else `$XDG_CONFIG_HOME/quartz-deck` or `~/.config/quartz-deck`. Add a unit test for the env override.
+- [X] T001 Inventory today's actions and keys in `specs/007-app-shell/checklists/action-inventory.md`. List every header button, right-click item (element, slide, empty area), property-toolbar control, formatting-toolbar button and source-pane bar button. Also list every key the editor handles: `onKey`, `sessionKey`, the toolbar's typing keys, the source pane, the splitter and the slide list. Give each a proposed action id, menu and key. This is the baseline for SC-001.
+- [X] T002 [P] Add `store::config_root()` next to `cache_root()` in `src/store.rs`: `$QD_CONFIG_DIR`, else `~/Library/Application Support/quartz-deck` on macOS, else `$XDG_CONFIG_HOME/quartz-deck` or `~/.config/quartz-deck`. Add a unit test for the env override.
 
 ---
 
@@ -36,17 +36,17 @@ Paths relative to repo root.
 
 **Purpose**: research R1. Everything that lists or handles an action reads `src/ui/actions.json`.
 
-- [ ] T003 [P] Write failing Rust tests in a new `tests/actions.rs` over the embedded list (data-model.md "Action"):
+- [X] T003 [P] Write failing Rust tests in a new `tests/actions.rs` over the embedded list (data-model.md "Action"):
   - ids are unique;
   - every key parses (`Mod`/`Shift`/`Alt`/`Ctrl` + key);
   - no two actions share a key where their `where` overlaps;
   - no `runs_code` action fires in `text`;
   - every id in `checklists/action-inventory.md` is in the list (SC-001).
-- [ ] T004 Write `src/ui/actions.json` from the inventory: menus and order as in contracts/ui.md, keys, `where`, `toggle`, `runs_code`, `qd`. Embed it (`include_str!`). Serve `GET /ui/actions.js` as `export default <json>;` in `src/server.rs`. T003 passes.
-- [ ] T005 [P] Write failing checks.
+- [X] T004 Write `src/ui/actions.json` from the inventory: menus and order as in contracts/ui.md, keys, `where`, `toggle`, `runs_code`, `qd`. Embed it (`include_str!`). Serve `GET /ui/actions.js` as `export default <json>;` in `src/server.rs`. T003 passes.
+- [X] T005 [P] Write failing checks.
   - **Static (Rust, `tests/actions.rs`):** scanning `src/ui/*.js` finds no key comparisons (`e.key ===`, `key ===`, `e.code ===`) outside `src/ui/keys.js`. An allowlist covers text-editing internals (menu.js arrow keys, list typing in toolbar.js), each with a one-line reason.
   - **Browser (`tests/onslide.rs`):** `window.qdActions()` reports no action without a handler, and pressing each listed key in its place runs that action (a spy wraps the handlers).
-- [ ] T006 Implement `src/ui/keys.js`, one keydown dispatcher built from the list:
+- [X] T006 Implement `src/ui/keys.js`, one keydown dispatcher built from the list:
   - ⌘ on macOS and Ctrl elsewhere;
   - the place comes from focus (slide list, slide, element, text edit, source pane);
   - printable keys never fire while typing;
@@ -64,12 +64,12 @@ Paths relative to repo root.
 
 **Independent Test**: spec US1; quickstart §1.
 
-- [ ] T007 [US1] Write failing browser tests in `tests/onslide.rs` `menu_bar_runs_every_action`:
+- [X] T007 [US1] Write failing browser tests in `tests/onslide.rs` `menu_bar_runs_every_action`:
   - **Menus and items:** File, Edit, Insert, Slide, View, Run and Help are shown. Through the menus alone, run add slide after, duplicate slide, insert a paragraph, bold (in a text edit), toggle the source pane, Run all (on the run deck), Render and Export. Paste with nothing copied is shown disabled. With an element selected, the Edit/Insert/Slide items act on it, and its right-click menu shows the same items.
   - **Keyboard only:** F10 focuses the bar; arrows, Enter, Escape and type-ahead work; closing returns focus to where it was.
   - **Accessibility:** roles are `menubar`/`menu`/`menuitem`/`menuitemcheckbox`, with `aria-disabled`, `aria-checked` and `aria-keyshortcuts`.
   - **Equivalence:** each action run from the menu leaves the same file and one undo step, the same as its button.
-- [ ] T008 [US1] Implement `src/ui/menubar.js` (over `src/ui/menu.js`), the `index.html` container and the `editor.css` styles. Make the right-click menus in `src/ui/actions.js` views of the list. Keep the header buttons as quick access, with tooltips showing their keys from the list. T007 passes.
+- [X] T008 [US1] Implement `src/ui/menubar.js` (over `src/ui/menu.js`), the `index.html` container and the `editor.css` styles. Make the right-click menus in `src/ui/actions.js` views of the list. Keep the header buttons as quick access, with tooltips showing their keys from the list. T007 passes.
 
 **Checkpoint**: MVP. Nothing is reachable only by right-click or a hidden key.
 

@@ -7,14 +7,15 @@
 | `id` | string | unique, kebab-case; the handler key in the editor |
 | `label` | string | menu text; ends in "…" when it opens a dialog |
 | `menu` | string[] | path, e.g. `["Slide", "Transition"]`; order in the file is menu order; `"-"` entries are separators |
-| `keys` | `{mac?, other?, vscode?}` | `mac`/`other` like `"Mod+Shift+N"`; `vscode` overrides in the panel, `null` = menu-only there |
+| `key` | string or string[] | like `"Mod+Shift+N"`; `Mod` is ⌘ on macOS, Ctrl elsewhere |
+| `vscode_key` | string, string[] or null | replaces `key` in VS Code's panel; `null` = menu-only there |
 | `where` | string[] | subset of `anywhere`, `slide`, `element`, `text`, `source`, `slides` (the slide list) |
 | `toggle` | bool | shown as a checkbox item |
 | `runs_code` | bool | only on the person's own click/key (spec 004); never bound to a key that fires while typing |
 | `qd` | string? | the matching CLI command, e.g. `"qd dup <slide>"` |
 
 Validation (Rust test over the embedded file): ids unique; every key parses;
-no two actions share a key in overlapping `where`; no `vscode`-effective key
+no two actions share a key in overlapping `where`; no effective panel key
 is in `vscode/default-keys.json`; every `runs_code` action has `where` ≠
 `text`.
 

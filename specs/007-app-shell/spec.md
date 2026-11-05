@@ -10,6 +10,9 @@
 
 ### Session 2026-11-05
 
+- Decision during the MVP: menus open with F10 only. Alt (Option) alone
+  can't mean "go to the menus", because on macOS it is held to type accented
+  characters.
 - Q: When the person is editing text on a slide (or in a source popup) and
   presses Escape, what happens to what they typed? → A: It is kept, as if
   they had clicked elsewhere; undo takes it back. This changes today's
@@ -58,7 +61,7 @@ open every menu with the keyboard only and run one item from each.
    Insert or Slide, **Then** the element and slide actions from its
    right-click menu are there too, acting on the same selection.
 3. **Given** keyboard focus is anywhere in the editor, **When** the person
-   presses the menu key (F10, or Alt on its own) and uses the arrow keys,
+   presses F10 and uses the arrow keys,
    Enter and Escape, **Then** they can open any menu, run any item, and
    return focus to where it was.
 4. **Given** a screen reader is running, **When** the person moves through a
@@ -267,7 +270,7 @@ shortcuts overrides a default VS Code binding while the panel has focus.
   Insert, Slide, View, Run and Help. Unavailable items are shown disabled;
   toggles show their state; items that open a dialog end in "…".
 - **FR-005**: Menus MUST be fully operable from the keyboard (open with
-  F10 or Alt alone, move with arrows, run with Enter, close with Escape,
+  F10, move with arrows, run with Enter, close with Escape,
   type-ahead to jump to an item) and MUST follow the accessible menu pattern
   so screen readers announce name, state and shortcut.
 - **FR-006**: Closing a menu MUST return focus to where it was before.

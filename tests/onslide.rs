@@ -175,6 +175,20 @@ impl Ed {
         }
     }
 
+    /// Run `label` from the menu bar's `top` menu with the mouse (submenus: "Format/Bold").
+    async fn menu(&self, top: &str, label: &str) {
+        self.click_editor(&format!("#menubar [data-menu={top:?}]"))
+            .await;
+        for part in label.split('/') {
+            // find and measure in one go: the menu opens (and may rebuild) asynchronously
+            let at = format!(
+                "(() => {{ const li = [...document.querySelectorAll('#ctxmenu li')].find((li) => li.firstChild?.textContent === {part:?} && li.offsetParent); if (!li) return null; const r = li.getBoundingClientRect(); return [r.left + 20, r.top + r.height / 2]; }})()"
+            );
+            self.wait(&format!("{at} !== null")).await;
+            self.click_js(&at).await;
+        }
+    }
+
     /// Show the slide with this preview anchor and wait for it.
     async fn go(&self, anchor: &str) {
         // re-set the hash while waiting: a preview reload in between drops it
@@ -1640,4 +1654,130 @@ async fn framed_editor_takes_theme_and_messages() {
         json!(["none", "none"])
     );
     assert_eq!(ed.eval(theme).await, "light");
+}
+
+// ---------- spec 007: one action list, the menu bar ----------
+
+/// Every listed key, in each place it works, resolves to its own action.
+const KEYS_RESOLVE: &str = "(async () => { const { ACTIONS, keysOf } = await import('/ui/keys.js'); const bad = []; for (const a of ACTIONS) for (const k of keysOf(a)) for (const w of a.where) { const r = qdActions().resolve(k, [w]); if (r !== a.id) bad.push([a.id, k, w, r]); } return bad; })()";
+
+/// Spec 007 US1 (T005, T007): the menu bar holds every action. Run from a menu
+/// it does what its button, key or right-click item does; the menus work from
+/// the keyboard alone and carry the menu roles screen readers need.
+#[tokio::test(flavor = "multi_thread")]
+async fn menu_bar_runs_every_action() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    assert_eq!(
+        ed.eval("qdActions().missing").await,
+        json!([]),
+        "every action has a handler"
+    );
+    assert_eq!(
+        ed.eval(KEYS_RESOLVE).await,
+        json!([]),
+        "every key reaches its action"
+    );
+    assert_eq!(
+        ed.eval("qdMenus().then(Object.keys)").await,
+        json!(["File", "Edit", "Insert", "Slide", "View", "Run", "Help"])
+    );
+    assert_eq!(
+        ed.eval("document.querySelectorAll('#menubar[role=menubar] > [role=menuitem][aria-haspopup=menu]').length").await,
+        7
+    );
+
+    // Slide → Duplicate slide, then Edit → Undo
+    ed.go("a").await;
+    ed.menu("Slide", "Duplicate slide").await;
+    ed.wait_file(|f| f.matches("## A").count() == 2, "duplicated")
+        .await;
+    ed.menu("Edit", "Undo").await;
+    ed.wait_file(|f| f == P2, "undone").await;
+
+    // with an element selected: Paste shows disabled (nothing copied yet), Insert goes after it
+    ed.go("a").await;
+    ed.select("[data-qd=\"a/0\"]").await;
+    let paste = ed
+        .eval("qdMenus().then((m) => m.Edit.find((i) => i.label === 'Paste after'))")
+        .await;
+    assert_eq!(paste["disabled"], true, "{paste}");
+    ed.menu("Insert", "Paragraph").await;
+    ed.wait_file(
+        |f| f.contains("First para.\n\nNew paragraph."),
+        "inserted after the selection",
+    )
+    .await;
+
+    ed.wait("window.qdSession()?.ref === 'a/1'").await; // it opens for typing
+    ed.click_blank().await;
+    ed.wait("window.qdSession() === null").await;
+    ed.settle().await;
+    ed.go("a").await;
+
+    // while typing on the slide, Edit → Format → Bold applies and keeps the edit open
+    ed.click_in_slide("[data-qd=\"a/0\"]").await;
+    ed.caret("[data-qd=\"a/0\"]", Some("First")).await;
+    ed.menu("Edit", "Format/Bold").await;
+    ed.wait("window.qdSession()?.draft?.includes('**First**')")
+        .await;
+    ed.key("Enter", "Enter", 13, 2).await; // Ctrl+Enter saves
+    ed.wait_file(|f| f.contains("**First** para."), "bold saved")
+        .await;
+
+    // View → Source pane is a toggle, checked once open
+    ed.menu("View", "Source pane").await;
+    ed.wait("!document.querySelector('#srcpane').hidden").await;
+    let view = ed
+        .eval("qdMenus().then((m) => m.View.find((i) => i.label === 'Source pane'))")
+        .await;
+    assert_eq!(view["checked"], true, "{view}");
+    ed.menu("View", "Source pane").await;
+    ed.wait("document.querySelector('#srcpane').hidden").await;
+
+    // keyboard only: F10, arrows, Enter, Escape; focus comes back to where it was
+    let active = "(document.activeElement.dataset.menu || document.activeElement.id || document.activeElement.textContent.trim().split('\\n')[0])";
+    ed.go("a").await;
+    ed.eval("document.querySelector('#add-slide').focus()")
+        .await;
+    ed.key("F10", "F10", 121, 0).await;
+    ed.wait(&format!("{active} === 'File'")).await;
+    for _ in 0..3 {
+        ed.key("ArrowRight", "ArrowRight", 39, 0).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    ed.wait(&format!("{active} === 'Slide'")).await;
+    ed.key("ArrowDown", "ArrowDown", 40, 0).await;
+    ed.wait("document.activeElement.closest('#ctxmenu') && document.activeElement.firstChild.textContent === 'Duplicate slide'").await;
+    assert!(
+        ed.eval("document.activeElement.getAttribute('aria-keyshortcuts')")
+            .await
+            .as_str()
+            .is_some_and(|k| k.ends_with("Shift+D")),
+        "the shortcut is announced"
+    );
+    assert_eq!(
+        ed.eval(
+            "document.querySelector('#menubar [data-menu=Slide]').getAttribute('aria-expanded')"
+        )
+        .await,
+        "true"
+    );
+    ed.key("Enter", "Enter", 13, 0).await;
+    ed.wait_file(
+        |f| f.matches("## A").count() == 2,
+        "duplicated from the keyboard",
+    )
+    .await;
+    ed.key("F10", "F10", 121, 0).await;
+    ed.wait(&format!("{active} === 'File'")).await;
+    ed.key("ArrowDown", "ArrowDown", 40, 0).await;
+    ed.wait("!document.querySelector('#ctxmenu').hidden").await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait(&format!(
+        "document.querySelector('#ctxmenu').hidden && {active} === 'File'"
+    ))
+    .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("document.activeElement.closest('#menubar') === null")
+        .await;
 }

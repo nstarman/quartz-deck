@@ -2,7 +2,7 @@
 
 | Command | Output (JSON) | Errors |
 |---|---|---|
-| `qd actions` | `[{id, label, menu, keys: {mac, other, vscode}, where, toggle, runs_code, qd}]` | — |
+| `qd actions` | `[{id, label, menu, key, vscode_key, where, toggle, runs_code, qd}]` | — |
 | `qd settings` | `{values, defs, path}` | — |
 | `qd settings set KEY VALUE` | `{ok, values}` (VALUE parsed as JSON if it parses, else string) | `E_INVALID_SETTING` (unknown key or bad value, with allowed values in the hint) |
 | `qd settings reset` | `{ok, values}` | — |

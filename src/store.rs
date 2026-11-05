@@ -42,6 +42,25 @@ fn replaced(_: &fs::File, _: &Path) -> bool {
     false
 }
 
+/// The person's settings folder (spec 007): `$QD_CONFIG_DIR`, else the
+/// platform's per-user config folder.
+pub fn config_root() -> PathBuf {
+    if let Some(d) = std::env::var_os("QD_CONFIG_DIR") {
+        return PathBuf::from(d);
+    }
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    if cfg!(target_os = "macos") {
+        home.join("Library/Application Support/quartz-deck")
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".config"))
+            .join("quartz-deck")
+    }
+}
+
 pub fn cache_root() -> PathBuf {
     if let Some(d) = std::env::var_os("QD_CACHE_DIR") {
         return PathBuf::from(d);
@@ -293,6 +312,15 @@ mod tests {
 
     /// Spec 006 (T003): attached, every read/write/undo goes to the buffer
     /// overlay and the deck file is untouched; detached, back to the file.
+    #[test]
+    fn config_root_honours_the_override() {
+        // the only test that sets QD_CONFIG_DIR, so no other test races it
+        unsafe { std::env::set_var("QD_CONFIG_DIR", "/tmp/qd-config-test") };
+        assert_eq!(config_root(), PathBuf::from("/tmp/qd-config-test"));
+        unsafe { std::env::remove_var("QD_CONFIG_DIR") };
+        assert!(config_root().ends_with("quartz-deck"));
+    }
+
     #[test]
     fn buffer_overlay_is_the_deck_while_attached() {
         let (_d, st) = setup("## A\n\nold\n");
