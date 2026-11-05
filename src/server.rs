@@ -84,6 +84,10 @@ struct App {
     runs: AtomicU64,
     /// `POST /api/shutdown` (`qd stop`).
     stop: Notify,
+    /// Held while Quarto renders; `true` once shutting down (no new renders).
+    /// Shutdown waits for a render in progress: Quarto left running would
+    /// clean up the deck folder under the next server's render.
+    rendering: Mutex<bool>,
 }
 
 impl App {
@@ -605,9 +609,15 @@ async fn render_loop(app: Shared) {
         let _ = app.tx.send(Ev::Rendering);
         let outputs = Outputs::new(&app.store).report(&d);
         let copy = preview_copy(&d, &outputs["cells"]);
-        let (path, out) = (app.store.path.clone(), app.out.clone());
-        let res =
-            tokio::task::spawn_blocking(move || render(&path, &copy, "preview", &out, true)).await;
+        let (path, out, a) = (app.store.path.clone(), app.out.clone(), app.clone());
+        let res = tokio::task::spawn_blocking(move || {
+            let closing = a.rendering.lock().unwrap();
+            if *closing {
+                return Err(QdError::NoServer);
+            }
+            render(&path, &copy, "preview", &out, true)
+        })
+        .await;
         let ev = match res {
             Ok(Ok(_)) => {
                 let mut st = app.st.lock().unwrap();
@@ -701,6 +711,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             kernel: Mutex::new(None),
             runs: AtomicU64::new(0),
             stop: Notify::new(),
+            rendering: Mutex::new(false),
             store,
         });
         let router = Router::new()
@@ -771,6 +782,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             r = server => r,
             _ = grace => Ok(()),
         };
+        *app.rendering.lock().unwrap() = true; // waits for a render in progress
         app.kernel.lock().unwrap().take(); // shuts the kernel down
         let _ = std::fs::remove_file(&session_file);
         res.map_err(QdError::Io)

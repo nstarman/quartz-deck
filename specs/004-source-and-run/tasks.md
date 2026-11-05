@@ -120,7 +120,9 @@ P3: US5. Paths relative to repo root.
 
 **Independent Test**: spec US5 Independent Test.
 
-- [ ] T032 [US5] Write failing test then implement: after a run, stopping and restarting `qd serve` shows the stored outputs in the pane and on the slide without running anything; editing a cell marks its output stale in both (`tests/onslide.rs`, `src/ui/run.js`, `src/render.rs`)
+- [X] T032 [US5] Write failing test then implement: after a run, stopping and restarting `qd serve` shows the stored outputs in the pane and on the slide without running anything; editing a cell marks its output stale in both (`tests/onslide.rs`, `src/ui/run.js`, `src/render.rs`)
+
+**Notes (US5)**: persistence and staleness already followed from US3's output store (cache, keyed by cell, fingerprinted) and the preview/pane reading it on load; the test found one bug: `qd stop` returned before the server exited, so a `qd serve` right after overlapped the old one's shutdown (session file removed, renders into the same folder). `qd stop` now returns once the server is gone.
 
 ---
 

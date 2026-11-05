@@ -1226,6 +1226,13 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                     "qd serve refused to stop ({status}: {text}); one from an older qd stops with Ctrl-C"
                 ))));
             }
+            // returns once it is gone (it removes its session file last, after any
+            // render), so a `qd serve` right after never overlaps it
+            let file = ctx.store()?.cache_dir().join("session.json");
+            let end = std::time::Instant::now() + std::time::Duration::from_secs(60);
+            while file.exists() && std::time::Instant::now() < end {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
             Ok(json!({"ok": true, "pid": session["pid"]}))
         }
         Cmd::Schema => Ok(schema()),
