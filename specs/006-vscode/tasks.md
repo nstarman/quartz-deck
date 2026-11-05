@@ -150,7 +150,7 @@ cursor there without taking keyboard focus.
 - [X] T021 [P] README: "VS Code" section (build/install the `.vsix`, what syncs, unsaved-until-save); skill note (with VS Code attached, qd edits land in the buffer); `specs/ROADMAP.md` status
 - [ ] T022 (follow-up: the person asked to do the clicking later) VS Code quickstart §3–§5 in the real app incl. Remote-SSH (SC-004, SC-005); record in `checklists/vscode-run.md`
 - [X] T023 Final constitution re-check in `plan.md`; fmt, clippy, `cargo test`, `node --test vscode/test` green
-- [ ] T024 Concision audit (`/pr-audit`), last task before the PR is marked ready
+- [X] T024 Concision audit (`/pr-audit`), last task before the PR is marked ready
 
 ---
 

@@ -1607,25 +1607,26 @@ async fn framed_editor_takes_theme_and_messages() {
     ed.until_focus(|v| v["line"] == 17, "focus never got the line")
         .await;
     // an element chosen on a slide: its source lines go to VS Code
-    ed.eval("window.__reveal = null; addEventListener('message', (e) => { if (e.data?.type === 'reveal') window.__reveal = e.data.lines; })")
+    // what the editor posts to its parent (here itself): reveal, focusText
+    ed.eval("window.__msgs = []; addEventListener('message', (e) => __msgs.push(e.data))")
         .await;
     ed.go("a").await;
     ed.click_in_slide("[data-qd=\"a/0\"] p").await;
-    ed.wait("JSON.stringify(window.__reveal) === '[8,8]'").await;
-    // Esc clears the selection first; Esc with nothing left hands the keyboard to the text
-    ed.eval("window.__focusText = 0; addEventListener('message', (e) => { if (e.data?.type === 'focusText') window.__focusText++; })")
+    ed.wait("JSON.stringify(__msgs.findLast((m) => m.type === 'reveal')?.lines) === '[8,8]'")
         .await;
+    let focus_text = "__msgs.filter((m) => m.type === 'focusText').length";
+    // Esc clears the selection first; Esc with nothing left hands the keyboard to the text
     let esc = || ed.key("Escape", "Escape", 27, 0);
     esc().await; // ends the edit the click started (the element stays selected)
     esc().await; // clears the selection
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert_eq!(
-        ed.eval("window.__focusText").await,
+        ed.eval(focus_text).await,
         0,
         "Esc ended the edit, then cleared the selection"
     );
     esc().await;
-    ed.wait("window.__focusText === 1").await;
+    ed.wait(&format!("{focus_text} === 1")).await;
 
     // the Quarto extension runs cells: no Run bar, no gutter
     ed.page

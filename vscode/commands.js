@@ -8,7 +8,10 @@ const ARGS = {
   checkOffline: ['check', '--offline'],
 };
 
-const json = (s) => { try { return JSON.parse(s.trim()); } catch { return null; } };
+const json = (s) => { try { return JSON.parse(s); } catch { return null; } };
+
+/** qd's JSON error (`{"error": {message, hint}}`) as one line, or null. */
+const qdError = (s) => { const e = json(s)?.error; return e ? `${e.message} — ${e.hint}` : null; };
 
 /** qd's stdout/stderr for `name` → `{ok, text}`. */
 function report(name, stdout, stderr) {
@@ -19,17 +22,16 @@ function report(name, stdout, stderr) {
     const pdf = r.pdf ? `; PDF ${r.pdf.path}, ${r.pdf.pages} pages` : '';
     return { ok: true, text: `Exported: ${r.html} (${r.check.slides} slides, works offline)${pdf}` };
   }
-  const [p, more] = [r?.problems?.[0], (r?.problems?.length ?? 0) - 1];
-  if (p) {
+  const ps = r?.problems ?? [];
+  if (ps.length) {
+    const [p, n] = [ps[0], ps.length];
     const hint = p.hint ? ` — ${p.hint}` : '';
-    return { ok: false, text: `${more + 1} offline problem${more ? "s" : ""}: ${p.message}${hint}${more ? ` (and ${more} more)` : ''}` };
+    return { ok: false, text: `${n} offline problem${n > 1 ? 's' : ''}: ${p.message}${hint}${n > 1 ? ` (and ${n - 1} more)` : ''}` };
   }
-  const e = (r || json(stderr))?.error;
-  if (e) return { ok: false, text: `${e.message} — ${e.hint}` };
-  return { ok: false, text: stderr.trim() || `qd ${ARGS[name][0]} failed` };
+  return { ok: false, text: qdError(stdout) || qdError(stderr) || stderr.trim() || `qd ${ARGS[name][0]} failed` };
 }
 
 /** The first of `docs` that is a saved .qmd — not the Output panel, an untitled or another file. */
 const deckOf = (docs) => docs.find((d) => d?.uri?.scheme === 'file' && d.fileName.endsWith('.qmd'));
 
-module.exports = { ARGS, report, deckOf };
+module.exports = { ARGS, report, deckOf, qdError };
