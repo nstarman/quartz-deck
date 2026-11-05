@@ -10,7 +10,7 @@ use chromiumoxide::cdp::js_protocol::runtime::EvaluateParams;
 use chromiumoxide::layout::Point;
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures_util::StreamExt;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -446,7 +446,7 @@ async fn gate(name: &str) -> Option<Value> {
     );
     assert_eq!(
         r["broken"],
-        serde_json::json!([]),
+        json!([]),
         "{name}: splice changed bytes outside the edit"
     );
     Some(r)
@@ -1394,11 +1394,7 @@ return (await fetch(qd + '/').then((r) => r.text()).catch(() => null)) === null;
 
     assert_eq!(ed.file(), RUN_DECK, "no edit landed");
     assert_eq!(manifest(), before, "no package added");
-    assert_eq!(
-        ed.cli(&["outputs"])["outputs"],
-        serde_json::json!([]),
-        "nothing ran"
-    );
+    assert_eq!(ed.cli(&["outputs"])["outputs"], json!([]), "nothing ran");
     assert_eq!(
         ed.eval("document.querySelector('#srcpane .kernel').dataset.state ?? 'none'")
             .await,
@@ -1409,4 +1405,82 @@ return (await fetch(qd + '/').then((r) => r.text()).catch(() => null)) === null;
         ed.cli(&["url"])["url"].is_string(),
         "the server is still up"
     );
+}
+
+/// Spec 005 US1 (T008): the focus follows the person — slide, clicked element,
+/// text selected while typing, a source selection spanning blocks — and
+/// `qd focus` reads it; a later edit shows in the versions; no editor = closed.
+#[tokio::test(flavor = "multi_thread")]
+async fn focus_follows_the_person() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    // `qd focus` until `pred` holds; returns it and how long that took (SC-001)
+    let until = |pred: &dyn Fn(&Value) -> bool| {
+        let start = Instant::now();
+        loop {
+            let v = ed.cli(&["focus"]);
+            if pred(&v) {
+                return (v, start.elapsed());
+            }
+            assert!(
+                start.elapsed() < Duration::from_secs(10),
+                "focus never matched: {v}"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+
+    ed.go("b").await;
+    let (v, t) = until(&|v| v["slide"] == "b");
+    assert!(v["open"] == true && v["elements"] == json!([]), "{v}");
+    eprintln!("slide → qd focus in {t:?}");
+
+    ed.select("[data-qd=\"b/0\"]").await;
+    let (_, t) = until(&|v| v["elements"] == json!(["b/0"]));
+    eprintln!("element → qd focus in {t:?}");
+
+    // words selected while typing in a paragraph
+    ed.go("a").await;
+    ed.click_in_slide("[data-qd=\"a/0\"] p").await;
+    ed.caret("[data-qd=\"a/0\"]", Some("First")).await;
+    let (v, t) = until(&|v| v["selection"]["text"] == "First");
+    assert!(
+        v["selection"]["where"] == "slide"
+            && v["elements"] == json!(["a/0"])
+            && v["editing"] == true,
+        "{v}"
+    );
+    eprintln!("slide selection → qd focus in {t:?}");
+    ed.click_blank().await;
+    until(&|v| v["editing"] == false && v["selection"].is_null());
+
+    // a source selection across two blocks: both, where = source, the caret's line
+    ed.open_source().await;
+    ed.pane_caret("First para.\n\nSecond para.", true).await;
+    let (v, t) = until(&|v| v["selection"]["where"] == "source");
+    assert_eq!(v["elements"], json!(["a/0", "a/1"]), "{v}");
+    assert_eq!(v["selection"]["text"], "First para.\n\nSecond para.");
+    assert!(v["line"].as_u64().is_some_and(|l| l > 1), "{v}");
+    eprintln!("source selection → qd focus in {t:?}");
+
+    // the caret into another slide's text: the editor follows it, and the
+    // focus stays the source pane's (line kept, that slide's block)
+    ed.pane_caret("Other slide", false).await;
+    let (v, _) = until(&|v| v["slide"] == "b" && v["line"].is_u64());
+    assert_eq!(v["elements"], json!(["b/0"]), "{v}");
+    ed.wait("document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide().id === 'b'")
+        .await;
+    std::thread::sleep(Duration::from_millis(400)); // the slide change must not reset it
+    let v = ed.cli(&["focus"]);
+    assert!(v["line"].is_u64() && v["elements"] == json!(["b/0"]), "{v}");
+    ed.pane_caret("First para.\n\nSecond para.", true).await;
+    until(&|v| v["selection"]["where"] == "source");
+
+    // an edit elsewhere: the focus says which version it was taken against
+    ed.cli(&["title", "b", "B two"]);
+    let v = ed.cli(&["focus"]);
+    assert_ne!(v["version"], v["deck_version"], "{v}");
+    assert_eq!(v["elements"], json!(["a/0", "a/1"]), "refs still resolve");
+
+    ed.cli(&["stop"]);
+    assert_eq!(ed.cli(&["focus"]), json!({"open": false}));
 }

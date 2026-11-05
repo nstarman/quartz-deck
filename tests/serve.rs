@@ -2,7 +2,7 @@
 //! preview, and pushes SSE events when the deck changes. Skipped (passes
 //! trivially) when Quarto is not installed.
 
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
@@ -30,6 +30,7 @@ fn qd_json(dir: &Path, args: &[&str]) -> (bool, Value) {
 struct Server {
     child: Child,
     port: u16,
+    token: String,
 }
 
 impl Drop for Server {
@@ -62,7 +63,11 @@ fn start(dir: &Path) -> Server {
         token.len() == 32 && token.bytes().all(|b| b.is_ascii_hexdigit()),
         "{url}"
     );
-    Server { child, port }
+    Server {
+        child,
+        port,
+        token: token.to_string(),
+    }
 }
 
 fn post(port: u16, path: &str, host: &str, ctype: &str, body: &str) -> (u16, String) {
@@ -73,34 +78,32 @@ fn post(port: u16, path: &str, host: &str, ctype: &str, body: &str) -> (u16, Str
         body.len()
     )
     .unwrap();
+    response(s)
+}
+
+/// Status and body of a `Connection: close` response.
+fn response(mut s: TcpStream) -> (u16, String) {
     let mut buf = Vec::new();
     s.read_to_end(&mut buf).unwrap();
     let text = String::from_utf8_lossy(&buf).into_owned();
     let status = text.split_whitespace().nth(1).unwrap().parse().unwrap();
-    (
-        status,
-        text.split_once("\r\n\r\n")
-            .map(|(_, b)| b.to_string())
-            .unwrap_or_default(),
-    )
+    let body = text.split_once("\r\n\r\n").map(|(_, b)| b.to_string());
+    (status, body.unwrap_or_default())
 }
 
 fn get(port: u16, path: &str) -> (u16, String) {
+    get_with(port, path, "")
+}
+
+/// GET with extra header lines (each ending in `\r\n`).
+fn get_with(port: u16, path: &str, headers: &str) -> (u16, String) {
     let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
     write!(
         s,
-        "GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+        "GET {path} HTTP/1.1\r\nHost: localhost\r\n{headers}Connection: close\r\n\r\n"
     )
     .unwrap();
-    let mut buf = Vec::new();
-    s.read_to_end(&mut buf).unwrap();
-    let text = String::from_utf8_lossy(&buf).into_owned();
-    let status = text.split_whitespace().nth(1).unwrap().parse().unwrap();
-    let body = text
-        .split_once("\r\n\r\n")
-        .map(|(_, b)| b.to_string())
-        .unwrap_or_default();
-    (status, body)
+    response(s)
 }
 
 /// Read SSE `event:` names (with data) until `want` arrives or `timeout` passes.
@@ -109,11 +112,11 @@ struct Events {
 }
 
 impl Events {
-    fn open(port: u16) -> Events {
+    fn open(port: u16, path: &str) -> Events {
         let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
         write!(
             s,
-            "GET /events HTTP/1.1\r\nHost: localhost\r\nAccept: text/event-stream\r\n\r\n"
+            "GET {path} HTTP/1.1\r\nHost: localhost\r\nAccept: text/event-stream\r\n\r\n"
         )
         .unwrap();
         s.set_read_timeout(Some(Duration::from_millis(200)))
@@ -160,7 +163,7 @@ fn serve_renders_and_live_reloads() {
     }
     let (_tmp, dir) = setup();
     let server = start(&dir);
-    let mut ev = Events::open(server.port);
+    let mut ev = Events::open(server.port, "/events");
     let first = ev
         .wait("rendered", Duration::from_secs(60))
         .expect("initial render");
@@ -557,7 +560,7 @@ fn run_cells_over_http() {
     assert_eq!(run(r#"{"cells":["plain/0"]}"#, &auth), 400, "E_NOT_CODE");
     assert_eq!(run(r#"{"cells":["r/0"]}"#, &auth), 400, "E_ENGINE");
 
-    let mut ev = Events::open(p);
+    let mut ev = Events::open(p, "/events");
     assert_eq!(run(print, &auth), 202);
     let wait = Duration::from_secs(120);
     assert!(ev.wait("kernel", wait).unwrap().contains("starting"));
@@ -634,4 +637,103 @@ fn run_cells_over_http() {
         std::thread::sleep(Duration::from_millis(100));
     }
     assert!(!session.exists(), "session file removed on shutdown");
+}
+
+/// Spec 005 (T004): the editor's focus reports, kept per open tab in memory,
+/// readable with the token only; stale refs dropped.
+#[test]
+fn focus_over_http() {
+    if !have("quarto") {
+        return;
+    }
+    let (_tmp, dir) = setup();
+    assert_eq!(
+        qd_json(&dir, &["focus"]),
+        (true, json!({"open": false})),
+        "no server: not an error"
+    );
+    let server = start(&dir);
+    let p = server.port;
+    let auth = format!("X-QD-Token: {}\r\n", server.token);
+    let json_auth = format!("application/json\r\nX-QD-Token: {}", server.token);
+    let read = || -> Value { serde_json::from_str(&get_with(p, "/api/focus", &auth).1).unwrap() };
+    let report = |tab: &str, slide: &str, elements: &str| {
+        let body = format!(
+            r#"{{"tab":"{tab}","version":"v","slide":"{slide}","elements":{elements},"selection":{{"text":"two words","where":"slide"}},"line":7,"editing":false}}"#
+        );
+        post(p, "/api/focus", "127.0.0.1", &json_auth, &body).0
+    };
+    let until = |f: &dyn Fn(&Value) -> bool| {
+        let end = Instant::now() + Duration::from_secs(5);
+        loop {
+            let v = read();
+            if f(&v) {
+                return v;
+            }
+            assert!(Instant::now() < end, "focus never matched: {v}");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    };
+
+    // the token, a loopback Origin: both required, for reading and reporting
+    assert_eq!(get(p, "/api/focus").0, 403);
+    assert_eq!(get_with(p, "/api/focus", "X-QD-Token: wrong\r\n").0, 403);
+    let body = r#"{"tab":"t1","version":"v","slide":null}"#;
+    assert_eq!(
+        post(p, "/api/focus", "127.0.0.1", "application/json", body).0,
+        403
+    );
+    let evil = format!("{json_auth}\r\nOrigin: http://evil.example");
+    assert_eq!(post(p, "/api/focus", "127.0.0.1", &evil, body).0, 403);
+
+    assert_eq!(read(), json!({"open": false}), "no editor tab");
+    let t1 = Events::open(p, "/events?tab=t1");
+    let v = until(&|v| v["open"] == true);
+    assert!(v["age"].is_null() && v["hint"].is_string(), "{v}");
+
+    assert_eq!(
+        report("t1", "results", r#"["results/0","results/99"]"#),
+        204
+    );
+    let v = until(&|v| !v["age"].is_null());
+    assert_eq!(v["slide"], "results");
+    assert_eq!(v["elements"], json!(["results/0"]), "results/99 dropped");
+    assert_eq!(
+        (v["selection"]["text"].as_str(), v["line"].as_u64()),
+        (Some("two words"), Some(7))
+    );
+    assert!(v["age"].as_f64().unwrap() >= 0.0 && v["deck_version"].is_string());
+
+    // `qd focus` reads the same, and reading changes nothing (SC-005)
+    let deck = std::fs::read(dir.join("deck.qmd")).unwrap();
+    let (ok, cli) = qd_json(&dir, &["focus"]);
+    assert!(
+        ok && cli["slide"] == "results" && cli["elements"] == v["elements"],
+        "{cli}"
+    );
+    for _ in 0..100 {
+        assert!(qd_json(&dir, &["focus"]).0);
+    }
+    assert_eq!(std::fs::read(dir.join("deck.qmd")).unwrap(), deck);
+
+    assert_eq!(
+        report("ghost", "conclusion", "[]"),
+        204,
+        "accepted, not kept"
+    );
+    assert_eq!(
+        read()["slide"],
+        "results",
+        "a tab with no open stream doesn't count"
+    );
+
+    // the most recently used tab wins; when it goes, the other one's focus is back
+    let t2 = Events::open(p, "/events?tab=t2");
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(report("t2", "conclusion", "[]"), 204);
+    until(&|v| v["slide"] == "conclusion");
+    drop(t2);
+    until(&|v| v["slide"] == "results");
+    drop(t1);
+    assert_eq!(until(&|v| v["open"] == false), json!({"open": false}));
 }

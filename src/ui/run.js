@@ -12,7 +12,7 @@ if (given) {
   store((s) => s.setItem('qd-token', given[1]));
   history.replaceState(null, '', location.pathname + location.hash.replace(given[0], ''));
 }
-const token = given?.[1] || store((s) => s.getItem('qd-token')) || '';
+export const token = given?.[1] || store((s) => s.getItem('qd-token')) || '';
 const pane = document.querySelector('#srcpane');
 const ta = pane.querySelector('textarea');
 const gutter = pane.querySelector('.gutter');
