@@ -84,6 +84,16 @@ dir); nothing new in the deck folder.
 Post-design re-check: PASS. A Node step in CI is the only new tooling; the
 extension adds a new language (JS outside the browser), justified below.
 
+Final re-check after implementation (T023, 2026-11-05): PASS.
+- II: `qd render` renders the saved file. `qd export` and `qd check` read the
+  attached buffer. The palette asks before a render would miss unsaved text.
+- V: CI found a race where the watcher read the buffer outside its lock, so a
+  stale read could undo the person's typing. It is fixed in #18.
+- VII: cursor following reuses the editor's source-pane path (a `follow`
+  message), so there is no second focus module and no server change.
+- Not yet run in the real app: quickstart §3–§5 and Remote-SSH (T022). They
+  are left for a follow-up session by the person's choice.
+
 ## Project Structure
 
 ### Documentation (this feature)

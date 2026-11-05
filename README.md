@@ -130,12 +130,33 @@ The editor and the CLI can be used at the same time; edits carry a version
 (`--expect`, or per element `--expect-text`) and are refused rather than lost
 if the file changed underneath.
 
+### VS Code (spec [006](specs/006-vscode/spec.md))
+
+A small extension in [`vscode/`](vscode/README.md) shows the editor in a panel
+beside the `.qmd`, next to the Quarto extension:
+
+```bash
+cd vscode && npx @vscode/vsce package && code --install-extension quartz-deck-*.vsix
+```
+
+- **Open in quartz-deck** (the editor title button) on a `.qmd`.
+- While the panel is open, the VS Code buffer is the deck: edits on the
+  slides, your agent's `qd` edits and undo all land there as ordinary unsaved
+  edits (⌘Z undoes them), and the file changes when you save. Typing in VS
+  Code updates the slides.
+- The cursor and the slide follow each other, both ways; `qd focus` sees the
+  VS Code cursor.
+- Render and export from the command palette ("quartz-deck: …").
+- Remote-SSH is designed in (`qd` runs on the remote host and the panel
+  reaches it through VS Code's port forwarding), but not tried yet.
+
 ## Develop
 
 ```bash
 cargo test                                      # ~150 tests; Quarto/Chrome-backed ones skip without them
 cargo test --release -- --ignored perf_100 export_30 fifty   # slow checks (as in CI)
 cargo clippy --all-targets -- -D warnings
+node --test vscode/test/*.test.js               # the VS Code extension
 ```
 
 Built with [spec-kit](https://github.com/github/spec-kit): `/speckit-plan`,

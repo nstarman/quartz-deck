@@ -139,18 +139,18 @@ cursor there without taking keyboard focus.
 
 ## Phase 5: User Story 4 — Run, render, export (P3)
 
-- [ ] T018 [P] [US4] Write failing tests in `vscode/test/commands.test.js`: render/export/exportPdf/checkOffline spawn `qd` with the right args in the deck's folder and turn its JSON (or its stderr error) into a success or error message; `quarto.quarto` installed → `run=external`
-- [ ] T019 [US4] Implement the palette commands and the Quarto-extension detection in `vscode/extension.js` (output channel `quartz-deck`) — T018 passes
+- [X] T018 [P] [US4] Write failing tests in `vscode/test/commands.test.js`: render/export/exportPdf/checkOffline spawn `qd` with the right args in the deck's folder and turn its JSON (or its stderr error) into a success or error message; `quarto.quarto` installed → `run=external`
+- [X] T019 [US4] Implement the palette commands and the Quarto-extension detection in `vscode/extension.js` (output channel `quartz-deck`) — T018 passes
 
 ---
 
 ## Phase 6: Polish & cross-cutting
 
-- [ ] T020 [P] Security (SC-006): extend `tests/onslide.rs` `another_origin_cannot_run_code_or_edit` with `/api/buffer/open`, `/api/buffer`, `/api/buffer/close` (nothing attached, nothing changed); `framed_editor…` already checks the non-parent message; record in `specs/006-vscode/checklists/security.md`
-- [ ] T021 [P] README: "VS Code" section (build/install the `.vsix`, what syncs, unsaved-until-save); skill note (with VS Code attached, qd edits land in the buffer); `specs/ROADMAP.md` status
-- [ ] T022 VS Code quickstart §3–§5 in the real app incl. Remote-SSH (SC-004, SC-005); record in `checklists/vscode-run.md`
-- [ ] T023 Final constitution re-check in `plan.md`; fmt, clippy, `cargo test`, `node --test vscode/test` green
-- [ ] T024 Concision audit (`/pr-audit`), last task before the PR is marked ready
+- [X] T020 [P] Security (SC-006): extend `tests/onslide.rs` `another_origin_cannot_run_code_or_edit` with `/api/buffer/open`, `/api/buffer`, `/api/buffer/close` (nothing attached, nothing changed); `framed_editor…` already checks the non-parent message; record in `specs/006-vscode/checklists/security.md`
+- [X] T021 [P] README: "VS Code" section (build/install the `.vsix`, what syncs, unsaved-until-save); skill note (with VS Code attached, qd edits land in the buffer); `specs/ROADMAP.md` status
+- [ ] T022 (follow-up: the person asked to do the clicking later) VS Code quickstart §3–§5 in the real app incl. Remote-SSH (SC-004, SC-005); record in `checklists/vscode-run.md`
+- [X] T023 Final constitution re-check in `plan.md`; fmt, clippy, `cargo test`, `node --test vscode/test` green
+- [X] T024 Concision audit (`/pr-audit`), last task before the PR is marked ready
 
 ---
 
