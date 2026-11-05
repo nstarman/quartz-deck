@@ -788,6 +788,35 @@ es.addEventListener('changed', async (e) => {
   }
   pane.changed();
 });
+// an agent points this tab at a slide or element (spec 005 US2)
+const offer = $('#gooffer');
+let offered = null;
+function showPoint({ anchor, ref }) {
+  offer.hidden = true;
+  // where an agent points isn't the person's own focus
+  if (anchor !== state.anchor) { state.followed = anchor; go(anchor); }
+  if (!ref.includes('/')) return;
+  revealSource({ ref });
+  // flash it (not select it); every slide stays in the DOM, so no need to wait
+  for (const el of frame.contentDocument?.querySelectorAll(`[data-qd="${CSS.escape(ref)}"]`) || []) {
+    el.animate([{ outline: '3px solid #f0a020', outlineOffset: '4px' }, {}], 1500);
+  }
+}
+es.addEventListener('point', (e) => {
+  const p = JSON.parse(e.data);
+  if (p.tab !== focus.tabId) return;
+  if (!focus.isEditing()) return showPoint(p);
+  // never while the person types (FR-008): offer it instead
+  offered = p;
+  const s = slideByAnchor(p.anchor);
+  offer.querySelector('.msg').textContent = `An agent points at ${s?.title ? `"${s.title}"` : 'a slide'}${p.ref.includes('/') ? ' (an element)' : ''}.`;
+  offer.hidden = false;
+});
+offer.addEventListener('click', (e) => {
+  const act = e.target.closest('button')?.dataset.act;
+  if (act === 'go' && offered) showPoint(offered);
+  if (act) offer.hidden = true;
+});
 es.addEventListener('rendering', () => { statusEl.textContent = 'rendering…'; });
 es.addEventListener('rendered', (e) => {
   const d = JSON.parse(e.data);

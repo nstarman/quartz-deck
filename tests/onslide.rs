@@ -1484,3 +1484,71 @@ async fn focus_follows_the_person() {
     ed.cli(&["stop"]);
     assert_eq!(ed.cli(&["focus"]), json!({"open": false}));
 }
+
+/// Spec 005 US2 (T015): `qd focus --set` shows the slide and flashes the
+/// element (and its source lines); while the person types, 20 requests are
+/// deferred, nothing moves, nothing typed is lost, and a "Go to …" offer waits.
+#[tokio::test(flavor = "multi_thread")]
+async fn pointing_moves_or_offers() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    let current = |id: &str| {
+        format!(
+            "document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide().id === '{id}'"
+        )
+    };
+    ed.go("a").await;
+    ed.open_source().await;
+    // the server knows this tab once it has reported
+    let start = Instant::now();
+    while !ed.cli(&["focus"])["age"].is_number() {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "tab never reported"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    let t = Instant::now();
+    assert_eq!(ed.cli(&["focus", "--set", "b/0"])["result"], "moved");
+    ed.wait(&current("b")).await;
+    eprintln!("--set → slide shown in {:?}", t.elapsed()); // SC-002
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert_eq!(
+        ed.cli(&["focus"])["slide"],
+        "a",
+        "where an agent points isn't the person's focus"
+    );
+    ed.wait("document.querySelector('#preview').contentDocument.querySelector('[data-qd=\"b/0\"]').getAnimations().length > 0")
+        .await;
+    ed.wait("document.querySelector('#srcpane .band').dataset.lines === '17-17'")
+        .await;
+
+    // typing: every request is deferred, the view stays, the text arrives whole (SC-003)
+    ed.go("a").await;
+    ed.click_in_slide("[data-qd=\"a/0\"] p").await;
+    ed.caret("[data-qd=\"a/0\"]", None).await;
+    ed.type_text(" abc").await;
+    let start = Instant::now();
+    while ed.cli(&["focus"])["editing"] != true {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "editing never reported"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    for _ in 0..20 {
+        assert_eq!(ed.cli(&["focus", "--set", "b"])["result"], "deferred");
+    }
+    ed.type_text("def").await;
+    assert_eq!(ed.eval(&current("a")).await, true, "the view never moved");
+    ed.wait("!document.querySelector('#gooffer').hidden").await;
+    ed.click_blank().await;
+    ed.wait_file(|f| f.contains("First para. abcdef"), "typed in full")
+        .await;
+    ed.click_editor("#gooffer [data-act=go]").await;
+    ed.wait(&current("b")).await;
+    assert_eq!(
+        ed.eval("document.querySelector('#gooffer').hidden").await,
+        true
+    );
+}

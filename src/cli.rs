@@ -180,7 +180,11 @@ enum Cmd {
         timeout: Option<u64>,
     },
     /// What the person has in focus in the editor: slide, selected elements and text
-    Focus,
+    Focus {
+        /// Point the editor at this slide or element instead
+        #[arg(long, value_name = "REF")]
+        set: Option<String>,
+    },
     /// Stored outputs of code cells (all, or the given ones), with `stale`
     Outputs { cells: Vec<String> },
     /// URL of the running preview (optionally opening on a slide)
@@ -1187,12 +1191,24 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             fresh,
             timeout,
         } => run_cells(&ctx.store()?, cells, *all, *fresh, *timeout),
-        Cmd::Focus => {
-            // no running editor is an answer, not an error (FR-003)
-            let Ok(session) = crate::server::running(&ctx.store()?) else {
-                return Ok(json!({"open": false}));
+        Cmd::Focus { set } => {
+            let s = ctx.store()?;
+            // a bad ref is an error even with no editor to point
+            let target = match set {
+                Some(r) => Some(crate::focus::resolve(&s.read()?, r)?.1),
+                None => None,
             };
-            let (status, text) = to_server(&session, "api/focus", None)?;
+            // no running editor is an answer, not an error (FR-003)
+            let Ok(session) = crate::server::running(&s) else {
+                return Ok(match target {
+                    Some(r) => json!({"ok": true, "result": "no_editor", "ref": r}),
+                    None => json!({"open": false}),
+                });
+            };
+            let (status, text) = match &target {
+                Some(r) => to_server(&session, "api/focus/set", Some(&json!({ "ref": r })))?,
+                None => to_server(&session, "api/focus", None)?,
+            };
             if status != 200 {
                 return Err(QdError::Io(std::io::Error::other(format!(
                     "qd serve answered {status}: {text}; one from an older qd has no focus (restart it)"

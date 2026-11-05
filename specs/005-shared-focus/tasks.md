@@ -66,11 +66,11 @@ Paths relative to repo root.
 
 **Independent Test**: spec US2 Independent Test; quickstart §2.
 
-- [ ] T014 [P] [US2] Write failing HTTP tests in `tests/serve.rs`: `POST /api/focus/set` needs the token (403 otherwise); bad ref → 404 `E_NOT_FOUND`; no open tab → `no_editor`; open tab not editing → `moved` and a `point {tab, anchor, ref}` event on that tab's stream; tab reported `editing: true` → `deferred`
-- [ ] T015 [P] [US2] Write failing browser test `pointing_moves_or_offers` in `tests/onslide.rs`: `qd focus --set results/1` → the editor shows the slide within 1 s (SC-002) and the element has the flash class; with the source pane open its lines are revealed; while typing in a paragraph, 20 × `--set` elsewhere → every result `deferred`, the view never moves, the typed text arrives intact (SC-003), and a "Go to …" offer is shown; clicking it goes there
-- [ ] T016 [US2] Server `POST /api/focus/set` in `src/server.rs`: authorize, resolve the ref (`d.element` / `d.slide`, preview anchor via `render::preview_id`), target = latest tab, emit `Ev::Run("point", …)` (or a new `Ev::Point`), answer `moved`/`deferred`/`no_editor` from the latest snapshot's `editing` — T014 passes
-- [ ] T017 [US2] `qd focus --set <ref>` in `src/cli.rs` via `to_server` POST; no server → `{"ok": true, "result": "no_editor"}`
-- [ ] T018 [US2] Editor `point` handling in `src/ui/focus.js` + `src/ui/editor.js`: ignore other tabs' events; when not editing go to the anchor, select/flash the element (CSS class for ~1.5 s), reveal its source lines; when editing show a dismissable "Go to <title>" offer (`role="status"`, keyboard reachable) that navigates on click; styles in `src/ui/editor.css` — T015 passes
+- [X] T014 [P] [US2] Write failing HTTP tests in `tests/serve.rs`: `POST /api/focus/set` needs the token (403 otherwise); bad ref → 404 `E_NOT_FOUND`; no open tab → `no_editor`; open tab not editing → `moved` and a `point {tab, anchor, ref}` event on that tab's stream; tab reported `editing: true` → `deferred`
+- [X] T015 [P] [US2] Write failing browser test `pointing_moves_or_offers` in `tests/onslide.rs`: `qd focus --set results/1` → the editor shows the slide within 1 s (SC-002) and the element has the flash class; with the source pane open its lines are revealed; while typing in a paragraph, 20 × `--set` elsewhere → every result `deferred`, the view never moves, the typed text arrives intact (SC-003), and a "Go to …" offer is shown; clicking it goes there
+- [X] T016 [US2] Server `POST /api/focus/set` in `src/server.rs`: authorize, resolve the ref (`d.element` / `d.slide`, preview anchor via `render::preview_id`), target = latest tab, emit `Ev::Run("point", …)` (or a new `Ev::Point`), answer `moved`/`deferred`/`no_editor` from the latest snapshot's `editing` — T014 passes
+- [X] T017 [US2] `qd focus --set <ref>` in `src/cli.rs` via `to_server` POST; no server → `{"ok": true, "result": "no_editor"}`
+- [X] T018 [US2] Editor `point` handling in `src/ui/focus.js` + `src/ui/editor.js`: ignore other tabs' events; when not editing go to the anchor, select/flash the element (CSS class for ~1.5 s), reveal its source lines; when editing show a dismissable "Go to <title>" offer (`role="status"`, keyboard reachable) that navigates on click; styles in `src/ui/editor.css` — T015 passes
 
 **Checkpoint**: both directions work.
 
