@@ -111,35 +111,14 @@ impl Store {
         let _ = fs::remove_file(self.overlay());
     }
 
-    /// The change from `old` to `new` as line edits for VS Code: each
-    /// `{start, end, text}` replaces lines `[start, end)` of `old` (0-based)
-    /// with `text`; non-overlapping, in order. Lines, not offsets: VS Code
-    /// counts UTF-16 units, qd bytes, and lines mean the same to both.
-    pub fn line_edits(old: &str, new: &str) -> Vec<serde_json::Value> {
-        let diff = similar::TextDiff::from_lines(old, new);
-        let lines: Vec<&str> = diff.iter_new_slices().collect();
-        diff.ops()
-            .iter()
-            .filter(|op| op.tag() != similar::DiffTag::Equal)
-            .map(|op| {
-                let (o, n) = (op.old_range(), op.new_range());
-                serde_json::json!({"start": o.start, "end": o.end, "text": lines[n].concat()})
-            })
-            .collect()
-    }
-
     /// The person typed in VS Code: replace the overlay iff it is still at
     /// `base` (no qd edit landed meanwhile); not a qd edit, so not journaled.
     pub fn set_buffer(&self, base: &str, text: &str) -> Result<String> {
         let _lock = self.lock()?;
-        let current = version_of(&fs::read(self.overlay())?);
-        if current != base {
-            return Err(QdError::Conflict(format!(
-                "buffer is at {current}, not {base}"
-            )));
+        if !self.attached() {
+            return Err(QdError::Conflict("no VS Code buffer attached".into()));
         }
-        fs::write(self.overlay(), text)?;
-        Ok(version_of(text.as_bytes()))
+        self.replace(base, text)
     }
 
     /// qd's cache root this store lives under (shared libraries, browser).

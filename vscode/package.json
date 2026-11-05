@@ -9,17 +9,13 @@
   "engines": { "vscode": "^1.90.0" },
   "extensionKind": ["workspace"],
   "categories": ["Other"],
-  "activationEvents": ["onLanguage:quarto", "workspaceContains:**/*.qmd", "onWebviewPanel:quartz-deck"],
+  "activationEvents": ["onWebviewPanel:quartz-deck"],
   "main": "extension.js",
   "contributes": {
     "commands": [
       { "command": "quartz-deck.open", "title": "Open in quartz-deck", "category": "quartz-deck", "icon": "$(preview)" },
       { "command": "quartz-deck.focusPanel", "title": "Focus the slide panel", "category": "quartz-deck" },
-      { "command": "quartz-deck.focusText", "title": "Focus the text editor", "category": "quartz-deck" },
-      { "command": "quartz-deck.render", "title": "Render", "category": "quartz-deck" },
-      { "command": "quartz-deck.export", "title": "Export (offline HTML)", "category": "quartz-deck" },
-      { "command": "quartz-deck.exportPdf", "title": "Export with PDF", "category": "quartz-deck" },
-      { "command": "quartz-deck.checkOffline", "title": "Check offline", "category": "quartz-deck" }
+      { "command": "quartz-deck.focusText", "title": "Focus the text editor", "category": "quartz-deck" }
     ],
     "menus": {
       "editor/title": [

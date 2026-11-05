@@ -6,6 +6,7 @@
 
 const vscode = require('vscode');
 const { spawn } = require('node:child_process');
+const readline = require('node:readline');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { Sync } = require('./sync.js');
@@ -15,24 +16,20 @@ const { editorUrl, themeKind, html, fromEditor, follow } = require('./panel.js')
 const open = new Map();
 let out;
 
-/** `qd serve` for `file`: resolves to `{child, port, token, link}` once it prints its link. */
+/** `qd serve` for `file`: resolves to `{child, port, token}` once it prints its link. */
 function serve(file) {
   const qd = vscode.workspace.getConfiguration('quartz-deck').get('qdPath') || 'qd';
   return new Promise((resolve, reject) => {
     const child = spawn(qd, ['--deck', file, 'serve', '--port', '0'], { cwd: path.dirname(file) });
-    let buf = '';
     let err = '';
     child.on('error', (e) => reject(new Error(e.code === 'ENOENT'
       ? `qd not found ("${qd}"): install quartz-deck, or set quartz-deck.qdPath`
       : e.message)));
     child.stderr.on('data', (d) => { err += d; });
-    child.stdout.on('data', (d) => {
-      buf += d;
-      const nl = buf.indexOf('\n');
-      if (nl < 0) return;
+    readline.createInterface({ input: child.stdout }).once('line', (l) => {
       try {
-        const v = JSON.parse(buf.slice(0, nl));
-        resolve({ child, port: v.port, token: new URL(v.url).hash.replace('#t=', ''), link: v.url });
+        const v = JSON.parse(l);
+        resolve({ child, port: v.port, token: new URL(v.url).hash.replace('#t=', '') });
       } catch (e) { reject(e); }
     });
     child.on('exit', () => {
@@ -126,9 +123,8 @@ async function openDeck(doc, panel) {
   panel ??= vscode.window.createWebviewPanel('quartz-deck', `Slides: ${path.basename(file)}`,
     { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
     { enableScripts: true, retainContextWhenHidden: true });
-  const page = () => html(editorUrl(link, { theme: themeKind(vscode.window.activeColorTheme.kind), run: quarto ? 'external' : undefined }),
+  panel.webview.html = html(editorUrl(link, { theme: themeKind(vscode.window.activeColorTheme.kind), run: quarto ? 'external' : undefined }),
     crypto.randomBytes(16).toString('base64url'), { path: file });
-  panel.webview.html = page();
 
   const attached = await api.post('/api/buffer/open', { text: doc.getText() });
   const sync = new Sync({
@@ -177,7 +173,7 @@ async function openDeck(doc, panel) {
     ed.revealRange(new vscode.Range(at, new vscode.Position(last - 1, 0)), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
   };
   const entry = {
-    panel, doc, api, run, sync,
+    panel, doc,
     dispose: async () => {
       open.delete(file);
       clearTimeout(timer);
@@ -189,7 +185,6 @@ async function openDeck(doc, panel) {
   };
   open.set(file, entry);
   panel.onDidDispose(() => entry.dispose());
-  return entry;
 }
 
 function activate(context) {

@@ -851,7 +851,7 @@ fn watch(app: Shared) -> Result<notify::RecommendedWatcher> {
                 .as_ref()
                 .filter(|old| a.store.attached() && **old != d.text)
             {
-                let edits = Store::line_edits(old, &d.text);
+                let edits = crate::ops::line_edits(old, &d.text);
                 let base = version_of(old.as_bytes());
                 a.emit(
                     "buffer_edit",
@@ -873,7 +873,6 @@ fn watch(app: Shared) -> Result<notify::RecommendedWatcher> {
     .map_err(|e| QdError::Io(std::io::Error::other(e)))?;
     w.watch(deck.parent().unwrap(), notify::RecursiveMode::NonRecursive)
         .map_err(|e| QdError::Io(std::io::Error::other(e)))?;
-    std::fs::create_dir_all(app.store.cache_dir())?;
     w.watch(app.store.cache_dir(), notify::RecursiveMode::NonRecursive)
         .map_err(|e| QdError::Io(std::io::Error::other(e)))?;
     Ok(w)

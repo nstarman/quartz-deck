@@ -166,6 +166,15 @@ impl Ed {
         }
     }
 
+    /// Poll `qd focus` until `pred` holds (10 s).
+    async fn until_focus(&self, pred: impl Fn(&Value) -> bool, what: &str) {
+        let start = Instant::now();
+        while !pred(&self.cli(&["focus"])) {
+            assert!(start.elapsed() < Duration::from_secs(10), "{what}");
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
     /// Show the slide with this preview anchor and wait for it.
     async fn go(&self, anchor: &str) {
         // re-set the hash while waiting: a preview reload in between drops it
@@ -1510,14 +1519,8 @@ async fn pointing_moves_or_offers() {
     ed.go("a").await;
     ed.open_source().await;
     // the server knows this tab once it has reported
-    let start = Instant::now();
-    while !ed.cli(&["focus"])["age"].is_number() {
-        assert!(
-            start.elapsed() < Duration::from_secs(10),
-            "tab never reported"
-        );
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
+    ed.until_focus(|v| v["age"].is_number(), "tab never reported")
+        .await;
 
     let t = Instant::now();
     assert_eq!(ed.cli(&["focus", "--set", "b/0"])["result"], "moved");
@@ -1539,14 +1542,8 @@ async fn pointing_moves_or_offers() {
     ed.click_in_slide("[data-qd=\"a/0\"] p").await;
     ed.caret("[data-qd=\"a/0\"]", None).await;
     ed.type_text(" abc").await;
-    let start = Instant::now();
-    while ed.cli(&["focus"])["editing"] != true {
-        assert!(
-            start.elapsed() < Duration::from_secs(10),
-            "editing never reported"
-        );
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
+    ed.until_focus(|v| v["editing"] == true, "editing never reported")
+        .await;
     for _ in 0..20 {
         assert_eq!(ed.cli(&["focus", "--set", "b"])["result"], "deferred");
     }
@@ -1599,14 +1596,8 @@ async fn framed_editor_takes_theme_and_messages() {
         .await;
     ed.wait("document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide().id === 'b'")
         .await;
-    let start = std::time::Instant::now();
-    while ed.cli(&["focus"])["line"] != 17 {
-        assert!(
-            start.elapsed() < Duration::from_secs(5),
-            "focus never got the line"
-        );
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
+    ed.until_focus(|v| v["line"] == 17, "focus never got the line")
+        .await;
     // an element chosen on a slide: its source lines go to VS Code
     ed.eval("window.__reveal = null; addEventListener('message', (e) => { if (e.data?.type === 'reveal') window.__reveal = e.data.lines; })")
         .await;

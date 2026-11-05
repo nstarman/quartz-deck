@@ -1408,7 +1408,6 @@ if (inVSCode) {
       sourceFocus({ line, first, last, text });
     }
   });
-  window.parent.postMessage({ type: 'ready' }, '*');
 }
 
 /** Element (or slide title) → its source lines, in the pane (US2) and in VS Code's text (006 US3). */

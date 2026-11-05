@@ -44,6 +44,23 @@ pub fn diff(before: &str, after: &str) -> String {
         .to_string()
 }
 
+/// The change from `old` to `new` as line edits for VS Code: each
+/// `{start, end, text}` replaces lines `[start, end)` of `old` (0-based)
+/// with `text`; non-overlapping, in order. Lines, not offsets: VS Code
+/// counts UTF-16 units, qd bytes, and lines mean the same to both.
+pub fn line_edits(old: &str, new: &str) -> Vec<serde_json::Value> {
+    let diff = similar::TextDiff::from_lines(old, new);
+    let lines: Vec<&str> = diff.iter_new_slices().collect();
+    diff.ops()
+        .iter()
+        .filter(|op| op.tag() != similar::DiffTag::Equal)
+        .map(|op| {
+            let (o, n) = (op.old_range(), op.new_range());
+            serde_json::json!({"start": o.start, "end": o.end, "text": lines[n].concat()})
+        })
+        .collect()
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum Pos<'a> {
     End,

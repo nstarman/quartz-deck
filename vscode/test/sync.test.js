@@ -20,16 +20,11 @@ test('merge keeps both sides apart, reports the same lines as a conflict', () =>
 });
 
 /** A fake buffer + server around a Sync. */
-function rig({ server = BASE } = {}) {
-  const log = [];
-  const w = {
-    buffer: BASE,
-    server: { text: server, version: 'v0' },
-    choice: 'theirs',
-    log,
-  };
+function rig() {
   const ver = (t) => 'v:' + t; // distinct per text, like qd's hash
-  w.server.version = ver(w.server.text);
+  const log = [];
+  const w = { buffer: BASE, server: { text: BASE, version: ver(BASE) }, choice: 'theirs', log, ver };
+  w.qd = (t) => (w.server = { text: t, version: ver(t) }); // qd's side moved on to `t`
   w.sync = new Sync({
     buffer: () => w.buffer,
     apply: async (edits) => { w.buffer = applyEdits(w.buffer, edits); log.push('apply'); w.sync.changed(w.buffer); },
@@ -43,7 +38,6 @@ function rig({ server = BASE } = {}) {
     conflict: async () => { log.push('conflict'); return w.choice; },
   });
   w.sync.open(BASE, ver(BASE));
-  w.ver = ver;
   return w;
 }
 
@@ -58,7 +52,7 @@ test('typing is posted against the version VS Code last saw', async () => {
 test("a qd edit is applied once and its echo isn't posted back", async () => {
   const w = rig();
   const next = 'a\nb\nc\nD\ne\n';
-  w.server = { text: next, version: w.ver(next) };
+  w.qd(next);
   await w.sync.bufferEdit({ base: w.ver(BASE), version: w.ver(next), edits: lineEdits(BASE, next) });
   assert.equal(w.buffer, next);
   assert.deepEqual(w.log, ['apply'], 'no post: the buffer already matches qd');
@@ -67,7 +61,7 @@ test("a qd edit is applied once and its echo isn't posted back", async () => {
 test('typing that crossed a qd edit is merged, then posted', async () => {
   const w = rig();
   const theirs = 'a\nb\nc\nd\nE\n';
-  w.server = { text: theirs, version: w.ver(theirs) };
+  w.qd(theirs);
   w.buffer = 'a\nB\nc\nd\ne\n';
   await w.sync.changed(w.buffer);
   assert.equal(w.buffer, 'a\nB\nc\nd\nE\n', 'both changes in the buffer');
@@ -80,7 +74,7 @@ test('the same lines changed on both sides: the person chooses', async () => {
     const w = rig();
     w.choice = choice;
     const theirs = 'a\nb\ntheirs\nd\ne\n';
-    w.server = { text: theirs, version: w.ver(theirs) };
+    w.qd(theirs);
     w.buffer = 'a\nb\nmine\nd\ne\n';
     await w.sync.changed(w.buffer);
     assert.ok(w.log.includes('conflict'));
@@ -93,7 +87,7 @@ test('a qd edit while the person has unsent typing is merged, not misapplied', a
   const w = rig();
   w.buffer = 'a\nB\nc\nd\ne\n'; // typed, not yet posted
   const theirs = 'a\nb\nc\nd\nE\n';
-  w.server = { text: theirs, version: w.ver(theirs) };
+  w.qd(theirs);
   await w.sync.bufferEdit({ base: w.ver(BASE), version: w.ver(theirs), edits: lineEdits(BASE, theirs) });
   assert.equal(w.buffer, 'a\nB\nc\nd\nE\n');
   assert.equal(w.server.text, 'a\nB\nc\nd\nE\n', 'the typing reaches qd too');
@@ -102,7 +96,7 @@ test('a qd edit while the person has unsent typing is merged, not misapplied', a
 test('an edit against an unknown base resyncs from the full text', async () => {
   const w = rig();
   const theirs = 'z\nb\nc\nd\ne\n';
-  w.server = { text: theirs, version: w.ver(theirs) };
+  w.qd(theirs);
   await w.sync.bufferEdit({ base: 'elsewhere', version: w.ver(theirs), edits: [] });
   assert.equal(w.buffer, theirs);
 });
