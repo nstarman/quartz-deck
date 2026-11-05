@@ -32,6 +32,15 @@ pub(crate) fn which(name: &str, path: Option<OsString>) -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
+/// A finished process's stdout then stderr, as text.
+pub(crate) fn log(out: &std::process::Output) -> String {
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    )
+}
+
 /// `quarto <args>` for a deck whose text is `text`, run in `dir`: inside the
 /// deck's environment when it has code cells and an environment exists (R3),
 /// using the environment's kernel unless the deck names one; else Quarto
@@ -39,11 +48,7 @@ pub(crate) fn which(name: &str, path: Option<OsString>) -> Option<PathBuf> {
 fn quarto_cmd(dir: &Path, text: &str, args: &[&OsStr]) -> Result<(Command, bool)> {
     let quarto = quarto()?;
     let d = Deck::parse(text.to_string());
-    let cells = d
-        .slides
-        .iter()
-        .flat_map(|s| &s.blocks)
-        .any(|b| b.kind == BlockKind::Cell);
+    let cells = d.blocks().any(|b| b.kind == BlockKind::Cell);
     let (mut cmd, wrapped) = match crate::env::find(dir).filter(|_| cells) {
         Some(env) => (env.wrap(&quarto)?, true),
         None => (Command::new(quarto), false),
@@ -220,14 +225,14 @@ pub fn render(
     let stem = deck_path.file_stem().unwrap_or_default().to_string_lossy();
     let name = format!("{stem}.qd-{tag}");
     let copy = dir.join(format!("{name}.qmd"));
-    let mut args = [
+    let mut args: Vec<&OsStr> = vec![
         "render".as_ref(),
         copy.as_os_str(),
         "--to".as_ref(),
         "revealjs".as_ref(),
-    ]
-    .to_vec();
-    args.extend(["--output-dir".as_ref(), out_dir.as_os_str()]);
+        "--output-dir".as_ref(),
+        out_dir.as_os_str(),
+    ];
     if preview {
         args.extend(["-M", "embed-resources:false"].map(OsStr::new));
     }
@@ -271,11 +276,7 @@ pub fn render_deck(deck_path: &Path, to: Option<&str>) -> Result<(PathBuf, Strin
     let text = std::fs::read_to_string(deck_path)?;
     let (mut cmd, wrapped) = quarto_cmd(dir, &text, &args)?;
     let out = cmd.output()?;
-    let log = format!(
-        "{}{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
+    let log = log(&out);
     if !out.status.success() {
         return Err(failed(&log, wrapped, "\u{0}"));
     }

@@ -10,7 +10,7 @@ use std::process::{Child, Stdio};
 use std::time::{Duration, Instant};
 
 mod common;
-use common::{have_quarto, qd};
+use common::{have, qd};
 
 const BASIC: &str = include_str!("fixtures/basic.qmd");
 
@@ -147,7 +147,7 @@ fn setup() -> (tempfile::TempDir, PathBuf) {
 
 #[test]
 fn serve_renders_and_live_reloads() {
-    if !have_quarto() {
+    if !have("quarto") {
         return;
     }
     let (_tmp, dir) = setup();
@@ -249,7 +249,7 @@ fn serve_renders_and_live_reloads() {
 
 #[test]
 fn check_render_reports_quarto_errors() {
-    if !have_quarto() {
+    if !have("quarto") {
         return;
     }
     let (_tmp, dir) = setup();
@@ -319,7 +319,7 @@ fn render_commands_without_quarto() {
 /// T033 over HTTP: POST /api/op edits the deck; non-JSON and foreign hosts are refused.
 #[test]
 fn api_op_over_http() {
-    if !have_quarto() {
+    if !have("quarto") {
         return;
     }
     let (_tmp, dir) = setup();
@@ -426,7 +426,7 @@ fn api_op_over_http() {
 /// where the output went — next to the deck, or in a project's output-dir.
 #[test]
 fn render_reports_output() {
-    if !have_quarto() {
+    if !have("quarto") {
         return;
     }
     let (_tmp, dir) = setup();

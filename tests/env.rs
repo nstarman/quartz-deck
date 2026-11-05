@@ -2,66 +2,44 @@
 //! Needs uv and network for the first lock (Quarto too for rendering); pixi
 //! variants need pixi. Each skips with a message when its tool is missing.
 
-use assert_cmd::Command;
+mod common;
+
+use common::have;
+use quartz_deck::env::BASE;
 use serde_json::Value;
 use std::path::Path;
 
-fn on_path(name: &str) -> bool {
-    let found = std::env::var_os("PATH")
-        .iter()
-        .flat_map(std::env::split_paths)
-        .any(|d| d.join(name).is_file());
-    if !found {
-        eprintln!("skipping: {name} not installed");
-    }
-    found
-}
-
 /// `qd <args>` on the deck in `dir`; (exit ok, JSON).
 fn qd(dir: &Path, args: &[&str]) -> (bool, Value) {
-    let out = Command::cargo_bin("qd")
-        .unwrap()
-        .current_dir(dir)
-        .args(args)
-        .output()
-        .unwrap();
-    let text = if out.status.success() {
-        &out.stdout
-    } else {
-        &out.stderr
-    };
-    (
-        out.status.success(),
-        serde_json::from_slice(text).unwrap_or(Value::Null),
-    )
+    let out = common::qd(dir).args(args).output().unwrap();
+    let ok = out.status.success();
+    let text = if ok { &out.stdout } else { &out.stderr };
+    (ok, serde_json::from_slice(text).unwrap_or(Value::Null))
 }
 
-const CELLS: &str =
-    "---\ntitle: T\nformat: revealjs\n---\n\n## Code\n\n```{python}\nprint(6 * 7)\n```\n";
-
-fn deck(text: &str) -> tempfile::TempDir {
+/// A deck with one Python cell that prints 42.
+fn deck() -> tempfile::TempDir {
     let d = tempfile::tempdir().unwrap();
+    let text =
+        "---\ntitle: T\nformat: revealjs\n---\n\n## Code\n\n```{python}\nprint(6 * 7)\n```\n";
     std::fs::write(d.path().join("deck.qmd"), text).unwrap();
     d
 }
 
 #[test]
 fn uv_environment_lifecycle() {
-    if !on_path("uv") {
+    if !have("uv") {
         return;
     }
-    let d = deck(CELLS);
+    let d = deck();
     let (ok, e) = qd(d.path(), &["env"]);
     assert!(!ok && e["error"]["code"] == "E_NO_ENV", "{e}");
 
     let (ok, r) = qd(d.path(), &["env", "init"]);
     assert!(ok, "{r}");
-    assert_eq!(
-        (r["tool"].as_str(), r["lock_current"].as_bool()),
-        (Some("uv"), Some(true))
-    );
+    assert!(r["tool"] == "uv" && r["lock_current"] == true, "{r}");
     let manifest = std::fs::read_to_string(d.path().join("pyproject.toml")).unwrap();
-    for pkg in ["ipykernel", "nbclient", "nbformat", "pyyaml"] {
+    for pkg in BASE {
         assert!(manifest.contains(pkg), "{pkg} missing from:\n{manifest}");
     }
     let (ok, e) = qd(d.path(), &["env", "init"]);
@@ -92,7 +70,7 @@ fn uv_environment_lifecycle() {
     assert_ne!(edited, manifest);
     std::fs::write(d.path().join("pyproject.toml"), edited).unwrap();
     assert_eq!(qd(d.path(), &["env"]).1["lock_current"], false);
-    if on_path("quarto") {
+    if have("quarto") {
         let (ok, e) = qd(d.path(), &["render"]);
         assert!(!ok && e["error"]["code"] == "E_LOCK_STALE", "{e}");
     }
@@ -102,10 +80,10 @@ fn uv_environment_lifecycle() {
 
 #[test]
 fn code_cells_render_through_the_environment() {
-    if !on_path("uv") || !on_path("quarto") {
+    if !have("uv") || !have("quarto") {
         return;
     }
-    let d = deck(CELLS);
+    let d = deck();
     assert!(qd(d.path(), &["env", "init"]).0);
     let (ok, r) = qd(d.path(), &["render"]);
     assert!(ok, "{r}");
@@ -118,22 +96,19 @@ fn code_cells_render_through_the_environment() {
 
 #[test]
 fn pixi_environment_has_pypi_packages_only() {
-    if !on_path("pixi") {
+    if !have("pixi") {
         return;
     }
-    let d = deck(CELLS);
+    let d = deck();
     let (ok, r) = qd(d.path(), &["env", "init", "--tool", "pixi"]);
     assert!(ok, "{r}");
-    assert_eq!(
-        (r["tool"].as_str(), r["lock_current"].as_bool()),
-        (Some("pixi"), Some(true))
-    );
+    assert!(r["tool"] == "pixi" && r["lock_current"] == true, "{r}");
     let manifest = std::fs::read_to_string(d.path().join("pixi.toml")).unwrap();
     let pypi = manifest
         .split("[pypi-dependencies]")
         .nth(1)
         .expect("PyPI section");
-    for pkg in ["ipykernel", "nbclient", "nbformat", "pyyaml"] {
+    for pkg in BASE {
         assert!(
             pypi.contains(pkg),
             "{pkg} not a PyPI dependency:\n{manifest}"

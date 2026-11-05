@@ -77,9 +77,10 @@ pub fn require(deck_dir: &Path) -> Result<Env> {
     find(deck_dir).ok_or_else(|| QdError::NoEnv(deck_dir.display().to_string()))
 }
 
-/// The tool's binary on `path` (`$PATH`), or `E_ENV_TOOL`.
-fn tool_bin(tool: Tool, path: Option<OsString>) -> Result<PathBuf> {
-    crate::render::which(tool.name(), path).ok_or(QdError::EnvTool(tool.name()))
+/// The tool found on `path` (`$PATH`), or `E_ENV_TOOL`.
+fn tool_cmd(tool: Tool, path: Option<OsString>) -> Result<Command> {
+    let bin = crate::render::which(tool.name(), path).ok_or(QdError::EnvTool(tool.name()))?;
+    Ok(Command::new(bin))
 }
 
 impl Env {
@@ -109,7 +110,7 @@ impl Env {
     /// A command that runs `program` inside the environment (`uv run --locked …`),
     /// with qd's kernel spec ([`KERNEL`]) first on Jupyter's search path.
     pub fn wrap(&self, program: &Path) -> Result<Command> {
-        let mut c = Command::new(tool_bin(self.tool, std::env::var_os("PATH"))?);
+        let mut c = tool_cmd(self.tool, std::env::var_os("PATH"))?;
         c.args(self.run_args(program.as_os_str()));
         let mut path = vec![kernel_dir()?];
         path.extend(
@@ -126,7 +127,7 @@ impl Env {
 
     /// A uv/pixi subcommand aimed at this environment: `uv <sub> --project <root> <args>`.
     fn tool(&self, sub: &[&str], args: &[&str]) -> Result<String> {
-        let mut c = Command::new(tool_bin(self.tool, std::env::var_os("PATH"))?);
+        let mut c = tool_cmd(self.tool, std::env::var_os("PATH"))?;
         c.args(sub).arg(self.flag()).arg(&self.root).args(args);
         output(&mut c)
     }
@@ -141,11 +142,7 @@ impl Env {
     }
 
     pub fn lockfile(&self) -> PathBuf {
-        self.root.join(if self.tool == Tool::Uv {
-            "uv.lock"
-        } else {
-            "pixi.lock"
-        })
+        self.root.join(format!("{}.lock", self.tool.name()))
     }
 
     /// `qd env`: where the environment is and whether its lock matches the manifest.
@@ -207,7 +204,7 @@ pub fn init(deck_dir: &Path, tool: Tool) -> Result<Env> {
         )));
     }
     let root = home(deck_dir);
-    let mut c = Command::new(tool_bin(tool, std::env::var_os("PATH"))?);
+    let mut c = tool_cmd(tool, std::env::var_os("PATH"))?;
     match tool {
         // --name: the folder name may not be a valid package name
         Tool::Uv => c.args(["init", "--bare", "--no-workspace", "--name", "slides"]),
@@ -225,11 +222,7 @@ pub fn init(deck_dir: &Path, tool: Tool) -> Result<Env> {
 
 fn output(c: &mut Command) -> Result<String> {
     let out = c.output()?;
-    let log = format!(
-        "{}{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
+    let log = crate::render::log(&out);
     if out.status.success() {
         Ok(log)
     } else {
@@ -311,7 +304,7 @@ mod tests {
 
     #[test]
     fn missing_tool_and_stale_lock_are_clear_errors() {
-        let e = tool_bin(Tool::Pixi, Some(OsString::from("/nonexistent"))).unwrap_err();
+        let e = tool_cmd(Tool::Pixi, Some(OsString::from("/nonexistent"))).unwrap_err();
         assert_eq!(e.code(), "E_ENV_TOOL");
         assert!(e.hint().contains("pixi"));
         let uv =

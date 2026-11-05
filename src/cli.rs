@@ -1047,19 +1047,15 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
         Cmd::Env { action } => {
             let s = ctx.store()?;
             let dir = s.path.parent().unwrap_or(Path::new("."));
-            let (env, log) = match action {
-                None => return Ok(crate::env::require(dir)?.report()),
-                Some(EnvCmd::Init { tool }) => (crate::env::init(dir, *tool)?, String::new()),
-                Some(EnvCmd::Add { packages }) => {
-                    let env = crate::env::require(dir)?;
-                    let log = env.add(packages)?;
-                    (env, log)
-                }
-                Some(EnvCmd::Sync) => {
-                    let env = crate::env::require(dir)?;
-                    let log = env.sync()?;
-                    (env, log)
-                }
+            let env = match action {
+                Some(EnvCmd::Init { tool }) => crate::env::init(dir, *tool)?,
+                _ => crate::env::require(dir)?,
+            };
+            let log = match action {
+                None => return Ok(env.report()),
+                Some(EnvCmd::Init { .. }) => String::new(),
+                Some(EnvCmd::Add { packages }) => env.add(packages)?,
+                Some(EnvCmd::Sync) => env.sync()?,
             };
             let mut r = env.report();
             r["ok"] = json!(true);
