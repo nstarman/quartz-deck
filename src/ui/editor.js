@@ -314,7 +314,13 @@ function hookFrame() {
     // Escape belongs to the editor (leave an edit / deselect), not Reveal's overview
     w.Reveal.configure({ scrollActivationWidth: 1, keyboard: { 27: null } });
     w.dispatchEvent(new Event('resize'));
-    if (state.want && w.Reveal.getCurrentSlide()?.id !== state.want) w.location.hash = '#/' + state.want;
+    // synchronously: a hash change lands a task later, and onSlide() below would
+    // meanwhile report the first slide (hiding the slide bar under a click)
+    const want = state.want && frame.contentDocument.getElementById(state.want);
+    if (want && w.Reveal.getCurrentSlide() !== want) {
+      const { h, v } = w.Reveal.getIndices(want);
+      w.Reveal.slide(h, v);
+    }
     state.want = null;
     if (state.selectIdAfterRender) {
       const el = frame.contentDocument.getElementById(state.selectIdAfterRender);
