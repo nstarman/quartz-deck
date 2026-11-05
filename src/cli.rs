@@ -8,6 +8,7 @@ use clap::{Args, CommandFactory, Parser, Subcommand};
 use serde_json::{Value, json};
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 pub const SKILL: &str = include_str!("../skills/quartz-deck/SKILL.md");
 
@@ -1219,12 +1220,25 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
         }
         Cmd::Stop => {
             // asks the server itself (token-guarded): never signals a pid that may be reused
-            let session = crate::server::running(&ctx.store()?)?;
+            let store = ctx.store()?;
+            let session = crate::server::running(&store)?;
             let (status, text) = to_server(&session, "api/shutdown", &json!({}))?;
             if status != 200 {
                 return Err(QdError::Io(std::io::Error::other(format!(
                     "qd serve refused to stop ({status}: {text}); one from an older qd stops with Ctrl-C"
                 ))));
+            }
+            // returns once it is gone (it removes its session file last, after any
+            // render), so a `qd serve` right after never overlaps it
+            let file = store.cache_dir().join("session.json");
+            let end = Instant::now() + Duration::from_secs(60);
+            while file.exists() {
+                if Instant::now() > end {
+                    return Err(QdError::Io(std::io::Error::other(
+                        "qd serve is still finishing a render; run `qd stop` again before `qd serve`",
+                    )));
+                }
+                std::thread::sleep(Duration::from_millis(100));
             }
             Ok(json!({"ok": true, "pid": session["pid"]}))
         }
