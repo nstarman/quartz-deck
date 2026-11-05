@@ -767,6 +767,8 @@ function onKey(e) {
     return;
   }
   if (e.key === 'Escape' && state.sel) { e.preventDefault(); e.stopPropagation(); select(null); return; }
+  // in VS Code, Esc with nothing selected or open hands the keyboard back to the text (006)
+  if (e.key === 'Escape' && inVSCode) { window.parent.postMessage({ type: 'focusText' }, '*'); return; }
   if (!mod || e.key.toLowerCase() !== 'z' || editing()) return;
   e.preventDefault();
   undoRedo(e.shiftKey ? 'redo' : 'undo');

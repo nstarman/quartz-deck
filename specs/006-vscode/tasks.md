@@ -146,10 +146,10 @@ cursor there without taking keyboard focus.
 
 ## Phase 6: Polish & cross-cutting
 
-- [ ] T020 [P] Security (SC-006): extend `tests/onslide.rs` `another_origin_cannot_run_code_or_edit` with `/api/buffer/open`, `/api/buffer`, `/api/buffer/close` (nothing attached, nothing changed); `framed_editor…` already checks the non-parent message; record in `specs/006-vscode/checklists/security.md`
-- [ ] T021 [P] README: "VS Code" section (build/install the `.vsix`, what syncs, unsaved-until-save); skill note (with VS Code attached, qd edits land in the buffer); `specs/ROADMAP.md` status
-- [ ] T022 VS Code quickstart §3–§5 in the real app incl. Remote-SSH (SC-004, SC-005); record in `checklists/vscode-run.md`
-- [ ] T023 Final constitution re-check in `plan.md`; fmt, clippy, `cargo test`, `node --test vscode/test` green
+- [X] T020 [P] Security (SC-006): extend `tests/onslide.rs` `another_origin_cannot_run_code_or_edit` with `/api/buffer/open`, `/api/buffer`, `/api/buffer/close` (nothing attached, nothing changed); `framed_editor…` already checks the non-parent message; record in `specs/006-vscode/checklists/security.md`
+- [X] T021 [P] README: "VS Code" section (build/install the `.vsix`, what syncs, unsaved-until-save); skill note (with VS Code attached, qd edits land in the buffer); `specs/ROADMAP.md` status
+- [ ] T022 (follow-up: the person asked to do the clicking later) VS Code quickstart §3–§5 in the real app incl. Remote-SSH (SC-004, SC-005); record in `checklists/vscode-run.md`
+- [X] T023 Final constitution re-check in `plan.md`; fmt, clippy, `cargo test`, `node --test vscode/test` green
 - [ ] T024 Concision audit (`/pr-audit`), last task before the PR is marked ready
 
 ---

@@ -207,3 +207,9 @@ qd box move #b-xxxx --by 0,-20              # use the id from the add result's t
 - `qd meta set` edits top-level keys only. For nested options under
   `format: revealjs:`, edit the front matter by hand (then `qd check`).
 - Speaker notes are `::: {.notes}` blocks; incremental reveal is `. . .`.
+- With the deck open in VS Code's quartz-deck panel, `qd` reads and edits the
+  person's unsaved VS Code buffer, not the file: your edits show up in their
+  editor as unsaved changes, and the `.qmd` on disk changes only when they
+  save. Don't read the file directly then; use `qd show` / `qd slides`.
+  (`qd render` alone renders the saved file; `qd export` and `qd check` use
+  the buffer.)

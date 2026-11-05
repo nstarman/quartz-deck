@@ -168,6 +168,7 @@ async function openDeck(doc, panel) {
     panel.webview.onDidReceiveMessage((m) => {
       const msg = fromEditor(m);
       if (msg?.type === 'reveal') reveal(msg.lines);
+      if (msg?.type === 'focusText') focusText(doc);
     }),
     vscode.workspace.onDidCloseTextDocument((d) => { if (d === doc) panel.dispose(); }),
   ];
@@ -195,9 +196,15 @@ async function openDeck(doc, panel) {
   panel.onDidDispose(() => entry.dispose());
 }
 
-/** A palette command (US4): its qd command on the deck's saved file; the result shown. */
+/** Keyboard back to `doc`'s text, in the column it is already in. */
+const focusText = (doc) => vscode.window.showTextDocument(doc, {
+  preview: false, viewColumn: vscode.window.visibleTextEditors.find((x) => x.document === doc)?.viewColumn,
+});
+
+/** A palette command (US4): its qd command on the deck; the result shown. With
+ * a panel open qd reads the buffer, except `qd render`, which renders the file. */
 async function runQd(name, doc) {
-  if (doc.isDirty) {
+  if (doc.isDirty && (name === 'render' || !open.has(doc.uri.fsPath))) {
     const pick = await vscode.window.showWarningMessage(
       `${path.basename(doc.fileName)} has unsaved changes; qd works on the saved file.`,
       { modal: true }, 'Save and continue', 'Use the saved file');
@@ -237,7 +244,7 @@ function activate(context) {
   cmd('quartz-deck.focusPanel', () => open.get(active().uri.fsPath)?.panel.reveal(undefined, false));
   cmd('quartz-deck.focusText', async () => {
     const e = [...open.values()].find((x) => x.panel.active);
-    if (e) await vscode.window.showTextDocument(e.doc, { preview: false });
+    if (e) await focusText(e.doc);
   });
   context.subscriptions.push(out, vscode.window.registerWebviewPanelSerializer('quartz-deck', {
     async deserializeWebviewPanel(panel, state) {

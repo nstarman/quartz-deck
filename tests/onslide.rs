@@ -1382,6 +1382,9 @@ const bodies = {{
   '/api/shutdown': '{{}}',
   '/api/focus': JSON.stringify({{tab: 'evil', version: 'v', slide: 'slow', elements: [], selection: {{text: 'planted', where: 'slide'}}, line: null, editing: false}}),
   '/api/focus/set': JSON.stringify({{ref: 'slow'}}),
+  '/api/buffer/open': JSON.stringify({{text: '## Pwned\\n'}}),
+  '/api/buffer': JSON.stringify({{base: '', text: '## Pwned\\n'}}),
+  '/api/buffer/close': '{{}}',
 }};
 for (const [path, body] of Object.entries(bodies)) {{
   await fetch(qd + path, {{method: 'POST', headers: {{'Content-Type': 'application/json', 'X-QD-Token': 'guess'}}, body}}).catch(() => {{}});
@@ -1405,6 +1408,11 @@ return (await unreadable('/')) && (await unreadable('/api/focus'));
     tokio::time::sleep(Duration::from_secs(3)).await; // anything that got through would show by now
 
     assert_eq!(ed.file(), RUN_DECK, "no edit landed");
+    // spec 006: no VS Code buffer was attached in the person's place
+    assert!(
+        !ed.cli(&["slides"]).to_string().contains("Pwned"),
+        "qd still reads the file, not a planted buffer"
+    );
     assert_eq!(manifest(), before, "no package added");
     assert_eq!(ed.cli(&["outputs"])["outputs"], json!([]), "nothing ran");
     assert_eq!(
@@ -1604,6 +1612,20 @@ async fn framed_editor_takes_theme_and_messages() {
     ed.go("a").await;
     ed.click_in_slide("[data-qd=\"a/0\"] p").await;
     ed.wait("JSON.stringify(window.__reveal) === '[8,8]'").await;
+    // Esc clears the selection first; Esc with nothing left hands the keyboard to the text
+    ed.eval("window.__focusText = 0; addEventListener('message', (e) => { if (e.data?.type === 'focusText') window.__focusText++; })")
+        .await;
+    let esc = || ed.key("Escape", "Escape", 27, 0);
+    esc().await; // ends the edit the click started (the element stays selected)
+    esc().await; // clears the selection
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(
+        ed.eval("window.__focusText").await,
+        0,
+        "Esc ended the edit, then cleared the selection"
+    );
+    esc().await;
+    ed.wait("window.__focusText === 1").await;
 
     // the Quarto extension runs cells: no Run bar, no gutter
     ed.page
