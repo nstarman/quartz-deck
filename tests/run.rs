@@ -38,6 +38,16 @@ fn session_runs_cells_keeps_state_interrupts_and_restarts() {
         .execute("import matplotlib.pyplot as plt\nplt.plot([1, 3, 2])", None)
         .unwrap();
     assert!(kinds(&r).contains(&"image"), "{r}");
+    let fig = r["outputs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|o| o["kind"] == "image")
+        .unwrap();
+    assert!(
+        std::path::Path::new(fig["path"].as_str().unwrap()).is_file(),
+        "{r}"
+    );
     let r = s.execute("x + 1", None).unwrap();
     assert_eq!(r["outputs"][0]["text"], "43", "state is kept: {r}");
     let r = s.execute("1 / 0", None).unwrap();

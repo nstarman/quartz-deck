@@ -9,6 +9,7 @@ pub mod export;
 pub mod kernel;
 pub mod offline;
 pub mod ops;
+pub mod outputs;
 pub mod render;
 pub mod server;
 pub mod store;

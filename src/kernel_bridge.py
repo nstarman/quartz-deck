@@ -5,10 +5,11 @@ stdin:  {"op": "execute", "code": "..."} | {"op": "restart"} | {"op": "interrupt
 stdout: {"ready": true}, then one reply per execute/restart (interrupt has none):
         {"status": "ok|error|stopped", "counter": n, "outputs": [...]} | {"restarted": true}
 Outputs: {"kind": "text", "text"} | {"kind": "html", "html"} |
-         {"kind": "image", "mime", "data" (base64)} | {"kind": "error", "ename", "evalue", "traceback"}
+         {"kind": "image", "mime", "path" (a file in a temporary folder)} | {"kind": "error", "ename", "evalue", "traceback"}
 EOF on stdin shuts the kernel down.
 """
 
+import base64
 import json
 import os
 import queue
@@ -27,11 +28,19 @@ def say(obj):
     sys.stdout.flush()
 
 
+FIGURES = tempfile.mkdtemp(prefix="qd-figures-")
+EXT = {"image/png": "png", "image/jpeg": "jpg", "image/svg+xml": "svg"}
+
+
 def bundle(data):
-    """The richest output qd can show from a MIME bundle."""
-    for mime in ("image/png", "image/jpeg", "image/svg+xml"):
+    """The richest output qd can show from a MIME bundle; figures go to files."""
+    for mime, ext in EXT.items():
         if mime in data:
-            return {"kind": "image", "mime": mime, "data": data[mime]}
+            fd, path = tempfile.mkstemp(suffix="." + ext, dir=FIGURES)
+            raw = data[mime]
+            with os.fdopen(fd, "wb") as f:
+                f.write(raw.encode() if ext == "svg" else base64.b64decode(raw))
+            return {"kind": "image", "mime": mime, "path": path}
     if "text/html" in data:
         return {"kind": "html", "html": data["text/html"]}
     return {"kind": "text", "text": data.get("text/plain", "")}
