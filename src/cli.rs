@@ -470,7 +470,7 @@ fn output_of(cmd: &str) -> &'static str {
         "render" => r#"{"ok","output":"<absolute path>","format","log"}"#,
         "stop" => r#"{"ok","pid"}"#,
         "run" => {
-            r#"{"ok","op":"run","mode":"live|fresh","status":"done|error|stopped","runs":[{"cell","counter","status":"done|error|stopped","outputs":[{"kind":"text","text"}|{"kind":"html","html"}|{"kind":"image","mime","path"}|{"kind":"error","ename","evalue","traceback"}]}]} (ok false: E_RUN on stderr, exit 1)"#
+            r#"{"ok","op":"run","version","mode":"live|fresh","status":"done|error|stopped","runs":[{"cell","counter","status":"done|error|stopped","outputs":[{"kind":"text","text"}|{"kind":"html","html"}|{"kind":"image","mime","path"}|{"kind":"error","ename","evalue","traceback"}]}]} (ok false: E_RUN on stderr, exit 1)"#
         }
         "outputs" => r#"{"outputs":[{"cell","counter","status","stale","outputs":[...as run]}]}"#,
         "env" => {
@@ -605,6 +605,7 @@ fn run_cells(
     };
     r["ok"] = json!(r["status"] == "done");
     r["op"] = json!("run");
+    r["version"] = json!(d.version); // runs never change the file: ready for an --expect
     Ok(r)
 }
 

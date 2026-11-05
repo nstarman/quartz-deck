@@ -64,6 +64,7 @@ when the current directory has exactly one `.qmd`.
 | delete | `qd rm @4` |
 | retitle | `qd title results "Findings"` (`""` = untitled) |
 | replace content | `qd body results --md "New text"` (keeps positioned boxes) |
+| change a few characters anywhere (code, YAML, text) | `qd replace --old 'np.mean(xs' --new 'np.median(xs' --expect <version>` — `--old` must match exactly once (`E_AMBIGUOUS`: add surrounding text); only those bytes change |
 | edit one block | `qd edit results/0 --md "- three"` |
 | slide attributes | `qd set results --attr background-color=aquamarine --class center` |
 | remove attribute/class | `qd set results --unset background-color --unclass center` |
@@ -159,6 +160,15 @@ qd check
 qd show @3                                  # check it is the right one
 qd title @3 "Key findings"                  # result.target is now its stable id
 qd set <target> --attr background-color="#1a1a2e" --class center
+```
+
+**Fix a failing code cell** — the run result names the cell, shows the
+traceback (with the failing line) and gives the deck `version`:
+
+```bash
+qd run --all                                # E_RUN; stdout: runs[-1] is the failing cell, its outputs the traceback
+qd replace --old 'df.colum' --new 'df.columns' --expect <version from that result>
+qd run --all                                # "ok": true; figures in outputs[].path
 ```
 
 **Positioned image** — boxes are Quarto `.absolute` blocks, in px on the
