@@ -70,19 +70,19 @@ Paths relative to repo root.
 
 **Independent Test**: spec US1 and US2 Independent Tests; quickstart §1–§2.
 
-- [ ] T007 [P] [US2] Write failing `node --test` tests in `vscode/test/sync.test.js` for `vscode/sync.js`:
+- [X] T007 [P] [US2] Write failing `node --test` tests in `vscode/test/sync.test.js` for `vscode/sync.js`:
   - `applyEdits(text, edits)` reproduces the server's new text;
   - `merge(base, mine, theirs)` keeps non-overlapping changes from both and reports overlap as a conflict with both versions;
   - the sync state machine: buffer change → post with `base`; a 409 → merge → re-post; `buffer_edit` with a matching base → one `WorkspaceEdit`; a mismatched base → full resync;
   - the extension's own echoes are ignored.
 
   All against a fake `vscode` / fetch.
-- [ ] T008 [US2] Implement `vscode/sync.js` (pure: no `vscode` import; the caller passes `applyWorkspaceEdit`, `post`, `onConflict`) — T007 passes
-- [ ] T009 [P] [US1] Write failing tests in `vscode/test/panel.test.js` for `vscode/panel.js`:
+- [X] T008 [US2] Implement `vscode/sync.js` (pure: no `vscode` import; the caller passes `applyWorkspaceEdit`, `post`, `onConflict`) — T007 passes
+- [X] T009 [P] [US1] Write failing tests in `vscode/test/panel.test.js` for `vscode/panel.js`:
   - the webview HTML is one full-size iframe of the editor link plus `?host=vscode&theme=…[&run=external]`, with a CSP allowing only that origin;
   - messages from the iframe other than `reveal`/`ready` are dropped;
   - theme kinds map to `light`/`dark`/`hc`.
-- [ ] T010 [US1] Implement `vscode/panel.js` — T009 passes
+- [X] T010 [US1] Implement `vscode/panel.js` — T009 passes
 - [ ] T011 [US1] Implement `vscode/extension.js`:
   - `quartz-deck.open`: find `qd` (setting or PATH); a missing qd or Quarto gives an error message naming the install;
   - spawn `qd serve --port 0` for the active `.qmd` and read the first JSON line;

@@ -1,0 +1,34 @@
+// Spec 006 (T009): the panel's page, theme mapping and message filter.
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { editorUrl, themeKind, html, fromEditor } = require('../panel.js');
+
+const LINK = 'http://127.0.0.1:5123/#t=abc123';
+
+test('the editor link gains the framed-mode parameters, token kept in the fragment', () => {
+  assert.equal(editorUrl(LINK, { theme: 'dark' }), 'http://127.0.0.1:5123/?host=vscode&theme=dark#t=abc123');
+  assert.equal(
+    editorUrl('http://localhost:9000/#t=abc123', { theme: 'light', run: 'external' }),
+    'http://localhost:9000/?host=vscode&theme=light&run=external#t=abc123',
+  );
+});
+
+test("VS Code's theme kinds map to the editor's", () => {
+  assert.deepEqual([1, 2, 3, 4].map(themeKind), ['light', 'dark', 'hc', 'hc']);
+});
+
+test('the page is one full-size iframe of the editor, and its CSP allows only that origin', () => {
+  const page = html(editorUrl(LINK, { theme: 'dark' }), 'n0nce');
+  assert.match(page, /<iframe [^>]*src="http:\/\/127\.0\.0\.1:5123\/\?host=vscode&amp;theme=dark#t=abc123"/);
+  assert.match(page, /frame-src http:\/\/127\.0\.0\.1:5123;/);
+  assert.match(page, /default-src 'none'/);
+  assert.match(page, /<script nonce="n0nce">/);
+});
+
+test('only reveal and ready come through from the editor, well-formed', () => {
+  assert.deepEqual(fromEditor({ type: 'ready' }), { type: 'ready' });
+  assert.deepEqual(fromEditor({ type: 'reveal', lines: [3, 5] }), { type: 'reveal', lines: [3, 5] });
+  for (const bad of [{ type: 'run' }, { type: 'reveal', lines: ['x', 1] }, { type: 'reveal' }, null, 'reveal', { type: 'op', op: 'rm' }]) {
+    assert.equal(fromEditor(bad), null, JSON.stringify(bad));
+  }
+});

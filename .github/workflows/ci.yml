@@ -64,7 +64,7 @@ jobs:
         with:
           node-version: "22"
       - name: Extension tests
-        run: node --test vscode/test/
+        run: node --test vscode/test/*.test.js
 
       - name: Tests (Quarto-backed tests run, not skip)
         run: |

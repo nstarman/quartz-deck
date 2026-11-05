@@ -18,4 +18,4 @@ npx @vscode/vsce package          # → quartz-deck-<version>.vsix
 code --install-extension quartz-deck-*.vsix
 ```
 
-Tests: `node --test vscode/test/` (no npm packages).
+Tests: `node --test vscode/test/*.test.js` (no npm packages).
