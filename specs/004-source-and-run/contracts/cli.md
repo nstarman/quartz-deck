@@ -16,10 +16,10 @@ found (the text changed elsewhere; `details.hint` suggests re-reading),
 ## `qd env`
 
 ```text
-qd env                         # {"tool","root","manifest","lockfile","lock_current","python","packages":[…]}
+qd env                         # {"tool","root","manifest","lockfile","lock_current"}
 qd env init [--tool uv|pixi]   # create manifest + lock with the base packages (default uv)
 qd env add <PKG>...            # add packages (uv add / pixi add --pypi), relock
-qd env sync                    # install exactly the lockfile (e.g. on a new machine)
+qd env sync                    # install exactly the lockfile (e.g. on a new machine); relocks after a hand-edited manifest
 ```
 
 Errors: `E_NO_ENV` (no environment; hint: `qd env init`), `E_ENV_TOOL`
@@ -56,4 +56,8 @@ Cells gain `"output": {"stale", "counter"}` when an output is stored.
 
 `qd render`, `qd export`, `qd check --render` run Quarto through the deck's
 environment when it has code cells (`uv run --locked quarto …` /
-`pixi run --locked quarto …`); `E_LOCK_STALE` / `E_NO_ENV` as above.
+`pixi run --locked quarto …`); `E_LOCK_STALE` as above. A deck with code
+cells and no environment renders with Quarto directly, as before (it never
+needs one to start). Unless the deck names a kernel (`jupyter:`), cells run
+in qd's `qd-python` kernel spec — the environment's own Python — so a Python
+kernel installed elsewhere for the user is never picked up.
