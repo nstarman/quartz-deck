@@ -15,9 +15,7 @@ let version = '';
 let timer = null;
 let quiet = null;
 
-export const get = () => ({ ...focus });
-
-/** Follow focus changes: `f(focus, changed)`. */
+/** Follow focus changes: `f(focus, changedKeys)`. */
 export const on = (f) => listeners.push(f);
 
 /** Merge `partial` into the focus; listeners and the server hear of real changes. */
@@ -25,7 +23,7 @@ export function set(partial) {
   const changed = Object.keys(partial).filter((k) => JSON.stringify(focus[k]) !== JSON.stringify(partial[k]));
   if (!changed.length) return;
   Object.assign(focus, partial);
-  listeners.forEach((f) => f(focus, partial));
+  listeners.forEach((f) => f(focus, changed));
   report();
 }
 
@@ -52,8 +50,8 @@ function report() {
 
 function send() {
   if (!token || !version) return; // a tab opened without the editor link can't report
-  let { selection } = focus;
-  if (selection && selection.text.length > MAX_TEXT) selection = { ...selection, text: selection.text.slice(0, MAX_TEXT), truncated: true };
+  const s = focus.selection;
+  const selection = s && { ...s, text: s.text.slice(0, MAX_TEXT), truncated: s.text.length > MAX_TEXT };
   fetch('/api/focus', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-QD-Token': token },

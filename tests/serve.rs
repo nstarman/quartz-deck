@@ -2,7 +2,7 @@
 //! preview, and pushes SSE events when the deck changes. Skipped (passes
 //! trivially) when Quarto is not installed.
 
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
@@ -63,8 +63,11 @@ fn start(dir: &Path) -> Server {
         token.len() == 32 && token.bytes().all(|b| b.is_ascii_hexdigit()),
         "{url}"
     );
-    let token = token.to_string();
-    Server { child, port, token }
+    Server {
+        child,
+        port,
+        token: token.to_string(),
+    }
 }
 
 fn post(port: u16, path: &str, host: &str, ctype: &str, body: &str) -> (u16, String) {
@@ -75,16 +78,17 @@ fn post(port: u16, path: &str, host: &str, ctype: &str, body: &str) -> (u16, Str
         body.len()
     )
     .unwrap();
+    response(s)
+}
+
+/// Status and body of a `Connection: close` response.
+fn response(mut s: TcpStream) -> (u16, String) {
     let mut buf = Vec::new();
     s.read_to_end(&mut buf).unwrap();
     let text = String::from_utf8_lossy(&buf).into_owned();
     let status = text.split_whitespace().nth(1).unwrap().parse().unwrap();
-    (
-        status,
-        text.split_once("\r\n\r\n")
-            .map(|(_, b)| b.to_string())
-            .unwrap_or_default(),
-    )
+    let body = text.split_once("\r\n\r\n").map(|(_, b)| b.to_string());
+    (status, body.unwrap_or_default())
 }
 
 fn get(port: u16, path: &str) -> (u16, String) {
@@ -99,15 +103,7 @@ fn get_with(port: u16, path: &str, headers: &str) -> (u16, String) {
         "GET {path} HTTP/1.1\r\nHost: localhost\r\n{headers}Connection: close\r\n\r\n"
     )
     .unwrap();
-    let mut buf = Vec::new();
-    s.read_to_end(&mut buf).unwrap();
-    let text = String::from_utf8_lossy(&buf).into_owned();
-    let status = text.split_whitespace().nth(1).unwrap().parse().unwrap();
-    let body = text
-        .split_once("\r\n\r\n")
-        .map(|(_, b)| b.to_string())
-        .unwrap_or_default();
-    (status, body)
+    response(s)
 }
 
 /// Read SSE `event:` names (with data) until `want` arrives or `timeout` passes.
@@ -116,11 +112,7 @@ struct Events {
 }
 
 impl Events {
-    fn open(port: u16) -> Events {
-        Events::open_path(port, "/events")
-    }
-
-    fn open_path(port: u16, path: &str) -> Events {
+    fn open(port: u16, path: &str) -> Events {
         let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
         write!(
             s,
@@ -171,7 +163,7 @@ fn serve_renders_and_live_reloads() {
     }
     let (_tmp, dir) = setup();
     let server = start(&dir);
-    let mut ev = Events::open(server.port);
+    let mut ev = Events::open(server.port, "/events");
     let first = ev
         .wait("rendered", Duration::from_secs(60))
         .expect("initial render");
@@ -568,7 +560,7 @@ fn run_cells_over_http() {
     assert_eq!(run(r#"{"cells":["plain/0"]}"#, &auth), 400, "E_NOT_CODE");
     assert_eq!(run(r#"{"cells":["r/0"]}"#, &auth), 400, "E_ENGINE");
 
-    let mut ev = Events::open(p);
+    let mut ev = Events::open(p, "/events");
     assert_eq!(run(print, &auth), 202);
     let wait = Duration::from_secs(120);
     assert!(ev.wait("kernel", wait).unwrap().contains("starting"));
@@ -657,7 +649,7 @@ fn focus_over_http() {
     let (_tmp, dir) = setup();
     assert_eq!(
         qd_json(&dir, &["focus"]),
-        (true, serde_json::json!({"open": false})),
+        (true, json!({"open": false})),
         "no server: not an error"
     );
     let server = start(&dir);
@@ -675,9 +667,10 @@ fn focus_over_http() {
         let end = Instant::now() + Duration::from_secs(5);
         loop {
             let v = read();
-            if f(&v) || Instant::now() > end {
+            if f(&v) {
                 return v;
             }
+            assert!(Instant::now() < end, "focus never matched: {v}");
             std::thread::sleep(Duration::from_millis(50));
         }
     };
@@ -693,8 +686,8 @@ fn focus_over_http() {
     let evil = format!("{json_auth}\r\nOrigin: http://evil.example");
     assert_eq!(post(p, "/api/focus", "127.0.0.1", &evil, body).0, 403);
 
-    assert_eq!(read(), serde_json::json!({"open": false}), "no editor tab");
-    let t1 = Events::open_path(p, "/events?tab=t1");
+    assert_eq!(read(), json!({"open": false}), "no editor tab");
+    let t1 = Events::open(p, "/events?tab=t1");
     let v = until(&|v| v["open"] == true);
     assert!(v["age"].is_null() && v["hint"].is_string(), "{v}");
 
@@ -704,11 +697,7 @@ fn focus_over_http() {
     );
     let v = until(&|v| !v["age"].is_null());
     assert_eq!(v["slide"], "results");
-    assert_eq!(
-        v["elements"],
-        serde_json::json!(["results/0"]),
-        "results/99 dropped"
-    );
+    assert_eq!(v["elements"], json!(["results/0"]), "results/99 dropped");
     assert_eq!(
         (v["selection"]["text"].as_str(), v["line"].as_u64()),
         (Some("two words"), Some(7))
@@ -739,18 +728,12 @@ fn focus_over_http() {
     );
 
     // the most recently used tab wins; when it goes, the other one's focus is back
-    let t2 = Events::open_path(p, "/events?tab=t2");
+    let t2 = Events::open(p, "/events?tab=t2");
     std::thread::sleep(Duration::from_millis(300));
     assert_eq!(report("t2", "conclusion", "[]"), 204);
-    assert_eq!(
-        until(&|v| v["slide"] == "conclusion")["slide"],
-        "conclusion"
-    );
+    until(&|v| v["slide"] == "conclusion");
     drop(t2);
-    assert_eq!(until(&|v| v["slide"] == "results")["slide"], "results");
+    until(&|v| v["slide"] == "results");
     drop(t1);
-    assert_eq!(
-        until(&|v| v["open"] == false),
-        serde_json::json!({"open": false})
-    );
+    assert_eq!(until(&|v| v["open"] == false), json!({"open": false}));
 }

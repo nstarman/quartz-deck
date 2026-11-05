@@ -87,7 +87,7 @@ struct App {
     runs: AtomicU64,
     /// `POST /api/shutdown` (`qd stop`).
     stop: Notify,
-    /// Shared focus (spec 005): open editor tabs and what each last reported.
+    /// Shared focus (spec 005).
     focus: Mutex<Tabs>,
     /// Held while Quarto renders; `true` once shutting down (no new renders).
     /// Shutdown waits for a render in progress: Quarto left running would
@@ -574,12 +574,8 @@ async fn api_env_change(
     res
 }
 
-/// Open editor tabs (by their event stream) and each one's latest focus.
-#[derive(Default)]
-struct Tabs {
-    open: HashMap<String, usize>,
-    focus: HashMap<String, (Snapshot, Instant)>,
-}
+/// Per open editor tab: how many event streams it has open, and its last focus report.
+type Tabs = HashMap<String, (usize, Option<(Snapshot, Instant)>)>;
 
 /// A tab counts as open while its event stream lasts.
 struct TabGuard(Shared, String);
@@ -587,12 +583,10 @@ struct TabGuard(Shared, String);
 impl Drop for TabGuard {
     fn drop(&mut self) {
         let mut t = self.0.focus.lock().unwrap();
-        if let Some(n) = t.open.get_mut(&self.1) {
-            *n -= 1;
-            if *n == 0 {
-                t.open.remove(&self.1);
-                t.focus.remove(&self.1);
-            }
+        let n = &mut t.get_mut(&self.1).unwrap().0;
+        *n -= 1;
+        if *n == 0 {
+            t.remove(&self.1);
         }
     }
 }
@@ -610,9 +604,9 @@ async fn api_focus_report(
         Ok(s) => s,
         Err(e) => return err_response(e),
     };
-    let mut t = app.focus.lock().unwrap();
-    if t.open.contains_key(&snap.tab) {
-        t.focus.insert(snap.tab.clone(), (snap, Instant::now()));
+    // a tab without an open event stream doesn't count (FR-006)
+    if let Some(tab) = app.focus.lock().unwrap().get_mut(&snap.tab) {
+        tab.1 = Some((snap, Instant::now()));
     }
     StatusCode::NO_CONTENT.into_response()
 }
@@ -624,10 +618,12 @@ async fn api_focus(State(app): State<Shared>, headers: HeaderMap) -> Response {
     }
     let latest = {
         let t = app.focus.lock().unwrap();
-        if t.open.is_empty() {
+        if t.is_empty() {
             return Json(json!({"open": false})).into_response();
         }
-        t.focus.values().max_by_key(|(_, at)| *at).cloned()
+        t.values()
+            .filter_map(|(_, f)| f.clone())
+            .max_by_key(|(_, at)| *at)
     };
     let Some((snap, at)) = latest else {
         return Json(json!({"open": true, "age": null,
@@ -645,12 +641,7 @@ async fn events(
     Query(q): Query<HashMap<String, String>>,
 ) -> Sse<impl Stream<Item = std::result::Result<Event, Infallible>>> {
     let guard = q.get("tab").map(|tab| {
-        *app.focus
-            .lock()
-            .unwrap()
-            .open
-            .entry(tab.clone())
-            .or_default() += 1;
+        app.focus.lock().unwrap().entry(tab.clone()).or_default().0 += 1;
         TabGuard(app.clone(), tab.clone())
     });
     let rx = app.tx.subscribe();

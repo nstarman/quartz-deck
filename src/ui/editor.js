@@ -340,7 +340,9 @@ function hookFrame() {
     history.replaceState(null, '', '#/' + id);
     const s = slideByAnchor(id);
     if (state.sel && s && !state.sel.startsWith(s.id + '/')) state.sel = null;
-    syncFocus();
+    // a slide change that followed the focus isn't a new one (keeps the source pane's)
+    if (state.followed === id) state.followed = null;
+    else syncFocus();
     renderList();
     renderPanel();
     renderSlidebar();
@@ -1319,6 +1321,7 @@ pane.initPane({
 
 /** The slide view's part of the shared focus (spec 005): slide, element, text selected while editing. */
 function syncFocus() {
+  seq++; // a source report still fetching is now older than this
   const text = state.session ? String(frameWin()?.getSelection?.() || '') : '';
   const ref = state.sel || state.session?.ref;
   focus.editingSlide(!!state.session);
@@ -1326,34 +1329,35 @@ function syncFocus() {
     slide: slideByAnchor(state.anchor)?.id ?? null,
     elements: ref ? [ref] : [],
     line: null,
-    selection: text ? { text, where: 'slide', truncated: false } : null,
+    selection: text ? { text, where: 'slide' } : null,
   });
 }
 
 /** The source pane's part: the caret's slide, every block the selection touches (or the caret's). */
 let sourceTimer = null;
+let seq = 0;
 function sourceFocus({ line, first, last, text }) {
   clearTimeout(sourceTimer);
   sourceTimer = setTimeout(async () => {
-    const slides = state.deck?.slides || [];
-    const s = slides.find((x) => x.lines[0] <= line && line <= x.lines[1]);
-    const hit = slides.filter((x) => x.lines[0] <= last && first <= x.lines[1]);
+    const n = ++seq;
+    const hit = (state.deck?.slides || []).filter((x) => x.lines[0] <= last && first <= x.lines[1]);
     const blocks = (await Promise.all(hit.map((x) => fetchSlide(x.id)))).flatMap((sl) => sl?.blocks || []);
+    if (n !== seq) return; // a newer focus arrived meanwhile
     focus.set({
-      slide: s?.id ?? null,
+      slide: hit.at(-1)?.id ?? null, // the caret (= the selection's end) is in the last one
       elements: blocks.filter((b) => b.lines && b.lines[0] <= last && first <= b.lines[1]).map((b) => b.id),
       line,
-      selection: text ? { text, where: 'source', truncated: false } : null,
+      selection: text ? { text, where: 'source' } : null,
     });
   }, 100);
 }
 
 // 004's source → slide sync follows the shared focus (FR-012); the front matter shows the title slide
 focus.on((f, changed) => {
-  if (!('slide' in changed)) return;
-  const s = (state.deck?.slides || []).find((x) => x.id === f.slide);
+  if (!changed.includes('slide')) return;
+  const s = slideById(f.slide);
   const anchor = s ? s.anchor : (state.deck?.title_slide ? 'title-slide' : null);
-  if (anchor && anchor !== state.anchor) go(anchor);
+  if (anchor && anchor !== state.anchor) { state.followed = anchor; go(anchor); }
 });
 
 run.initRun({ say, flush: pane.save });

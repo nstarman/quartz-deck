@@ -174,9 +174,10 @@ export function reveal([first, last]) {
 
 /** Caret line and selection → the editor's shared focus (spec 005). */
 function caretMoved() {
-  const lineAt = (i) => ta.value.slice(0, i).split('\n').length;
-  const line = lineAt(ta.selectionEnd);
-  api.onCaret({ line, first: lineAt(ta.selectionStart), last: line, text: ta.value.slice(ta.selectionStart, ta.selectionEnd) });
+  const first = ta.value.slice(0, ta.selectionStart).split('\n').length;
+  const text = ta.value.slice(ta.selectionStart, ta.selectionEnd);
+  const line = first + text.split('\n').length - 1;
+  api.onCaret({ line, first, last: line, text });
 }
 
 export function initPane(a) {

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Selected text is cut here (FR-005); element refs past this are dropped.
-pub const MAX_TEXT: usize = 2000;
+const MAX_TEXT: usize = 2000;
 const MAX_ELEMENTS: usize = 50;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
