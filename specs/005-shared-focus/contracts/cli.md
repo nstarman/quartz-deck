@@ -28,6 +28,9 @@ Read result:
   changed since the focus was taken.
 
 Set result: `{"ok": true, "result": "moved" | "deferred" | "no_editor", "ref": "<REF>"}`.
+`deferred` means the editor reported the person typing at its last update
+(the page checks again when the request arrives and offers "Go there" while
+they type); element refs come back positional (`<slide>/<i>`).
 `E_NOT_FOUND` / `E_AMBIGUOUS` for a bad ref, as other commands.
 
 Reading never changes anything (deck, editor view).

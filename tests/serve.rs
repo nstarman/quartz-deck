@@ -652,6 +652,14 @@ fn focus_over_http() {
         (true, json!({"open": false})),
         "no server: not an error"
     );
+    assert_eq!(
+        qd_json(&dir, &["focus", "--set", "results/0"]).1["result"],
+        "no_editor"
+    );
+    assert_eq!(
+        qd_json(&dir, &["focus", "--set", "nope"]).1["error"]["code"],
+        "E_NOT_FOUND"
+    );
     let server = start(&dir);
     let p = server.port;
     let auth = format!("X-QD-Token: {}\r\n", server.token);
@@ -687,7 +695,7 @@ fn focus_over_http() {
     assert_eq!(post(p, "/api/focus", "127.0.0.1", &evil, body).0, 403);
 
     assert_eq!(read(), json!({"open": false}), "no editor tab");
-    let t1 = Events::open(p, "/events?tab=t1");
+    let mut t1 = Events::open(p, "/events?tab=t1");
     let v = until(&|v| v["open"] == true);
     assert!(v["age"].is_null() && v["hint"].is_string(), "{v}");
 
@@ -734,6 +742,47 @@ fn focus_over_http() {
     until(&|v| v["slide"] == "conclusion");
     drop(t2);
     until(&|v| v["slide"] == "results");
+
+    // pointing (US2): token-guarded, the ref checked, the latest open tab told
+    let set = |r: &str, ctype: &str| {
+        let (status, body) = post(
+            p,
+            "/api/focus/set",
+            "127.0.0.1",
+            ctype,
+            &format!(r#"{{"ref":"{r}"}}"#),
+        );
+        (
+            status,
+            serde_json::from_str::<Value>(&body).unwrap_or(Value::Null),
+        )
+    };
+    assert_eq!(set("results", "application/json").0, 403);
+    assert_eq!(set("nope", &json_auth).0, 404);
+    let (status, v) = set("results/0", &json_auth);
+    assert_eq!(
+        (status, &v["result"], &v["ref"]),
+        (200, &json!("moved"), &json!("results/0")),
+        "{v}"
+    );
+    let ev = t1
+        .wait("point", Duration::from_secs(5))
+        .expect("point event");
+    assert!(
+        ev.contains(r#""tab":"t1""#) && ev.contains(r#""anchor":"results""#),
+        "{ev}"
+    );
+    // while the person types, the move is offered instead (deferred)
+    let typing = r#"{"tab":"t1","version":"v","slide":"results","elements":[],"selection":null,"line":null,"editing":true}"#;
+    assert_eq!(
+        post(p, "/api/focus", "127.0.0.1", &json_auth, typing).0,
+        204
+    );
+    assert_eq!(set("results", &json_auth).1["result"], "deferred");
+    let (ok, cli) = qd_json(&dir, &["focus", "--set", "results/1"]);
+    assert!(ok && cli["result"] == "deferred", "{cli}");
+
     drop(t1);
     assert_eq!(until(&|v| v["open"] == false), json!({"open": false}));
+    assert_eq!(set("results", &json_auth).1["result"], "no_editor");
 }
