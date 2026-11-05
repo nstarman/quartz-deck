@@ -166,6 +166,15 @@ impl Ed {
         }
     }
 
+    /// Poll `qd focus` until `pred` holds (10 s).
+    async fn until_focus(&self, pred: impl Fn(&Value) -> bool, what: &str) {
+        let start = Instant::now();
+        while !pred(&self.cli(&["focus"])) {
+            assert!(start.elapsed() < Duration::from_secs(10), "{what}");
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
     /// Show the slide with this preview anchor and wait for it.
     async fn go(&self, anchor: &str) {
         // re-set the hash while waiting: a preview reload in between drops it
@@ -1510,14 +1519,8 @@ async fn pointing_moves_or_offers() {
     ed.go("a").await;
     ed.open_source().await;
     // the server knows this tab once it has reported
-    let start = Instant::now();
-    while !ed.cli(&["focus"])["age"].is_number() {
-        assert!(
-            start.elapsed() < Duration::from_secs(10),
-            "tab never reported"
-        );
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
+    ed.until_focus(|v| v["age"].is_number(), "tab never reported")
+        .await;
 
     let t = Instant::now();
     assert_eq!(ed.cli(&["focus", "--set", "b/0"])["result"], "moved");
@@ -1539,14 +1542,8 @@ async fn pointing_moves_or_offers() {
     ed.click_in_slide("[data-qd=\"a/0\"] p").await;
     ed.caret("[data-qd=\"a/0\"]", None).await;
     ed.type_text(" abc").await;
-    let start = Instant::now();
-    while ed.cli(&["focus"])["editing"] != true {
-        assert!(
-            start.elapsed() < Duration::from_secs(10),
-            "editing never reported"
-        );
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
+    ed.until_focus(|v| v["editing"] == true, "editing never reported")
+        .await;
     for _ in 0..20 {
         assert_eq!(ed.cli(&["focus", "--set", "b"])["result"], "deferred");
     }
@@ -1562,4 +1559,62 @@ async fn pointing_moves_or_offers() {
         ed.eval("document.querySelector('#gooffer').hidden").await,
         true
     );
+}
+
+/// Spec 006 (T013): the editor framed by VS Code takes its theme from the
+/// query, then from messages — only its parent's — and hides Run when the
+/// Quarto extension runs cells.
+#[tokio::test(flavor = "multi_thread")]
+async fn framed_editor_takes_theme_and_messages() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    let link = ed.cli(&["url"])["url"].as_str().unwrap().to_string();
+    let framed = |q: &str| link.replace("/#t=", &format!("/?host=vscode&{q}#t="));
+    let theme = "document.documentElement.dataset.theme";
+    let bg = "getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()";
+
+    ed.page.goto(framed("theme=dark").as_str()).await.unwrap();
+    ed.wait_secs(READY, 60).await;
+    assert_eq!(ed.eval(theme).await, "dark");
+    assert_eq!(ed.eval(bg).await, "#18181a");
+
+    // here the page is its own parent: its messages count, a child frame's don't
+    ed.eval("window.postMessage({type: 'theme', kind: 'hc'}, '*')")
+        .await;
+    ed.wait(&format!("{theme} === 'hc'")).await;
+    ed.eval("(() => { const f = document.createElement('iframe'); f.srcdoc = `<script>parent.postMessage({type: 'theme', kind: 'light'}, '*')</script>`; document.body.append(f); })()").await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(
+        ed.eval(theme).await,
+        "hc",
+        "a stranger's message is ignored"
+    );
+    assert_eq!(ed.eval(bg).await, "#000000");
+
+    // VS Code's cursor in slide B's text shows B, and qd focus has it (US3)
+    ed.go("a").await;
+    ed.eval("window.postMessage({type: 'follow', line: 17, first: 17, last: 17, text: ''}, '*')")
+        .await;
+    ed.wait("document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide().id === 'b'")
+        .await;
+    ed.until_focus(|v| v["line"] == 17, "focus never got the line")
+        .await;
+    // an element chosen on a slide: its source lines go to VS Code
+    ed.eval("window.__reveal = null; addEventListener('message', (e) => { if (e.data?.type === 'reveal') window.__reveal = e.data.lines; })")
+        .await;
+    ed.go("a").await;
+    ed.click_in_slide("[data-qd=\"a/0\"] p").await;
+    ed.wait("JSON.stringify(window.__reveal) === '[8,8]'").await;
+
+    // the Quarto extension runs cells: no Run bar, no gutter
+    ed.page
+        .goto(framed("theme=light&run=external").as_str())
+        .await
+        .unwrap();
+    ed.wait_secs(READY, 60).await;
+    ed.open_source().await;
+    assert_eq!(
+        ed.eval("['.runbar', '.gutter'].map((s) => getComputedStyle(document.querySelector('#srcpane ' + s)).display)").await,
+        json!(["none", "none"])
+    );
+    assert_eq!(ed.eval(theme).await, "light");
 }

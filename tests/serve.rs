@@ -786,3 +786,118 @@ fn focus_over_http() {
     assert_eq!(until(&|v| v["open"] == false), json!({"open": false}));
     assert_eq!(set("results", &json_auth).1["result"], "no_editor");
 }
+
+/// Apply a `buffer_edit`'s line edits to `text` (as the VS Code extension does).
+fn apply_line_edits(text: &str, edits: &Value) -> String {
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    let (mut out, mut at) = (String::new(), 0);
+    for e in edits.as_array().unwrap() {
+        let (s, t) = (
+            e["start"].as_u64().unwrap() as usize,
+            e["end"].as_u64().unwrap() as usize,
+        );
+        out += &lines[at..s].concat();
+        out += e["text"].as_str().unwrap();
+        at = t;
+    }
+    out + &lines[at..].concat()
+}
+
+/// Spec 006 (T005): while a VS Code buffer is attached it is the deck for qd —
+/// panel ops, CLI edits and undo land in it (as `buffer_edit` events for VS
+/// Code), the person's typing comes in with a version check, and the file on
+/// disk never changes (VS Code saves it).
+#[test]
+fn buffer_overlay_over_http() {
+    if !have("quarto") {
+        return;
+    }
+    let (_tmp, dir) = setup();
+    let server = start(&dir);
+    let p = server.port;
+    let auth = format!("application/json\r\nX-QD-Token: {}", server.token);
+    let source = || -> Value { serde_json::from_str(&get(p, "/api/source").1).unwrap() };
+    let disk = || std::fs::read_to_string(dir.join("deck.qmd")).unwrap();
+    let buffer = BASIC.replace("## Intro", "## Intro (unsaved)");
+    let body = json!({ "text": buffer }).to_string();
+
+    for path in ["/api/buffer/open", "/api/buffer", "/api/buffer/close"] {
+        assert_eq!(
+            post(p, path, "127.0.0.1", "application/json", &body).0,
+            403,
+            "{path}"
+        );
+    }
+    let (status, v) = post(p, "/api/buffer/open", "127.0.0.1", &auth, &body);
+    assert_eq!(status, 200, "{v}");
+    let mut ev = Events::open(p, "/events");
+    assert_eq!(source()["text"], buffer.as_str(), "qd now reads the buffer");
+
+    // a panel op → a buffer_edit that turns the buffer into the new text; disk untouched
+    let op = r#"{"op":"title","args":{"slide":"results","text":"From the panel"}}"#;
+    assert_eq!(
+        post(p, "/api/op", "127.0.0.1", "application/json", op).0,
+        200
+    );
+    let e: Value = serde_json::from_str(
+        &ev.wait("buffer_edit", Duration::from_secs(5))
+            .expect("buffer_edit"),
+    )
+    .unwrap();
+    let now = source();
+    assert_eq!(
+        apply_line_edits(&buffer, &e["edits"]),
+        now["text"].as_str().unwrap(),
+        "{e}"
+    );
+    assert_eq!(e["version"], now["version"]);
+    assert_eq!(disk(), BASIC, "the file changes only when VS Code saves");
+
+    // the person's typing: CAS on the version the extension last saw
+    let typed = now["text"]
+        .as_str()
+        .unwrap()
+        .replace("Conclusion", "Wrap-up");
+    let set = |base: &Value, text: &str| {
+        post(
+            p,
+            "/api/buffer",
+            "127.0.0.1",
+            &auth,
+            &json!({"base": base, "text": text}).to_string(),
+        )
+    };
+    let (status, _) = set(&now["version"], &typed);
+    assert_eq!(status, 200);
+    assert_eq!(source()["text"], typed.as_str());
+    let (status, body) = set(&now["version"], "stale");
+    assert_eq!(status, 409, "a stale base is refused");
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap()["text"],
+        typed.as_str()
+    );
+
+    // an agent's CLI edit and undo land in the buffer too
+    let before = source();
+    assert!(qd_json(&dir, &["title", "@1", "From the CLI"]).0);
+    let e: Value = serde_json::from_str(
+        &ev.wait("buffer_edit", Duration::from_secs(5))
+            .expect("cli buffer_edit"),
+    )
+    .unwrap();
+    assert_eq!(
+        apply_line_edits(before["text"].as_str().unwrap(), &e["edits"]),
+        source()["text"].as_str().unwrap()
+    );
+    assert!(qd_json(&dir, &["undo"]).0);
+    ev.wait("buffer_edit", Duration::from_secs(5))
+        .expect("undo buffer_edit");
+    assert_eq!(source()["text"], before["text"]);
+    assert_eq!(disk(), BASIC);
+
+    assert_eq!(
+        post(p, "/api/buffer/close", "127.0.0.1", &auth, "{}").0,
+        204
+    );
+    assert_eq!(source()["text"], BASIC, "detached: back to the file");
+}
