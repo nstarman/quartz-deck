@@ -12,7 +12,7 @@ const ta = pane.querySelector('textarea');
 const hl = pane.querySelector('pre');
 const band = pane.querySelector('.band');
 
-let api = null; // { op, conflict, onCaretLine, say }
+let api = null; // { op, conflict, onCaret, typed, say }
 let base = ''; // the file text the pane last agreed with
 let timer = null;
 let saving = false;
@@ -172,15 +172,16 @@ export function reveal([first, last]) {
   syncScroll();
 }
 
-let lastLine = 0;
+/** Caret line and selection → the editor's shared focus (spec 005). */
 function caretMoved() {
-  const line = ta.value.slice(0, ta.selectionStart).split('\n').length;
-  if (line !== lastLine) { lastLine = line; api.onCaretLine(line); }
+  const lineAt = (i) => ta.value.slice(0, i).split('\n').length;
+  const line = lineAt(ta.selectionEnd);
+  api.onCaret({ line, first: lineAt(ta.selectionStart), last: line, text: ta.value.slice(ta.selectionStart, ta.selectionEnd) });
 }
 
 export function initPane(a) {
   api = a;
-  ta.addEventListener('input', () => { repaint(); schedule(); });
+  ta.addEventListener('input', () => { repaint(); schedule(); api.typed(); });
   ta.addEventListener('blur', save);
   ta.addEventListener('scroll', syncScroll);
   ta.addEventListener('keyup', caretMoved);

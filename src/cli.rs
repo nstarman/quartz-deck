@@ -179,6 +179,8 @@ enum Cmd {
         #[arg(long)]
         timeout: Option<u64>,
     },
+    /// What the person has in focus in the editor: slide, selected elements and text
+    Focus,
     /// Stored outputs of code cells (all, or the given ones), with `stale`
     Outputs { cells: Vec<String> },
     /// URL of the running preview (optionally opening on a slide)
@@ -473,6 +475,9 @@ fn output_of(cmd: &str) -> &'static str {
             r#"{"ok","op":"run","version","mode":"live|fresh","status":"done|error|stopped","runs":[{"cell","counter","status":"done|error|stopped","outputs":[{"kind":"text","text"}|{"kind":"html","html"}|{"kind":"image","mime","path"}|{"kind":"error","ename","evalue","traceback"}]}]} (ok false: E_RUN on stderr, exit 1)"#
         }
         "outputs" => r#"{"outputs":[{"cell","counter","status","stale","outputs":[...as run]}]}"#,
+        "focus" => {
+            r#"{"open","age","version","deck_version","slide","elements":[...],"selection":{"text","where":"slide|source","truncated"}|null,"line","editing"} or {"open":false}; with --set {"ok","result":"moved|deferred|no_editor","ref"}"#
+        }
         "env" => {
             r#"{"tool","root","manifest","lockfile","lock_current"} (+ "ok","log" for init/add/sync)"#
         }
@@ -567,7 +572,7 @@ fn run_cells(
         crate::kernel::plan(&d, cells, all, fresh)?; // refs checked here, errors as CLI codes
         let body =
             json!({"cells": cells, "all": all, "fresh": fresh, "wait": true, "timeout": timeout});
-        let (status, text) = to_server(&session, "api/run", &body)?;
+        let (status, text) = to_server(&session, "api/run", Some(&body))?;
         let mut v: Value = serde_json::from_str(&text).unwrap_or_default();
         if status != 200 || !v["runs"].is_array() {
             let error = match &v["error"] {
@@ -611,18 +616,23 @@ fn run_cells(
 
 /// POST `body` to the running server (its session file) with the run token:
 /// to the port that answered, never a redirect, so the token goes nowhere else.
-fn to_server(session: &Value, path: &str, body: &Value) -> Result<(u16, String)> {
+fn to_server(session: &Value, path: &str, body: Option<&Value>) -> Result<(u16, String)> {
     let agent = ureq::Agent::config_builder()
         .http_status_as_error(false)
         .max_redirects(0)
         .build()
         .new_agent();
-    let mut res = agent
-        .post(format!("http://127.0.0.1:{}/{path}", session["port"]))
-        .header("X-QD-Token", session["token"].as_str().unwrap_or_default())
-        .header("Content-Type", "application/json")
-        .send(body.to_string())
-        .map_err(std::io::Error::other)?;
+    let url = format!("http://127.0.0.1:{}/{path}", session["port"]);
+    let token = session["token"].as_str().unwrap_or_default();
+    let mut res = match body {
+        Some(b) => agent
+            .post(&url)
+            .header("X-QD-Token", token)
+            .header("Content-Type", "application/json")
+            .send(b.to_string()),
+        None => agent.get(&url).header("X-QD-Token", token).call(),
+    }
+    .map_err(std::io::Error::other)?;
     let text = res
         .body_mut()
         .read_to_string()
@@ -1177,6 +1187,19 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             fresh,
             timeout,
         } => run_cells(&ctx.store()?, cells, *all, *fresh, *timeout),
+        Cmd::Focus => {
+            // no running editor is an answer, not an error (FR-003)
+            let Ok(session) = crate::server::running(&ctx.store()?) else {
+                return Ok(json!({"open": false}));
+            };
+            let (status, text) = to_server(&session, "api/focus", None)?;
+            if status != 200 {
+                return Err(QdError::Io(std::io::Error::other(format!(
+                    "qd serve answered {status}: {text}; one from an older qd has no focus (restart it)"
+                ))));
+            }
+            Ok(serde_json::from_str(&text).map_err(std::io::Error::other)?)
+        }
         Cmd::Outputs { cells } => {
             let (s, d) = read()?;
             let out = crate::outputs::Outputs::new(&s);
@@ -1223,7 +1246,7 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             // asks the server itself (token-guarded): never signals a pid that may be reused
             let store = ctx.store()?;
             let session = crate::server::running(&store)?;
-            let (status, text) = to_server(&session, "api/shutdown", &json!({}))?;
+            let (status, text) = to_server(&session, "api/shutdown", Some(&json!({})))?;
             if status != 200 {
                 return Err(QdError::Io(std::io::Error::other(format!(
                     "qd serve refused to stop ({status}: {text}); one from an older qd stops with Ctrl-C"

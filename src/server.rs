@@ -4,11 +4,12 @@
 use crate::cli::{run_op, show_json, slides_json};
 use crate::deck::{BlockKind, Deck, version_of};
 use crate::error::{QdError, Result};
+use crate::focus::Snapshot;
 use crate::kernel::{Session as Kernel, cell_code};
 use crate::outputs::Outputs;
 use crate::render::{preview_copy, render};
 use crate::store::Store;
-use axum::extract::{Path as UrlPath, State};
+use axum::extract::{Path as UrlPath, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Redirect, Response};
@@ -17,11 +18,12 @@ use axum::{Json, Router};
 use futures_util::stream::{self, Stream, StreamExt};
 use notify::Watcher;
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::{Notify, broadcast};
 use tower_http::services::ServeDir;
 
@@ -37,6 +39,7 @@ const UI_MODULES: &[(&str, &str)] = &[
     ("menu.js", include_str!("ui/menu.js")),
     ("pane.js", include_str!("ui/pane.js")),
     ("run.js", include_str!("ui/run.js")),
+    ("focus.js", include_str!("ui/focus.js")),
 ];
 
 #[derive(Clone, Debug)]
@@ -84,6 +87,8 @@ struct App {
     runs: AtomicU64,
     /// `POST /api/shutdown` (`qd stop`).
     stop: Notify,
+    /// Shared focus (spec 005): open editor tabs and what each last reported.
+    focus: Mutex<Tabs>,
     /// Held while Quarto renders; `true` once shutting down (no new renders).
     /// Shutdown waits for a render in progress: Quarto left running would
     /// clean up the deck folder under the next server's render.
@@ -569,9 +574,85 @@ async fn api_env_change(
     res
 }
 
+/// Open editor tabs (by their event stream) and each one's latest focus.
+#[derive(Default)]
+struct Tabs {
+    open: HashMap<String, usize>,
+    focus: HashMap<String, (Snapshot, Instant)>,
+}
+
+/// A tab counts as open while its event stream lasts.
+struct TabGuard(Shared, String);
+
+impl Drop for TabGuard {
+    fn drop(&mut self) {
+        let mut t = self.0.focus.lock().unwrap();
+        if let Some(n) = t.open.get_mut(&self.1) {
+            *n -= 1;
+            if *n == 0 {
+                t.open.remove(&self.1);
+                t.focus.remove(&self.1);
+            }
+        }
+    }
+}
+
+/// `POST /api/focus` (token): an editor tab's focus snapshot (data-model.md).
+async fn api_focus_report(
+    State(app): State<Shared>,
+    headers: HeaderMap,
+    Json(snap): Json<Snapshot>,
+) -> Response {
+    if !authorized(&app, &headers) {
+        return forbidden();
+    }
+    let snap = match snap.clamp() {
+        Ok(s) => s,
+        Err(e) => return err_response(e),
+    };
+    let mut t = app.focus.lock().unwrap();
+    if t.open.contains_key(&snap.tab) {
+        t.focus.insert(snap.tab.clone(), (snap, Instant::now()));
+    }
+    StatusCode::NO_CONTENT.into_response()
+}
+
+/// `GET /api/focus` (token): `qd focus` — the most recently reporting open tab's focus.
+async fn api_focus(State(app): State<Shared>, headers: HeaderMap) -> Response {
+    if !authorized(&app, &headers) {
+        return forbidden();
+    }
+    let latest = {
+        let t = app.focus.lock().unwrap();
+        if t.open.is_empty() {
+            return Json(json!({"open": false})).into_response();
+        }
+        t.focus.values().max_by_key(|(_, at)| *at).cloned()
+    };
+    let Some((snap, at)) = latest else {
+        return Json(json!({"open": true, "age": null,
+            "hint": "open the editor with the link from `qd serve` / `qd url`"}))
+        .into_response();
+    };
+    match app.store.read() {
+        Ok(d) => Json(snap.report(&d, at.elapsed().as_secs_f64())).into_response(),
+        Err(e) => err_response(e),
+    }
+}
+
 async fn events(
     State(app): State<Shared>,
+    Query(q): Query<HashMap<String, String>>,
 ) -> Sse<impl Stream<Item = std::result::Result<Event, Infallible>>> {
+    let guard = q.get("tab").map(|tab| {
+        *app.focus
+            .lock()
+            .unwrap()
+            .open
+            .entry(tab.clone())
+            .or_default() += 1;
+        TabGuard(app.clone(), tab.clone())
+    });
     let rx = app.tx.subscribe();
     let initial: Vec<Ev> = {
         let st = app.st.lock().unwrap();
@@ -596,7 +677,10 @@ async fn events(
             }
         }
     })
-    .map(move |e| Ok(e.to_sse(&h2)));
+    .map(move |e| {
+        let _tab = &guard; // dropped with the stream: the tab is gone
+        Ok(e.to_sse(&h2))
+    });
     Sse::new(first.chain(live)).keep_alive(KeepAlive::default())
 }
 
@@ -711,6 +795,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             kernel: Mutex::new(None),
             runs: AtomicU64::new(0),
             stop: Notify::new(),
+            focus: Mutex::default(),
             rendering: Mutex::new(false),
             store,
         });
@@ -733,6 +818,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             .route("/api/env", get(api_env))
             .route("/api/env/{action}", post(api_env_change))
             .route("/events", get(events))
+            .route("/api/focus", get(api_focus).post(api_focus_report))
             .nest_service(
                 "/preview",
                 ServeDir::new(&out).fallback(ServeDir::new(&deck_dir)),

@@ -24,7 +24,7 @@ Paths relative to repo root.
 
 ## Phase 1: Setup
 
-- [ ] T001 Add the focus result shapes to `qd schema`: `focus` entry in `output_of` in `src/cli.rs` (`{"open",…}` read, `{"ok","result","ref"}` set) per contracts/cli.md
+- [X] T001 Add the focus result shapes to `qd schema`: `focus` entry in `output_of` in `src/cli.rs` (`{"open",…}` read, `{"ok","result","ref"}` set) per contracts/cli.md
 
 ---
 
@@ -32,12 +32,12 @@ Paths relative to repo root.
 
 **Purpose**: the focus snapshot type, tab tracking on the event stream, and the editor's shared focus object.
 
-- [ ] T002 [P] Write failing unit tests in `src/focus.rs`: a snapshot (data-model.md) parses; `selection.text` is clamped to 2,000 chars with `truncated: true`; more than 50 element refs are cut; empty `tab`/`version` is refused (`E_INVALID_ARG`); on read, refs that no longer resolve in a given deck are dropped, `slide: null` kept, and `deck_version` reported next to `version`
-- [ ] T003 Implement `src/focus.rs` (`Snapshot` with serde, `Snapshot::clamp`, `report(&self, deck, age) -> Value`), register in `src/lib.rs` — T002 passes
-- [ ] T004 [P] Write failing HTTP tests in `tests/serve.rs` `focus_over_http`: `GET /api/focus` and `POST /api/focus` without the token, with a wrong token, or with a foreign Origin → 403; with no `/events?tab=` stream open → `{"open": false}`; with a stream open but nothing posted → `open: true, age: null` + hint; after a post → the snapshot with `age` ≥ 0; after the stream closes → `open: false`; two tabs posting → the later one is reported; a post naming a deleted element → that ref dropped
-- [ ] T005 Server side in `src/server.rs`: `App.focus` (open tab ids + latest snapshot with arrival `Instant`); `/events` takes `?tab=` and registers/unregisters the tab with a drop guard on the stream; `POST /api/focus` (authorized, clamp, keep if tab open) → 204; `GET /api/focus` (authorized) → `Snapshot::report` against the current deck — T004 passes
-- [ ] T006 [P] Editor focus object `src/ui/focus.js`: tab id (`crypto.randomUUID()`), `set(partial)` merges and notifies listeners, posts the snapshot with the session token debounced ~100 ms (skipped, with one notice, when the page has no token), re-posts on window `focus` / `visibilitychange`; `editing` flag with a 3 s quiet timer; export `get`, `set`, `on`, `tabId`. `src/ui/run.js` exports its token (or `focus.js` reads it the same way) — no second copy of the fragment logic
-- [ ] T007 Open the event stream as `/events?tab=<focus.tabId>` in `src/ui/editor.js`; add `focus.js` to `UI_MODULES` in `src/server.rs`
+- [X] T002 [P] Write failing unit tests in `src/focus.rs`: a snapshot (data-model.md) parses; `selection.text` is clamped to 2,000 chars with `truncated: true`; more than 50 element refs are cut; empty `tab`/`version` is refused (`E_INVALID_ARG`); on read, refs that no longer resolve in a given deck are dropped, `slide: null` kept, and `deck_version` reported next to `version`
+- [X] T003 Implement `src/focus.rs` (`Snapshot` with serde, `Snapshot::clamp`, `report(&self, deck, age) -> Value`), register in `src/lib.rs` — T002 passes
+- [X] T004 [P] Write failing HTTP tests in `tests/serve.rs` `focus_over_http`: `GET /api/focus` and `POST /api/focus` without the token, with a wrong token, or with a foreign Origin → 403; with no `/events?tab=` stream open → `{"open": false}`; with a stream open but nothing posted → `open: true, age: null` + hint; after a post → the snapshot with `age` ≥ 0; after the stream closes → `open: false`; two tabs posting → the later one is reported; a post naming a deleted element → that ref dropped
+- [X] T005 Server side in `src/server.rs`: `App.focus` (open tab ids + latest snapshot with arrival `Instant`); `/events` takes `?tab=` and registers/unregisters the tab with a drop guard on the stream; `POST /api/focus` (authorized, clamp, keep if tab open) → 204; `GET /api/focus` (authorized) → `Snapshot::report` against the current deck — T004 passes
+- [X] T006 [P] Editor focus object `src/ui/focus.js`: tab id (`crypto.randomUUID()`), `set(partial)` merges and notifies listeners, posts the snapshot with the session token debounced ~100 ms (skipped, with one notice, when the page has no token), re-posts on window `focus` / `visibilitychange`; `editing` flag with a 3 s quiet timer; export `get`, `set`, `on`, `tabId`. `src/ui/run.js` exports its token (or `focus.js` reads it the same way) — no second copy of the fragment logic
+- [X] T007 Open the event stream as `/events?tab=<focus.tabId>` in `src/ui/editor.js`; add `focus.js` to `UI_MODULES` in `src/server.rs`
 
 **Checkpoint**: the server knows which tabs are open and stores what they report.
 
@@ -49,12 +49,12 @@ Paths relative to repo root.
 
 **Independent Test**: spec US1 Independent Test; quickstart §1.
 
-- [ ] T008 [P] [US1] Write failing browser test `focus_follows_the_person` in `tests/onslide.rs`: go to a slide → `qd focus` slide matches, `elements: []`; click a paragraph → that element; select two words while editing it → `selection {text, where: "slide"}`; open Source, select lines spanning two blocks → both elements, `where: "source"`, `line` set; each visible to `qd focus` within 0.5 s (SC-001, measured); `qd title` edit → `version` ≠ `deck_version`; `qd stop` → `{"open": false}`
-- [ ] T009 [P] [US1] Write failing CLI tests in `tests/serve.rs` (or `tests/run_cli.rs` if it needs no browser): `qd focus` with no server → `{"open": false}` exit 0; with a server and a posted snapshot → the snapshot's fields; 100 reads leave the deck file byte-identical (SC-005)
-- [ ] T010 [US1] `qd focus` in `src/cli.rs`: `Cmd::Focus { set: Option<String> }`; read path = `server::running` → `to_server` GET `api/focus` (extend `to_server` with the method), no server → `{"open": false}` — T009 passes
-- [ ] T011 [US1] Slide view → focus in `src/ui/editor.js`: slide navigation (`state.anchor` changes) → `focus.set({slide, elements: []})`; element selection (`state.sel`) → `elements: [ref]`; text selection inside an open edit (or the preview frame) → `selection {where: "slide"}`; edit session open/closed → `editing`
-- [ ] T012 [US1] Source pane → focus in `src/ui/pane.js`: caret line → `line` and the block under it (blocks' `lines` from the editor's slide data); textarea selection → `selection {where: "source"}` and every block whose lines intersect; keystrokes → `editing` (3 s quiet). Rewire 004's `onCaretLine` slide sync as a `focus.on` listener (FR-012) — T008 passes
-- [ ] T013 [US1] Skill `skills/quartz-deck/SKILL.md`: a "this / here / the selected …" rule (run `qd focus` first; act when open and fresh; ask when closed/empty/old) and a table row; `qd schema` lists `focus`; skill sync test passes
+- [X] T008 [P] [US1] Write failing browser test `focus_follows_the_person` in `tests/onslide.rs`: go to a slide → `qd focus` slide matches, `elements: []`; click a paragraph → that element; select two words while editing it → `selection {text, where: "slide"}`; open Source, select lines spanning two blocks → both elements, `where: "source"`, `line` set; each visible to `qd focus` within 0.5 s (SC-001, measured); `qd title` edit → `version` ≠ `deck_version`; `qd stop` → `{"open": false}`
+- [X] T009 [P] [US1] Write failing CLI tests in `tests/serve.rs` (or `tests/run_cli.rs` if it needs no browser): `qd focus` with no server → `{"open": false}` exit 0; with a server and a posted snapshot → the snapshot's fields; 100 reads leave the deck file byte-identical (SC-005)
+- [X] T010 [US1] `qd focus` in `src/cli.rs`: `Cmd::Focus { set: Option<String> }`; read path = `server::running` → `to_server` GET `api/focus` (extend `to_server` with the method), no server → `{"open": false}` — T009 passes
+- [X] T011 [US1] Slide view → focus in `src/ui/editor.js`: slide navigation (`state.anchor` changes) → `focus.set({slide, elements: []})`; element selection (`state.sel`) → `elements: [ref]`; text selection inside an open edit (or the preview frame) → `selection {where: "slide"}`; edit session open/closed → `editing`
+- [X] T012 [US1] Source pane → focus in `src/ui/pane.js`: caret line → `line` and the block under it (blocks' `lines` from the editor's slide data); textarea selection → `selection {where: "source"}` and every block whose lines intersect; keystrokes → `editing` (3 s quiet). Rewire 004's `onCaretLine` slide sync as a `focus.on` listener (FR-012) — T008 passes
+- [X] T013 [US1] Skill `skills/quartz-deck/SKILL.md`: a "this / here / the selected …" rule (run `qd focus` first; act when open and fresh; ask when closed/empty/old) and a table row; `qd schema` lists `focus`; skill sync test passes
 
 **Checkpoint**: MVP — agents can resolve "this".
 

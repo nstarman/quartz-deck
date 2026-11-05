@@ -36,7 +36,14 @@ edits, detects concurrent changes and supports undo.
    render stays visible. Stop it with `qd stop`. The person you work with may
    edit in that page at the same time (it runs the same `qd` commands), so
    always pass `--expect` and re-read on `E_CONFLICT`.
-5. **Undo** if needed — `qd undo` (and `qd redo`).
+5. **"This", "here", "the selected …"** — when the person points at
+   something in their editor, run `qd focus` first. It returns the slide,
+   the selected `elements` (refs for any edit command) and the selected text
+   (`selection.where` = `slide` or `source`). Act on it when `open` is true and
+   `age` is a few seconds; ask which one when `open` is false, nothing is
+   selected, or the focus is old. If `version` ≠ `deck_version`, re-read
+   (`qd show <slide>`) before editing.
+6. **Undo** if needed — `qd undo` (and `qd redo`).
 
 Pick the deck with `--deck path/to/talk.qmd` (or `QD_DECK`); it is implicit
 when the current directory has exactly one `.qmd`.
@@ -81,6 +88,7 @@ when the current directory has exactly one `.qmd`.
 | stored outputs | `qd outputs` (or `qd outputs results/1`): last outputs per cell, `stale: true` once the cell changed |
 | works without network? | `qd check --offline` (headless Chrome, network blocked; problems per slide with hints) |
 | live preview | `qd serve --detach`, then `qd url results`; `qd stop` when done |
+| what the person is looking at / has selected | `qd focus` → `slide`, `elements`, `selection.text`, `age` (`{"open": false}` without an editor) |
 | undo / redo | `qd undo` / `qd redo` |
 | new deck | `qd new talk.qmd --title "My talk"` |
 | all commands + output shapes | `qd schema` |
