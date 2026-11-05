@@ -1267,3 +1267,59 @@ async fn run_cells_in_the_editor() {
     .await;
     assert_eq!(ed.file(), RUN_DECK, "running never changes the deck");
 }
+
+/// Spec 004 US5 (T032): outputs survive a restart of `qd serve` and show in
+/// the pane and on the slide without running anything; an edited cell's
+/// output is marked stale in both. Needs uv too.
+#[tokio::test(flavor = "multi_thread")]
+async fn outputs_persist_across_restarts_and_go_stale() {
+    if !have("uv") {
+        return;
+    }
+    let Some(ed) = Ed::open(RUN_DECK).await else {
+        return;
+    };
+    ed.cli(&["env", "init"]);
+    let run = ed.cli(&["run", "print/0"]);
+    assert_eq!(run["runs"][0]["outputs"][0]["text"], "42\n", "{run}");
+
+    // a new server (new port, new token), as when the deck is reopened
+    ed.cli(&["stop"]);
+    let info = ed.cli(&["serve", "--detach"]);
+    ed.page.goto(info["url"].as_str().unwrap()).await.unwrap();
+    ed.wait_secs(READY, 60).await;
+    ed.go("print").await;
+    let frame = "document.querySelector('#preview').contentDocument";
+    ed.wait_secs(
+        &format!("{frame}.querySelector('.qd-output')?.textContent.includes('42')"),
+        60,
+    )
+    .await;
+    if ed.eval("document.querySelector('#srcpane').hidden").await == true {
+        ed.open_source().await;
+    }
+    let print = "document.querySelector('#srcpane .gutter button[data-cell=\"print/0\"]')";
+    ed.wait(&format!("{print}?.textContent === '▶ 1'")).await;
+    ed.pane_caret("print(6", false).await;
+    let dock = "document.querySelector('#srcpane .outdock')";
+    ed.wait(&format!("{dock}.textContent.includes('42')")).await;
+    assert_eq!(
+        ed.eval("document.querySelector('#srcpane .kernel').dataset.state ?? 'none'")
+            .await,
+        "none",
+        "nothing ran: no kernel was started"
+    );
+
+    // an edit marks the stored output stale on the slide and in the pane
+    ed.cli(&["replace", "--old", "6 * 7", "--new", "6 * 8"]);
+    ed.wait_secs(
+        &format!("!!{frame}.querySelector('.qd-output.qd-stale')"),
+        60,
+    )
+    .await;
+    ed.wait(&format!("{print}.classList.contains('stale')"))
+        .await;
+    ed.pane_caret("print(6", false).await;
+    ed.wait(&format!("{dock}.classList.contains('stale')"))
+        .await;
+}
