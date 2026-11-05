@@ -5,26 +5,30 @@
 // the person saves.
 
 const vscode = require('vscode');
-const { spawn } = require('node:child_process');
+const { spawn, execFile } = require('node:child_process');
 const readline = require('node:readline');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { Sync } = require('./sync.js');
+const { ARGS, report, deckOf, qdError } = require('./commands.js');
 const { editorUrl, themeKind, html, fromEditor, follow } = require('./panel.js');
 
 /** Open decks: fsPath → { panel, doc, dispose() }. */
 const open = new Map();
 let out;
 
+const qdBin = () => vscode.workspace.getConfiguration('quartz-deck').get('qdPath') || 'qd';
+/** qd could not be started at all (not qd reporting an error). */
+const notStarted = (e) => new Error(e.code === 'ENOENT'
+  ? `qd not found ("${qdBin()}"): install quartz-deck, or set quartz-deck.qdPath`
+  : e.message);
+
 /** `qd serve` for `file`: resolves to `{child, port, token}` once it prints its link. */
 function serve(file) {
-  const qd = vscode.workspace.getConfiguration('quartz-deck').get('qdPath') || 'qd';
   return new Promise((resolve, reject) => {
-    const child = spawn(qd, ['--deck', file, 'serve', '--port', '0'], { cwd: path.dirname(file) });
+    const child = spawn(qdBin(), ['--deck', file, 'serve', '--port', '0'], { cwd: path.dirname(file) });
     let err = '';
-    child.on('error', (e) => reject(new Error(e.code === 'ENOENT'
-      ? `qd not found ("${qd}"): install quartz-deck, or set quartz-deck.qdPath`
-      : e.message)));
+    child.on('error', (e) => reject(notStarted(e)));
     child.stderr.on('data', (d) => { err += d; });
     readline.createInterface({ input: child.stdout }).once('line', (l) => {
       try {
@@ -34,9 +38,7 @@ function serve(file) {
     });
     child.on('exit', () => {
       // qd's errors are JSON with a hint (e.g. E_NO_QUARTO: install Quarto)
-      let msg = err.trim();
-      try { const e = JSON.parse(msg).error; msg = `${e.message} — ${e.hint}`; } catch {}
-      reject(new Error(msg || 'qd serve stopped'));
+      reject(new Error(qdError(err) || err.trim() || 'qd serve stopped'));
     });
   });
 }
@@ -160,6 +162,7 @@ async function openDeck(doc, panel) {
     panel.webview.onDidReceiveMessage((m) => {
       const msg = fromEditor(m);
       if (msg?.type === 'reveal') reveal(msg.lines);
+      if (msg?.type === 'focusText') focusText(doc);
     }),
     vscode.workspace.onDidCloseTextDocument((d) => { if (d === doc) panel.dispose(); }),
   ];
@@ -187,10 +190,41 @@ async function openDeck(doc, panel) {
   panel.onDidDispose(() => entry.dispose());
 }
 
+/** Keyboard back to `doc`'s text, in the column it is already in. */
+const focusText = (doc) => vscode.window.showTextDocument(doc, {
+  preview: false, viewColumn: vscode.window.visibleTextEditors.find((x) => x.document === doc)?.viewColumn,
+});
+
+/** A palette command (US4): its qd command on the deck; the result shown. With
+ * a panel open qd reads the buffer, except `qd render`, which renders the file. */
+async function runQd(name, doc) {
+  if (doc.isDirty && (name === 'render' || !open.has(doc.uri.fsPath))) {
+    const pick = await vscode.window.showWarningMessage(
+      `${path.basename(doc.fileName)} has unsaved changes; qd works on the saved file.`,
+      { modal: true }, 'Save and continue', 'Use the saved file');
+    if (!pick || (pick === 'Save and continue' && !(await doc.save()))) return;
+  }
+  const line = `qd ${ARGS[name].join(' ')}`;
+  const file = doc.uri.fsPath;
+  const { stdout, stderr } = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `quartz-deck: ${line}…` },
+    () => new Promise((resolve, reject) => execFile(qdBin(), ['--deck', file, ...ARGS[name]],
+      { cwd: path.dirname(file), maxBuffer: 64 << 20 }, // Quarto logs can be long
+      // a string code means qd never started; a numeric one is qd's exit status, its JSON says why
+      (e, stdout, stderr) => (typeof e?.code === 'string' ? reject(notStarted(e)) : resolve({ stdout, stderr })))));
+  out.appendLine(`$ ${line}\n${stdout}${stderr}`);
+  const r = report(name, stdout, stderr);
+  if (r.ok) return void vscode.window.showInformationMessage(`quartz-deck: ${r.text}`);
+  if ((await vscode.window.showErrorMessage(`quartz-deck: ${r.text}`, 'Show log')) === 'Show log') out.show();
+}
+
 function activate(context) {
   out = vscode.window.createOutputChannel('quartz-deck');
+  // the focused panel's deck, else the text in front, else any .qmd on screen or with a panel
   const active = () => {
-    const doc = vscode.window.activeTextEditor?.document;
+    const panels = [...open.values()];
+    const doc = deckOf([panels.find((x) => x.panel.active)?.doc, vscode.window.activeTextEditor?.document,
+      ...vscode.window.visibleTextEditors.map((e) => e.document), ...panels.map((x) => x.doc)]);
     if (!doc) throw new Error('Open a .qmd first');
     return doc;
   };
@@ -198,10 +232,11 @@ function activate(context) {
     try { await fn(); } catch (e) { vscode.window.showErrorMessage(`quartz-deck: ${e.message}`); }
   }));
   cmd('quartz-deck.open', () => openDeck(active()));
+  for (const name of Object.keys(ARGS)) cmd(`quartz-deck.${name}`, () => runQd(name, active()));
   cmd('quartz-deck.focusPanel', () => open.get(active().uri.fsPath)?.panel.reveal(undefined, false));
   cmd('quartz-deck.focusText', async () => {
     const e = [...open.values()].find((x) => x.panel.active);
-    if (e) await vscode.window.showTextDocument(e.doc, { preview: false });
+    if (e) await focusText(e.doc);
   });
   context.subscriptions.push(out, vscode.window.registerWebviewPanelSerializer('quartz-deck', {
     async deserializeWebviewPanel(panel, state) {

@@ -50,3 +50,18 @@ steps are the person's.
 - [x] `qd focus --set close` showed Close in the panel and moved the cursor to
       line 46 (`## Close`); `qd focus` still reports the person's own focus
       (FR-013).
+
+## US4 run (palette commands)
+
+- [x] The four commands are in the palette; ⌃⌥Q is shown on "Focus the slide panel".
+- [x] Render on the demo deck: "quarto render failed — see details for the
+      Quarto log"; **Show log** opens the qd output with the traceback.
+- [x] Check offline and Export fail on the demo deck's `1 / 0` cell, as
+      `qd export` does from the CLI (expected; the deck fails on purpose).
+- Found and fixed: after **Show log** the Output panel counted as the deck
+  ("no deck found: extension-output-…"). Commands now pick the focused panel's
+  deck, else the `.qmd` in front or on screen.
+- [ ] Not yet checked after that fix: running a command with the Output panel
+      in front; the unsaved-changes dialog (Auto Save was on, so the file was
+      already saved and no dialog was due); Export succeeding on a deck
+      without a failing cell; the light-theme switch.

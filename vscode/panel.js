@@ -36,6 +36,7 @@ addEventListener('message', (e) => {
 
 /** A message from the editor, if it is one the extension acts on; else null. */
 function fromEditor(m) {
+  if (m?.type === 'focusText') return { type: 'focusText' };
   if (m?.type === 'reveal' && Array.isArray(m.lines) && m.lines.length === 2 && m.lines.every(Number.isInteger)) {
     return { type: 'reveal', lines: m.lines };
   }

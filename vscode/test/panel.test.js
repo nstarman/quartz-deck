@@ -25,7 +25,8 @@ test('the page is one full-size iframe of the editor, and its CSP allows only th
   assert.match(page, /<script nonce="n0nce">/);
 });
 
-test('only a well-formed reveal comes through from the editor', () => {
+test('only focusText and a well-formed reveal come through from the editor', () => {
+  assert.deepEqual(fromEditor({ type: 'focusText', extra: 1 }), { type: 'focusText' });
   assert.deepEqual(fromEditor({ type: 'reveal', lines: [3, 5] }), { type: 'reveal', lines: [3, 5] });
   for (const bad of [{ type: 'ready' }, { type: 'run' }, { type: 'reveal', lines: ['x', 1] }, { type: 'reveal' }, null, 'reveal', { type: 'op', op: 'rm' }]) {
     assert.equal(fromEditor(bad), null, JSON.stringify(bad));
