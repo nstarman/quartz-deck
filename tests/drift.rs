@@ -31,7 +31,13 @@ fn render_corpus_for_drift_check() {
         fs::write(&deck, &text).unwrap();
         let d = Deck::parse(text.clone());
         let a = render(&deck, &text, "final", &dir, true);
-        let b = render(&deck, &preview_copy(&d), "preview", &dir, true);
+        let b = render(
+            &deck,
+            &preview_copy(&d, &serde_json::Value::Null),
+            "preview",
+            &dir,
+            true,
+        );
         match (a, b) {
             (Ok(a), Ok(b)) => {
                 fs::rename(a, dir.join("final.html")).unwrap();

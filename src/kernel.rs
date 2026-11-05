@@ -3,6 +3,7 @@
 //! over IPC sockets; qd talks to it in JSON lines. One request at a time;
 //! `interrupt` may be sent while a cell runs.
 
+use crate::deck::{Block, BlockKind, Deck, code_open};
 use crate::env::Env;
 use crate::error::{QdError, Result};
 use serde_json::{Value, json};
@@ -17,6 +18,32 @@ const BRIDGE: &str = include_str!("kernel_bridge.py");
 
 /// Cold start measured at ~8 s (environment + kernel); allow for a first sync.
 const START: Duration = Duration::from_secs(180);
+
+/// The code of cell `b` to execute, or None for `#| eval: false`;
+/// `E_NOT_CODE` for anything but an executable cell, `E_ENGINE` unless Python.
+pub fn cell_code(d: &Deck, b: &Block) -> Result<Option<String>> {
+    if b.kind != BlockKind::Cell {
+        return Err(QdError::NotCode(b.id.clone()));
+    }
+    let text = d.slice(b.span);
+    let mut lines = text.lines();
+    let info = lines.next().and_then(code_open).map_or("", |(_, _, i)| i);
+    let lang = info.trim_start_matches([' ', '{']);
+    let lang = &lang[..lang.find([' ', ',', '}']).unwrap_or(lang.len())];
+    if lang != "python" {
+        return Err(QdError::Engine(lang.to_string()));
+    }
+    let body: Vec<&str> = lines.collect();
+    let body = &body[..body.len().saturating_sub(1)]; // the closing fence
+    let off = body.iter().any(|l| {
+        let o = l
+            .trim_start()
+            .strip_prefix("#|")
+            .map(|o| o.replace(' ', ""));
+        o.as_deref() == Some("eval:false")
+    });
+    Ok((!off).then(|| body.join("\n")))
+}
 
 pub struct Session {
     child: Child,

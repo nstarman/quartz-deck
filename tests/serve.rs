@@ -481,3 +481,142 @@ fn render_reports_output() {
         "{v}"
     );
 }
+
+/// JSON content type plus the run token header (for `post`).
+fn json_token(token: &str) -> String {
+    format!("application/json\r\nX-QD-Token: {token}")
+}
+
+/// Spec 004 US3 (T023, T025): token-guarded runs, events, stored outputs, and
+/// a preview that shows them without executing anything. Needs uv and Quarto.
+#[test]
+fn run_cells_over_http() {
+    if !have("quarto") || !have("uv") {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let deck = dir.path().join("deck.qmd");
+    std::fs::write(&deck, include_str!("fixtures/run/basic.qmd")).unwrap();
+    assert!(qd_json(dir.path(), &["env", "init"]).0);
+    assert!(qd_json(dir.path(), &["env", "add", "matplotlib"]).0);
+    let before = std::fs::read(&deck).unwrap();
+    let server = start(dir.path());
+    let p = server.port;
+
+    // the token: in the editor page and the user-only session file, nowhere else
+    let session = std::fs::read_dir(dir.path().join(".cache"))
+        .unwrap()
+        .map(|e| e.unwrap().path().join("session.json"))
+        .find(|f| f.is_file())
+        .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&session).unwrap().permissions().mode();
+        assert_eq!(mode & 0o077, 0, "session file is user-only");
+    }
+    let token = serde_json::from_str::<Value>(&std::fs::read_to_string(&session).unwrap()).unwrap()
+        ["token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(get(p, "/").1.contains(&format!("content=\"{token}\"")));
+
+    let run = |body: &str, ctype: &str| post(p, "/api/run", "127.0.0.1", ctype, body).0;
+    let print = r#"{"cells":["print/0"]}"#;
+    assert_eq!(run(print, "application/json"), 403, "no token");
+    assert_eq!(run(print, &json_token("wrong")), 403, "wrong token");
+    let evil = format!("{}\r\nOrigin: http://evil.example", json_token(&token));
+    assert_eq!(run(print, &evil), 403, "right token, other origin");
+    let op = r#"{"op":"run","args":{"cells":["print/0"]}}"#;
+    assert_ne!(
+        post(p, "/api/op", "127.0.0.1", "application/json", op).0,
+        200,
+        "run_op refuses run"
+    );
+    assert_eq!(
+        run(r#"{"cells":["plain/0"]}"#, &json_token(&token)),
+        400,
+        "E_NOT_CODE"
+    );
+    assert_eq!(
+        run(r#"{"cells":["r/0"]}"#, &json_token(&token)),
+        400,
+        "E_ENGINE"
+    );
+
+    let mut ev = Events::open(p);
+    assert_eq!(run(print, &json_token(&token)), 202);
+    let wait = Duration::from_secs(120);
+    assert!(ev.wait("kernel", wait).unwrap().contains("starting"));
+    let out = ev.wait("cell_output", wait).expect("cell output");
+    assert!(out.contains("42"), "{out}");
+    assert!(ev.wait("run_done", wait).unwrap().contains("\"done\""));
+
+    // Run all: in order, skipping eval:false and non-Python, stopping at the failure
+    assert_eq!(run(r#"{"all":true}"#, &json_token(&token)), 202);
+    let started = ev.wait("run_started", wait).unwrap();
+    assert!(
+        started.contains("fails/0") && !started.contains("skipped/0") && !started.contains("r/0"),
+        "{started}"
+    );
+    let done = ev.wait("run_done", wait).unwrap();
+    assert!(done.contains("\"error\""), "{done}");
+
+    let outputs: Value = serde_json::from_str(&get(p, "/api/outputs").1).unwrap();
+    let cells = &outputs["cells"];
+    assert_eq!(cells["state/0"]["items"][0]["text"], "43", "{outputs}");
+    assert_eq!(cells["fails/0"]["items"][0]["ename"], "ZeroDivisionError");
+    let img = cells["plot/0"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["kind"] == "image")
+        .unwrap();
+    assert_eq!(get(p, img["url"].as_str().unwrap()).0, 200);
+    assert!(cells["print/0"]["stale"] == false && cells["print/0"]["counter"].is_number());
+    assert_eq!(
+        std::fs::read(&deck).unwrap(),
+        before,
+        "runs never touch the .qmd"
+    );
+
+    // the preview shows the stored outputs without running anything
+    let page = std::fs::read_dir(dir.path().join(".cache"))
+        .unwrap()
+        .map(|e| e.unwrap().path().join("preview/deck.qd-preview.html"))
+        .find(|f| f.parent().unwrap().is_dir())
+        .unwrap();
+    let end = Instant::now() + wait;
+    let mut html = String::new();
+    while !html.contains("ZeroDivisionError") && Instant::now() < end {
+        std::thread::sleep(Duration::from_millis(200)); // the render after run_done
+        html = std::fs::read_to_string(&page).unwrap_or_default();
+    }
+    assert!(
+        html.contains("qd-output")
+            && html.contains("/outputs/")
+            && html.contains("ZeroDivisionError")
+    );
+
+    // an edited cell's output is marked stale
+    assert!(
+        qd_json(
+            dir.path(),
+            &["replace", "--old", "21 * 2", "--new", "21 * 3"]
+        )
+        .0
+    );
+    let outputs: Value = serde_json::from_str(&get(p, "/api/outputs").1).unwrap();
+    assert_eq!(outputs["cells"]["print/0"]["stale"], true);
+
+    let stop = post(
+        p,
+        "/api/run/interrupt",
+        "127.0.0.1",
+        &json_token(&token),
+        "{}",
+    )
+    .0;
+    assert_eq!(stop, 200);
+}
