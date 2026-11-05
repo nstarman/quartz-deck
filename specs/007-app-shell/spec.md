@@ -6,6 +6,15 @@
 
 **Status**: Draft
 
+## Clarifications
+
+### Session 2026-11-05
+
+- Q: When the person is editing text on a slide (or in a source popup) and
+  presses Escape, what happens to what they typed? → A: It is kept, as if
+  they had clicked elsewhere; undo takes it back. This changes today's
+  behaviour, where Escape cancels.
+
 **Input**: User description: "App shell for the quartz-deck editor (roadmap 007): desktop-app conventions so the browser editor (and the same page framed in VS Code, spec 006) feels like one coherent application. A menu bar — File, Edit, Insert, Slide, View, Run, Help — that lists every action the editor already has (undo/redo, add/duplicate/move/remove slides, insert elements, formatting, source pane, run cell / run all / stop, render, export and PDF, offline check, preview) with its keyboard shortcut, so nothing is only reachable by right-click or a hidden key; menus are keyboard-navigable and accessible. A Settings window for the person's preferences (e.g. source pane on the left or right — default left, editor theme, autosave/preview behaviour, and room for later settings such as 009's "save as git commit"), stored per user and applied live. A shortcut reference (Help → Keyboard shortcuts, and "?") generated from the same action list so it can never drift from the real bindings. Consistent paradigms across the editor: one selection model, clipboard (cut/copy/paste of elements and slides, not just text), undo/redo covering every edit, Escape always backs out one level and Enter always goes in / confirms, focus always visible. In VS Code (006) the menu bar is hidden or folded into a compact menu since VS Code has its own, and shortcuts must not clash with VS Code's. Agents are unaffected: every menu action already has a qd CLI command; the spec may add a `qd` way to list actions/shortcuts for the skill. Clean-room: our own design, no slides.com code."
 
 ## Overview
@@ -158,8 +167,8 @@ in one deck and paste it into another; undo removes it in one step.
 
 1. **Given** any nested state (a menu open over an element being edited, on
    a selected slide), **When** the person presses Escape repeatedly, **Then**
-   each press backs out one level in a fixed order, and what happens to an
-   edit in progress is the same everywhere (FR-016).
+   each press backs out one level in a fixed order, and an edit in progress
+   is kept, not discarded (undo takes it back).
 2. **Given** a slide is selected in the slide list, **When** the person
    copies it and pastes it after another slide (in the same deck or another
    deck's editor), **Then** an identical slide appears there, with fresh ids
@@ -301,10 +310,9 @@ shortcuts overrides a default VS Code binding while the panel has focus.
 - **FR-016**: Escape MUST back out exactly one level, in this order: close
   the topmost menu or dialog; end the text or source edit; clear the element
   selection; (in VS Code) hand the keyboard to the text. Ending an edit with
-  Escape MUST [NEEDS CLARIFICATION: keep or discard what was typed? Today Esc
-  cancels an on-slide text edit (Enter or clicking elsewhere saves). Keeping
-  it matches most slide editors; cancelling matches today's behaviour and
-  spreadsheet cells.]. Enter MUST go in one level or confirm.
+  Escape MUST keep what was typed, as if the person had clicked elsewhere;
+  undo takes it back. (Today Escape cancels an on-slide text edit; this
+  changes it.) Enter MUST go in one level or confirm.
 - **FR-017**: Cut, copy and paste MUST work on the current selection, which
   is text, one element or one slide. Copying puts the deck markdown on the
   system clipboard (when the browser allows) and keeps an internal copy, so
@@ -366,7 +374,8 @@ shortcuts overrides a default VS Code binding while the panel has focus.
   (automated check over every listed shortcut).
 - **SC-005**: From any state reachable in the editor, at most 5 presses of
   Escape return to the plain slide view, and each press backs out exactly one
-  level (checked for every state in an automated test).
+  level without discarding an edit in progress (checked for every state in an
+  automated test).
 - **SC-006**: A slide copied in one deck and pasted into another arrives
   identical (same markdown apart from renamed clashing ids) and is removed by
   one undo.

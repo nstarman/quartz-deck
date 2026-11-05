@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain — one open: what Escape does to an edit in progress (FR-016)
+- [x] No [NEEDS CLARIFICATION] markers remain (Escape keeps an edit in progress: Clarifications, 2026-11-05)
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
