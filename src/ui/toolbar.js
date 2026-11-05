@@ -153,6 +153,8 @@ function button(id, label, title, run) {
   b.dataset.fmt = id;
   b.textContent = label;
   const key = keys.shortcut(ACTION[id] || id);
+  b.dataset.hint = title; // the setting hints.shortcuts adds or drops the key (editor.js)
+  if (key) b.dataset.key = key;
   title = key ? `${title} (${key})` : title;
   b.title = title;
   b.setAttribute('aria-label', title);

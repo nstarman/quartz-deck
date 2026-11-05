@@ -52,6 +52,7 @@ fn deck(name: &str) -> (tempfile::TempDir, PathBuf) {
 fn check(dir: &Path, extra: &[&str]) -> (i32, Value, Value) {
     let out = qd(dir)
         .env("QD_CACHE_DIR", dir.join(".cache"))
+        .env("QD_CONFIG_DIR", dir.join(".config"))
         .args(["check", "--offline"])
         .args(extra)
         .output()

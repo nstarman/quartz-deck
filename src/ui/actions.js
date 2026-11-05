@@ -3,6 +3,7 @@
 // the deck runs the same `qd` command an agent would.
 
 import * as keys from '/ui/keys.js';
+import * as settings from '/ui/settings.js';
 
 export const TRANSITIONS = ['none', 'fade', 'slide', 'convex', 'concave', 'zoom'];
 
@@ -57,7 +58,7 @@ export function makeActions(api) {
     { id: 'slide-after', label: 'Add slide after', run: (t) => api.op('add', { title: 'New slide', after: t.slideId }) },
     { id: 'slide-dup', label: 'Duplicate slide', run: (t) => api.op('dup', { slide: t.slideId }) },
     { id: 'slide-hide', label: 'Hidden in the presentation', checked: (t) => kv(t).visibility === 'hidden', run: (t) => setAttr(t, 'visibility', kv(t).visibility === 'hidden' ? null : 'hidden') },
-    { id: 'slide-rm', label: 'Delete slide…', run: (t) => confirm(`Delete slide "${t.title || t.slideId}"? (Undo can restore it.)`) && api.op('rm', { slide: t.slideId }) },
+    { id: 'slide-rm', label: 'Delete slide…', run: (t) => (!settings.get('confirm.slide_delete') || confirm(`Delete slide "${t.title || t.slideId}"? (Undo can restore it.)`)) && api.op('rm', { slide: t.slideId }) },
     '-',
     { id: 'slide-bg', label: 'Background colour…', run: (t) => { const v = prompt('Background colour (e.g. #fdf6e3; empty removes it)', kv(t)['background-color'] || ''); if (v !== null) setAttr(t, 'background-color', v.trim()); } },
     { id: 'slide-bgimg', label: 'Background image…', run: (t) => { const v = prompt('Background image path or URL (empty removes it)', kv(t)['background-image'] || ''); if (v !== null) setAttr(t, 'background-image', v.trim()); } },

@@ -42,6 +42,25 @@ fn replaced(_: &fs::File, _: &Path) -> bool {
     false
 }
 
+/// The person's settings folder (spec 007): `$QD_CONFIG_DIR`, else the
+/// platform's per-user config folder.
+pub fn config_root() -> PathBuf {
+    if let Some(d) = std::env::var_os("QD_CONFIG_DIR") {
+        return PathBuf::from(d);
+    }
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    if cfg!(target_os = "macos") {
+        home.join("Library/Application Support/quartz-deck")
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".config"))
+            .join("quartz-deck")
+    }
+}
+
 pub fn cache_root() -> PathBuf {
     if let Some(d) = std::env::var_os("QD_CACHE_DIR") {
         return PathBuf::from(d);

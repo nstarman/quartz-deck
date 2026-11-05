@@ -1776,3 +1776,76 @@ async fn menu_bar_runs_every_action() {
     ed.wait("document.activeElement.closest('#menubar') === null")
         .await;
 }
+
+/// Spec 007 US2 (T013): settings apply at once, are the person's (the CLI sees
+/// them, and changes there reach the open editor), and stick: another deck on
+/// a new server opens with the same settings and layout.
+#[tokio::test(flavor = "multi_thread")]
+async fn settings_apply_live_and_stick() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    let main = "document.querySelector('main').classList";
+    let theme = "document.documentElement.dataset.theme";
+    ed.key(",", "Comma", 188, 2).await; // ⌘, (Ctrl+, works too)
+    ed.wait("document.querySelector('#settings').open").await;
+    let choose = |key: &str, v: &str| {
+        format!(
+            "(() => {{ const s = document.getElementById('set-{key}'); s.value = {v:?}; s.dispatchEvent(new Event('change')); }})()"
+        )
+    };
+    ed.eval(&choose("source.side", "right")).await;
+    ed.wait(&format!("{main}.contains('source-right')")).await;
+    ed.eval(&choose("theme", "dark")).await;
+    ed.wait(&format!("{theme} === 'dark'")).await;
+    ed.eval(&choose("source.save", "explicit")).await;
+    ed.wait("document.querySelector('#srcpane .hint').textContent.includes('leave the pane')")
+        .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("!document.querySelector('#settings').open").await;
+
+    // they are the person's: the CLI sees them, and a change there applies at once
+    assert_eq!(ed.cli(&["settings"])["values"]["theme"], "dark");
+    ed.cli(&["settings", "set", "theme", "light"]);
+    ed.wait(&format!("{theme} === 'light'")).await;
+
+    // layout memory: the source pane opened here is open in another deck, on a new server
+    ed.open_source().await;
+    let start = Instant::now();
+    while ed.cli(&["settings"])["values"]["ui.source_was_open"] != true {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "the open source pane was not remembered"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    ed.cli(&["stop"]);
+    let other = ed.dir.path().join("other");
+    std::fs::create_dir(&other).unwrap();
+    std::fs::write(other.join("talk.qmd"), P2).unwrap();
+    let deck = other.join("talk.qmd");
+    let info = ed.cli(&["--deck", deck.to_str().unwrap(), "serve", "--detach"]);
+    ed.page.goto(info["url"].as_str().unwrap()).await.unwrap();
+    ed.wait_secs(READY, 60).await;
+    ed.wait(&format!(
+        "!document.querySelector('#srcpane').hidden && {main}.contains('source-right') && {theme} === 'light'"
+    ))
+    .await;
+
+    // Reset to defaults asks first, then everything is back (theme follows the system)
+    ed.eval("window.confirm = (m) => ((window.__asked = m), true)")
+        .await;
+    ed.key(",", "Comma", 188, 2).await;
+    ed.wait("document.querySelector('#settings').open").await;
+    ed.click_js("(r => [r.left + r.width / 2, r.top + r.height / 2])([...document.querySelectorAll('#settings button')].find((b) => b.textContent.startsWith('Reset')).getBoundingClientRect())").await;
+    ed.wait(&format!(
+        "{theme} === undefined && !{main}.contains('source-right')"
+    ))
+    .await;
+    assert!(
+        ed.eval("window.__asked")
+            .await
+            .as_str()
+            .unwrap()
+            .contains("default")
+    );
+    ed.cli(&["--deck", deck.to_str().unwrap(), "stop"]);
+}
