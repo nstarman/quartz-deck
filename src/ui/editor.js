@@ -1389,7 +1389,21 @@ focus.on((f, changed) => {
   if (anchor && anchor !== state.anchor) { state.followed = anchor; go(anchor); }
 });
 
-run.initRun({ say, flush: pane.save });
+// framed in VS Code (spec 006): its theme, its Quarto extension's Run, a few messages
+const framed = new URLSearchParams(location.search);
+const setTheme = (t) => { if (['light', 'dark', 'hc'].includes(t)) document.documentElement.dataset.theme = t; };
+setTheme(framed.get('theme'));
+const runExternal = framed.get('run') === 'external';
+document.documentElement.classList.toggle('run-external', runExternal);
+if (!runExternal) run.initRun({ say, flush: pane.save });
+if (framed.get('host') === 'vscode') {
+  // only the panel that framed this page, and only navigation/display — never edits or code
+  addEventListener('message', (e) => {
+    if (e.source !== window.parent || typeof e.data !== 'object' || !e.data) return;
+    if (e.data.type === 'theme') setTheme(e.data.kind);
+  });
+  window.parent.postMessage({ type: 'ready' }, '*');
+}
 
 /** Element (or slide title) → its source lines in the pane (US2). */
 async function revealSource(s) {

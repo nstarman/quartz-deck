@@ -4,12 +4,25 @@
   --error-bg: #fdecea; --error: #8a1c12; --danger: #b3261e; --drop: #2a5bd7;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     --bg: #18181a; --panel: #222225; --text: #ececee; --muted: #9a9aa0;
     --line: #3a3a3e; --accent: #7aa2ff; --accent-text: #0d1430;
     --error-bg: #3b1d1a; --error: #ffb4a8; --danger: #ff8a80; --drop: #7aa2ff;
   }
 }
+/* an explicit theme (VS Code's, spec 006) wins over the OS setting */
+:root[data-theme="dark"] {
+  --bg: #18181a; --panel: #222225; --text: #ececee; --muted: #9a9aa0;
+  --line: #3a3a3e; --accent: #7aa2ff; --accent-text: #0d1430;
+  --error-bg: #3b1d1a; --error: #ffb4a8; --danger: #ff8a80; --drop: #7aa2ff;
+}
+:root[data-theme="hc"] {
+  --bg: #000000; --panel: #000000; --text: #ffffff; --muted: #e6e6e6;
+  --line: #ffffff; --accent: #ffd400; --accent-text: #000000;
+  --error-bg: #000000; --error: #ff7b72; --danger: #ff7b72; --drop: #ffd400;
+}
+/* the Quarto extension runs cells (spec 006): no second Run */
+.run-external #srcpane .runbar, .run-external #srcpane .gutter { display: none; }
 * { box-sizing: border-box; }
 /* `hidden` always hides, even on elements whose rules set `display` */
 [hidden] { display: none !important; }

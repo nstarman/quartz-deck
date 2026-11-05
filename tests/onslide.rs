@@ -1563,3 +1563,46 @@ async fn pointing_moves_or_offers() {
         true
     );
 }
+
+/// Spec 006 (T013): the editor framed by VS Code takes its theme from the
+/// query, then from messages — only its parent's — and hides Run when the
+/// Quarto extension runs cells.
+#[tokio::test(flavor = "multi_thread")]
+async fn framed_editor_takes_theme_and_messages() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    let link = ed.cli(&["url"])["url"].as_str().unwrap().to_string();
+    let framed = |q: &str| link.replace("/#t=", &format!("/?host=vscode&{q}#t="));
+    let theme = "document.documentElement.dataset.theme";
+    let bg = "getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()";
+
+    ed.page.goto(framed("theme=dark").as_str()).await.unwrap();
+    ed.wait_secs(READY, 60).await;
+    assert_eq!(ed.eval(theme).await, "dark");
+    assert_eq!(ed.eval(bg).await, "#18181a");
+
+    // here the page is its own parent: its messages count, a child frame's don't
+    ed.eval("window.postMessage({type: 'theme', kind: 'hc'}, '*')")
+        .await;
+    ed.wait(&format!("{theme} === 'hc'")).await;
+    ed.eval("(() => { const f = document.createElement('iframe'); f.srcdoc = `<script>parent.postMessage({type: 'theme', kind: 'light'}, '*')</script>`; document.body.append(f); })()").await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(
+        ed.eval(theme).await,
+        "hc",
+        "a stranger's message is ignored"
+    );
+    assert_eq!(ed.eval(bg).await, "#000000");
+
+    // the Quarto extension runs cells: no Run bar, no gutter
+    ed.page
+        .goto(framed("theme=light&run=external").as_str())
+        .await
+        .unwrap();
+    ed.wait_secs(READY, 60).await;
+    ed.open_source().await;
+    assert_eq!(
+        ed.eval("['.runbar', '.gutter'].map((s) => getComputedStyle(document.querySelector('#srcpane ' + s)).display)").await,
+        json!(["none", "none"])
+    );
+    assert_eq!(ed.eval(theme).await, "light");
+}

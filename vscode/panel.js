@@ -14,8 +14,9 @@ const themeKind = (k) => ({ 1: 'light', 2: 'dark' })[k] || 'hc';
 
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 
-/** The webview's page; `nonce` lets only its own relay script run. */
-function html(url, nonce) {
+/** The webview's page; `nonce` lets only its own relay script run; `state` is
+ * kept by VS Code to restore the panel after a restart. */
+function html(url, nonce, state = {}) {
   const origin = new URL(url).origin;
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src ${origin}; script-src 'nonce-${nonce}'; style-src 'unsafe-inline';">
@@ -23,6 +24,7 @@ function html(url, nonce) {
 <body><iframe id="qd" src="${esc(url)}" title="quartz-deck slides"></iframe>
 <script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
+vscode.setState(${JSON.stringify(state).replace(/</g, "\\u003c")});
 const frame = document.getElementById('qd');
 const origin = ${JSON.stringify(origin)};
 addEventListener('message', (e) => {

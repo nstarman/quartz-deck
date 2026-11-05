@@ -83,7 +83,7 @@ Paths relative to repo root.
   - messages from the iframe other than `reveal`/`ready` are dropped;
   - theme kinds map to `light`/`dark`/`hc`.
 - [X] T010 [US1] Implement `vscode/panel.js` — T009 passes
-- [ ] T011 [US1] Implement `vscode/extension.js`:
+- [X] T011 [US1] Implement `vscode/extension.js`:
   - `quartz-deck.open`: find `qd` (setting or PATH); a missing qd or Quarto gives an error message naming the install;
   - spawn `qd serve --port 0` for the active `.qmd` and read the first JSON line;
   - `asExternalUri` for the link;
@@ -94,12 +94,12 @@ Paths relative to repo root.
   - dispose → `qd stop`;
   - `WebviewPanelSerializer` to restore;
   - follow `onDidChangeActiveColorTheme`.
-- [ ] T012 [P] [US1] Editor framed mode in `src/ui/editor.js` + `src/ui/editor.css`:
+- [X] T012 [P] [US1] Editor framed mode in `src/ui/editor.js` + `src/ui/editor.css`:
   - `?theme=light|dark|hc` overrides the colour scheme (CSS variables, including a high-contrast set);
   - with `?host=vscode`, accept `postMessage` only from `window.parent`, and only the `theme` / `follow` / `run` types;
   - post `ready` when loaded;
   - `?run=external` hides the run bar and gutter (spec 004 UI).
-- [ ] T013 [US1] Browser test in `tests/onslide.rs` `framed_editor_takes_theme_and_messages`: the editor page inside a test parent page (iframe, as the webview does) gets dark colours with `?theme=dark`, ignores a message from a non-parent, hides Run with `run=external`, posts `ready` — T012 passes
+- [X] T013 [US1] Browser test in `tests/onslide.rs` `framed_editor_takes_theme_and_messages`: the editor page inside a test parent page (iframe, as the webview does) gets dark colours with `?theme=dark`, ignores a message from a non-parent, hides Run with `run=external`, posts `ready` — T012 passes
 - [ ] T014 [US2] VS Code run (quickstart §1–§2) by hand in the real app; record SC-001/SC-002/SC-003 in `specs/006-vscode/checklists/vscode-run.md`; fix what it finds
 
 **Checkpoint**: MVP — the panel in VS Code, edits both ways, nothing lost.
