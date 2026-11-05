@@ -188,7 +188,7 @@ main.source-full > #srcpane { flex: 1; width: auto; }
 #srcpane .gutter button.stale { opacity: .55; }
 #srcpane .gutter button.busy { color: var(--muted); }
 #srcpane .gutter button:disabled { color: var(--muted); cursor: default; opacity: .5; }
-#srcpane .runbar { display: flex; gap: 4px; align-items: center; }
+#srcpane .runbar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-width: 0; }
 #srcpane .runbar button { font-size: 12px; padding: 2px 6px; white-space: nowrap; }
 #srcpane .kernel { font-size: 11px; color: var(--muted); padding: 0 4px; }
 #srcpane .kernel[data-state="busy"], #srcpane .kernel[data-state="starting"] { color: var(--accent); }
