@@ -62,7 +62,7 @@ lines; one live kernel per deck.
 |---|---|---|
 | I. Clean-room | Built from public docs (Quarto, Jupyter messaging via `jupyter_client`, uv/pixi docs); the overlay editor and bridge are our own. | PASS |
 | II. `.qmd` is truth | Source edits via `qd replace` write only the changed region; runs never touch the `.qmd`; outputs live in the cache; environments are separate files the person versions. | PASS |
-| III. CLI-first | `qd replace`, `qd env [init|add|sync]`, `qd run [<cell>|--all] [--restart] [--fresh]`, `qd outputs` with JSON; skill updated; the editor uses the same ops (Run via an authenticated endpoint backed by the same code). | PASS |
+| III. CLI-first | `qd replace`, `qd env [init|add|sync]`, `qd run [<cell>|--all] [--fresh] [--timeout]`, `qd outputs` with JSON; skill updated; the editor uses the same ops (Run via an authenticated endpoint backed by the same code). | PASS |
 | IV. Live preview | Preview shows stored outputs (fast, no kernel); source and slides follow each other. | PASS |
 | V. Safe writes | `replace` refuses on missing/ambiguous match; conflict bar as in 003; outputs written atomically to the cache. | PASS |
 | VI. Test-first | Tests per module before code; gated integration tests run in CI. | PASS |
@@ -70,6 +70,26 @@ lines; one live kernel per deck.
 
 Post-design re-check: PASS — the deck file gains nothing; environments are
 standard uv/pixi files.
+
+Final re-check after implementation (T038, constitution 1.2.0): PASS.
+- I: the bridge (`src/kernel_bridge.py`), overlay pane and run UI are our own,
+  from public docs only.
+- II: runs never change the `.qmd` (asserted in every run test and SC-004 in
+  the quickstart run); outputs are in qd's cache.
+- III: `qd run` (no `--restart`; `--fresh` covers it), `qd outputs`, `qd env`
+  in `qd schema` with their error codes; the skill covers them; the editor and
+  `qd run` share `kernel::plan` / `kernel::run_plan`.
+- IV: preview shows stored outputs with `--no-execute`; source ↔ slide sync
+  measured at ≤ 30 ms (quickstart run).
+- V: source edits go through the same versioned ops; outputs are written
+  atomically; `qd stop` waits for the server to finish so a restart never
+  overlaps it.
+- VI: every story landed with failing tests first (unit, HTTP, browser,
+  CLI); uv/pixi-gated tests run in CI.
+- VII: no new Rust dependency; every PR passed the concision audit.
+- Constraints (amended to 1.2.0): uv/pixi only for decks with code; code runs
+  only on an explicit action; code-running endpoints require the session
+  token, which only the editor link carries (`checklists/security.md`).
 
 ## Project Structure
 

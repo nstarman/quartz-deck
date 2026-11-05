@@ -44,6 +44,8 @@ fn agents_run_cells_from_the_cli() {
     let (ok, r, e) = qd(dir, &["run", "state/0", "print/0"]);
     assert!(ok, "{r} {e}");
     assert_eq!(r["mode"], "fresh");
+    let version = qd(dir, &["slides"]).1["version"].clone();
+    assert_eq!(r["version"], version, "ready for --expect");
     let cells: Vec<&str> = r["runs"]
         .as_array()
         .unwrap()

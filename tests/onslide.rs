@@ -11,6 +11,7 @@ use chromiumoxide::layout::Point;
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures_util::StreamExt;
 use serde_json::Value;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -41,6 +42,21 @@ fn chrome() -> Option<PathBuf> {
 
 /// The editor has loaded: preview ready, slide list drawn, session API up.
 const READY: &str = "(() => { const f = document.querySelector('#preview'); return !!(f && f.contentWindow?.Reveal?.isReady?.() && document.querySelector('#slides li') && window.qdSession); })()";
+
+/// Evaluate `js` in `page` (promises awaited); its JSON value.
+async fn eval(page: &Page, js: &str) -> Value {
+    let p = EvaluateParams::builder()
+        .expression(js)
+        .await_promise(true)
+        .return_by_value(true)
+        .build()
+        .unwrap();
+    let r = page
+        .evaluate_expression(p)
+        .await
+        .unwrap_or_else(|e| panic!("eval failed: {e}\n{js}"));
+    r.value().cloned().unwrap_or(Value::Null)
+}
 
 struct Ed {
     dir: tempfile::TempDir,
@@ -114,18 +130,7 @@ impl Ed {
     }
 
     async fn eval(&self, js: &str) -> Value {
-        let p = EvaluateParams::builder()
-            .expression(js)
-            .await_promise(true)
-            .return_by_value(true)
-            .build()
-            .unwrap();
-        let r = self
-            .page
-            .evaluate_expression(p)
-            .await
-            .unwrap_or_else(|e| panic!("eval failed: {e}\n{js}"));
-        r.value().cloned().unwrap_or(Value::Null)
+        eval(&self.page, js).await
     }
 
     /// Wait (up to `WAIT` s) until the JS condition is true.
@@ -1322,4 +1327,86 @@ async fn outputs_persist_across_restarts_and_go_stale() {
     ed.pane_caret("print(6", false).await;
     ed.wait(&format!("{dock}.classList.contains('stale')"))
         .await;
+}
+
+/// Spec 004 SC-006 (T035): a page from another local origin, open in the same
+/// browser as the editor, tries every way a page can reach the editor's
+/// server — JSON fetch with a guessed token, no-cors posts, plain form posts —
+/// against the code-running and editing endpoints, and to read the page for
+/// the token. Nothing runs, nothing changes, the server stays up. Needs uv.
+#[tokio::test(flavor = "multi_thread")]
+async fn another_origin_cannot_run_code_or_edit() {
+    if !have("uv") {
+        return;
+    }
+    let Some(ed) = Ed::open(RUN_DECK).await else {
+        return;
+    };
+    ed.cli(&["env", "init"]);
+    let manifest = || std::fs::read(ed.dir.path().join("pyproject.toml")).unwrap();
+    let before = manifest();
+    let port = ed.eval("location.port").await;
+
+    // the hostile page: same machine, another port = another origin
+    let evil = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let evil_port = evil.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for s in evil.incoming() {
+            let mut s = s.unwrap();
+            let _ = s.read(&mut [0; 4096]);
+            let _ = s.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n<iframe name=\"sink\"></iframe>");
+        }
+    });
+    let attacker = ed
+        ._browser
+        .new_page(format!("http://127.0.0.1:{evil_port}/").as_str())
+        .await
+        .unwrap();
+    let attack = format!(
+        r#"(async () => {{
+const qd = 'http://127.0.0.1:{port}';
+const bodies = {{
+  '/api/run': JSON.stringify({{all: true}}),
+  '/api/env/init': '{{}}',
+  '/api/env/add': JSON.stringify({{packages: ['six']}}),
+  '/api/op': JSON.stringify({{op: 'replace', args: {{old: '6 * 7', new: '6 * 9'}}}}),
+  '/api/shutdown': '{{}}',
+}};
+for (const [path, body] of Object.entries(bodies)) {{
+  await fetch(qd + path, {{method: 'POST', headers: {{'Content-Type': 'application/json', 'X-QD-Token': 'guess'}}, body}}).catch(() => {{}});
+  await fetch(qd + path, {{method: 'POST', mode: 'no-cors', headers: {{'Content-Type': 'text/plain'}}, body}}).catch(() => {{}});
+  const f = Object.assign(document.createElement('form'), {{method: 'POST', action: qd + path, enctype: 'text/plain', target: 'sink'}});
+  f.append(Object.assign(document.createElement('input'), {{name: body, value: ''}}));
+  document.body.append(f);
+  f.submit();
+  await new Promise((r) => setTimeout(r, 300));
+}}
+// the editor page (and any token in it) must be unreadable from here
+return (await fetch(qd + '/').then((r) => r.text()).catch(() => null)) === null;
+}})()"#
+    );
+    assert_eq!(
+        eval(&attacker, &attack).await,
+        Value::Bool(true),
+        "the editor page is unreadable cross-origin"
+    );
+    tokio::time::sleep(Duration::from_secs(3)).await; // anything that got through would show by now
+
+    assert_eq!(ed.file(), RUN_DECK, "no edit landed");
+    assert_eq!(manifest(), before, "no package added");
+    assert_eq!(
+        ed.cli(&["outputs"])["outputs"],
+        serde_json::json!([]),
+        "nothing ran"
+    );
+    assert_eq!(
+        ed.eval("document.querySelector('#srcpane .kernel').dataset.state ?? 'none'")
+            .await,
+        "none",
+        "no kernel started"
+    );
+    assert!(
+        ed.cli(&["url"])["url"].is_string(),
+        "the server is still up"
+    );
 }
