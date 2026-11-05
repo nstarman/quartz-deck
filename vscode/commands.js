@@ -29,4 +29,7 @@ function report(name, stdout, stderr) {
   return { ok: false, text: stderr.trim() || `qd ${ARGS[name][0]} failed` };
 }
 
-module.exports = { ARGS, report };
+/** The first of `docs` that is a saved .qmd — not the Output panel, an untitled or another file. */
+const deckOf = (docs) => docs.find((d) => d?.uri?.scheme === 'file' && d.fileName.endsWith('.qmd'));
+
+module.exports = { ARGS, report, deckOf };

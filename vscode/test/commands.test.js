@@ -1,7 +1,7 @@
 // Spec 006 (T018): the palette commands — which qd command, and what the person is told.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { ARGS, report } = require('../commands.js');
+const { ARGS, report, deckOf } = require('../commands.js');
 
 test('each palette command runs the matching qd command', () => {
   assert.deepEqual(ARGS, {
@@ -32,4 +32,12 @@ test('failures say what went wrong, from the problems or the error', () => {
     { ok: false, text: 'quarto render failed — see details for the Quarto log' });
   assert.deepEqual(report('render', '', 'Segmentation fault'), { ok: false, text: 'Segmentation fault' });
   assert.deepEqual(report('render', '', ''), { ok: false, text: 'qd render failed' });
+});
+
+test('the deck is the first saved .qmd: never the Output panel or another file', () => {
+  const doc = (scheme, fileName) => ({ uri: { scheme }, fileName });
+  const out = doc('output', 'extension-output-nstarman.quartz-deck-#1-quartz-deck');
+  const talk = doc('file', '/d/talk.qmd');
+  assert.equal(deckOf([undefined, out, doc('file', '/d/notes.md'), doc('untitled', 'Untitled-1.qmd'), talk]), talk);
+  assert.equal(deckOf([out]), undefined);
 });

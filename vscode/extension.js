@@ -10,7 +10,7 @@ const readline = require('node:readline');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { Sync } = require('./sync.js');
-const { ARGS, report } = require('./commands.js');
+const { ARGS, report, deckOf } = require('./commands.js');
 const { editorUrl, themeKind, html, fromEditor, follow } = require('./panel.js');
 
 /** Open decks: fsPath → { panel, doc, dispose() }. */
@@ -221,8 +221,11 @@ async function runQd(name, doc) {
 
 function activate(context) {
   out = vscode.window.createOutputChannel('quartz-deck');
+  // the focused panel's deck, else the text in front, else any .qmd on screen or with a panel
   const active = () => {
-    const doc = vscode.window.activeTextEditor?.document;
+    const panels = [...open.values()];
+    const doc = deckOf([panels.find((x) => x.panel.active)?.doc, vscode.window.activeTextEditor?.document,
+      ...vscode.window.visibleTextEditors.map((e) => e.document), ...panels.map((x) => x.doc)]);
     if (!doc) throw new Error('Open a .qmd first');
     return doc;
   };
