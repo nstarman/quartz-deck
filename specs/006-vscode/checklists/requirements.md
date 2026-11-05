@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
+- [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -31,9 +31,8 @@
 
 ## Notes
 
-- One open question (US2-6 / FR-010): whether panel edits leave the VS Code
-  buffer unsaved or save the file at once. It decides how the two editors
-  share the file, so it is asked rather than defaulted.
+- The one open question (US2-6 / FR-010) was answered 2026-11-05: panel edits
+  stay unsaved in the VS Code buffer until the person saves.
 - VS Code, the Quarto extension, Remote-SSH and `qd` commands are named
   because they are the product surface the person asked for, not
   implementation choices; no transport, webview or protocol is specified.

@@ -8,6 +8,15 @@
 
 **Input**: User description: "VS Code integration for quartz-deck (roadmap 006): everything the browser editor does, inside VS Code, working with the Quarto extension rather than replacing it. A small personal-use VS Code extension (same licence, installed from a .vsix) adds a command "Open in quartz-deck" that starts `qd serve` for the active .qmd and shows the interactive slide editor in a panel beside the text editor. The text editor and the panel edit the same deck: on-slide edits appear in the VS Code text buffer, typing in VS Code re-renders the panel, and the text cursor and the slide follow each other through the shared focus from spec 005 (moving the cursor shows that slide; selecting on a slide moves the cursor to its source). VS Code holds unsaved changes in its buffer while qd writes the file on disk, so neither side may ever overwrite the other's unsaved work (constitution V): panel edits go into the buffer as ordinary VS Code edits (undoable with VS Code's undo), or the extension saves/guards around them. Running code uses the Quarto extension's own Run Cell where it is installed, or spec 004's Run when not; render, preview and export map to qd commands in the command palette. Also: keyboard focus moves cleanly between panel and text editor, the panel follows VS Code's light/dark theme, and it works over Remote-SSH (the panel reaches qd serve through VS Code's port forwarding). Agents (Claude in VS Code) keep using the qd CLI, and qd focus reports the VS Code cursor too."
 
+## Clarifications
+
+### Session 2026-11-05
+
+- Q: In VS Code, should panel edits stay unsaved in the buffer until the
+  person saves, or be written to the file at once (as the browser editor
+  does)? → A: Unsaved until the person saves, like any VS Code edit; the
+  file changes only on save (US2-6, FR-010).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 — Slides beside the text, in VS Code (Priority: P1)
@@ -73,10 +82,10 @@ VS Code's undo reverts the panel edit.
 5. **Given** an agent edits the deck with `qd` while the buffer has unsaved
    changes, **When** that happens, **Then** VS Code shows the agent's change
    in the buffer, with no silent overwrite in either direction.
-6. Panel edits and the saved file: [NEEDS CLARIFICATION: do panel edits
-   leave the VS Code buffer unsaved (the person saves as usual, and the file
-   on disk changes only on save), or does every panel edit save the file at
-   once (as the browser editor does today)?]
+6. **Given** the person edits on a slide in the panel, **When** the edit is
+   made, **Then** the VS Code buffer shows it as an unsaved change (the
+   editor's dirty marker), and the file on disk changes only when the person
+   saves, exactly like typing in VS Code.
 
 ---
 
@@ -185,8 +194,9 @@ in the palette produces the same files as `qd export`.
   chooses (spec 003's conflict rules).
 - **FR-009**: Changes made on disk by others (agents via `qd`, other editors)
   MUST reach both the buffer and the panel with the same guarantees.
-- **FR-010**: Panel edits MUST [NEEDS CLARIFICATION: leave the buffer unsaved
-  until the person saves, or be saved to disk at once] (see US2-6).
+- **FR-010**: Panel edits MUST leave the VS Code buffer unsaved until the
+  person saves; the file on disk changes only on save (US2-6). While a VS
+  Code panel is open, the buffer — saved or not — is what the panel shows.
 
 **Cursor ↔ slide (US3)**
 
