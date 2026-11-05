@@ -3,7 +3,7 @@
 
 use crate::deck::{BlockKind, Deck, Slide, SlideKind};
 use crate::error::{QdError, Result};
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -21,11 +21,47 @@ fn find_quarto(explicit: Option<OsString>, path: Option<OsString>) -> Result<Pat
             Err(QdError::NoQuarto)
         };
     }
+    which("quarto", path).ok_or(QdError::NoQuarto)
+}
+
+/// `name` in the folders of `path` (a `$PATH` value).
+pub(crate) fn which(name: &str, path: Option<OsString>) -> Option<PathBuf> {
     path.iter()
         .flat_map(std::env::split_paths)
-        .map(|d| d.join("quarto"))
+        .map(|d| d.join(name))
         .find(|p| p.is_file())
-        .ok_or(QdError::NoQuarto)
+}
+
+/// `quarto <args>` for a deck whose text is `text`, run in `dir`: inside the
+/// deck's environment when it has code cells and an environment exists (R3),
+/// using the environment's kernel unless the deck names one; else Quarto
+/// directly (code-free decks never need an environment). The flag says which.
+fn quarto_cmd(dir: &Path, text: &str, args: &[&OsStr]) -> Result<(Command, bool)> {
+    let quarto = quarto()?;
+    let d = Deck::parse(text.to_string());
+    let cells = d
+        .slides
+        .iter()
+        .flat_map(|s| &s.blocks)
+        .any(|b| b.kind == BlockKind::Cell);
+    let (mut cmd, wrapped) = match crate::env::find(dir).filter(|_| cells) {
+        Some(env) => (env.wrap(&quarto)?, true),
+        None => (Command::new(quarto), false),
+    };
+    cmd.args(args).current_dir(dir);
+    if wrapped && d.meta.get("jupyter").is_none() {
+        cmd.args(["-M", &format!("jupyter:{}", crate::env::KERNEL)]);
+    }
+    Ok((cmd, wrapped))
+}
+
+/// A failed Quarto run: `E_LOCK_STALE` if the environment refused a stale lock.
+fn failed(log: &str, wrapped: bool, name: &str) -> QdError {
+    if wrapped && crate::env::is_stale(log) {
+        QdError::LockStale(log.to_string())
+    } else {
+        QdError::Render(clean_log(log, name))
+    }
 }
 
 /// Id of a slide's `<section>` in the preview: its own id, or `qd-N` for
@@ -180,32 +216,33 @@ pub fn render(
     out_dir: &Path,
     preview: bool,
 ) -> Result<PathBuf> {
-    let quarto = quarto()?;
     let dir = deck_path.parent().unwrap_or(Path::new("."));
     let stem = deck_path.file_stem().unwrap_or_default().to_string_lossy();
     let name = format!("{stem}.qd-{tag}");
     let copy = dir.join(format!("{name}.qmd"));
+    let mut args = [
+        "render".as_ref(),
+        copy.as_os_str(),
+        "--to".as_ref(),
+        "revealjs".as_ref(),
+    ]
+    .to_vec();
+    args.extend(["--output-dir".as_ref(), out_dir.as_os_str()]);
+    if preview {
+        args.extend(["-M", "embed-resources:false"].map(OsStr::new));
+    }
+    let (mut quarto, wrapped) = quarto_cmd(dir, text, &args)?;
     std::fs::create_dir_all(out_dir)?;
     std::fs::write(&copy, text)?;
-    let out = Command::new(quarto)
-        .arg("render")
-        .arg(&copy)
-        .args(["--to", "revealjs", "--output-dir"])
-        .arg(out_dir)
-        .args(if preview {
-            &["-M", "embed-resources:false"][..]
-        } else {
-            &[]
-        })
-        .current_dir(dir)
-        .output();
+    let out = quarto.output();
     let _ = std::fs::remove_file(&copy);
     let out = out?;
     if !out.status.success() {
-        return Err(QdError::Render(clean_log(
+        return Err(failed(
             &String::from_utf8_lossy(&out.stderr),
+            wrapped,
             &name,
-        )));
+        ));
     }
     Ok(out_dir.join(format!("{name}.html")))
 }
@@ -215,7 +252,6 @@ pub fn render(
 /// `output-dir`, `embed-resources` etc. apply. Returns the output path (from
 /// Quarto's "Output created:" line) and a cleaned log.
 pub fn render_deck(deck_path: &Path, to: Option<&str>) -> Result<(PathBuf, String)> {
-    let quarto = quarto()?;
     if let Some(f) = to
         && (f.is_empty()
             || f.starts_with('-')
@@ -228,13 +264,12 @@ pub fn render_deck(deck_path: &Path, to: Option<&str>) -> Result<(PathBuf, Strin
         )));
     }
     let dir = deck_path.parent().unwrap_or(Path::new("."));
-    let mut cmd = Command::new(quarto);
-    cmd.arg("render")
-        .arg(deck_path.file_name().unwrap())
-        .current_dir(dir);
+    let mut args = vec!["render".as_ref(), deck_path.file_name().unwrap()];
     if let Some(f) = to {
-        cmd.args(["--to", f]);
+        args.extend(["--to", f].map(OsStr::new));
     }
+    let text = std::fs::read_to_string(deck_path)?;
+    let (mut cmd, wrapped) = quarto_cmd(dir, &text, &args)?;
     let out = cmd.output()?;
     let log = format!(
         "{}{}",
@@ -242,7 +277,7 @@ pub fn render_deck(deck_path: &Path, to: Option<&str>) -> Result<(PathBuf, Strin
         String::from_utf8_lossy(&out.stderr)
     );
     if !out.status.success() {
-        return Err(QdError::Render(clean_log(&log, "\u{0}")));
+        return Err(failed(&log, wrapped, "\u{0}"));
     }
     let created = log
         .lines()

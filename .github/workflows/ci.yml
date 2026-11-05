@@ -47,6 +47,12 @@ jobs:
       - name: Browser
         run: google-chrome --version
 
+      # per-deck environments (spec 004): tests/env.rs runs with both tools
+      - uses: astral-sh/setup-uv@v6
+      - uses: prefix-dev/setup-pixi@v0.8.14
+        with:
+          run-install: false
+
       - name: Format
         run: cargo fmt --check
 

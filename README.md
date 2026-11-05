@@ -39,7 +39,8 @@ qd box add results --image figures/plot.png --at 100,150 --size 600,400
 qd --human slides
 qd check                                         # --render also runs Quarto
 qd serve --open                                  # browser editor + live preview
-qd render                                        # final output; reports its path
+qd env init && qd env add matplotlib             # per-deck locked Python env (uv; or --tool pixi)
+qd render                                        # final output; runs code cells in that env
 qd undo
 ```
 

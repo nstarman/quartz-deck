@@ -3,6 +3,7 @@ pub mod attrs;
 pub mod browser;
 pub mod cli;
 pub mod deck;
+pub mod env;
 pub mod error;
 pub mod export;
 pub mod offline;

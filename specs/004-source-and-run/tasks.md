@@ -22,7 +22,7 @@ P3: US5. Paths relative to repo root.
 
 ## Phase 1: Setup
 
-- [ ] T001 [P] CI in `.github/workflows/ci.yml`: install **uv** (official installer) and **pixi**; keep Python for existing Plotly tests; add the gated tests to the normal `cargo test` step — moved to the environments phase (audit: nothing in the MVP uses uv/pixi); add it with T015
+- [X] T001 [P] CI in `.github/workflows/ci.yml`: install **uv** (official installer) and **pixi**; keep Python for existing Plotly tests; add the gated tests to the normal `cargo test` step — moved to the environments phase (audit: nothing in the MVP uses uv/pixi); add it with T015
 - [X] T002 [P] Fixtures `tests/fixtures/run/`: `basic.qmd` (Python cell printing a value, a matplotlib figure cell, a cell using a variable from the first, a failing cell `1/0`, an `eval: false` cell, an R cell), `slow.qmd` (a `while True` cell), `nocode.qmd`; `README.md` per file — done
 - [X] T003 Module skeletons wired into `src/lib.rs`: `src/env.rs`, `src/kernel.rs`, `src/outputs.rs`, `src/kernel_bridge.py` (embedded with `include_str!`); editor modules `src/ui/pane.js`, `src/ui/run.js` added to the `/ui/<name>` table in `src/server.rs` — done for the MVP (`pane.js` served); `env.rs`, `kernel.rs`, `outputs.rs`, `kernel_bridge.py`, `run.js` are created by their phases rather than as empty files
 
@@ -68,12 +68,12 @@ P3: US5. Paths relative to repo root.
 
 **Goal**: each deck has its own locked uv (or pixi) environment; everything that executes code goes through it.
 
-- [ ] T013 [P] Write failing unit tests in `src/env.rs` (`#[cfg(test)]`): discovery from deck folder up to the Quarto project root — `pixi.toml` / `pyproject.toml [tool.pixi]` → pixi, `pyproject.toml` / `uv.lock` → uv, none → `E_NO_ENV`; `wrap(cmd)` builds `uv run --project <root> --locked …` / `pixi run --manifest-path <root> --locked …`; tool missing → `E_ENV_TOOL` with an install hint
-- [ ] T014 Implement discovery and `wrap` in `src/env.rs`; new error codes `E_NO_ENV`, `E_ENV_TOOL`, `E_LOCK_STALE`, `E_ENV` in `src/error.rs` — T013 passes
-- [ ] T015 [P] Write failing integration tests `tests/env.rs` (gated on uv; pixi variants gated on pixi): `qd env init` creates `pyproject.toml` + `uv.lock` with `ipykernel`, `nbclient`, `nbformat`, `pyyaml` (research R2); `qd env add matplotlib` updates manifest + lock; `qd env` reports `lock_current`; editing the manifest by hand → `E_LOCK_STALE` on run/render; `qd env sync` in a fresh copy reproduces the same locked versions (SC-007); `--tool pixi` creates a pixi manifest with PyPI dependencies only
-- [ ] T016 Implement `qd env`, `qd env init [--tool uv|pixi]`, `qd env add`, `qd env sync` in `src/env.rs`/`src/cli.rs` (shell out to uv/pixi; never pip) — T015 passes
-- [ ] T017 [P] Write failing test in `tests/env.rs`: a deck with Python cells renders through its environment (`qd render` executes the cells: printed value and figure in the HTML; research R3 verified flow); a deck without code cells renders without any environment
-- [ ] T018 Route code-executing Quarto calls through `env::wrap` in `src/render.rs` (`render`, `export`, `check --render`) when the deck has code cells — T017 passes; existing export/render tests still pass
+- [X] T013 [P] Write failing unit tests in `src/env.rs` (`#[cfg(test)]`): discovery from deck folder up to the Quarto project root — `pixi.toml` / `pyproject.toml [tool.pixi]` → pixi, `pyproject.toml` / `uv.lock` → uv, none → `E_NO_ENV`; `wrap(cmd)` builds `uv run --project <root> --locked …` / `pixi run --manifest-path <root> --locked …`; tool missing → `E_ENV_TOOL` with an install hint
+- [X] T014 Implement discovery and `wrap` in `src/env.rs`; new error codes `E_NO_ENV`, `E_ENV_TOOL`, `E_LOCK_STALE`, `E_ENV` in `src/error.rs` — T013 passes
+- [X] T015 [P] Write failing integration tests `tests/env.rs` (gated on uv; pixi variants gated on pixi): `qd env init` creates `pyproject.toml` + `uv.lock` with `ipykernel`, `nbclient`, `nbformat`, `pyyaml` (research R2); `qd env add matplotlib` updates manifest + lock; `qd env` reports `lock_current`; editing the manifest by hand → `E_LOCK_STALE` on run/render; `qd env sync` in a fresh copy reproduces the same locked versions (SC-007); `--tool pixi` creates a pixi manifest with PyPI dependencies only
+- [X] T016 Implement `qd env`, `qd env init [--tool uv|pixi]`, `qd env add`, `qd env sync` in `src/env.rs`/`src/cli.rs` (shell out to uv/pixi; never pip) — T015 passes
+- [X] T017 [P] Write failing test in `tests/env.rs`: a deck with Python cells renders through its environment (`qd render` executes the cells: printed value and figure in the HTML; research R3 verified flow); a deck without code cells renders without any environment
+- [X] T018 Route code-executing Quarto calls through `env::wrap` in `src/render.rs` (`render`, `export`, `check --render`) when the deck has code cells — T017 passes; existing export/render tests still pass
 
 ---
 
