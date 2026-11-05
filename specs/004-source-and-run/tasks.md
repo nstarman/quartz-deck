@@ -128,9 +128,9 @@ P3: US5. Paths relative to repo root.
 
 ## Phase 9: Polish & cross-cutting
 
-- [ ] T033 [P] README: "Source and run" section (environments with uv/pixi and lockfiles, source pane, Run, safety); `qd schema` complete
-- [ ] T034 [P] Constitution amendment via the governance rules (MINOR): Constraints list uv or pixi as external tools needed only to run code / render decks with code (plan Complexity Tracking)
-- [ ] T035 Security check SC-006: a browser test page on another origin tries `fetch`/form posts to `/api/run`, `/api/env/add` and `/api/op` with `replace`; assert no kernel starts and no file changes; record in `checklists/security.md`
+- [X] T033 [P] README: "Source and run" section (environments with uv/pixi and lockfiles, source pane, Run, safety); `qd schema` complete
+- [X] T034 [P] Constitution amendment via the governance rules (MINOR): Constraints list uv or pixi as external tools needed only to run code / render decks with code (plan Complexity Tracking)
+- [X] T035 Security check SC-006: a browser test page on another origin tries `fetch`/form posts to `/api/run`, `/api/env/add` and `/api/op` with `replace`; assert no kernel starts and no file changes; record in `checklists/security.md`
 - [ ] T036 Run quickstart §1–§5 with the release binary in the browser pane; record in `checklists/quickstart-run.md` (SC-001–SC-003 timings)
 - [ ] T037 Agent eval (SC-005): 10 fresh agents asked to fix a failing cell in a deck with an environment; grade fixed output, ≤ 6 commands, no usage errors, `.qmd` changed only in the cell; record in `checklists/agent-eval.md`
 - [ ] T038 Final constitution re-check in plan.md; fmt, clippy, full suite green; ROADMAP status
