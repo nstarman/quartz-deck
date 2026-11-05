@@ -39,6 +39,9 @@ fn chrome() -> Option<PathBuf> {
     path
 }
 
+/// The editor has loaded: preview ready, slide list drawn, session API up.
+const READY: &str = "(() => { const f = document.querySelector('#preview'); return !!(f && f.contentWindow?.Reveal?.isReady?.() && document.querySelector('#slides li') && window.qdSession); })()";
+
 struct Ed {
     dir: tempfile::TempDir,
     page: Page,
@@ -91,7 +94,7 @@ impl Ed {
             _profile: profile,
             _slot: slot,
         };
-        ed.wait_secs("(() => { const f = document.querySelector('#preview'); return !!(f && f.contentWindow?.Reveal?.isReady?.() && document.querySelector('#slides li') && window.qdSession); })()", 60).await;
+        ed.wait_secs(READY, 60).await;
         Some(ed)
     }
 
@@ -1208,10 +1211,30 @@ async fn run_cells_in_the_editor() {
     ed.wait("document.querySelectorAll('#srcpane .gutter button').length === 3")
         .await;
 
+    // the token came in the link's fragment: gone from the address bar and the page
+    assert_eq!(
+        ed.eval("!location.href.includes('t=') && !document.querySelector('meta[name=qd-token]') && !!sessionStorage.getItem('qd-token')").await,
+        true
+    );
     ed.click_editor("#srcpane .gutter button[data-cell=\"print/0\"]")
         .await;
     ed.wait_secs(&format!("{dock}.textContent.includes('42')"), 120)
         .await;
+    // and a reload in the same tab can still run code
+    ed.page.reload().await.unwrap();
+    ed.wait_secs(READY, 60).await;
+    if ed.eval("document.querySelector('#srcpane').hidden").await == true {
+        ed.open_source().await; // (the editor remembers an open pane across reloads)
+    }
+    ed.wait("document.querySelectorAll('#srcpane .gutter button').length === 3")
+        .await;
+    ed.click_editor("#srcpane .gutter button[data-cell=\"print/0\"]")
+        .await;
+    ed.wait_secs(
+        &format!("{dock}.querySelector('.head')?.textContent.includes('[2]')"),
+        60,
+    )
+    .await;
     // the slide shows the stored output, rendered without running anything
     ed.go("print").await;
     ed.wait_secs(

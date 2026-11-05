@@ -82,6 +82,8 @@ struct App {
     /// The deck's live session, started on the first run.
     kernel: Mutex<Option<Arc<Kernel>>>,
     runs: AtomicU64,
+    /// `POST /api/shutdown` (`qd stop`).
+    stop: Notify,
 }
 
 impl App {
@@ -138,15 +140,15 @@ fn asset(content_type: &'static str, body: &'static str) -> impl IntoResponse {
 }
 
 /// The editor page, carrying this session's run token.
-async fn index(State(app): State<Shared>) -> Response {
-    let meta = format!("<head>\n<meta name=\"qd-token\" content=\"{}\">", app.token);
-    let page = INDEX.replacen("<head>", &meta, 1);
+/// The editor page. It never holds the run token: that comes in the link's
+/// fragment (`#t=…`, from `qd serve` / `qd url`), which browsers don't send.
+async fn index() -> Response {
     (
         [
             (header::CONTENT_TYPE, "text/html; charset=utf-8"),
             (header::CACHE_CONTROL, "no-store"),
         ],
-        page,
+        INDEX,
     )
         .into_response()
 }
@@ -474,6 +476,15 @@ async fn blocking(f: impl FnOnce() -> Result<Value> + Send + 'static) -> Respons
     }
 }
 
+/// `POST /api/shutdown` (token): stop serving, as Ctrl-C does (`qd stop`).
+async fn api_shutdown(State(app): State<Shared>, headers: HeaderMap) -> Response {
+    if !authorized(&app, &headers) {
+        return forbidden();
+    }
+    app.stop.notify_one();
+    Json(json!({"ok": true})).into_response()
+}
+
 /// `GET /api/outputs`: stored outputs per cell, stale ones marked, and every
 /// code cell in order with its lines (the source pane's Run buttons).
 async fn api_outputs(State(app): State<Shared>) -> Response {
@@ -655,6 +666,8 @@ fn watch(app: Shared) -> Result<notify::RecommendedWatcher> {
 pub struct Session {
     pub url: String,
     pub port: u16,
+    /// The link to open: `url` plus the run token in its fragment.
+    pub editor: String,
 }
 
 /// Bind, then call `on_ready` (to print the URL) and serve until Ctrl-C.
@@ -687,6 +700,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             token: token()?,
             kernel: Mutex::new(None),
             runs: AtomicU64::new(0),
+            stop: Notify::new(),
             store,
         });
         let router = Router::new()
@@ -702,6 +716,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             .route("/api/run", post(api_run))
             .route("/api/run/interrupt", post(api_interrupt))
             .route("/api/run/restart", post(api_restart))
+            .route("/api/shutdown", post(api_shutdown))
             .route("/api/outputs", get(api_outputs))
             .route("/outputs/{name}", get(output_file))
             .route("/api/env", get(api_env))
@@ -718,6 +733,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
         let session = Session {
             url: format!("http://127.0.0.1:{port}/"),
             port,
+            editor: format!("http://127.0.0.1:{port}/#t={}", app.token),
         };
         std::fs::create_dir_all(app.store.cache_dir())?;
         let info = json!({"deck_path": app.store.path, "url": session.url, "port": port,
@@ -735,11 +751,26 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
         tokio::spawn(render_loop(app.clone()));
         app.kick.notify_one();
         on_ready(&session);
-        let res = axum::serve(listener, router)
-            .with_graceful_shutdown(async {
-                let _ = tokio::signal::ctrl_c().await;
-            })
-            .await;
+        let stopping = Arc::new(Notify::new());
+        let server = axum::serve(listener, router).with_graceful_shutdown({
+            let (app, stopping) = (app.clone(), stopping.clone());
+            async move {
+                tokio::select! {
+                    _ = tokio::signal::ctrl_c() => {}
+                    _ = app.stop.notified() => {}
+                }
+                stopping.notify_one();
+            }
+        });
+        // an open editor's event stream never ends by itself: don't wait on it
+        let grace = async {
+            stopping.notified().await;
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        };
+        let res = tokio::select! {
+            r = server => r,
+            _ = grace => Ok(()),
+        };
         app.kernel.lock().unwrap().take(); // shuts the kernel down
         let _ = std::fs::remove_file(&session_file);
         res.map_err(QdError::Io)
