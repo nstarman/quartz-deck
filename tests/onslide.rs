@@ -44,6 +44,17 @@ struct Ed {
     page: Page,
     _browser: Browser,
     _profile: tempfile::TempDir,
+    _slot: tokio::sync::OwnedSemaphorePermit,
+}
+
+/// At most half the CPUs' worth of editors (Chrome + Quarto each) at once:
+/// on a 2-vCPU CI runner they otherwise starve each other past the waits.
+async fn slot() -> tokio::sync::OwnedSemaphorePermit {
+    static SLOTS: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
+        std::sync::OnceLock::new();
+    let n = std::thread::available_parallelism().map_or(1, |n| (n.get() / 2).max(1));
+    let s = SLOTS.get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(n)));
+    s.clone().acquire_owned().await.unwrap()
 }
 
 impl Drop for Ed {
@@ -55,6 +66,7 @@ impl Drop for Ed {
 impl Ed {
     async fn open(deck: &str) -> Option<Ed> {
         let chrome = chrome()?;
+        let slot = slot().await;
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("deck.qmd"), deck).unwrap();
         let out = qd(dir.path()).args(["serve", "--detach"]).output().unwrap();
@@ -77,6 +89,7 @@ impl Ed {
             page,
             _browser: browser,
             _profile: profile,
+            _slot: slot,
         };
         ed.wait_secs("(() => { const f = document.querySelector('#preview'); return !!(f && f.contentWindow?.Reveal?.isReady?.() && document.querySelector('#slides li') && window.qdSession); })()", 60).await;
         Some(ed)

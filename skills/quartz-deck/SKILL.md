@@ -73,7 +73,9 @@ when the current directory has exactly one `.qmd`.
 | add / move / delete / duplicate one element | `qd block add results --after results/0 --md "- point"` (or `--before`, `--start`, `--end`), `qd block move results/2 --before results/0`, `qd block rm results/1`, `qd block dup results/1`, `qd block class results/1 --add fragment` (appears on click) — only that element's bytes move; the heading is untouched |
 | validate | `qd check` (add `--render` to run Quarto) |
 | final output | `qd render` (→ `output` path; `--to pdf` etc. for other formats) |
-| Python code cells | each deck has its own locked environment: `qd env init` (uv; `--tool pixi` for pixi with PyPI packages), `qd env add numpy matplotlib`, `qd env` (where, `lock_current`), `qd env sync` (install the lock on a new machine / relock after a hand edit). Never `pip install`; `qd render` runs the cells inside the environment |
+| Python code cells | each deck has its own locked environment: `qd env init` (uv; `--tool pixi` for pixi with PyPI packages), `qd env add numpy matplotlib`, `qd env` (where, `lock_current`), `qd env sync` (install the lock on a new machine / relock after a hand edit). The manifest and lockfile are part of the deck: commit them. Never `pip install`; `qd render` runs the cells inside the environment |
+| run code / check a result | `qd run results/1` (JSON outputs; figures as files: `outputs[].path`), `qd run --all` (stops at the first error), `--fresh` to restart and run from the top, `--timeout 60`. With `qd serve` running it uses the editor's live session and the person sees the outputs; otherwise a fresh one-shot session. Fix a failing cell with `qd replace --old … --new …`, then run it again |
+| stored outputs | `qd outputs` (or `qd outputs results/1`): last outputs per cell, `stale: true` once the cell changed |
 | works without network? | `qd check --offline` (headless Chrome, network blocked; problems per slide with hints) |
 | live preview | `qd serve --detach`, then `qd url results`; `qd stop` when done |
 | undo / redo | `qd undo` / `qd redo` |
@@ -134,6 +136,8 @@ SHA-256; later exports work offline. `--no-download` forbids downloads.
 | `E_NO_ENV` | deck has code cells but no environment | `qd env init`, then `qd env add <pkgs>` |
 | `E_LOCK_STALE` | manifest edited, lock out of date | `qd env sync` |
 | `E_ENV_TOOL` / `E_ENV` | uv/pixi missing, or it failed | install per the hint / read `details` |
+| `E_RUN` | a cell raised or was stopped (`qd run`) | read the error output in the stdout result; fix the cell; run again |
+| `E_NOT_CODE` / `E_ENGINE` | not an executable cell / not Python | run only ```` ```{python} ```` cells; `qd render` still runs others |
 | `E_NO_BROWSER` / `E_DOWNLOAD` | no Chrome, or a download failed its checksum | install Chrome, or allow the download; retry |
 
 ## Worked examples

@@ -3,9 +3,10 @@
 //! over IPC sockets; qd talks to it in JSON lines. One request at a time;
 //! `interrupt` may be sent while a cell runs.
 
-use crate::deck::{Block, BlockKind, Deck, code_open};
+use crate::deck::{Block, BlockKind, Deck, code_open, version_of};
 use crate::env::Env;
 use crate::error::{QdError, Result};
+use crate::outputs::Outputs;
 use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
@@ -43,6 +44,65 @@ pub fn cell_code(d: &Deck, b: &Block) -> Result<Option<String>> {
         o.as_deref() == Some("eval:false")
     });
     Ok((!off).then(|| body.join("\n")))
+}
+
+/// A cell to run: (ref, fingerprint, code).
+pub type Planned = (String, String, String);
+
+/// The cells to run, in order: the picked `cells` (in the order given), or
+/// every cell (`all`), or from the top through the furthest picked one (`fresh`,
+/// a new session has no state). Run all / fresh skip what can't run here;
+/// picked cells must be runnable code.
+pub fn plan(d: &Deck, cells: &[String], all: bool, fresh: bool) -> Result<Vec<Planned>> {
+    let mut picked = vec![];
+    for r in cells {
+        let (_, b) = d.element(r)?;
+        cell_code(d, b)?;
+        picked.push(b.id.clone());
+    }
+    let last = d
+        .blocks()
+        .enumerate()
+        .filter(|(_, b)| picked.contains(&b.id))
+        .map(|(i, _)| i)
+        .max();
+    let mut plan = vec![];
+    for (i, b) in d.blocks().enumerate() {
+        let wanted = all || picked.contains(&b.id) || (fresh && last.is_some_and(|l| i <= l));
+        if b.kind != BlockKind::Cell || !wanted {
+            continue;
+        }
+        if let Ok(Some(code)) = cell_code(d, b) {
+            plan.push((b.id.clone(), version_of(d.slice(b.span).as_bytes()), code));
+        }
+    }
+    if !all && !fresh {
+        plan.sort_by_key(|(id, ..)| picked.iter().position(|p| p == id));
+    }
+    Ok(plan)
+}
+
+/// Run `plan` in `k`, storing each output; stops at the first cell that
+/// fails or is stopped (FR-010). `each(cell, None)` before a cell runs and
+/// `each(cell, Some(record))` after. Returns `done`, `error` or `stopped`.
+pub fn run_plan(
+    k: &Session,
+    out: &Outputs,
+    plan: Vec<Planned>,
+    timeout: Option<Duration>,
+    mut each: impl FnMut(&str, Option<&Value>),
+) -> Result<&'static str> {
+    for (cell, fp, code) in plan {
+        each(&cell, None);
+        let rec = out.save(&cell, &fp, &k.execute(&code, timeout)?)?;
+        each(&cell, Some(&rec));
+        match rec["status"].as_str() {
+            Some("ok") => {}
+            Some("stopped") => return Ok("stopped"),
+            _ => return Ok("error"),
+        }
+    }
+    Ok("done")
 }
 
 pub struct Session {

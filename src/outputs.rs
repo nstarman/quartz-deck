@@ -95,6 +95,25 @@ impl Outputs {
         json!({ "cells": cells })
     }
 
+    /// A record as the CLI reports it (contracts/cli.md): `{cell, counter,
+    /// status: done|error|stopped, outputs}`, figures and full text as paths.
+    pub fn entry(&self, cell: &str, rec: &Value) -> Value {
+        let mut items = rec["items"].clone();
+        for o in items.as_array_mut().into_iter().flatten() {
+            if let Some(f) = o.as_object_mut().unwrap().remove("file") {
+                o["path"] = json!(self.dir.join(f.as_str().unwrap_or_default()));
+            }
+            if let Some(f) = o["full"].as_str() {
+                o["full"] = json!(self.dir.join(f));
+            }
+        }
+        let status = match rec["status"].as_str() {
+            Some("ok") => "done",
+            s => s.unwrap_or("error"),
+        };
+        json!({"cell": cell, "counter": rec["counter"], "status": status, "outputs": items})
+    }
+
     /// A stored file by name (as in `"file"` / `"full"`), never outside the store.
     pub fn file(&self, name: &str) -> Option<PathBuf> {
         let ok = !name.is_empty() && Path::new(name).file_name() == Some(name.as_ref());

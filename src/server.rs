@@ -220,6 +220,20 @@ fn local_host(h: &str) -> bool {
     matches!(host, "127.0.0.1" | "localhost")
 }
 
+/// Every route answers only to a loopback Host: a DNS-rebound page on
+/// another site can read nothing (source, outputs, the editor's token).
+async fn local_only(req: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let host = req
+        .headers()
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok());
+    if host.is_some_and(local_host) {
+        next.run(req).await
+    } else {
+        forbidden()
+    }
+}
+
 /// Only pages served by this server may edit: the Host must be loopback
 /// (blocks DNS rebinding) and any Origin must be too. The `Json` extractor
 /// already refuses non-JSON bodies, which browsers cannot send cross-site
@@ -318,6 +332,11 @@ struct RunBody {
     /// Restart and run from the top through the last requested cell (FR-008b).
     #[serde(default)]
     fresh: bool,
+    /// Answer when the run ends, with its outputs (`qd run`), instead of 202 at once.
+    #[serde(default)]
+    wait: bool,
+    /// Seconds before a cell is interrupted.
+    timeout: Option<u64>,
 }
 
 /// `POST /api/run`: 202 at once; progress and outputs arrive as events.
@@ -329,33 +348,10 @@ async fn api_run(
     if !authorized(&app, &headers) {
         return forbidden();
     }
-    let plan = app.store.read().and_then(|d| {
-        // (ref, fingerprint, code) of each cell to run, in order
-        let mut picked = vec![];
-        for r in &body.cells {
-            let (_, b) = d.element(r)?;
-            cell_code(&d, b)?;
-            picked.push(b.id.clone());
-        }
-        let last = d.blocks().position(|b| picked.last() == Some(&b.id));
-        let mut plan = vec![];
-        for (i, b) in d.blocks().enumerate() {
-            let wanted =
-                body.all || picked.contains(&b.id) || (body.fresh && last.is_some_and(|l| i <= l));
-            if b.kind != BlockKind::Cell || !wanted {
-                continue;
-            }
-            // Run all / fresh skip what can't run here; picked cells were checked above
-            if let Ok(Some(code)) = cell_code(&d, b) {
-                plan.push((b.id.clone(), version_of(d.slice(b.span).as_bytes()), code));
-            }
-        }
-        if !body.all && !body.fresh {
-            // explicitly picked cells run in the order given
-            plan.sort_by_key(|(id, ..)| picked.iter().position(|p| p == id));
-        }
-        Ok(plan)
-    });
+    let plan = app
+        .store
+        .read()
+        .and_then(|d| crate::kernel::plan(&d, &body.cells, body.all, body.fresh));
     let plan = match plan {
         Ok(p) => p,
         Err(e) => return err_response(e),
@@ -364,7 +360,12 @@ async fn api_run(
     let cells: Vec<&String> = plan.iter().map(|(id, ..)| id).collect();
     app.emit("run_started", json!({"run": run, "cells": cells}));
     let a = app.clone();
-    tokio::task::spawn_blocking(move || run_cells(&a, run, plan, body.fresh));
+    let timeout = body.timeout.map(Duration::from_secs);
+    let go = move || run_cells(&a, run, plan, body.fresh, timeout);
+    if body.wait {
+        return blocking(move || Ok(go())).await;
+    }
+    tokio::task::spawn_blocking(go);
     (StatusCode::ACCEPTED, Json(json!({"run": run}))).into_response()
 }
 
@@ -383,36 +384,42 @@ fn kernel(app: &App) -> Result<Arc<Kernel>> {
     Ok(s)
 }
 
-/// Run `plan` in order, storing outputs; stops at the first cell that fails
-/// or is stopped (FR-010). The preview re-renders afterwards (R7).
-fn run_cells(app: &App, run: u64, plan: Vec<(String, String, String)>, fresh: bool) {
+/// Run `plan` (`kernel::run_plan`) in the live session, with events for the
+/// editor; the preview re-renders afterwards (R7). Returns `run_done`'s
+/// `{run, status, error?}` plus `runs`: each cell's entry as `qd run` reports it.
+fn run_cells(
+    app: &App,
+    run: u64,
+    plan: Vec<crate::kernel::Planned>,
+    fresh: bool,
+    timeout: Option<Duration>,
+) -> Value {
     let outputs = Outputs::new(&app.store);
-    let res = (|| -> Result<&'static str> {
+    let mut runs = vec![];
+    let go = || -> Result<&'static str> {
+        if plan.is_empty() {
+            return Ok("done"); // nothing to run needs no kernel (nor an environment)
+        }
         let k = kernel(app)?;
         if fresh {
             app.state("starting");
             k.restart()?;
         }
-        for (cell, fp, code) in plan {
-            app.state("busy");
-            let reply = k.execute(&code, None);
+        crate::kernel::run_plan(&k, &outputs, plan, timeout, |cell, rec| {
+            let Some(rec) = rec else {
+                return app.state("busy");
+            };
             app.state("idle");
-            let reply = reply?;
-            let rec = with_urls(outputs.save(&cell, &fp, &reply)?);
+            runs.push(outputs.entry(cell, rec));
+            let rec = with_urls(rec.clone());
             app.emit(
                 "cell_output",
                 json!({"run": run, "cell": cell, "counter": rec["counter"],
                 "status": rec["status"], "items": rec["items"]}),
             );
-            match reply["status"].as_str() {
-                Some("ok") => {}
-                Some("stopped") => return Ok("stopped"),
-                _ => return Ok("error"),
-            }
-        }
-        Ok("done")
-    })();
-    let done = match res {
+        })
+    };
+    let mut done = match go() {
         Ok(status) => json!({"run": run, "status": status}),
         Err(e) => {
             // the session is gone or never started: the next run starts a new one
@@ -421,8 +428,10 @@ fn run_cells(app: &App, run: u64, plan: Vec<(String, String, String)>, fresh: bo
             json!({"run": run, "status": "failed", "error": e.to_json()["error"]})
         }
     };
-    app.emit("run_done", done);
+    app.emit("run_done", done.clone());
     app.kick.notify_one();
+    done["runs"] = json!(runs);
+    done
 }
 
 /// `POST /api/run/interrupt`: stop the running cell (no-op when idle or starting).
@@ -702,6 +711,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
                 "/preview",
                 ServeDir::new(&out).fallback(ServeDir::new(&deck_dir)),
             )
+            .layer(axum::middleware::from_fn(local_only))
             .with_state(app.clone());
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
         let port = listener.local_addr()?.port();
@@ -736,8 +746,9 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
     })
 }
 
-/// URL of the running server for this deck, if it is still answering.
-pub fn running_url(store: &Store) -> Result<String> {
+/// The session file of the running server for this deck (`url`, `port`,
+/// `pid`, `token`), if it is still answering.
+pub fn running(store: &Store) -> Result<Value> {
     let text = std::fs::read_to_string(store.cache_dir().join("session.json"))
         .map_err(|_| QdError::NoServer)?;
     let v: Value = serde_json::from_str(&text).map_err(|_| QdError::NoServer)?;
@@ -745,13 +756,5 @@ pub fn running_url(store: &Store) -> Result<String> {
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
     std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(300))
         .map_err(|_| QdError::NoServer)?;
-    Ok(v["url"].as_str().ok_or(QdError::NoServer)?.to_string())
-}
-
-/// pid of the running server for this deck.
-pub fn running_pid(store: &Store) -> Result<u32> {
-    running_url(store)?;
-    let text = std::fs::read_to_string(store.cache_dir().join("session.json"))?;
-    let v: Value = serde_json::from_str(&text).map_err(|_| QdError::NoServer)?;
-    v["pid"].as_u64().map(|p| p as u32).ok_or(QdError::NoServer)
+    Ok(v)
 }

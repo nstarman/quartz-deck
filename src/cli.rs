@@ -163,6 +163,23 @@ enum Cmd {
         #[arg(long)]
         to: Option<String>,
     },
+    /// Run code cells: in the running `qd serve` session, else a fresh one-shot session
+    Run {
+        /// Cell refs (`<slide>/<i>`, `#id`)
+        #[arg(required_unless_present = "all")]
+        cells: Vec<String>,
+        /// Every cell in order, stopping at the first error
+        #[arg(long, conflicts_with = "cells")]
+        all: bool,
+        /// Restart and run from the top (through the last given cell)
+        #[arg(long)]
+        fresh: bool,
+        /// Interrupt a cell after this many seconds
+        #[arg(long)]
+        timeout: Option<u64>,
+    },
+    /// Stored outputs of code cells (all, or the given ones), with `stale`
+    Outputs { cells: Vec<String> },
     /// URL of the running preview (optionally opening on a slide)
     Url { slide: Option<String> },
     /// Stop the running preview server for this deck
@@ -451,6 +468,13 @@ fn output_of(cmd: &str) -> &'static str {
         "browser" => r#"{"path","source":"env|installed|download","version"} or {"ok","removed"}"#,
         "render" => r#"{"ok","output":"<absolute path>","format","log"}"#,
         "stop" => r#"{"ok","pid"}"#,
+        "run" => {
+            r#"{"ok","op":"run","mode":"live|fresh","status":"done|error|stopped","runs":[{"cell","counter","status":"done|error|stopped","outputs":[{"kind":"text","text"}|{"kind":"html","html"}|{"kind":"image","mime","path"}|{"kind":"error","ename","evalue","traceback"}]}]} (ok false: E_RUN on stderr, exit 1)"#
+        }
+        "outputs" => r#"{"outputs":[{"cell","counter","status","stale","outputs":[...as run]}]}"#,
+        "env" => {
+            r#"{"tool","root","manifest","lockfile","lock_current"} (+ "ok","log" for init/add/sync)"#
+        }
         "schema" => r#"{"commands":[...],"errors":[...]}"#,
         "skill" => r#"{"skill":"<markdown>"} or {"ok","path"} with --install"#,
         "undo" | "redo" => r#"{"ok","op","undone|redone","version"}"#,
@@ -512,13 +536,92 @@ fn schema() -> Value {
         "E_NO_BROWSER",
         "E_DOWNLOAD",
         "E_OFFLINE",
-        "E_OFFLINE_INCOMPATIBLE"
+        "E_OFFLINE_INCOMPATIBLE",
+        "E_NO_ENV",
+        "E_ENV_TOOL",
+        "E_LOCK_STALE",
+        "E_ENV",
+        "E_NOT_CODE",
+        "E_ENGINE",
+        "E_RUN"
     ]);
     v["refs"] = json!({
         "slide": "explicit id | auto id | @N (1-based) | first | last",
         "element": "<slide>/<index> (0-based among the slide's blocks) | #id"
     });
     v
+}
+
+/// `qd run`: through the running server's live session (its outputs show in
+/// the editor), else a fresh one-shot session run from the top.
+fn run_cells(
+    s: &Store,
+    cells: &[String],
+    all: bool,
+    fresh: bool,
+    timeout: Option<u64>,
+) -> Result<Value> {
+    let d = s.read()?;
+    let mut r = if let Ok(session) = crate::server::running(s) {
+        crate::kernel::plan(&d, cells, all, fresh)?; // refs checked here, errors as CLI codes
+        // the port that answered, never a redirect: the token goes nowhere else
+        let url = format!("http://127.0.0.1:{}/api/run", session["port"]);
+        let body =
+            json!({"cells": cells, "all": all, "fresh": fresh, "wait": true, "timeout": timeout});
+        let agent = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .max_redirects(0)
+            .build()
+            .new_agent();
+        let mut res = agent
+            .post(&url)
+            .header("X-QD-Token", session["token"].as_str().unwrap_or_default())
+            .header("Content-Type", "application/json")
+            .send(body.to_string())
+            .map_err(std::io::Error::other)?;
+        let status = res.status();
+        let text = res
+            .body_mut()
+            .read_to_string()
+            .map_err(std::io::Error::other)?;
+        let mut v: Value = serde_json::from_str(&text).unwrap_or_default();
+        if status != 200 || !v["runs"].is_array() {
+            let error = match &v["error"] {
+                Value::Null => {
+                    json!({"code": "E_IO", "message": format!("qd serve answered {status}: {text}"),
+                    "hint": "restart `qd serve` (it may be from an older qd)"})
+                }
+                e => e.clone(),
+            };
+            v = json!({"status": "failed", "error": error, "runs": []});
+        }
+        v["mode"] = json!("live");
+        v
+    } else {
+        let plan = crate::kernel::plan(&d, cells, all, true)?;
+        let out = crate::outputs::Outputs::new(s);
+        let mut runs = vec![];
+        let res = if plan.is_empty() {
+            Ok("done") // nothing to run needs no environment
+        } else {
+            let dir = s.path.parent().unwrap_or(Path::new("."));
+            let k = crate::kernel::Session::start(&crate::env::require(dir)?, dir)?;
+            let t = timeout.map(std::time::Duration::from_secs);
+            crate::kernel::run_plan(&k, &out, plan, t, |cell, rec| {
+                runs.extend(rec.map(|rec| out.entry(cell, rec)));
+            })
+        };
+        // a kernel failure mid-run still reports the cells that finished
+        match res {
+            Ok(status) => json!({"mode": "fresh", "status": status, "runs": runs}),
+            Err(e) => {
+                json!({"mode": "fresh", "status": "failed", "error": e.to_json()["error"], "runs": runs})
+            }
+        }
+    };
+    r["ok"] = json!(r["status"] == "done");
+    r["op"] = json!("run");
+    Ok(r)
 }
 
 fn find_deck(arg: &Option<PathBuf>) -> Result<PathBuf> {
@@ -1062,6 +1165,32 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             r["log"] = json!(log);
             Ok(r)
         }
+        Cmd::Run {
+            cells,
+            all,
+            fresh,
+            timeout,
+        } => run_cells(&ctx.store()?, cells, *all, *fresh, *timeout),
+        Cmd::Outputs { cells } => {
+            let (s, d) = read()?;
+            let out = crate::outputs::Outputs::new(&s);
+            let ids: Vec<String> = cells
+                .iter()
+                .map(|r| d.element(r).map(|(_, b)| b.id.clone()))
+                .collect::<Result<_>>()?;
+            let stored = out.report(&d);
+            let list: Vec<Value> = d
+                .blocks()
+                .filter(|b| ids.is_empty() || ids.contains(&b.id))
+                .filter_map(|b| {
+                    let rec = &stored["cells"][&b.id];
+                    let mut e = out.entry(&b.id, rec.as_object().map(|_| rec)?);
+                    e["stale"] = rec["stale"].clone();
+                    Some(e)
+                })
+                .collect();
+            Ok(json!({ "outputs": list }))
+        }
         Cmd::Render { to } => {
             let s = ctx.store()?;
             let (output, log) = crate::render::render_deck(&s.path, to.as_deref())?;
@@ -1070,7 +1199,10 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
         }
         Cmd::Url { slide } => {
             let (s, d) = read()?;
-            let url = crate::server::running_url(&s)?;
+            let url = crate::server::running(&s)?["url"]
+                .as_str()
+                .ok_or(QdError::NoServer)?
+                .to_string();
             Ok(match slide {
                 Some(r) => {
                     json!({"url": format!("{url}#/{}", crate::render::preview_id(d.slide(r)?))})
@@ -1079,7 +1211,9 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             })
         }
         Cmd::Stop => {
-            let pid = crate::server::running_pid(&ctx.store()?)?;
+            let pid = crate::server::running(&ctx.store()?)?["pid"]
+                .as_u64()
+                .ok_or(QdError::NoServer)?;
             std::process::Command::new("kill")
                 .arg(pid.to_string())
                 .status()?;
@@ -1352,6 +1486,22 @@ pub fn main() -> i32 {
             } else {
                 writeln!(out, "{v}")
             };
+            // a run that stopped at a cell: the result is on stdout, the error on stderr
+            if v["op"] == "run" && v["ok"] == false {
+                if !v["error"].is_null() {
+                    // the kernel or server failed (e.g. E_NO_ENV): its own error
+                    eprintln!("{}", json!({"error": v["error"]}));
+                    return 1;
+                }
+                let last = v["runs"].as_array().and_then(|r| r.last());
+                let e = QdError::Run(
+                    last.and_then(|c| c["cell"].as_str())
+                        .unwrap_or("a cell")
+                        .into(),
+                );
+                eprintln!("{}", e.to_json());
+                return e.exit_code();
+            }
             // a failed offline check: the report is on stdout, the error on stderr
             if (v["kind"] == "offline_check" || v["kind"] == "export") && v["ok"] == false {
                 let probs = if v["kind"] == "export" {
