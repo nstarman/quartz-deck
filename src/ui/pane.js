@@ -146,6 +146,9 @@ function setText(text) {
   repaint();
 }
 
+/** Save pending typing now (e.g. before running a cell). */
+export const flush = () => save();
+
 export async function load() {
   base = (await fetch('/api/source').then((r) => r.json())).text;
   setText(base);

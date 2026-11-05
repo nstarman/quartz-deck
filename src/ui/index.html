@@ -34,6 +34,15 @@
     <div class="srcbar">
       <strong>Source</strong>
       <span class="hint">saves as you pause · ⌘S saves now</span>
+      <span class="runbar">
+        <button type="button" data-act="run-all" title="Run every cell from the top">Run all</button>
+        <button type="button" data-act="stop" title="Stop the running cell">Stop</button>
+        <button type="button" data-act="restart" title="Restart Python (clears its state)">Restart</button>
+        <button type="button" data-act="fresh-all" title="Restart Python, then run every cell from the top">Restart &amp; run all</button>
+        <button type="button" data-act="add-pkg" title="Add Python packages to this deck's environment">+ Package</button>
+        <button type="button" data-act="env" hidden title="Create this deck's Python environment (uv, with a lockfile)">Create environment</button>
+        <span class="kernel" role="status" aria-label="Python state" title="Python kernel">stopped</span>
+      </span>
       <button type="button" data-act="full" aria-pressed="false" title="Use the full width">Full width</button>
       <button type="button" data-act="form" title="Slide/element properties form">Form</button>
     </div>
@@ -41,7 +50,9 @@
       <pre aria-hidden="true"></pre>
       <div class="band" aria-hidden="true"></div>
       <textarea spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Deck source (.qmd)"></textarea>
+      <div class="gutter" aria-label="Run cells"></div>
     </div>
+    <div class="outdock" aria-label="Cell output" aria-live="polite" hidden></div>
   </section>
   <div id="splitter" role="separator" aria-orientation="vertical" aria-label="Resize the source pane" tabindex="0"></div>
   <section id="stage" aria-label="Preview">

@@ -6,6 +6,7 @@ import { openSource, closeSource, sourceError, sourceText } from '/ui/source.js'
 import { makeActions } from '/ui/actions.js';
 import { openMenu, closeMenu, menuOpen } from '/ui/menu.js';
 import * as pane from '/ui/pane.js';
+import * as run from '/ui/run.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const frame = $('#preview');
@@ -762,6 +763,7 @@ document.addEventListener('keydown', onKey);
 // ---------- live updates ----------
 
 const es = new EventSource('/events');
+run.listen(es);
 es.addEventListener('open', () => { statusEl.textContent = 'connected'; });
 es.addEventListener('error', () => { statusEl.textContent = 'disconnected — is qd serve running?'; });
 es.addEventListener('changed', async (e) => {
@@ -1135,6 +1137,7 @@ async function slideTarget(slideId) {
 }
 
 const actions = makeActions({
+  runCells: (cells) => run.runCells(cells),
   op: async (name, args) => {
     if (name === 'rm') {
       const slides = state.deck?.slides || [];
@@ -1196,7 +1199,7 @@ elbar.id = 'elbar';
 elbar.setAttribute('role', 'toolbar');
 elbar.setAttribute('aria-label', 'Element');
 elbar.hidden = true;
-for (const [id, label, title] of [['edit', 'Edit', 'Edit text (Enter)'], ['source', 'Source', 'Edit source (⌥Enter)'],
+for (const [id, label, title] of [['run', '▶ Run', 'Run this code cell'], ['edit', 'Edit', 'Edit text (Enter)'], ['source', 'Source', 'Edit source (⌥Enter)'],
   ['fragment', 'On click', 'Appears on click'], ['delete', 'Delete', 'Delete (⌫)'], ['more', '⋯', 'More (right-click, ⇧F10)']]) {
   const b = Object.assign(document.createElement('button'), { type: 'button', textContent: label, title });
   b.dataset.act = id;
@@ -1216,6 +1219,7 @@ async function placeElbar() {
   const el = !state.session && state.sel && elOf(state.sel);
   if (!el) { elbar.hidden = true; return; }
   const t = await elementTarget(state.sel);
+  $('[data-act=run]', elbar).hidden = t?.block.kind !== 'cell';
   $('[data-act=fragment]', elbar).setAttribute('aria-pressed', String(!!t?.block.attrs?.classes?.includes('fragment')));
   const p = pageRect(el);
   elbar.hidden = false;
@@ -1303,6 +1307,8 @@ pane.initPane({
     if (anchor && anchor !== state.anchor) go(anchor);
   },
 });
+
+run.initRun({ say, flush: pane.flush });
 
 /** Element (or slide title) → its source lines in the pane (US2). */
 async function revealSource(s) {

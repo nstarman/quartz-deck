@@ -36,6 +36,7 @@ const UI_MODULES: &[(&str, &str)] = &[
     ("actions.js", include_str!("ui/actions.js")),
     ("menu.js", include_str!("ui/menu.js")),
     ("pane.js", include_str!("ui/pane.js")),
+    ("run.js", include_str!("ui/run.js")),
 ];
 
 #[derive(Clone, Debug)]
@@ -464,11 +465,21 @@ async fn api_restart(State(app): State<Shared>, headers: HeaderMap) -> Response 
     }
 }
 
-/// `GET /api/outputs`: stored outputs per cell, stale ones marked.
+/// `GET /api/outputs`: stored outputs per cell, stale ones marked, and every
+/// code cell in order with its lines (the source pane's Run buttons).
 async fn api_outputs(State(app): State<Shared>) -> Response {
     match app.store.read() {
         Ok(d) => {
             let mut r = Outputs::new(&app.store).report(&d);
+            let order: Vec<Value> = d
+                .blocks()
+                .filter(|b| b.kind == BlockKind::Cell)
+                .map(|b| {
+                    json!({"cell": b.id, "lines": d.lines(b.span),
+                    "runnable": matches!(cell_code(&d, b), Ok(Some(_)))})
+                })
+                .collect();
+            r["order"] = json!(order);
             for rec in r["cells"]
                 .as_object_mut()
                 .into_iter()

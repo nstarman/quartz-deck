@@ -14,7 +14,7 @@ export const INSERTS = [
 ];
 
 /**
- * `api` is the editor: op, refresh, beginEditRef, beginSourceEl, beginSlideSource,
+ * `api` is the editor: op, runCells(refs), refresh, beginEditRef, beginSourceEl, beginSlideSource,
  * insert(slide, where, kind), copy(t), paste(t), say, slideUrl(anchor).
  */
 export function makeActions(api) {
@@ -23,6 +23,7 @@ export function makeActions(api) {
   const insertMenu = (t, where) => INSERTS.map((k) => ({ label: k.label, run: () => api.insert(t.slideId, where, k) }));
 
   const element = [
+    { id: 'run', label: 'Run cell', visible: (t) => t.block.kind === 'cell', run: (t) => api.runCells([t.ref]) },
     { id: 'edit', label: 'Edit text', shortcut: 'Enter', run: (t) => api.beginEditRef(t) },
     { id: 'source', label: 'Edit source', shortcut: '⌥Enter', run: (t) => api.beginSourceEl(t) },
     '-',
@@ -72,7 +73,8 @@ export function makeActions(api) {
   const emptyArea = [...slide, '-', { id: 'insert-end', label: 'Insert', items: (t) => insertMenu(t, { end: true }) }];
 
   /** Menu items for a target, with functions resolved against it. */
-  const resolve = (list, t) => list.map((a) => (a === '-' ? a : {
+  const shown = (a, t) => a === '-' || !a.visible || a.visible(t);
+  const resolve = (list, t) => list.filter((a) => shown(a, t)).map((a) => (a === '-' ? a : {
     id: a.id,
     label: a.label,
     shortcut: a.shortcut,
@@ -92,7 +94,7 @@ export function makeActions(api) {
     /** Run action `id` of a table on `t` (keyboard shortcuts, bars). */
     run: (id, t, table = 'element') => {
       const a = tables[table].find((x) => x.id === id);
-      return a && (!a.enabled || a.enabled(t)) ? a.run(t) : null;
+      return a && shown(a, t) && (!a.enabled || a.enabled(t)) ? a.run(t) : null;
     },
   };
 }
