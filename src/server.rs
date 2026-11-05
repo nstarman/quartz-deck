@@ -768,7 +768,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             tokio::time::sleep(Duration::from_secs(2)).await;
         };
         let res = tokio::select! {
-            r = async { server.await } => r,
+            r = server => r,
             _ = grace => Ok(()),
         };
         app.kernel.lock().unwrap().take(); // shuts the kernel down

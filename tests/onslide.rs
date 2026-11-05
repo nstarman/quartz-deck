@@ -39,6 +39,9 @@ fn chrome() -> Option<PathBuf> {
     path
 }
 
+/// The editor has loaded: preview ready, slide list drawn, session API up.
+const READY: &str = "(() => { const f = document.querySelector('#preview'); return !!(f && f.contentWindow?.Reveal?.isReady?.() && document.querySelector('#slides li') && window.qdSession); })()";
+
 struct Ed {
     dir: tempfile::TempDir,
     page: Page,
@@ -91,7 +94,7 @@ impl Ed {
             _profile: profile,
             _slot: slot,
         };
-        ed.wait_secs("(() => { const f = document.querySelector('#preview'); return !!(f && f.contentWindow?.Reveal?.isReady?.() && document.querySelector('#slides li') && window.qdSession); })()", 60).await;
+        ed.wait_secs(READY, 60).await;
         Some(ed)
     }
 
@@ -1219,7 +1222,7 @@ async fn run_cells_in_the_editor() {
         .await;
     // and a reload in the same tab can still run code
     ed.page.reload().await.unwrap();
-    ed.wait_secs("(() => { const f = document.querySelector('#preview'); return !!(f && f.contentWindow?.Reveal?.isReady?.() && window.qdSession); })()", 60).await;
+    ed.wait_secs(READY, 60).await;
     if ed.eval("document.querySelector('#srcpane').hidden").await == true {
         ed.open_source().await; // (the editor remembers an open pane across reloads)
     }
