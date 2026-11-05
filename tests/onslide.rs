@@ -1176,3 +1176,58 @@ async fn source_and_slides_follow_each_other() {
         "none"
     );
 }
+
+const RUN_DECK: &str = "---\ntitle: R\nformat: revealjs\n---\n\n## Print {#print}\n\n```{python}\nprint(6 * 7)\n```\n\n## Fails {#fails}\n\n```{python}\n1 / 0\n```\n\n## Slow {#slow}\n\n```{python}\nimport time\ntime.sleep(600)\n```\n";
+
+/// Spec 004 US3 (T027): Run from the source pane, outputs in its dock and on
+/// the slide, ⇧Enter, Stop; the deck file never changes. Needs uv too.
+#[tokio::test(flavor = "multi_thread")]
+async fn run_cells_in_the_editor() {
+    if !have("uv") {
+        return;
+    }
+    let Some(ed) = Ed::open(RUN_DECK).await else {
+        return;
+    };
+    ed.cli(&["env", "init"]);
+    ed.open_source().await;
+    let dock = "document.querySelector('#srcpane .outdock')";
+    ed.wait("document.querySelectorAll('#srcpane .gutter button').length === 3")
+        .await;
+
+    ed.click_editor("#srcpane .gutter button[data-cell=\"print/0\"]")
+        .await;
+    ed.wait_secs(&format!("{dock}.textContent.includes('42')"), 120)
+        .await;
+    // the slide shows the stored output, rendered without running anything
+    ed.go("print").await;
+    ed.wait_secs(
+        "document.querySelector('#preview').contentDocument.querySelector('.qd-output')?.textContent.includes('42')",
+        60,
+    )
+    .await;
+
+    // ⇧Enter runs the cell under the caret (and types no newline)
+    ed.pane_caret("1 / 0", false).await;
+    ed.key("Enter", "Enter", 13, 8).await;
+    ed.wait_secs(
+        &format!("{dock}.querySelector('pre.error')?.textContent.includes('ZeroDivisionError')"),
+        60,
+    )
+    .await;
+    ed.wait("document.querySelector('#srcpane .gutter button[data-cell=\"fails/0\"]').classList.contains('err')")
+        .await;
+
+    // Stop interrupts a running cell
+    ed.pane_caret("time.sleep", false).await;
+    ed.key("Enter", "Enter", 13, 8).await;
+    ed.wait("document.querySelector('#srcpane .kernel').dataset.state === 'busy'")
+        .await;
+    ed.click_editor("#srcpane [data-act=stop]").await;
+    ed.wait_secs(
+        &format!("{dock}.textContent.includes('KeyboardInterrupt')"),
+        30,
+    )
+    .await;
+    assert_eq!(ed.file(), RUN_DECK, "running never changes the deck");
+}

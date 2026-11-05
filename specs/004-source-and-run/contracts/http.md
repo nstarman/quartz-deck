@@ -17,7 +17,8 @@ Every run endpoint requires `X-QD-Token: <token>`; a missing or wrong token
 | `POST /api/run` | `{"cells":[ref…] \| "all":true, "fresh":bool}` | `202 {"run":id}`; progress via SSE |
 | `POST /api/run/interrupt` | `{}` | `200` |
 | `POST /api/run/restart` | `{}` | `200` (session restarts) |
-| `GET /api/outputs` | — | `{"cells":{ref:{"stale","counter","items":[…]}}}` (image items carry `/outputs/<file>` URLs) |
+| `GET /api/outputs` | — | `{"cells":{ref:{"stale","counter","items":[…]}}, "order":[{"cell","lines","runnable"}…]}` (image items carry `/outputs/<file>` URLs; `order` lists every code cell) |
+| `POST /api/env/init` | `{}` + token | as `qd env init` (uv) |
 | `GET /outputs/<file>` | — | cached figure files |
 | `GET /api/env` | — | as `qd env` |
 | `POST /api/env/add` | `{"packages":[…]}` + token | as `qd env add` |

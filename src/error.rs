@@ -52,6 +52,10 @@ pub enum QdError {
     LockStale(String),
     #[error("the environment tool failed")]
     Env(String),
+    #[error("not a code cell: {0}")]
+    NotCode(String),
+    #[error("cannot run {0} cells here yet")]
+    Engine(String),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -79,6 +83,8 @@ impl QdError {
             Self::EnvTool(_) => "E_ENV_TOOL",
             Self::LockStale(_) => "E_LOCK_STALE",
             Self::Env(_) => "E_ENV",
+            Self::NotCode(_) => "E_NOT_CODE",
+            Self::Engine(_) => "E_ENGINE",
             Self::Io(_) => "E_IO",
         }
     }
@@ -131,6 +137,10 @@ impl QdError {
                 "relock with `qd env sync` (or `qd env add <pkg>`); details hold the tool's output"
             }
             Self::Env(_) => "see details for the tool's output",
+            Self::NotCode(_) => "only executable cells (```{python}) run; see `kind` in `qd show`",
+            Self::Engine(_) => {
+                "only Python cells run for now; `qd render` still executes the others"
+            }
             Self::Io(_) => "check the path and permissions",
         }
     }
