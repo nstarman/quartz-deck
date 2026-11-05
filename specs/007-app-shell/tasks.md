@@ -28,7 +28,7 @@ Paths relative to repo root.
 ## Phase 1: Setup
 
 - [X] T001 Inventory today's actions and keys in `specs/007-app-shell/checklists/action-inventory.md`. List every header button, right-click item (element, slide, empty area), property-toolbar control, formatting-toolbar button and source-pane bar button. Also list every key the editor handles: `onKey`, `sessionKey`, the toolbar's typing keys, the source pane, the splitter and the slide list. Give each a proposed action id, menu and key. This is the baseline for SC-001.
-- [X] T002 [P] Add `store::config_root()` next to `cache_root()` in `src/store.rs`: `$QD_CONFIG_DIR`, else `~/Library/Application Support/quartz-deck` on macOS, else `$XDG_CONFIG_HOME/quartz-deck` or `~/.config/quartz-deck`. Add a unit test for the env override.
+- [ ] T002 [P] Add `store::config_root()` next to `cache_root()` in `src/store.rs`: `$QD_CONFIG_DIR`, else `~/Library/Application Support/quartz-deck` on macOS, else `$XDG_CONFIG_HOME/quartz-deck` or `~/.config/quartz-deck`. Add a unit test for the env override.
 
 ---
 

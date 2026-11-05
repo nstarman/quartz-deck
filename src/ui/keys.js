@@ -5,11 +5,9 @@
 
 import LIST from '/ui/action-list.js';
 
-export const mac = /Mac|iP(hone|ad|od)/.test(navigator.platform);
+const mac = /Mac|iP(hone|ad|od)/.test(navigator.platform);
 const framed = new URLSearchParams(location.search).get('host') === 'vscode';
 
-/** Every entry, separators included, in menu order. */
-export const ENTRIES = LIST;
 export const ACTIONS = LIST.filter((a) => a.id);
 const byId = new Map(ACTIONS.map((a) => [a.id, a]));
 export const action = (id) => byId.get(id);
@@ -26,7 +24,7 @@ const parse = (k) => { const p = k.split('+'); return { key: p.pop(), mods: new 
  * Does key `k` ("Mod+Shift+N") match keydown `e`? Mod is shown as ⌘ on macOS and
  * Ctrl elsewhere, and either one works (as the editor always took both).
  */
-export function matches(k, e) {
+function matches(k, e) {
   const { key, mods } = parse(k);
   const modOk = mods.has('Mod') ? e.metaKey || e.ctrlKey : !e.metaKey && e.ctrlKey === mods.has('Ctrl');
   if (!modOk || e.altKey !== mods.has('Alt')) return false;
@@ -84,23 +82,27 @@ export async function run(id, ctx) {
   return null;
 }
 
+/** The actions key event `e` reaches in `places`, most specific first. */
+function* reached(e, places) {
+  for (const place of [...places, 'anywhere']) {
+    for (const a of ACTIONS) if (a.where.includes(place) && keysOf(a).some((k) => matches(k, e))) yield a;
+  }
+}
+
 /**
  * Handle keydown `e` for the places it happened in, most specific first
  * (`element`, `slide`, `slides`, `text`, `source`). Returns true when an action took it.
  */
 export function dispatch(e, places) {
-  for (const place of [...places, 'anywhere']) {
-    for (const a of ACTIONS) {
-      if (!a.where.includes(place) || !keysOf(a).some((k) => matches(k, e))) continue;
-      const h = handlers.get(a.id);
-      if (!h || h.key?.(e) === false) continue;
-      if (a.runs_code && !e.isTrusted) continue; // code runs only on the person's own key (spec 004)
-      e.preventDefault();
-      e.stopPropagation();
-      if (!h.enabled) h.run({ e }); // at once: the next key must find focus where this one put it
-      else context(e).then((ctx) => { if (h.enabled(ctx) !== false) h.run({ ...ctx, e }); });
-      return true;
-    }
+  for (const a of reached(e, places)) {
+    const h = handlers.get(a.id);
+    if (!h || h.key?.(e) === false) continue;
+    if (a.runs_code && !e.isTrusted) continue; // code runs only on the person's own key (spec 004)
+    e.preventDefault();
+    e.stopPropagation();
+    if (!h.enabled) h.run({ e }); // at once: the next key must find focus where this one put it
+    else context(e).then((ctx) => { if (h.enabled(ctx) !== false) h.run({ ...ctx, e }); });
+    return true;
   }
   return false;
 }
@@ -111,10 +113,6 @@ window.qdActions = () => ({
   resolve: (k, places) => {
     const { key, mods } = parse(k);
     const fake = { key, code: /^[0-9]$/.test(key) ? `Digit${key}` : /^[a-z]$/i.test(key) ? `Key${key.toUpperCase()}` : key, metaKey: mac && mods.has('Mod'), ctrlKey: mods.has('Ctrl') || (!mac && mods.has('Mod')), altKey: mods.has('Alt'), shiftKey: mods.has('Shift') };
-    for (const place of [...places, 'anywhere']) {
-      const a = ACTIONS.find((x) => x.where.includes(place) && keysOf(x).some((kk) => matches(kk, fake)));
-      if (a) return a.id;
-    }
-    return null;
+    return reached(fake, places).next().value?.id ?? null;
   },
 });

@@ -1573,51 +1573,36 @@ keys.setContext(async (e) => {
   const cur = slideByAnchor(state.anchor);
   return { e, el: state.sel ? await elementTarget(state.sel) : null, slide: cur ? await slideTarget(cur.id) : null };
 });
-const click = (sel) => ({ enabled: () => !$(sel).disabled, run: () => $(sel).click() });
-keys.on('render', click('#render'));
+keys.on('render', { enabled: () => !$('#render').disabled, run: () => $('#render').click() });
 const exportWith = (pdf) => ({ enabled: () => !$('#export').disabled, run: () => { $('#export-pdf').checked = pdf; $('#export').click(); } });
 keys.on('export', exportWith(false));
 keys.on('export-pdf', exportWith(true));
 keys.on('preview', () => window.open('/present/', '_blank', 'noopener'));
 keys.on('undo', () => undoRedo('undo'));
 keys.on('redo', () => undoRedo('redo'));
-for (const id of ['edit', 'source', 'cut', 'copy', 'paste', 'dup', 'delete', 'up', 'down', 'fragment']) {
-  keys.on(id, {
-    // Paste reads the system clipboard on a key press; from a menu it needs our own copy
-    enabled: (ctx) => !!ctx.el && actions.can(id, ctx.el) && (id !== 'paste' || !!ctx.e || !!state.clip),
-    checked: (ctx) => ctx.el && actions.checked(id, ctx.el),
-    run: (ctx) => actions.run(id, ctx.el),
-  });
+// element and slide actions: the right-click menus' own (actions.js), on what is selected / shown
+const ELEMENT = ['edit', 'source', 'cut', 'copy', 'paste', 'dup', 'delete', 'up', 'down', 'fragment', 'class-smaller', 'class-incremental', 'class-custom'];
+const SLIDE = ['slide-before', 'slide-after', 'slide-dup', 'slide-hide', 'slide-rm', 'slide-bg', 'slide-bgimg', 'slide-notes', 'slide-source', 'slide-link'];
+for (const [ids, on, table] of [[ELEMENT, 'el', 'element'], [SLIDE, 'slide', 'slide']]) {
+  for (const id of ids) {
+    keys.on(id, {
+      // Paste reads the system clipboard on a key press; from a menu it needs our own copy
+      enabled: (ctx) => !!ctx[on] && actions.can(id, ctx[on], table) && (id !== 'paste' || !!ctx.e || !!state.clip),
+      checked: (ctx) => ctx[on] && actions.checked(id, ctx[on], table),
+      run: (ctx) => actions.run(id, ctx[on], table),
+    });
+  }
 }
-for (const c of ['smaller', 'incremental']) {
-  keys.on(`class-${c}`, {
-    enabled: (ctx) => !!ctx.el,
-    checked: (ctx) => ctx.el && actions.classesOf(ctx.el).includes(c),
-    run: (ctx) => actions.toggleClass(ctx.el, c),
-  });
-}
-keys.on('class-custom', {
-  enabled: (ctx) => !!ctx.el,
-  run: (ctx) => { const c = prompt('Class to add or remove (without the dot)'); if (c?.trim()) actions.toggleClass(ctx.el, c.trim().replace(/^\./, '')); },
-});
 const inSlide = (e) => e.target.ownerDocument === frame.contentDocument && !!frameWin()?.Reveal?.getCurrentSlide()?.querySelector('[data-qd]');
 keys.on('next-element', { key: inSlide, enabled: (ctx) => !!ctx.slide, run: () => stepSelection(false) });
 keys.on('prev-element', { key: inSlide, enabled: (ctx) => !!ctx.slide, run: () => stepSelection(true) });
 keys.on('deselect', { enabled: () => !!state.sel, run: () => select(null) });
 keys.on('actions-menu', keyboardMenu);
 keys.on('focus-text', () => window.parent.postMessage({ type: 'focusText' }, '*')); // VS Code's panel only
-const INSERT_IDS = { Paragraph: 'paragraph', List: 'list', Equation: 'equation', 'Image…': 'image', 'Text box': 'textbox' };
 for (const kind of INSERTS) {
-  keys.on(`insert-${INSERT_IDS[kind.label]}`, {
+  keys.on(`insert-${kind.id}`, {
     enabled: (ctx) => !!(ctx.el || ctx.slide),
     run: (ctx) => insertBlock(ctx.el?.slideId ?? ctx.slide.slideId, ctx.el ? { after: ctx.el.ref } : { end: true }, kind),
-  });
-}
-for (const id of ['slide-before', 'slide-after', 'slide-dup', 'slide-hide', 'slide-rm', 'slide-bg', 'slide-bgimg', 'slide-notes', 'slide-source', 'slide-link']) {
-  keys.on(id, {
-    enabled: (ctx) => !!ctx.slide && actions.can(id, ctx.slide, 'slide'),
-    checked: (ctx) => ctx.slide && actions.checked(id, ctx.slide, 'slide'),
-    run: (ctx) => actions.run(id, ctx.slide, 'slide'),
   });
 }
 for (const x of ['default', ...TRANSITIONS]) {

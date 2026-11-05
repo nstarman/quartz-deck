@@ -180,12 +180,7 @@ impl Ed {
         self.click_editor(&format!("#menubar [data-menu={top:?}]"))
             .await;
         for part in label.split('/') {
-            // find and measure in one go: the menu opens (and may rebuild) asynchronously
-            let at = format!(
-                "(() => {{ const li = [...document.querySelectorAll('#ctxmenu li')].find((li) => li.firstChild?.textContent === {part:?} && li.offsetParent); if (!li) return null; const r = li.getBoundingClientRect(); return [r.left + 20, r.top + r.height / 2]; }})()"
-            );
-            self.wait(&format!("{at} !== null")).await;
-            self.click_js(&at).await;
+            self.click_menu(part).await;
         }
     }
 

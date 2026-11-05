@@ -9,8 +9,7 @@ const LIST: &str = include_str!("../src/ui/actions.json");
 const INVENTORY: &str = include_str!("../specs/007-app-shell/checklists/action-inventory.md");
 
 fn actions() -> Vec<Value> {
-    let v: Value = serde_json::from_str(LIST).expect("actions.json is JSON");
-    v.as_array().expect("a list").clone()
+    serde_json::from_str(LIST).expect("actions.json is a JSON list")
 }
 
 /// The action entries (not separators).
@@ -200,10 +199,10 @@ fn keys_are_handled_only_through_the_list() {
     let mut found = vec![];
     for entry in std::fs::read_dir(dir).unwrap() {
         let path = entry.unwrap().path();
-        let name = path.file_name().unwrap().to_string_lossy().to_string();
-        if !name.ends_with(".js") || name == "keys.js" {
+        if path.extension() != Some("js".as_ref()) || path.ends_with("keys.js") {
             continue;
         }
+        let name = path.file_name().unwrap().to_str().unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         let n = text.matches("e.key").count();
         let allowed = WIDGET_KEYS

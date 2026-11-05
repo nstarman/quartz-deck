@@ -30,9 +30,8 @@ use tower_http::services::ServeDir;
 const INDEX: &str = include_str!("ui/index.html");
 const EDITOR_JS: &str = include_str!("ui/editor.js");
 const EDITOR_CSS: &str = include_str!("ui/editor.css");
-/// The editor's one action list (spec 007): menus, keys, the shortcut
-/// reference and `qd actions` all read it. Served as `/ui/action-list.js`.
-pub const ACTIONS: &str = include_str!("ui/actions.json");
+/// The editor's one action list (spec 007): menus and keys read it, as `/ui/action-list.js`.
+const ACTION_LIST_JS: &str = concat!("export default ", include_str!("ui/actions.json"), ";\n");
 /// Editor ES modules imported by `editor.js`, served at `/ui/<name>`.
 const UI_MODULES: &[(&str, &str)] = &[
     ("inline.js", include_str!("ui/inline.js")),
@@ -45,6 +44,7 @@ const UI_MODULES: &[(&str, &str)] = &[
     ("focus.js", include_str!("ui/focus.js")),
     ("keys.js", include_str!("ui/keys.js")),
     ("menubar.js", include_str!("ui/menubar.js")),
+    ("action-list.js", ACTION_LIST_JS),
 ];
 
 #[derive(Clone, Debug)]
@@ -179,14 +179,6 @@ async fn editor_css() -> impl IntoResponse {
 }
 
 async fn ui_module(UrlPath(name): UrlPath<String>) -> Response {
-    if name == "action-list.js" {
-        let js = format!("export default {ACTIONS};\n");
-        return (
-            [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
-            js,
-        )
-            .into_response();
-    }
     match UI_MODULES.iter().find(|(n, _)| *n == name) {
         Some((_, body)) => asset("text/javascript; charset=utf-8", body).into_response(),
         None => StatusCode::NOT_FOUND.into_response(),

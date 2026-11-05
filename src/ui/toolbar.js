@@ -142,6 +142,8 @@ function setAlign(value) {
   session.root.style.textAlign = value || '';
 }
 
+const noColor = () => setStyle('color', null);
+
 /** Toolbar button id → its action in the list (the rest share the id). */
 const ACTION = { mark: 'highlight', nocolor: 'no-color', left: 'align-left', center: 'align-center', right: 'align-right' };
 
@@ -168,7 +170,7 @@ for (const item of BUTTONS) {
       b.style.background = c;
       bar.append(b);
     }
-    bar.append(button('nocolor', '⌀', 'Remove text colour', () => setStyle('color', null)));
+    bar.append(button('nocolor', '⌀', 'Remove text colour', noColor));
     continue;
   }
   bar.append(button(...item));
@@ -197,7 +199,7 @@ export function hideToolbar() {
 }
 
 // the formatting actions (menus and keys) while typing on a slide
-for (const [id, , , run] of [...BUTTONS.filter(Array.isArray), ['nocolor', '', '', () => setStyle('color', null)]]) {
+for (const [id, , , run] of [...BUTTONS.filter(Array.isArray), ['nocolor', '', '', noColor]]) {
   keys.on(ACTION[id] || id, {
     enabled: () => !!session && !(session.reg.mode === 'inline' && BLOCK_ONLY.has(id)),
     run: () => { run(); session.root.focus(); },

@@ -2,6 +2,7 @@
 // every action is reachable without right-click or a hidden key. WAI-ARIA
 // menubar pattern; the drop-downs are menu.js's menus.
 
+import LIST from '/ui/action-list.js';
 import * as keys from '/ui/keys.js';
 import { openMenu, closeMenu, menuOpen, onClose } from '/ui/menu.js';
 
@@ -18,7 +19,7 @@ function tree() {
     }
     return n;
   };
-  for (const e of keys.ENTRIES) {
+  for (const e of LIST) {
     if (!e.menu) continue; // keys only (Back to the text, the menu bar itself)
     node(e.menu).items.push(e.separator ? '-' : e);
   }
@@ -36,7 +37,7 @@ function resolve(items, ctx) {
     const k = keys.keysOf(it)[0];
     out.push({
       label: it.label,
-      shortcut: k && keys.show(k),
+      shortcut: keys.shortcut(it.id),
       aria: k && keys.aria(k),
       checked: it.toggle ? !!h?.checked?.(ctx) : undefined,
       disabled: !h || h.enabled?.(ctx) === false,
