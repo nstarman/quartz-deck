@@ -2,9 +2,17 @@
 // Run all / Stop / Restart and the kernel state in the source bar, and the
 // outputs of the cell under the caret (or the one just run) in a dock below
 // the source. Slides show stored outputs through the preview (research R7).
-// Every request carries the session token from the page (FR-015).
+// Every request carries the session token (FR-015). It arrives in the link's
+// fragment (`#t=…` or `#/slide&t=…`, from `qd serve` / `qd url`), never in the
+// page: kept for this tab (reloads) and taken out of the address bar.
 
-const token = document.querySelector('meta[name="qd-token"]')?.content || '';
+const store = (f) => { try { return f(sessionStorage); } catch { return null; } };
+const given = location.hash.match(/(?:^#|&)t=([0-9a-f]+)/);
+if (given) {
+  store((s) => s.setItem('qd-token', given[1]));
+  history.replaceState(null, '', location.pathname + location.hash.replace(given[0], ''));
+}
+const token = given?.[1] || store((s) => s.getItem('qd-token')) || '';
 const pane = document.querySelector('#srcpane');
 const ta = pane.querySelector('textarea');
 const gutter = pane.querySelector('.gutter');
@@ -23,7 +31,7 @@ const fmt = (e) => `${e.message} — ${e.hint}`;
 async function post(path, body = {}) {
   const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-QD-Token': token }, body: JSON.stringify(body) });
   const v = await r.json().catch(() => ({}));
-  if (!r.ok) api.say(v.error ? fmt(v.error) : `request failed (${r.status})`, true);
+  if (!r.ok) api.say(v.error ? fmt(v.error) : r.status === 403 ? 'Running code needs the editor link from `qd serve` or `qd url`' : `request failed (${r.status})`, true);
   return r.ok ? v : null;
 }
 

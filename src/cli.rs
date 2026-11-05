@@ -564,26 +564,9 @@ fn run_cells(
     let d = s.read()?;
     let mut r = if let Ok(session) = crate::server::running(s) {
         crate::kernel::plan(&d, cells, all, fresh)?; // refs checked here, errors as CLI codes
-        // the port that answered, never a redirect: the token goes nowhere else
-        let url = format!("http://127.0.0.1:{}/api/run", session["port"]);
         let body =
             json!({"cells": cells, "all": all, "fresh": fresh, "wait": true, "timeout": timeout});
-        let agent = ureq::Agent::config_builder()
-            .http_status_as_error(false)
-            .max_redirects(0)
-            .build()
-            .new_agent();
-        let mut res = agent
-            .post(&url)
-            .header("X-QD-Token", session["token"].as_str().unwrap_or_default())
-            .header("Content-Type", "application/json")
-            .send(body.to_string())
-            .map_err(std::io::Error::other)?;
-        let status = res.status();
-        let text = res
-            .body_mut()
-            .read_to_string()
-            .map_err(std::io::Error::other)?;
+        let (status, text) = to_server(&session, "api/run", &body)?;
         let mut v: Value = serde_json::from_str(&text).unwrap_or_default();
         if status != 200 || !v["runs"].is_array() {
             let error = match &v["error"] {
@@ -622,6 +605,27 @@ fn run_cells(
     r["ok"] = json!(r["status"] == "done");
     r["op"] = json!("run");
     Ok(r)
+}
+
+/// POST `body` to the running server (its session file) with the run token:
+/// to the port that answered, never a redirect, so the token goes nowhere else.
+fn to_server(session: &Value, path: &str, body: &Value) -> Result<(u16, String)> {
+    let agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .max_redirects(0)
+        .build()
+        .new_agent();
+    let mut res = agent
+        .post(format!("http://127.0.0.1:{}/{path}", session["port"]))
+        .header("X-QD-Token", session["token"].as_str().unwrap_or_default())
+        .header("Content-Type", "application/json")
+        .send(body.to_string())
+        .map_err(std::io::Error::other)?;
+    let text = res
+        .body_mut()
+        .read_to_string()
+        .map_err(std::io::Error::other)?;
+    Ok((res.status().as_u16(), text))
 }
 
 fn find_deck(arg: &Option<PathBuf>) -> Result<PathBuf> {
@@ -1199,25 +1203,30 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
         }
         Cmd::Url { slide } => {
             let (s, d) = read()?;
-            let url = crate::server::running(&s)?["url"]
-                .as_str()
-                .ok_or(QdError::NoServer)?
-                .to_string();
+            let session = crate::server::running(&s)?;
+            let (Some(url), Some(token)) = (session["url"].as_str(), session["token"].as_str())
+            else {
+                return Err(QdError::NoServer);
+            };
+            // the editor link: the token rides in the fragment, which the editor keeps
             Ok(match slide {
                 Some(r) => {
-                    json!({"url": format!("{url}#/{}", crate::render::preview_id(d.slide(r)?))})
+                    let id = crate::render::preview_id(d.slide(r)?);
+                    json!({"url": format!("{url}#/{id}&t={token}")})
                 }
-                None => json!({"url": url}),
+                None => json!({"url": format!("{url}#t={token}")}),
             })
         }
         Cmd::Stop => {
-            let pid = crate::server::running(&ctx.store()?)?["pid"]
-                .as_u64()
-                .ok_or(QdError::NoServer)?;
-            std::process::Command::new("kill")
-                .arg(pid.to_string())
-                .status()?;
-            Ok(json!({"ok": true, "pid": pid}))
+            // asks the server itself (token-guarded): never signals a pid that may be reused
+            let session = crate::server::running(&ctx.store()?)?;
+            let (status, text) = to_server(&session, "api/shutdown", &json!({}))?;
+            if status != 200 {
+                return Err(QdError::Io(std::io::Error::other(format!(
+                    "qd serve refused to stop ({status}: {text}); one from an older qd stops with Ctrl-C"
+                ))));
+            }
+            Ok(json!({"ok": true, "pid": session["pid"]}))
         }
         Cmd::Schema => Ok(schema()),
         Cmd::Skill { install: None } => Ok(json!({"skill": SKILL})),
@@ -1410,12 +1419,12 @@ fn serve(store: &Store, port: u16, open: bool, detach: bool) -> Result<Value> {
     }
     crate::server::serve(Store::open(&store.path)?, port, |s| {
         use std::io::Write;
-        let line = json!({"url": s.url, "port": s.port, "pid": std::process::id()});
+        let line = json!({"url": s.editor, "port": s.port, "pid": std::process::id()});
         let mut out = std::io::stdout();
         let _ = writeln!(out, "{line}");
         let _ = out.flush();
         if open {
-            open_browser(&s.url);
+            open_browser(&s.editor);
         }
     })?;
     Ok(json!({"ok": true, "stopped": true}))
