@@ -992,11 +992,18 @@ async fn bars_set_properties_and_source_panel_is_hidden() {
     // the Source button shows the source pane; its Form button the old properties panel
     ed.click_editor("#toggle-source").await;
     ed.wait("!document.querySelector('#srcpane').hidden").await;
+    ed.eval("window.__clicked = []; document.addEventListener('click', (e) => __clicked.push(e.target.outerHTML.slice(0, 60)), true)").await;
     ed.click_editor("#srcpane [data-act=form]").await;
+    let opened = ed
+        .eval("new Promise((r) => { const t = Date.now(); (function f() { if (getComputedStyle(document.querySelector('#panel')).display === 'block') r(true); else if (Date.now() - t > 5000) r(false); else setTimeout(f, 50); })(); })")
+        .await;
     assert_eq!(
-        ed.eval("getComputedStyle(document.querySelector('#panel')).display")
-            .await,
-        "block"
+        opened,
+        true,
+        "the Form button did not open the panel: main={} clicked={} under the button now={}",
+        ed.eval("document.querySelector('main').className").await,
+        ed.eval("JSON.stringify(window.__clicked)").await,
+        ed.eval("(() => { const r = document.querySelector('#srcpane [data-act=form]').getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.outerHTML.slice(0, 80); })()").await,
     );
 }
 
