@@ -7,6 +7,7 @@ import { makeActions } from '/ui/actions.js';
 import { openMenu, closeMenu, menuOpen } from '/ui/menu.js';
 import * as pane from '/ui/pane.js';
 import * as run from '/ui/run.js';
+import * as focus from '/ui/focus.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const frame = $('#preview');
@@ -69,6 +70,7 @@ async function fetchDeck() {
   if (!res.ok) return;
   state.deck = await res.json();
   state.version = state.deck.version;
+  focus.setVersion(state.version);
   renderList();
   renderSlidebar();
 }
@@ -257,6 +259,7 @@ function hookFrame() {
   const w = frameWin();
   const doc = frame.contentDocument;
   if (!w || !doc) return;
+  doc.addEventListener('selectionchange', () => { if (state.session) syncFocus(); });
   const style = doc.createElement('style');
   style.textContent = PREVIEW_CSS;
   doc.head.append(style);
@@ -337,6 +340,9 @@ function hookFrame() {
     history.replaceState(null, '', '#/' + id);
     const s = slideByAnchor(id);
     if (state.sel && s && !state.sel.startsWith(s.id + '/')) state.sel = null;
+    // a slide change that followed the focus isn't a new one (keeps the source pane's)
+    if (state.followed === id) state.followed = null;
+    else syncFocus();
     renderList();
     renderPanel();
     renderSlidebar();
@@ -590,6 +596,7 @@ async function slideAction(act, slide) {
 async function select(ref) {
   state.sel = ref;
   highlight();
+  syncFocus();
   if (ref) revealSource({ ref });
   await renderPanel();
 }
@@ -768,7 +775,7 @@ document.addEventListener('keydown', onKey);
 
 // ---------- live updates ----------
 
-const es = new EventSource('/events');
+const es = new EventSource(`/events?tab=${focus.tabId}`);
 run.listen(es);
 es.addEventListener('open', () => { statusEl.textContent = 'connected'; });
 es.addEventListener('error', () => { statusEl.textContent = 'disconnected — is qd serve running?'; });
@@ -780,6 +787,35 @@ es.addEventListener('changed', async (e) => {
     if (!editing()) await renderPanel();
   }
   pane.changed();
+});
+// an agent points this tab at a slide or element (spec 005 US2)
+const offer = $('#gooffer');
+let offered = null;
+function showPoint({ anchor, ref }) {
+  offer.hidden = true;
+  // where an agent points isn't the person's own focus
+  if (anchor !== state.anchor) { state.followed = anchor; go(anchor); }
+  if (!ref.includes('/')) return;
+  revealSource({ ref });
+  // flash it (not select it); every slide stays in the DOM, so no need to wait
+  for (const el of frame.contentDocument?.querySelectorAll(`[data-qd="${CSS.escape(ref)}"]`) || []) {
+    el.animate([{ outline: '3px solid #f0a020', outlineOffset: '4px' }, {}], 1500);
+  }
+}
+es.addEventListener('point', (e) => {
+  const p = JSON.parse(e.data);
+  if (p.tab !== focus.tabId) return;
+  if (!focus.isEditing()) return showPoint(p);
+  // never while the person types (FR-008): offer it instead
+  offered = p;
+  const s = slideByAnchor(p.anchor);
+  offer.querySelector('.msg').textContent = `An agent points at ${s?.title ? `"${s.title}"` : 'a slide'}${p.ref.includes('/') ? ' (an element)' : ''}.`;
+  offer.hidden = false;
+});
+offer.addEventListener('click', (e) => {
+  const act = e.target.closest('button')?.dataset.act;
+  if (act === 'go' && offered) showPoint(offered);
+  if (act) offer.hidden = true;
 });
 es.addEventListener('rendering', () => { statusEl.textContent = 'rendering…'; });
 es.addEventListener('rendered', (e) => {
@@ -871,6 +907,7 @@ function openSession(s) {
   state.session = s;
   state.sel = null;
   highlight();
+  syncFocus();
   s.root.classList.add('qd-editing');
   revealSource(s);
 }
@@ -993,6 +1030,7 @@ function endSession(s, saved, { keepPending = false } = {}) {
     hideToolbar();
   }
   state.session = null;
+  syncFocus();
   if (state.pendingRender && !keepPending) {
     const html = state.pendingRender;
     state.pendingRender = null;
@@ -1306,12 +1344,49 @@ pane.initPane({
   op: (name, args) => op(name, args, { fileExpect: false }),
   lastError: () => op.lastError,
   conflict: (theirs, mine, onMine, onTheirs) => showConflict({ kind: 'source', theirs, mine, onMine, onTheirs }),
-  // the caret's slide is shown (US2); the front matter shows the title slide
-  onCaretLine: (line) => {
-    const s = (state.deck?.slides || []).find((x) => x.lines[0] <= line && line <= x.lines[1]);
-    const anchor = s ? s.anchor : (state.deck?.title_slide ? 'title-slide' : null);
-    if (anchor && anchor !== state.anchor) go(anchor);
-  },
+  onCaret: sourceFocus,
+  typed: focus.typed,
+});
+
+/** The slide view's part of the shared focus (spec 005): slide, element, text selected while editing. */
+function syncFocus() {
+  seq++; // a source report still fetching is now older than this
+  const text = state.session ? String(frameWin()?.getSelection?.() || '') : '';
+  const ref = state.sel || state.session?.ref;
+  focus.editingSlide(!!state.session);
+  focus.set({
+    slide: slideByAnchor(state.anchor)?.id ?? null,
+    elements: ref ? [ref] : [],
+    line: null,
+    selection: text ? { text, where: 'slide' } : null,
+  });
+}
+
+/** The source pane's part: the caret's slide, every block the selection touches (or the caret's). */
+let sourceTimer = null;
+let seq = 0;
+function sourceFocus({ line, first, last, text }) {
+  clearTimeout(sourceTimer);
+  sourceTimer = setTimeout(async () => {
+    const n = ++seq;
+    const hit = (state.deck?.slides || []).filter((x) => x.lines[0] <= last && first <= x.lines[1]);
+    const blocks = (await Promise.all(hit.map((x) => fetchSlide(x.id)))).flatMap((sl) => sl?.blocks || []);
+    if (n !== seq) return; // a newer focus arrived meanwhile
+    focus.set({
+      slide: hit.at(-1)?.id ?? null, // the caret (= the selection's end) is in the last one
+      elements: blocks.filter((b) => b.lines && b.lines[0] <= last && first <= b.lines[1]).map((b) => b.id),
+      line,
+      selection: text ? { text, where: 'source' } : null,
+    });
+  }, 100);
+}
+
+// 004's source → slide sync follows the shared focus (FR-012); the front matter shows the title slide
+focus.on((f, changed) => {
+  if (!changed.includes('slide')) return;
+  const s = slideById(f.slide);
+  const anchor = s ? s.anchor : (state.deck?.title_slide ? 'title-slide' : null);
+  if (anchor && anchor !== state.anchor) { state.followed = anchor; go(anchor); }
 });
 
 run.initRun({ say, flush: pane.save });
