@@ -133,7 +133,7 @@ P3: US5. Paths relative to repo root.
 - [X] T035 Security check SC-006: a browser test page on another origin tries `fetch`/form posts to `/api/run`, `/api/env/add` and `/api/op` with `replace`; assert no kernel starts and no file changes; record in `checklists/security.md`
 - [X] T036 Run quickstart §1–§5 with the release binary in the browser pane; record in `checklists/quickstart-run.md` (SC-001–SC-003 timings)
 - [X] T037 Agent eval (SC-005): 10 fresh agents asked to fix a failing cell in a deck with an environment; grade fixed output, ≤ 6 commands, no usage errors, `.qmd` changed only in the cell; record in `checklists/agent-eval.md`
-- [ ] T038 Final constitution re-check in plan.md; fmt, clippy, full suite green; ROADMAP status
+- [X] T038 Final constitution re-check in plan.md; fmt, clippy, full suite green; ROADMAP status
 - [ ] T039 Concision audit (`/pr-audit`), last task before the PR is marked ready
 
 ---
