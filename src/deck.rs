@@ -471,6 +471,11 @@ impl Deck {
         [line(span.start), line(span.end.max(span.start + 1) - 1)]
     }
 
+    /// Every block of every slide, in order.
+    pub fn blocks(&self) -> impl Iterator<Item = &Block> {
+        self.slides.iter().flat_map(|s| &s.blocks)
+    }
+
     pub fn parse(text: String) -> Deck {
         let ls = lines(&text);
         let nl = if text.contains("\r\n") { "\r\n" } else { "\n" };
