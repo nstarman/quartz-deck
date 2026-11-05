@@ -1,0 +1,27 @@
+quartz-deck — Proprietary License (Personal Use Only)
+
+Copyright (c) 2026 Nathaniel Starkman. All rights reserved.
+
+This software and its source code, documentation, specifications and
+associated files (the "Software") are proprietary and confidential.
+
+1. Permitted use. The copyright holder may use, copy and modify the Software
+   for personal, non-commercial purposes. No other person is granted any
+   right to use, copy, modify, merge, publish, distribute, sublicense, sell
+   or create derivative works of the Software, in whole or in part, without
+   prior written permission from the copyright holder.
+
+2. No distribution. The Software may not be redistributed, published,
+   hosted for others, or made available to any third party in source or
+   binary form.
+
+3. Third-party components. Third-party software used by or distributed with
+   the Software (for example reveal.js and Quarto) remains under its own
+   license. Nothing in this license restricts rights granted by those
+   licenses.
+
+4. No warranty. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+   KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR
+   OTHER LIABILITY ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE.

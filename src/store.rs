@@ -83,6 +83,44 @@ impl Store {
         &self.cache
     }
 
+    /// The VS Code buffer overlay (spec 006): while a VS Code panel is
+    /// attached, this copy of the buffer *is* the deck for every qd read and
+    /// write; the `.qmd` changes only when VS Code saves.
+    pub fn overlay(&self) -> PathBuf {
+        self.cache.join("buffer.qmd")
+    }
+
+    pub fn attached(&self) -> bool {
+        self.overlay().exists()
+    }
+
+    /// The text qd reads and writes: the overlay when attached, else the deck.
+    fn backing(&self) -> PathBuf {
+        let o = self.overlay();
+        if o.exists() { o } else { self.path.clone() }
+    }
+
+    /// Attach a VS Code buffer: from now on qd works on `text`.
+    pub fn attach(&self, text: &str) -> Result<String> {
+        fs::create_dir_all(&self.cache)?;
+        fs::write(self.overlay(), text)?;
+        Ok(version_of(text.as_bytes()))
+    }
+
+    pub fn detach(&self) {
+        let _ = fs::remove_file(self.overlay());
+    }
+
+    /// The person typed in VS Code: replace the overlay iff it is still at
+    /// `base` (no qd edit landed meanwhile); not a qd edit, so not journaled.
+    pub fn set_buffer(&self, base: &str, text: &str) -> Result<String> {
+        let _lock = self.lock()?;
+        if !self.attached() {
+            return Err(QdError::Conflict("no VS Code buffer attached".into()));
+        }
+        self.replace(base, text)
+    }
+
     /// qd's cache root this store lives under (shared libraries, browser).
     pub fn root(&self) -> PathBuf {
         self.cache
@@ -91,9 +129,10 @@ impl Store {
     }
 
     fn read_text(&self) -> Result<String> {
-        let bytes = fs::read(&self.path)?;
+        let path = self.backing();
+        let bytes = fs::read(&path)?;
         String::from_utf8(bytes)
-            .map_err(|_| QdError::Parse(format!("{} is not valid UTF-8", self.path.display())))
+            .map_err(|_| QdError::Parse(format!("{} is not valid UTF-8", path.display())))
     }
 
     pub fn read(&self) -> Result<Deck> {
@@ -137,26 +176,25 @@ impl Store {
                 "expected version {expected_version}, file is now {v}"
             ))
         };
-        let mut old = fs::File::open(&self.path)?;
-        let name = self.path.file_name().unwrap().to_string_lossy();
-        let tmp = self
-            .path
-            .with_file_name(format!(".{name}.qd-tmp-{}", std::process::id()));
+        let path = self.backing();
+        let mut old = fs::File::open(&path)?;
+        let name = path.file_name().unwrap().to_string_lossy();
+        let tmp = path.with_file_name(format!(".{name}.qd-tmp-{}", std::process::id()));
         fs::write(&tmp, text)?;
         if let Ok(meta) = old.metadata() {
             fs::set_permissions(&tmp, meta.permissions())?;
         }
         let current = version_of(&read_all(&mut old)?);
-        if current != expected_version || replaced(&old, &self.path) {
+        if current != expected_version || replaced(&old, &path) {
             let _ = fs::remove_file(&tmp);
             return Err(conflict(&current));
         }
-        fs::rename(&tmp, &self.path)?;
+        fs::rename(&tmp, &path)?;
         let late = read_all(&mut old)?;
         if version_of(&late) != expected_version {
             // someone wrote to the file between our check and our rename
             fs::write(&tmp, &late)?;
-            fs::rename(&tmp, &self.path)?;
+            fs::rename(&tmp, &path)?;
             return Err(conflict(&version_of(&late)));
         }
         Ok(version_of(text.as_bytes()))
@@ -184,7 +222,7 @@ impl Store {
     pub fn undo(&self) -> Result<(String, String)> {
         let _lock = self.lock()?;
         let e = self.pop("undo")?;
-        let current = version_of(&fs::read(&self.path)?);
+        let current = version_of(&fs::read(self.backing())?);
         if current != e.version_after {
             self.push("undo", &e)?;
             return Err(QdError::NoUndo(
@@ -199,7 +237,7 @@ impl Store {
     pub fn redo(&self) -> Result<(String, String)> {
         let _lock = self.lock()?;
         let e = self.pop("redo")?;
-        let current = version_of(&fs::read(&self.path)?);
+        let current = version_of(&fs::read(self.backing())?);
         if current != e.version_before {
             self.push("redo", &e)?;
             return Err(QdError::NoUndo("file changed since the undo".into()));
@@ -251,6 +289,48 @@ mod tests {
             cache: dir.path().join("cache"),
         };
         (dir, store)
+    }
+
+    /// Spec 006 (T003): attached, every read/write/undo goes to the buffer
+    /// overlay and the deck file is untouched; detached, back to the file.
+    #[test]
+    fn buffer_overlay_is_the_deck_while_attached() {
+        let (_d, st) = setup("## A\n\nold\n");
+        let disk = || fs::read_to_string(&st.path).unwrap();
+        assert!(!st.attached());
+        let v = st.attach("## A\n\nunsaved\n").unwrap();
+        assert!(st.attached());
+        let d = st.read().unwrap();
+        assert_eq!(
+            (d.text.as_str(), d.version.as_str()),
+            ("## A\n\nunsaved\n", v.as_str())
+        );
+
+        // a qd edit lands in the overlay (journaled), the file is untouched
+        let v2 = st.write(&d, "## A\n\nedited\n", "edit").unwrap();
+        assert_eq!(st.read().unwrap().text, "## A\n\nedited\n");
+        assert_eq!(disk(), "## A\n\nold\n");
+        assert!(
+            st.write(&d, "x", "edit").is_err(),
+            "CAS on the overlay's version"
+        );
+
+        st.undo().unwrap();
+        assert_eq!(st.read().unwrap().text, "## A\n\nunsaved\n");
+        st.redo().unwrap();
+        assert_eq!(st.read().unwrap().version, v2);
+
+        // the person's typing: CAS on the base, not journaled
+        assert_eq!(
+            st.set_buffer("stale", "y").unwrap_err().code(),
+            "E_CONFLICT"
+        );
+        st.set_buffer(&v2, "## A\n\ntyped\n").unwrap();
+        assert_eq!(st.read().unwrap().text, "## A\n\ntyped\n");
+
+        st.detach();
+        assert!(!st.attached());
+        assert_eq!(st.read().unwrap().text, "## A\n\nold\n", "back to the file");
     }
 
     #[test]

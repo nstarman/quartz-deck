@@ -10,7 +10,7 @@ const store = (f) => { try { return f(sessionStorage); } catch { return null; } 
 const given = location.hash.match(/(?:^#|&)t=([0-9a-f]+)/);
 if (given) {
   store((s) => s.setItem('qd-token', given[1]));
-  history.replaceState(null, '', location.pathname + location.hash.replace(given[0], ''));
+  history.replaceState(null, '', location.pathname + location.search + location.hash.replace(given[0], ''));
 }
 export const token = given?.[1] || store((s) => s.getItem('qd-token')) || '';
 const pane = document.querySelector('#srcpane');

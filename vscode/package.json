@@ -1,0 +1,35 @@
+{
+  "name": "quartz-deck",
+  "displayName": "quartz-deck",
+  "description": "The quartz-deck slide editor beside your .qmd: edit on the slides, the text follows (and the other way round).",
+  "version": "0.1.0",
+  "publisher": "nstarman",
+  "license": "SEE LICENSE IN LICENSE",
+  "private": true,
+  "engines": { "vscode": "^1.90.0" },
+  "extensionKind": ["workspace"],
+  "categories": ["Other"],
+  "activationEvents": ["onWebviewPanel:quartz-deck"],
+  "main": "extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "quartz-deck.open", "title": "Open in quartz-deck", "category": "quartz-deck", "icon": "$(preview)" },
+      { "command": "quartz-deck.focusPanel", "title": "Focus the slide panel", "category": "quartz-deck" },
+      { "command": "quartz-deck.focusText", "title": "Focus the text editor", "category": "quartz-deck" }
+    ],
+    "menus": {
+      "editor/title": [
+        { "command": "quartz-deck.open", "when": "resourceExtname == .qmd", "group": "navigation" }
+      ]
+    },
+    "keybindings": [
+      { "command": "quartz-deck.focusPanel", "key": "ctrl+alt+q", "when": "editorTextFocus && resourceExtname == .qmd" }
+    ],
+    "configuration": {
+      "title": "quartz-deck",
+      "properties": {
+        "quartz-deck.qdPath": { "type": "string", "default": "qd", "description": "The qd binary (a path, or a name on PATH)." }
+      }
+    }
+  }
+}
