@@ -1512,7 +1512,13 @@ async fn pointing_moves_or_offers() {
     assert_eq!(ed.cli(&["focus", "--set", "b/0"])["result"], "moved");
     ed.wait(&current("b")).await;
     eprintln!("--set → slide shown in {:?}", t.elapsed()); // SC-002
-    ed.wait("!!document.querySelector('#preview').contentDocument.querySelector('[data-qd=\"b/0\"].qd-flash')")
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert_eq!(
+        ed.cli(&["focus"])["slide"],
+        "a",
+        "where an agent points isn't the person's focus"
+    );
+    ed.wait("document.querySelector('#preview').contentDocument.querySelector('[data-qd=\"b/0\"]').getAnimations().length > 0")
         .await;
     ed.wait("document.querySelector('#srcpane .band').dataset.lines === '17-17'")
         .await;

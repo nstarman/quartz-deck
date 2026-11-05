@@ -145,7 +145,6 @@ const PREVIEW_CSS = `
   [data-qd] { cursor: pointer; }
   [data-qd]:hover { outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; }
   .qd-sel, .qd-sel:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 2px; }
-  .qd-flash { outline: 3px solid #f0a020 !important; outline-offset: 4px; transition: outline-color 0.3s; }
   .qd-editing, .qd-editing:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 4px; cursor: text; }
   .qd-editing:focus { outline-style: solid; }
   /* every fragment is shown (and reachable) in the editor; the marker says it appears on click */
@@ -794,15 +793,13 @@ const offer = $('#gooffer');
 let offered = null;
 function showPoint({ anchor, ref }) {
   offer.hidden = true;
-  if (anchor !== state.anchor) go(anchor);
-  if (ref.includes('/')) {
-    revealSource({ ref });
-    // once the slide is shown: flash the element (it is not selected)
-    setTimeout(() => {
-      const els = frame.contentDocument?.querySelectorAll(`[data-qd="${CSS.escape(ref)}"]`) || [];
-      els.forEach((el) => el.classList.add('qd-flash'));
-      setTimeout(() => els.forEach((el) => el.classList.remove('qd-flash')), 1500);
-    }, anchor === state.anchor ? 0 : 400);
+  // where an agent points isn't the person's own focus
+  if (anchor !== state.anchor) { state.followed = anchor; go(anchor); }
+  if (!ref.includes('/')) return;
+  revealSource({ ref });
+  // flash it (not select it); every slide stays in the DOM, so no need to wait
+  for (const el of frame.contentDocument?.querySelectorAll(`[data-qd="${CSS.escape(ref)}"]`) || []) {
+    el.animate([{ outline: '3px solid #f0a020', outlineOffset: '4px' }, {}], 1500);
   }
 }
 es.addEventListener('point', (e) => {

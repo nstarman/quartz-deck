@@ -70,11 +70,19 @@ impl Snapshot {
 }
 
 /// A slide or element ref → (preview anchor of its slide, normalized ref),
-/// for pointing the editor there (US2); `E_NOT_FOUND` as elsewhere.
+/// for pointing the editor there (US2). Elements come back positional
+/// (`<slide>/<i>`, as the preview tags them) even when named by `#id`.
 pub fn resolve(d: &Deck, r: &str) -> Result<(String, String)> {
     match d.element(r) {
-        Ok((s, b)) => Ok((preview_id(s), b.id.clone())),
-        Err(_) => d.slide(r).map(|s| (preview_id(s), s.id.clone())),
+        Ok((s, b)) => {
+            let i = s.blocks.iter().position(|x| std::ptr::eq(x, b)).unwrap();
+            Ok((preview_id(s), format!("{}/{i}", s.id)))
+        }
+        // a bare name that is no element's id may be a slide's
+        Err(QdError::NotFound(_)) if !r.contains('/') => {
+            d.slide(r).map(|s| (preview_id(s), s.id.clone()))
+        }
+        Err(e) => Err(e),
     }
 }
 
@@ -122,6 +130,18 @@ mod tests {
         let many: Vec<String> = (0..80).map(|i| format!("a/{i}")).collect();
         let s = snap(json!({"tab": "t", "version": "v", "slide": null, "elements": many})).unwrap();
         assert_eq!(s.elements.len(), MAX_ELEMENTS);
+
+        // pointing: an element named by its id comes back positional; slide errors stay
+        let d = Deck::parse("## A {#a}\n\nOne.\n\n![](x.png){#fig}\n".to_string());
+        assert_eq!(resolve(&d, "#fig").unwrap().1, "a/1");
+        assert_eq!(resolve(&d, "a").unwrap().1, "a");
+        assert_eq!(resolve(&d, "a/9").unwrap_err().code(), "E_NOT_FOUND");
+        assert!(
+            resolve(&d, "a/9")
+                .unwrap_err()
+                .to_string()
+                .contains("element")
+        );
 
         for bad in [
             json!({"tab": "", "version": "v", "slide": null}),

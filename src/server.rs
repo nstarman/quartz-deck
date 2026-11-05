@@ -577,6 +577,13 @@ async fn api_env_change(
 /// Per open editor tab: how many event streams it has open, and its last focus report.
 type Tabs = HashMap<String, (usize, Option<(Snapshot, Instant)>)>;
 
+/// The most recently reporting open tab: (id, its focus, when it arrived).
+fn latest(t: &Tabs) -> Option<(String, Snapshot, Instant)> {
+    t.iter()
+        .filter_map(|(tab, (_, f))| f.clone().map(|(s, at)| (tab.clone(), s, at)))
+        .max_by_key(|(.., at)| *at)
+}
+
 /// A tab counts as open while its event stream lasts.
 struct TabGuard(Shared, String);
 
@@ -621,11 +628,9 @@ async fn api_focus(State(app): State<Shared>, headers: HeaderMap) -> Response {
         if t.is_empty() {
             return Json(json!({"open": false})).into_response();
         }
-        t.values()
-            .filter_map(|(_, f)| f.clone())
-            .max_by_key(|(_, at)| *at)
+        latest(&t)
     };
-    let Some((snap, at)) = latest else {
+    let Some((_, snap, at)) = latest else {
         return Json(json!({"open": true, "age": null,
             "hint": "open the editor with the link from `qd serve` / `qd url`"}))
         .into_response();
@@ -660,21 +665,16 @@ async fn api_focus_set(
         Ok(x) => x,
         Err(e) => return err_response(e),
     };
-    let latest = app
-        .focus
-        .lock()
-        .unwrap()
-        .iter()
-        .filter_map(|(tab, (_, f))| f.as_ref().map(|(s, at)| (tab.clone(), s.editing, *at)))
-        .max_by_key(|(.., at)| *at);
+    let latest = latest(&app.focus.lock().unwrap());
     let result = match latest {
         None => "no_editor",
-        Some((tab, editing, _)) => {
+        Some((tab, snap, _)) => {
             app.emit(
                 "point",
                 json!({"tab": tab, "anchor": anchor, "ref": target}),
             );
-            if editing { "deferred" } else { "moved" }
+            // as of the tab's last report; the page decides again when it gets it
+            if snap.editing { "deferred" } else { "moved" }
         }
     };
     Json(json!({"ok": true, "result": result, "ref": target})).into_response()
