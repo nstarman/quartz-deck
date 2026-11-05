@@ -1266,6 +1266,10 @@ async function placeElbar() {
   elbar.style.top = Math.max(frame.getBoundingClientRect().top + 2, p.top - elbar.offsetHeight - 10) + 'px';
 }
 
+// the preview resized (source pane, panels, window): follow the element, or the bar
+// is left floating over whatever is there now. After reveal.js has laid out again.
+new ResizeObserver(() => requestAnimationFrame(() => requestAnimationFrame(placeElbar))).observe(frame);
+
 // slide bar: the slide's common properties (US3)
 const slidebar = $('#slidebar');
 async function renderSlidebar() {

@@ -992,6 +992,8 @@ async fn bars_set_properties_and_source_panel_is_hidden() {
     // the Source button shows the source pane; its Form button the old properties panel
     ed.click_editor("#toggle-source").await;
     ed.wait("!document.querySelector('#srcpane').hidden").await;
+    // the element bar follows the element when the layout moves; it never sits over other controls
+    ed.wait("(() => { const b = document.querySelector('#elbar'); if (b.hidden) return true; const r = b.getBoundingClientRect(), f = document.querySelector('#srcpane [data-act=form]').getBoundingClientRect(); return r.right < f.left || f.right < r.left || r.bottom < f.top || f.bottom < r.top; })()").await;
     ed.eval("window.__clicked = []; document.addEventListener('click', (e) => __clicked.push(e.target.outerHTML.slice(0, 60)), true)").await;
     ed.click_editor("#srcpane [data-act=form]").await;
     let opened = ed
