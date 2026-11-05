@@ -935,17 +935,28 @@ fn settings_over_http() {
     assert!(err.contains("E_INVALID_SETTING"), "{err}");
 
     let mut ev = Events::open(p, "/events");
-    let mut next = |what: &str| -> Value {
-        serde_json::from_str(&ev.wait("settings", Duration::from_secs(5)).expect(what)).unwrap()
+    // one write can raise several file events (and so several `settings` events):
+    // wait for the one that shows the change
+    let mut until = |key: &str, want: &str| {
+        let end = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < end {
+            let e = ev
+                .wait("settings", end - Instant::now())
+                .expect("settings event");
+            if serde_json::from_str::<Value>(&e).unwrap()["values"][key] == want {
+                return;
+            }
+        }
+        panic!("no settings event with {key} = {want}");
     };
     let (status, ok) = post(p, "/api/settings", "127.0.0.1", &auth, body);
     assert_eq!(status, 200, "{ok}");
-    assert_eq!(next("settings event")["values"]["source.side"], "right");
+    until("source.side", "right");
     assert_eq!(read()["values"]["source.side"], "right");
 
     // a change from the CLI reaches the open editor too
     assert!(qd_json(&dir, &["settings", "set", "theme", "dark"]).0);
-    assert_eq!(next("event after the CLI")["values"]["theme"], "dark");
+    until("theme", "dark");
 
     let (status, _) = post(p, "/api/settings", "127.0.0.1", &auth, r#"{"reset": true}"#);
     assert_eq!(status, 200);
