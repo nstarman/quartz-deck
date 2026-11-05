@@ -1371,6 +1371,8 @@ const bodies = {{
   '/api/env/add': JSON.stringify({{packages: ['six']}}),
   '/api/op': JSON.stringify({{op: 'replace', args: {{old: '6 * 7', new: '6 * 9'}}}}),
   '/api/shutdown': '{{}}',
+  '/api/focus': JSON.stringify({{tab: 'evil', version: 'v', slide: 'slow', elements: [], selection: {{text: 'planted', where: 'slide'}}, line: null, editing: false}}),
+  '/api/focus/set': JSON.stringify({{ref: 'slow'}}),
 }};
 for (const [path, body] of Object.entries(bodies)) {{
   await fetch(qd + path, {{method: 'POST', headers: {{'Content-Type': 'application/json', 'X-QD-Token': 'guess'}}, body}}).catch(() => {{}});
@@ -1381,14 +1383,15 @@ for (const [path, body] of Object.entries(bodies)) {{
   f.submit();
   await new Promise((r) => setTimeout(r, 300));
 }}
-// the editor page (and any token in it) must be unreadable from here
-return (await fetch(qd + '/').then((r) => r.text()).catch(() => null)) === null;
+// the editor page (and any token in it) and the focus must be unreadable from here
+const unreadable = async (p) => (await fetch(qd + p).then((r) => r.text()).catch(() => null)) === null;
+return (await unreadable('/')) && (await unreadable('/api/focus'));
 }})()"#
     );
     assert_eq!(
         eval(&attacker, &attack).await,
         Value::Bool(true),
-        "the editor page is unreadable cross-origin"
+        "the editor page and the focus are unreadable cross-origin"
     );
     tokio::time::sleep(Duration::from_secs(3)).await; // anything that got through would show by now
 
@@ -1404,6 +1407,14 @@ return (await fetch(qd + '/').then((r) => r.text()).catch(() => null)) === null;
     assert!(
         ed.cli(&["url"])["url"].is_string(),
         "the server is still up"
+    );
+    // spec 005: the focus can be neither planted nor used to move the editor
+    assert_ne!(ed.cli(&["focus"])["selection"]["text"], "planted");
+    assert_ne!(
+        ed.eval("document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide().id")
+            .await,
+        "slow",
+        "the editor was not pointed anywhere"
     );
 }
 

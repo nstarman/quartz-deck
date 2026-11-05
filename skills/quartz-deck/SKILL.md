@@ -40,9 +40,11 @@ edits, detects concurrent changes and supports undo.
    something in their editor, run `qd focus` first. It returns the slide,
    the selected `elements` (refs for any edit command) and the selected text
    (`selection.where` = `slide` or `source`). Act on it when `open` is true and
-   `age` is a few seconds; ask which one when `open` is false, nothing is
-   selected, or the focus is old. If `version` ≠ `deck_version`, re-read
-   (`qd show <slide>`) before editing.
+   something is selected — `age` counts from their last click, so a minute
+   or two is normal while they type to you; if it is much older, say what
+   you are acting on. Ask which one only when `open` is false or nothing is
+   selected. If `version` ≠ `deck_version`, re-read (`qd show <slide>`)
+   before editing.
 6. **Undo** if needed — `qd undo` (and `qd redo`).
 
 Pick the deck with `--deck path/to/talk.qmd` (or `QD_DECK`); it is implicit
