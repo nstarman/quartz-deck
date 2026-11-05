@@ -38,3 +38,15 @@ steps are the person's.
 - The panel stayed on its slide while the person typed in Methods; they expect
   it to follow the cursor like a preview. That is US3 (T015–T017), not in the
   MVP.
+
+## US3 run (same day, after a window reload)
+
+- [x] The panel came back after **Developer: Reload Window** (the serializer).
+- [x] Clicking the `## Loop` line, then `## Figure`, showed each slide in the
+      panel within a second (SC-004 not timed precisely).
+- [x] Clicking the plot on the Figure slide opened its cell editor in the panel
+      and moved the VS Code cursor to line 27 (the cell's start); the panel kept
+      keyboard focus and stayed on its slide (FR-012).
+- [x] `qd focus --set close` showed Close in the panel and moved the cursor to
+      line 46 (`## Close`); `qd focus` still reports the person's own focus
+      (FR-013).
