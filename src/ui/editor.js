@@ -145,6 +145,7 @@ const PREVIEW_CSS = `
   [data-qd] { cursor: pointer; }
   [data-qd]:hover { outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; }
   .qd-sel, .qd-sel:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 2px; }
+  .qd-flash { outline: 3px solid #f0a020 !important; outline-offset: 4px; transition: outline-color 0.3s; }
   .qd-editing, .qd-editing:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 4px; cursor: text; }
   .qd-editing:focus { outline-style: solid; }
   /* every fragment is shown (and reachable) in the editor; the marker says it appears on click */
@@ -787,6 +788,37 @@ es.addEventListener('changed', async (e) => {
     if (!editing()) await renderPanel();
   }
   pane.changed();
+});
+// an agent points this tab at a slide or element (spec 005 US2)
+const offer = $('#gooffer');
+let offered = null;
+function showPoint({ anchor, ref }) {
+  offer.hidden = true;
+  if (anchor !== state.anchor) go(anchor);
+  if (ref.includes('/')) {
+    revealSource({ ref });
+    // once the slide is shown: flash the element (it is not selected)
+    setTimeout(() => {
+      const els = frame.contentDocument?.querySelectorAll(`[data-qd="${CSS.escape(ref)}"]`) || [];
+      els.forEach((el) => el.classList.add('qd-flash'));
+      setTimeout(() => els.forEach((el) => el.classList.remove('qd-flash')), 1500);
+    }, anchor === state.anchor ? 0 : 400);
+  }
+}
+es.addEventListener('point', (e) => {
+  const p = JSON.parse(e.data);
+  if (p.tab !== focus.tabId) return;
+  if (!focus.isEditing()) return showPoint(p);
+  // never while the person types (FR-008): offer it instead
+  offered = p;
+  const s = slideByAnchor(p.anchor);
+  offer.querySelector('.msg').textContent = `An agent points at ${s?.title ? `"${s.title}"` : 'a slide'}${p.ref.includes('/') ? ' (an element)' : ''}.`;
+  offer.hidden = false;
+});
+offer.addEventListener('click', (e) => {
+  const act = e.target.closest('button')?.dataset.act;
+  if (act === 'go' && offered) showPoint(offered);
+  if (act) offer.hidden = true;
 });
 es.addEventListener('rendering', () => { statusEl.textContent = 'rendering…'; });
 es.addEventListener('rendered', (e) => {

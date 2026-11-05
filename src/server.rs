@@ -636,6 +636,50 @@ async fn api_focus(State(app): State<Shared>, headers: HeaderMap) -> Response {
     }
 }
 
+#[derive(serde::Deserialize)]
+struct PointBody {
+    #[serde(rename = "ref")]
+    target: String,
+}
+
+/// `POST /api/focus/set` (token): point the most recently used tab at a slide
+/// or element (US2). It goes there, or — while the person types — offers to.
+async fn api_focus_set(
+    State(app): State<Shared>,
+    headers: HeaderMap,
+    Json(body): Json<PointBody>,
+) -> Response {
+    if !authorized(&app, &headers) {
+        return forbidden();
+    }
+    let (anchor, target) = match app
+        .store
+        .read()
+        .and_then(|d| crate::focus::resolve(&d, &body.target))
+    {
+        Ok(x) => x,
+        Err(e) => return err_response(e),
+    };
+    let latest = app
+        .focus
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|(tab, (_, f))| f.as_ref().map(|(s, at)| (tab.clone(), s.editing, *at)))
+        .max_by_key(|(.., at)| *at);
+    let result = match latest {
+        None => "no_editor",
+        Some((tab, editing, _)) => {
+            app.emit(
+                "point",
+                json!({"tab": tab, "anchor": anchor, "ref": target}),
+            );
+            if editing { "deferred" } else { "moved" }
+        }
+    };
+    Json(json!({"ok": true, "result": result, "ref": target})).into_response()
+}
+
 async fn events(
     State(app): State<Shared>,
     Query(q): Query<HashMap<String, String>>,
@@ -810,6 +854,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             .route("/api/env/{action}", post(api_env_change))
             .route("/events", get(events))
             .route("/api/focus", get(api_focus).post(api_focus_report))
+            .route("/api/focus/set", post(api_focus_set))
             .nest_service(
                 "/preview",
                 ServeDir::new(&out).fallback(ServeDir::new(&deck_dir)),

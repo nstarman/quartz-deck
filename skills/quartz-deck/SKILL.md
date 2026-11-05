@@ -89,6 +89,7 @@ when the current directory has exactly one `.qmd`.
 | works without network? | `qd check --offline` (headless Chrome, network blocked; problems per slide with hints) |
 | live preview | `qd serve --detach`, then `qd url results`; `qd stop` when done |
 | what the person is looking at / has selected | `qd focus` → `slide`, `elements`, `selection.text`, `age` (`{"open": false}` without an editor) |
+| show the person something | `qd focus --set results/1` → their editor goes there and flashes it (`moved`); while they type it is offered instead (`deferred`); `no_editor` without one |
 | undo / redo | `qd undo` / `qd redo` |
 | new deck | `qd new talk.qmd --title "My talk"` |
 | all commands + output shapes | `qd schema` |

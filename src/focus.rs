@@ -4,6 +4,7 @@
 
 use crate::deck::Deck;
 use crate::error::{QdError, Result};
+use crate::render::preview_id;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -65,6 +66,15 @@ impl Snapshot {
         json!({"open": true, "age": (age * 10.0).round() / 10.0, "version": self.version,
             "deck_version": d.version, "slide": slide, "elements": elements,
             "selection": self.selection, "line": self.line, "editing": self.editing})
+    }
+}
+
+/// A slide or element ref → (preview anchor of its slide, normalized ref),
+/// for pointing the editor there (US2); `E_NOT_FOUND` as elsewhere.
+pub fn resolve(d: &Deck, r: &str) -> Result<(String, String)> {
+    match d.element(r) {
+        Ok((s, b)) => Ok((preview_id(s), b.id.clone())),
+        Err(_) => d.slide(r).map(|s| (preview_id(s), s.id.clone())),
     }
 }
 

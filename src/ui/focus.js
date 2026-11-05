@@ -32,6 +32,9 @@ export function setVersion(v) {
   if (v !== version) { version = v; report(); }
 }
 
+/** The person is typing (an on-slide edit, or the source pane within 3 s). */
+export const isEditing = () => focus.editing;
+
 /** An on-slide edit opened or closed. */
 export function editingSlide(on) { busy.slide = on; set({ editing: busy.slide || busy.source }); }
 
