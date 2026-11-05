@@ -4,17 +4,7 @@
 mod common;
 
 use quartz_deck::{env, kernel::Session};
-use serde_json::Value;
 use std::time::Duration;
-
-fn kinds(r: &Value) -> Vec<&str> {
-    r["outputs"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|o| o["kind"].as_str().unwrap())
-        .collect()
-}
 
 #[test]
 fn session_runs_cells_keeps_state_interrupts_and_restarts() {
@@ -37,13 +27,12 @@ fn session_runs_cells_keeps_state_interrupts_and_restarts() {
     let r = s
         .execute("import matplotlib.pyplot as plt\nplt.plot([1, 3, 2])", None)
         .unwrap();
-    assert!(kinds(&r).contains(&"image"), "{r}");
     let fig = r["outputs"]
         .as_array()
         .unwrap()
         .iter()
         .find(|o| o["kind"] == "image")
-        .unwrap();
+        .unwrap_or_else(|| panic!("no image output: {r}"));
     assert!(
         std::path::Path::new(fig["path"].as_str().unwrap()).is_file(),
         "{r}"

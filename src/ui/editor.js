@@ -1137,7 +1137,7 @@ async function slideTarget(slideId) {
 }
 
 const actions = makeActions({
-  runCells: (cells) => run.runCells(cells),
+  runCells: run.runCells,
   op: async (name, args) => {
     if (name === 'rm') {
       const slides = state.deck?.slides || [];
@@ -1308,7 +1308,7 @@ pane.initPane({
   },
 });
 
-run.initRun({ say, flush: pane.flush });
+run.initRun({ say, flush: pane.save });
 
 /** Element (or slide title) → its source lines in the pane (US2). */
 async function revealSource(s) {

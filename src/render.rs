@@ -45,11 +45,11 @@ pub(crate) fn log(out: &std::process::Output) -> String {
 /// `quarto <args>` for a deck whose text is `text`, run in `dir`: inside the
 /// deck's environment when it has code cells and an environment exists (R3),
 /// using the environment's kernel unless the deck names one; else Quarto
-/// directly (code-free decks never need an environment; `None` = the run
+/// directly (code-free decks never need an environment; `""` = the run
 /// never executes code). The flag says which.
-fn quarto_cmd(dir: &Path, text: Option<&str>, args: &[&OsStr]) -> Result<(Command, bool)> {
+fn quarto_cmd(dir: &Path, text: &str, args: &[&OsStr]) -> Result<(Command, bool)> {
     let quarto = quarto()?;
-    let d = Deck::parse(text.unwrap_or_default().to_string());
+    let d = Deck::parse(text.to_string());
     let cells = d.blocks().any(|b| b.kind == BlockKind::Cell);
     let (mut cmd, wrapped) = match crate::env::find(dir).filter(|_| cells) {
         Some(env) => (env.wrap(&quarto)?, true),
@@ -289,7 +289,7 @@ pub fn render(
         // stored outputs are in the copy; the preview never runs code (R7)
         args.extend(["-M", "embed-resources:false", "--no-execute"].map(OsStr::new));
     }
-    let (mut quarto, wrapped) = quarto_cmd(dir, (!preview).then_some(text), &args)?;
+    let (mut quarto, wrapped) = quarto_cmd(dir, if preview { "" } else { text }, &args)?;
     std::fs::create_dir_all(out_dir)?;
     std::fs::write(&copy, text)?;
     let out = quarto.output();
@@ -327,7 +327,7 @@ pub fn render_deck(deck_path: &Path, to: Option<&str>) -> Result<(PathBuf, Strin
         args.extend(["--to", f].map(OsStr::new));
     }
     let text = std::fs::read_to_string(deck_path)?;
-    let (mut cmd, wrapped) = quarto_cmd(dir, Some(&text), &args)?;
+    let (mut cmd, wrapped) = quarto_cmd(dir, &text, &args)?;
     let out = cmd.output()?;
     let log = log(&out);
     if !out.status.success() {

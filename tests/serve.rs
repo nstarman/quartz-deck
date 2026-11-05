@@ -482,11 +482,6 @@ fn render_reports_output() {
     );
 }
 
-/// JSON content type plus the run token header (for `post`).
-fn json_token(token: &str) -> String {
-    format!("application/json\r\nX-QD-Token: {token}")
-}
-
 /// Spec 004 US3 (T023, T025): token-guarded runs, events, stored outputs, and
 /// a preview that shows them without executing anything. Needs uv and Quarto.
 #[test]
@@ -521,12 +516,17 @@ fn run_cells_over_http() {
         .unwrap()
         .to_string();
     assert!(get(p, "/").1.contains(&format!("content=\"{token}\"")));
+    let auth = format!("application/json\r\nX-QD-Token: {token}");
 
     let run = |body: &str, ctype: &str| post(p, "/api/run", "127.0.0.1", ctype, body).0;
     let print = r#"{"cells":["print/0"]}"#;
     assert_eq!(run(print, "application/json"), 403, "no token");
-    assert_eq!(run(print, &json_token("wrong")), 403, "wrong token");
-    let evil = format!("{}\r\nOrigin: http://evil.example", json_token(&token));
+    assert_eq!(
+        run(print, "application/json\r\nX-QD-Token: wrong"),
+        403,
+        "wrong token"
+    );
+    let evil = format!("{auth}\r\nOrigin: http://evil.example");
     assert_eq!(run(print, &evil), 403, "right token, other origin");
     let op = r#"{"op":"run","args":{"cells":["print/0"]}}"#;
     assert_ne!(
@@ -534,19 +534,11 @@ fn run_cells_over_http() {
         200,
         "run_op refuses run"
     );
-    assert_eq!(
-        run(r#"{"cells":["plain/0"]}"#, &json_token(&token)),
-        400,
-        "E_NOT_CODE"
-    );
-    assert_eq!(
-        run(r#"{"cells":["r/0"]}"#, &json_token(&token)),
-        400,
-        "E_ENGINE"
-    );
+    assert_eq!(run(r#"{"cells":["plain/0"]}"#, &auth), 400, "E_NOT_CODE");
+    assert_eq!(run(r#"{"cells":["r/0"]}"#, &auth), 400, "E_ENGINE");
 
     let mut ev = Events::open(p);
-    assert_eq!(run(print, &json_token(&token)), 202);
+    assert_eq!(run(print, &auth), 202);
     let wait = Duration::from_secs(120);
     assert!(ev.wait("kernel", wait).unwrap().contains("starting"));
     let out = ev.wait("cell_output", wait).expect("cell output");
@@ -554,7 +546,7 @@ fn run_cells_over_http() {
     assert!(ev.wait("run_done", wait).unwrap().contains("\"done\""));
 
     // Run all: in order, skipping eval:false and non-Python, stopping at the failure
-    assert_eq!(run(r#"{"all":true}"#, &json_token(&token)), 202);
+    assert_eq!(run(r#"{"all":true}"#, &auth), 202);
     let started = ev.wait("run_started", wait).unwrap();
     assert!(
         started.contains("fails/0") && !started.contains("skipped/0") && !started.contains("r/0"),
@@ -582,16 +574,11 @@ fn run_cells_over_http() {
     );
 
     // the preview shows the stored outputs without running anything
-    let page = std::fs::read_dir(dir.path().join(".cache"))
-        .unwrap()
-        .map(|e| e.unwrap().path().join("preview/deck.qd-preview.html"))
-        .find(|f| f.parent().unwrap().is_dir())
-        .unwrap();
     let end = Instant::now() + wait;
     let mut html = String::new();
     while !html.contains("ZeroDivisionError") && Instant::now() < end {
         std::thread::sleep(Duration::from_millis(200)); // the render after run_done
-        html = std::fs::read_to_string(&page).unwrap_or_default();
+        html = get(p, "/preview/deck.qd-preview.html").1;
     }
     assert!(
         html.contains("qd-output")
@@ -610,13 +597,8 @@ fn run_cells_over_http() {
     let outputs: Value = serde_json::from_str(&get(p, "/api/outputs").1).unwrap();
     assert_eq!(outputs["cells"]["print/0"]["stale"], true);
 
-    let stop = post(
-        p,
-        "/api/run/interrupt",
-        "127.0.0.1",
-        &json_token(&token),
-        "{}",
-    )
-    .0;
-    assert_eq!(stop, 200);
+    assert_eq!(
+        post(p, "/api/run/interrupt", "127.0.0.1", &auth, "{}").0,
+        200
+    );
 }

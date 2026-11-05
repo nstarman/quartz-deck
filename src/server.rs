@@ -96,6 +96,10 @@ impl App {
     fn emit(&self, name: &'static str, data: Value) {
         let _ = self.tx.send(Ev::Run(name, data));
     }
+
+    fn state(&self, s: &str) {
+        self.emit("kernel", json!({ "state": s }));
+    }
 }
 
 type Shared = Arc<App>;
@@ -234,7 +238,7 @@ async fn api_op(
     Json(body): Json<OpBody>,
 ) -> Response {
     if !same_origin(&headers) {
-        return (StatusCode::FORBIDDEN, "forbidden").into_response();
+        return forbidden();
     }
     let store = app.store.clone();
     let res = tokio::task::spawn_blocking(move || {
@@ -244,12 +248,7 @@ async fn api_op(
     match res {
         Ok(Ok(mut v)) => {
             // outputs inside the deck folder can be opened through /preview/'s fallback
-            let deck_dir = app
-                .store
-                .path
-                .parent()
-                .map(PathBuf::from)
-                .unwrap_or_default();
+            let deck_dir = app.dir();
             let href = |p: &Value| {
                 let path = std::path::Path::new(p.as_str()?);
                 if !matches!(
@@ -375,12 +374,12 @@ fn kernel(app: &App) -> Result<Arc<Kernel>> {
     if let Some(s) = k.as_ref() {
         return Ok(s.clone());
     }
-    app.emit("kernel", json!({"state": "starting"}));
+    app.state("starting");
     let dir = app.dir();
     let s = crate::env::require(&dir).and_then(|env| Kernel::start(&env, &dir));
-    let s = Arc::new(s.inspect_err(|_| app.emit("kernel", json!({"state": "stopped"})))?);
+    let s = Arc::new(s.inspect_err(|_| app.state("stopped"))?);
     *k = Some(s.clone());
-    app.emit("kernel", json!({"state": "idle"}));
+    app.state("idle");
     Ok(s)
 }
 
@@ -391,13 +390,13 @@ fn run_cells(app: &App, run: u64, plan: Vec<(String, String, String)>, fresh: bo
     let res = (|| -> Result<&'static str> {
         let k = kernel(app)?;
         if fresh {
-            app.emit("kernel", json!({"state": "starting"}));
+            app.state("starting");
             k.restart()?;
         }
         for (cell, fp, code) in plan {
-            app.emit("kernel", json!({"state": "busy"}));
+            app.state("busy");
             let reply = k.execute(&code, None);
-            app.emit("kernel", json!({"state": "idle"}));
+            app.state("idle");
             let reply = reply?;
             let rec = with_urls(outputs.save(&cell, &fp, &reply)?);
             app.emit(
@@ -418,7 +417,7 @@ fn run_cells(app: &App, run: u64, plan: Vec<(String, String, String)>, fresh: bo
         Err(e) => {
             // the session is gone or never started: the next run starts a new one
             app.kernel.lock().unwrap().take();
-            app.emit("kernel", json!({"state": "stopped"}));
+            app.state("stopped");
             json!({"run": run, "status": "failed", "error": e.to_json()["error"]})
         }
     };
@@ -447,19 +446,20 @@ async fn api_restart(State(app): State<Shared>, headers: HeaderMap) -> Response 
         return Json(json!({"ok": true})).into_response();
     };
     let a = app.clone();
-    let res = tokio::task::spawn_blocking(move || {
+    blocking(move || {
         let _ = k.interrupt();
-        a.emit("kernel", json!({"state": "starting"}));
+        a.state("starting");
         let r = k.restart();
-        a.emit(
-            "kernel",
-            json!({"state": if r.is_ok() { "idle" } else { "stopped" }}),
-        );
-        r
+        a.state(if r.is_ok() { "idle" } else { "stopped" });
+        r.map(|_| json!({"ok": true}))
     })
-    .await;
-    match res {
-        Ok(Ok(())) => Json(json!({"ok": true})).into_response(),
+    .await
+}
+
+/// Run `f` off the async runtime; its JSON or error as the response.
+async fn blocking(f: impl FnOnce() -> Result<Value> + Send + 'static) -> Response {
+    match tokio::task::spawn_blocking(f).await {
+        Ok(Ok(v)) => Json(v).into_response(),
         Ok(Err(e)) => err_response(e),
         Err(e) => err_response(QdError::Io(std::io::Error::other(e))),
     }
@@ -494,18 +494,19 @@ async fn api_outputs(State(app): State<Shared>) -> Response {
 }
 
 /// `GET /outputs/<file>`: a stored figure or full text.
-async fn output_file(State(app): State<Shared>, UrlPath(name): UrlPath<String>) -> Response {
+async fn output_file(
+    State(app): State<Shared>,
+    UrlPath(name): UrlPath<String>,
+    req: axum::extract::Request,
+) -> Response {
     let Some(path) = Outputs::new(&app.store).file(&name) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    let mime = match path.extension().and_then(|e| e.to_str()) {
-        Some("png") => "image/png",
-        Some("jpg") => "image/jpeg",
-        Some("svg") => "image/svg+xml",
-        _ => "text/plain; charset=utf-8",
-    };
-    match std::fs::read(&path) {
-        Ok(b) => ([(header::CONTENT_TYPE, mime)], b).into_response(),
+    match tower_http::services::ServeFile::new(path)
+        .try_call(req)
+        .await
+    {
+        Ok(r) => r.into_response(),
         Err(e) => err_response(e.into()),
     }
 }
@@ -513,11 +514,7 @@ async fn output_file(State(app): State<Shared>, UrlPath(name): UrlPath<String>) 
 /// `GET /api/env`: as `qd env`.
 async fn api_env(State(app): State<Shared>) -> Response {
     let dir = app.dir();
-    match tokio::task::spawn_blocking(move || crate::env::require(&dir).map(|e| e.report())).await {
-        Ok(Ok(v)) => Json(v).into_response(),
-        Ok(Err(e)) => err_response(e),
-        Err(e) => err_response(QdError::Io(std::io::Error::other(e))),
-    }
+    blocking(move || crate::env::require(&dir).map(|e| e.report())).await
 }
 
 #[derive(serde::Deserialize)]
@@ -537,7 +534,7 @@ async fn api_env_change(
         return forbidden();
     }
     let dir = app.dir();
-    let res = tokio::task::spawn_blocking(move || match action.as_str() {
+    let res = blocking(move || match action.as_str() {
         "init" => crate::env::init(&dir, crate::env::Tool::Uv).map(|e| e.report()),
         "add" => crate::env::require(&dir).and_then(|e| e.add(&body.packages).map(|_| e.report())),
         _ => Err(QdError::NotFound(action)),
@@ -545,11 +542,7 @@ async fn api_env_change(
     .await;
     // a session started before the change runs the old packages: start afresh next time
     app.kernel.lock().unwrap().take();
-    match res {
-        Ok(Ok(v)) => Json(v).into_response(),
-        Ok(Err(e)) => err_response(e),
-        Err(e) => err_response(QdError::Io(std::io::Error::other(e))),
-    }
+    res
 }
 
 async fn events(

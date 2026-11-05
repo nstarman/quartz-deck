@@ -56,15 +56,9 @@ pub struct Session {
 impl Session {
     /// Start the bridge in `env` (cwd `dir`) and wait until its kernel is ready.
     pub fn start(env: &Env, dir: &Path) -> Result<Session> {
-        let bridge = crate::store::cache_root().join("kernel_bridge.py");
-        if std::fs::read_to_string(&bridge).ok().as_deref() != Some(BRIDGE) {
-            std::fs::create_dir_all(bridge.parent().unwrap())?;
-            std::fs::write(&bridge, BRIDGE)?;
-        }
         let mut child = env
             .wrap(Path::new("python"))?
-            .arg("-I")
-            .arg(&bridge)
+            .args(["-I", "-c", BRIDGE])
             .env("QD_KERNEL", crate::env::KERNEL)
             .current_dir(dir)
             .stdin(Stdio::piped())

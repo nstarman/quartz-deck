@@ -87,7 +87,8 @@ function lines(text, s, e, extra) {
   return [a, z];
 }
 
-async function save() {
+/** Save pending typing now (also before running a cell). */
+export async function save() {
   clearTimeout(timer);
   if (saving || ta.value === base) return;
   saving = true;
@@ -146,8 +147,6 @@ function setText(text) {
   repaint();
 }
 
-/** Save pending typing now (e.g. before running a cell). */
-export const flush = () => save();
 
 export async function load() {
   base = (await fetch('/api/source').then((r) => r.json())).text;

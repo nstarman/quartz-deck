@@ -17,11 +17,13 @@ let order = []; // [{cell, lines, runnable}]
 let outs = {}; // cell → stored record
 let focus = null; // cell shown in the dock
 const running = new Set();
+const el = (tag, props) => Object.assign(document.createElement(tag), props);
+const fmt = (e) => `${e.message} — ${e.hint}`;
 
 async function post(path, body = {}) {
   const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-QD-Token': token }, body: JSON.stringify(body) });
   const v = await r.json().catch(() => ({}));
-  if (!r.ok) api.say(v.error ? `${v.error.message} — ${v.error.hint}` : `request failed (${r.status})`, true);
+  if (!r.ok) api.say(v.error ? fmt(v.error) : `request failed (${r.status})`, true);
   return r.ok ? v : null;
 }
 
@@ -36,7 +38,7 @@ const runAll = async (fresh = false) => { await api.flush(); return post('/api/r
 const cellAt = (line) => order.find((c) => c.lines[0] <= line && line <= c.lines[1]);
 const caretLine = () => ta.value.slice(0, ta.selectionStart).split('\n').length;
 
-export async function refresh() {
+async function refresh() {
   const r = await fetch('/api/outputs').then((x) => x.json()).catch(() => null);
   if (!r?.order) return;
   ({ order } = r);
@@ -51,7 +53,7 @@ function drawGutter() {
   const pad = parseFloat(css.paddingTop) || 0;
   gutter.replaceChildren(...order.map((c) => {
     const o = outs[c.cell];
-    const b = Object.assign(document.createElement('button'), { type: 'button' });
+    const b = el('button', { type: 'button' });
     b.dataset.cell = c.cell;
     b.style.top = pad + (c.lines[0] - 1) * lh + 'px';
     b.disabled = !c.runnable;
@@ -67,8 +69,6 @@ function drawGutter() {
 function syncScroll() {
   gutter.style.transform = `translateY(${-ta.scrollTop}px)`;
 }
-
-const el = (tag, props) => Object.assign(document.createElement(tag), props);
 
 function drawDock() {
   const o = outs[focus];
@@ -106,7 +106,7 @@ export function listen(es) {
   on('cell_output', (o) => { running.delete(o.cell); outs[o.cell] = { ...o, stale: false }; focus = o.cell; drawGutter(); drawDock(); });
   on('run_done', ({ status, error }) => {
     running.clear();
-    if (error) api.say(`${error.message} — ${error.hint}`, true);
+    if (error) api.say(fmt(error), true);
     else if (status === 'stopped') api.say('Stopped');
     refresh();
     envStatus();
