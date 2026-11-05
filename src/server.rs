@@ -89,6 +89,9 @@ struct App {
     stop: Notify,
     /// Shared focus (spec 005).
     focus: Mutex<Tabs>,
+    /// Spec 006: the VS Code buffer's text as the extension last knows it
+    /// (None = no buffer attached); overlay changes beyond it go to VS Code.
+    buffer: Mutex<Option<String>>,
     /// Held while Quarto renders; `true` once shutting down (no new renders).
     /// Shutdown waits for a render in progress: Quarto left running would
     /// clean up the deck folder under the next server's render.
@@ -642,6 +645,69 @@ async fn api_focus(State(app): State<Shared>, headers: HeaderMap) -> Response {
 }
 
 #[derive(serde::Deserialize)]
+struct BufferBody {
+    #[serde(default)]
+    base: String,
+    text: String,
+}
+
+/// `POST /api/buffer/open` (token): a VS Code buffer attaches; from now on
+/// it is the deck for every qd read and write (spec 006).
+async fn api_buffer_open(
+    State(app): State<Shared>,
+    headers: HeaderMap,
+    Json(b): Json<BufferBody>,
+) -> Response {
+    if !authorized(&app, &headers) {
+        return forbidden();
+    }
+    *app.buffer.lock().unwrap() = Some(b.text.clone());
+    match app.store.attach(&b.text) {
+        Ok(v) => Json(json!({ "version": v })).into_response(),
+        Err(e) => err_response(e),
+    }
+}
+
+/// `POST /api/buffer` (token): the person typed in VS Code. Written iff no qd
+/// edit landed since `base`; else 409 with the buffer as qd has it, to merge.
+async fn api_buffer(
+    State(app): State<Shared>,
+    headers: HeaderMap,
+    Json(b): Json<BufferBody>,
+) -> Response {
+    if !authorized(&app, &headers) {
+        return forbidden();
+    }
+    // known first, so the watcher doesn't echo the person's own typing back
+    let mut known = app.buffer.lock().unwrap();
+    let prev = known.replace(b.text.clone());
+    match app.store.set_buffer(&b.base, &b.text) {
+        Ok(v) => Json(json!({ "version": v })).into_response(),
+        Err(e) => {
+            *known = prev;
+            match (e, app.store.read()) {
+                (QdError::Conflict(_), Ok(d)) => (
+                    StatusCode::CONFLICT,
+                    Json(json!({"version": d.version, "text": d.text})),
+                )
+                    .into_response(),
+                (e, _) => err_response(e),
+            }
+        }
+    }
+}
+
+/// `POST /api/buffer/close` (token): the VS Code panel closed; back to the file.
+async fn api_buffer_close(State(app): State<Shared>, headers: HeaderMap) -> Response {
+    if !authorized(&app, &headers) {
+        return forbidden();
+    }
+    *app.buffer.lock().unwrap() = None;
+    app.store.detach();
+    StatusCode::NO_CONTENT.into_response()
+}
+
+#[derive(serde::Deserialize)]
 struct PointBody {
     #[serde(rename = "ref")]
     target: String,
@@ -761,7 +827,10 @@ async fn render_loop(app: Shared) {
 /// Watch the deck's directory (atomic renames replace the file's inode).
 fn watch(app: Shared) -> Result<notify::RecommendedWatcher> {
     let deck = app.store.path.clone();
-    let name = deck.file_name().map(|n| n.to_os_string());
+    let names = [
+        deck.file_name().map(|n| n.to_os_string()),
+        app.store.overlay().file_name().map(|n| n.to_os_string()),
+    ];
     let rt = tokio::runtime::Handle::current();
     let a = app.clone();
     let mut w = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
@@ -769,14 +838,29 @@ fn watch(app: Shared) -> Result<notify::RecommendedWatcher> {
         if !ev
             .paths
             .iter()
-            .any(|p| p.file_name().map(|n| n.to_os_string()) == name)
+            .any(|p| names.contains(&p.file_name().map(|n| n.to_os_string())))
         {
             return;
         }
-        let Ok(bytes) = std::fs::read(&a.store.path) else {
-            return;
-        };
-        let v = version_of(&bytes);
+        // the deck as qd sees it: the VS Code buffer overlay when attached
+        let Ok(d) = a.store.read() else { return };
+        {
+            // a qd edit to the attached buffer (panel op, CLI, undo): tell VS Code
+            let mut known = a.buffer.lock().unwrap();
+            if let Some(old) = known
+                .as_ref()
+                .filter(|old| a.store.attached() && **old != d.text)
+            {
+                let edits = Store::line_edits(old, &d.text);
+                let base = version_of(old.as_bytes());
+                a.emit(
+                    "buffer_edit",
+                    json!({"base": base, "version": d.version, "edits": edits}),
+                );
+                *known = Some(d.text.clone());
+            }
+        }
+        let v = d.version;
         let mut st = a.st.lock().unwrap();
         if st.version != v {
             st.version = v.clone();
@@ -788,6 +872,9 @@ fn watch(app: Shared) -> Result<notify::RecommendedWatcher> {
     })
     .map_err(|e| QdError::Io(std::io::Error::other(e)))?;
     w.watch(deck.parent().unwrap(), notify::RecursiveMode::NonRecursive)
+        .map_err(|e| QdError::Io(std::io::Error::other(e)))?;
+    std::fs::create_dir_all(app.store.cache_dir())?;
+    w.watch(app.store.cache_dir(), notify::RecursiveMode::NonRecursive)
         .map_err(|e| QdError::Io(std::io::Error::other(e)))?;
     Ok(w)
 }
@@ -831,6 +918,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             runs: AtomicU64::new(0),
             stop: Notify::new(),
             focus: Mutex::default(),
+            buffer: Mutex::default(),
             rendering: Mutex::new(false),
             store,
         });
@@ -855,6 +943,9 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             .route("/events", get(events))
             .route("/api/focus", get(api_focus).post(api_focus_report))
             .route("/api/focus/set", post(api_focus_set))
+            .route("/api/buffer/open", post(api_buffer_open))
+            .route("/api/buffer", post(api_buffer))
+            .route("/api/buffer/close", post(api_buffer_close))
             .nest_service(
                 "/preview",
                 ServeDir::new(&out).fallback(ServeDir::new(&deck_dir)),
@@ -905,6 +996,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             _ = grace => Ok(()),
         };
         *app.rendering.lock().unwrap_or_else(|e| e.into_inner()) = true; // waits for a render in progress
+        app.store.detach(); // the file is whatever VS Code last saved
         app.kernel.lock().unwrap().take(); // shuts the kernel down
         let _ = std::fs::remove_file(&session_file);
         res.map_err(QdError::Io)

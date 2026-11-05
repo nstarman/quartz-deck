@@ -35,13 +35,13 @@ Paths relative to repo root.
 
 **Purpose**: while VS Code is attached, every qd read/write goes to the buffer (research R3–R5).
 
-- [ ] T003 [P] Write failing unit tests in `src/store.rs`:
+- [X] T003 [P] Write failing unit tests in `src/store.rs`:
   - with `<cache>/buffer.qmd` present, `Store::read` returns its text and `write` replaces it (CAS on its version, undo journal entry), leaving the `.qmd` untouched;
   - without it, behaviour is unchanged;
   - `undo`/`redo` work on the overlay;
   - `attach(text)` / `detach()` create and remove it.
-- [ ] T004 Implement the overlay in `src/store.rs`: `fn backing(&self) -> PathBuf` (overlay if present, else the deck) used by `read_text`, `replace`, `undo`/`redo`; `pub fn attach(&self, text)`, `pub fn detach(&self)`, `pub fn attached(&self) -> bool` — T003 passes
-- [ ] T005 [P] Write failing HTTP tests in `tests/serve.rs` `buffer_overlay_over_http`:
+- [X] T004 Implement the overlay in `src/store.rs`: `fn backing(&self) -> PathBuf` (overlay if present, else the deck) used by `read_text`, `replace`, `undo`/`redo`; `pub fn attach(&self, text)`, `pub fn detach(&self)`, `pub fn attached(&self) -> bool` — T003 passes
+- [X] T005 [P] Write failing HTTP tests in `tests/serve.rs` `buffer_overlay_over_http`:
   - all three endpoints need the token (403 otherwise);
   - `open` → `{version}` and `session.json` `"buffer": true`;
   - `/api/source` serves the overlay;
@@ -51,7 +51,7 @@ Paths relative to repo root.
   - `qd undo` → a `buffer_edit` back;
   - `close` → overlay gone, `"buffer"` cleared;
   - `qd stop` also detaches.
-- [ ] T006 Server in `src/server.rs`:
+- [X] T006 Server in `src/server.rs`:
   - `POST /api/buffer/open` (attach, set session flag);
   - `POST /api/buffer` (CAS under the store lock: write, or 409 with the current overlay);
   - `POST /api/buffer/close`;
