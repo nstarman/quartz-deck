@@ -2,6 +2,8 @@
 // It lives in the editor page and acts on the selection inside the preview
 // iframe; buttons never take focus, so the edit stays open while formatting.
 
+import * as keys from '/ui/keys.js';
+
 const bar = document.createElement('div');
 bar.id = 'fmtbar';
 bar.setAttribute('role', 'toolbar');
@@ -110,17 +112,17 @@ function link() {
 
 const BLOCK_ONLY = new Set(['ul', 'ol', 'indent', 'outdent', 'left', 'center', 'right']);
 
-// [id, label, title (with shortcut), action]
+// [id, label, title, action]; the key in a title comes from the action list (spec 007)
 const BUTTONS = [
-  ['bold', 'B', 'Bold (⌘B)', () => toggle('bold')],
-  ['italic', 'I', 'Italic (⌘I)', () => toggle('italic')],
-  ['underline', 'U', 'Underline (⌘U)', () => toggle('underline')],
-  ['strike', 'S', 'Strikethrough (⇧⌘X)', () => toggle('strikeThrough')],
-  ['code', '</>', 'Inline code (⌘E)', code],
-  ['link', '🔗', 'Link (⌘K)', link],
+  ['bold', 'B', 'Bold', () => toggle('bold')],
+  ['italic', 'I', 'Italic', () => toggle('italic')],
+  ['underline', 'U', 'Underline', () => toggle('underline')],
+  ['strike', 'S', 'Strikethrough', () => toggle('strikeThrough')],
+  ['code', '</>', 'Inline code', code],
+  ['link', '🔗', 'Link', link],
   '|',
-  ['ul', '•', 'Bulleted list (⇧⌘8)', () => exec('insertUnorderedList')],
-  ['ol', '1.', 'Numbered list (⇧⌘7)', () => exec('insertOrderedList')],
+  ['ul', '•', 'Bulleted list', () => exec('insertUnorderedList')],
+  ['ol', '1.', 'Numbered list', () => exec('insertOrderedList')],
   ['outdent', '⇤', 'Outdent (⇧Tab)', () => exec('outdent')],
   ['indent', '⇥', 'Indent (Tab in a list)', () => exec('indent')],
   '|',
@@ -140,11 +142,18 @@ function setAlign(value) {
   session.root.style.textAlign = value || '';
 }
 
+const noColor = () => setStyle('color', null);
+
+/** Toolbar button id → its action in the list (the rest share the id). */
+const ACTION = { mark: 'highlight', nocolor: 'no-color', left: 'align-left', center: 'align-center', right: 'align-right' };
+
 function button(id, label, title, run) {
   const b = document.createElement('button');
   b.type = 'button';
   b.dataset.fmt = id;
   b.textContent = label;
+  const key = keys.shortcut(ACTION[id] || id);
+  title = key ? `${title} (${key})` : title;
   b.title = title;
   b.setAttribute('aria-label', title);
   b.addEventListener('mousedown', (e) => e.preventDefault()); // keep focus in the slide
@@ -161,7 +170,7 @@ for (const item of BUTTONS) {
       b.style.background = c;
       bar.append(b);
     }
-    bar.append(button('nocolor', '⌀', 'Remove text colour', () => setStyle('color', null)));
+    bar.append(button('nocolor', '⌀', 'Remove text colour', noColor));
     continue;
   }
   bar.append(button(...item));
@@ -189,25 +198,10 @@ export function hideToolbar() {
   bar.hidden = true;
 }
 
-/** Keyboard shortcuts while typing; returns true when handled. */
-export function formatKey(e) {
-  if (!session || !(e.metaKey || e.ctrlKey)) return false;
-  const k = e.key.toLowerCase();
-  const block = session.reg.mode !== 'inline';
-  const run = {
-    b: !e.shiftKey && (() => toggle('bold')),
-    i: !e.shiftKey && (() => toggle('italic')),
-    u: !e.shiftKey && (() => toggle('underline')),
-    x: e.shiftKey && (() => toggle('strikeThrough')),
-    e: !e.shiftKey && code,
-    k: !e.shiftKey && link,
-    8: e.shiftKey && block && (() => exec('insertUnorderedList')),
-    '*': e.shiftKey && block && (() => exec('insertUnorderedList')),
-    7: e.shiftKey && block && (() => exec('insertOrderedList')),
-    '&': e.shiftKey && block && (() => exec('insertOrderedList')),
-  }[k];
-  if (!run) return false;
-  e.preventDefault();
-  run();
-  return true;
+// the formatting actions (menus and keys) while typing on a slide
+for (const [id, , , run] of [...BUTTONS.filter(Array.isArray), ['nocolor', '', '', noColor]]) {
+  keys.on(ACTION[id] || id, {
+    enabled: () => !!session && !(session.reg.mode === 'inline' && BLOCK_ONLY.has(id)),
+    run: () => { run(); session.root.focus(); },
+  });
 }

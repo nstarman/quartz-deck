@@ -30,6 +30,8 @@ use tower_http::services::ServeDir;
 const INDEX: &str = include_str!("ui/index.html");
 const EDITOR_JS: &str = include_str!("ui/editor.js");
 const EDITOR_CSS: &str = include_str!("ui/editor.css");
+/// The editor's one action list (spec 007): menus and keys read it, as `/ui/action-list.js`.
+const ACTION_LIST_JS: &str = concat!("export default ", include_str!("ui/actions.json"), ";\n");
 /// Editor ES modules imported by `editor.js`, served at `/ui/<name>`.
 const UI_MODULES: &[(&str, &str)] = &[
     ("inline.js", include_str!("ui/inline.js")),
@@ -40,6 +42,9 @@ const UI_MODULES: &[(&str, &str)] = &[
     ("pane.js", include_str!("ui/pane.js")),
     ("run.js", include_str!("ui/run.js")),
     ("focus.js", include_str!("ui/focus.js")),
+    ("keys.js", include_str!("ui/keys.js")),
+    ("menubar.js", include_str!("ui/menubar.js")),
+    ("action-list.js", ACTION_LIST_JS),
 ];
 
 #[derive(Clone, Debug)]

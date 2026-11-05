@@ -2,15 +2,17 @@
 // context menus, the element bar and the keyboard. Every action that changes
 // the deck runs the same `qd` command an agent would.
 
-const TRANSITIONS = ['none', 'fade', 'slide', 'convex', 'concave', 'zoom'];
+import * as keys from '/ui/keys.js';
+
+export const TRANSITIONS = ['none', 'fade', 'slide', 'convex', 'concave', 'zoom'];
 
 /** Markdown for each insertable element type (FR-019); `edit` says how to open it. */
 export const INSERTS = [
-  { label: 'Paragraph', md: 'New paragraph.', edit: 'typed' },
-  { label: 'List', md: '- Item', edit: 'typed' },
-  { label: 'Equation', md: '$$\nx = 1\n$$', edit: 'source' },
-  { label: 'Image…', image: true },
-  { label: 'Text box', box: true },
+  { id: 'paragraph', label: 'Paragraph', md: 'New paragraph.', edit: 'typed' },
+  { id: 'list', label: 'List', md: '- Item', edit: 'typed' },
+  { id: 'equation', label: 'Equation', md: '$$\nx = 1\n$$', edit: 'source' },
+  { id: 'image', label: 'Image…', image: true },
+  { id: 'textbox', label: 'Text box', box: true },
 ];
 
 /**
@@ -22,38 +24,38 @@ export function makeActions(api) {
   const toggleClass = (t, c) => api.op('block class', { element: t.ref, [classesOf(t).includes(c) ? 'remove' : 'add']: c });
   const insertMenu = (t, where) => INSERTS.map((k) => ({ label: k.label, run: () => api.insert(t.slideId, where, k) }));
 
+  // Appearance ▸: also the menu bar's Edit ▸ Appearance (spec 007)
+  const classes = [
+    { id: 'class-smaller', label: 'Smaller text', checked: (t) => classesOf(t).includes('smaller'), run: (t) => toggleClass(t, 'smaller') },
+    { id: 'class-incremental', label: 'Incremental list', checked: (t) => classesOf(t).includes('incremental'), run: (t) => toggleClass(t, 'incremental') },
+    { id: 'class-custom', label: 'Custom class…', run: (t) => { const c = prompt('Class to add or remove (without the dot)'); if (c?.trim()) toggleClass(t, c.trim().replace(/^\./, '')); } },
+  ];
   const element = [
     { id: 'run', label: 'Run cell', visible: (t) => t.block.kind === 'cell', run: (t) => api.runCells([t.ref]) },
-    { id: 'edit', label: 'Edit text', shortcut: 'Enter', run: (t) => api.beginEditRef(t) },
-    { id: 'source', label: 'Edit source', shortcut: '⌥Enter', run: (t) => api.beginSourceEl(t) },
+    { id: 'edit', label: 'Edit text', run: (t) => api.beginEditRef(t) },
+    { id: 'source', label: 'Edit source', run: (t) => api.beginSourceEl(t) },
     '-',
-    { id: 'cut', label: 'Cut', shortcut: '⌘X', run: async (t) => { await api.copy(t); return api.op('block rm', { element: t.ref }); } },
-    { id: 'copy', label: 'Copy', shortcut: '⌘C', run: (t) => api.copy(t) },
-    { id: 'paste', label: 'Paste after', shortcut: '⌘V', run: (t) => api.paste(t) },
-    { id: 'dup', label: 'Duplicate', shortcut: '⌘D', run: (t) => api.op('block dup', { element: t.ref }) },
-    { id: 'delete', label: 'Delete', shortcut: '⌫', run: (t) => api.op('block rm', { element: t.ref }) },
+    { id: 'cut', label: 'Cut', run: async (t) => { await api.copy(t); return api.op('block rm', { element: t.ref }); } },
+    { id: 'copy', label: 'Copy', run: (t) => api.copy(t) },
+    { id: 'paste', label: 'Paste after', run: (t) => api.paste(t) },
+    { id: 'dup', label: 'Duplicate', run: (t) => api.op('block dup', { element: t.ref }) },
+    { id: 'delete', label: 'Delete', run: (t) => api.op('block rm', { element: t.ref }) },
     '-',
-    { id: 'up', label: 'Move up', shortcut: '⌥↑', enabled: (t) => t.index > 0, run: (t) => api.op('block move', { element: t.ref, before: `${t.slideId}/${t.index - 1}` }) },
-    { id: 'down', label: 'Move down', shortcut: '⌥↓', enabled: (t) => t.index < t.count - 1, run: (t) => api.op('block move', { element: t.ref, after: `${t.slideId}/${t.index + 1}` }) },
+    { id: 'up', label: 'Move up', enabled: (t) => t.index > 0, run: (t) => api.op('block move', { element: t.ref, before: `${t.slideId}/${t.index - 1}` }) },
+    { id: 'down', label: 'Move down', enabled: (t) => t.index < t.count - 1, run: (t) => api.op('block move', { element: t.ref, after: `${t.slideId}/${t.index + 1}` }) },
     { id: 'insert-before', label: 'Insert before', items: (t) => insertMenu(t, { before: t.ref }) },
     { id: 'insert-after', label: 'Insert after', items: (t) => insertMenu(t, { after: t.ref }) },
     '-',
     { id: 'fragment', label: 'Appears on click', checked: (t) => classesOf(t).includes('fragment'), run: (t) => toggleClass(t, 'fragment') },
-    {
-      id: 'appearance', label: 'Appearance', items: (t) => [
-        { label: 'Smaller text', checked: classesOf(t).includes('smaller'), run: () => toggleClass(t, 'smaller') },
-        { label: 'Incremental list', checked: classesOf(t).includes('incremental'), run: () => toggleClass(t, 'incremental') },
-        { label: 'Custom class…', run: () => { const c = prompt('Class to add or remove (without the dot)'); if (c?.trim()) toggleClass(t, c.trim().replace(/^\./, '')); } },
-      ],
-    },
+    { id: 'appearance', label: 'Appearance', items: (t) => resolve(classes, t) },
   ];
 
   const kv = (t) => t.full?.attrs?.kv || {};
   const setAttr = (t, key, value) => api.op('set', value ? { slide: t.slideId, attr: [`${key}=${value}`] } : { slide: t.slideId, unset: [key] });
   const slide = [
     { id: 'slide-before', label: 'Add slide before', run: (t) => api.op('add', { title: 'New slide', before: t.slideId }) },
-    { id: 'slide-after', label: 'Add slide after', shortcut: '⇧⌘N', run: (t) => api.op('add', { title: 'New slide', after: t.slideId }) },
-    { id: 'slide-dup', label: 'Duplicate slide', shortcut: '⇧⌘D', run: (t) => api.op('dup', { slide: t.slideId }) },
+    { id: 'slide-after', label: 'Add slide after', run: (t) => api.op('add', { title: 'New slide', after: t.slideId }) },
+    { id: 'slide-dup', label: 'Duplicate slide', run: (t) => api.op('dup', { slide: t.slideId }) },
     { id: 'slide-hide', label: 'Hidden in the presentation', checked: (t) => kv(t).visibility === 'hidden', run: (t) => setAttr(t, 'visibility', kv(t).visibility === 'hidden' ? null : 'hidden') },
     { id: 'slide-rm', label: 'Delete slide…', run: (t) => confirm(`Delete slide "${t.title || t.slideId}"? (Undo can restore it.)`) && api.op('rm', { slide: t.slideId }) },
     '-',
@@ -77,24 +79,26 @@ export function makeActions(api) {
   const resolve = (list, t) => list.filter((a) => shown(a, t)).map((a) => (a === '-' ? a : {
     id: a.id,
     label: a.label,
-    shortcut: a.shortcut,
+    shortcut: keys.shortcut(a.id), // keys come from the action list (spec 007)
     checked: typeof a.checked === 'function' ? a.checked(t) : undefined,
     disabled: a.enabled ? !a.enabled(t) : false,
     items: a.items ? a.items(t) : undefined,
     run: a.run && (() => a.run(t)),
   }));
 
-  const tables = { element, slide };
+  const tables = { element: [...element, ...classes], slide };
+  const find = (id, table) => tables[table].find((x) => x.id === id);
+  const can = (id, t, table = 'element') => { const a = find(id, table); return !!a && shown(a, t) && (!a.enabled || a.enabled(t)); };
   return {
     element: (t) => resolve(element, t),
     slide: (t) => resolve(slide, t),
     empty: (t) => resolve(emptyArea, t),
     insert: insertMenu,
     setAttr,
-    /** Run action `id` of a table on `t` (keyboard shortcuts, bars). */
-    run: (id, t, table = 'element') => {
-      const a = tables[table].find((x) => x.id === id);
-      return a && shown(a, t) && (!a.enabled || a.enabled(t)) ? a.run(t) : null;
-    },
+    /** Run action `id` of a table on `t` (keyboard shortcuts, bars, the menu bar). */
+    run: (id, t, table = 'element') => (can(id, t, table) ? find(id, table).run(t) : null),
+    /** Whether action `id` applies to `t` now, and its checkmark (the menu bar). */
+    can,
+    checked: (id, t, table = 'element') => find(id, table)?.checked?.(t),
   };
 }
