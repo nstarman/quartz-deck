@@ -83,7 +83,7 @@ Paths relative to repo root.
 - [X] T021 Quickstart §1–§4 with the release build in the browser pane; record timings (SC-001, SC-002) in `checklists/quickstart-run.md`
 - [X] T022 Agent eval (SC-004): 10 fresh agents, the person has a sentence selected in the editor, task "make this shorter"; grade: only that element changed, no "which one?" question, no usage errors; record in `checklists/agent-eval.md`
 - [X] T023 Final constitution re-check in `plan.md`; fmt, clippy, full suite green
-- [ ] T024 Concision audit (`/pr-audit`), last task before the PR is marked ready
+- [X] T024 Concision audit (`/pr-audit`), last task before the PR is marked ready
 
 ---
 
