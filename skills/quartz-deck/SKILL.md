@@ -28,7 +28,9 @@ edits, detects concurrent changes and supports undo.
 3. **Check** — `qd check` (duplicate ids, unsafe constructs, missing files);
    `qd check --render` also runs Quarto and reports render errors.
 4. **Look** — start the live preview once with `qd serve --detach` (prints
-   `{"url","port","pid"}`), then open `qd url <slide>` in your browser tool.
+   `{"url","port","pid"}`), then open `qd url <slide>` in your browser tool
+   (the link carries the token the page needs to run code; share it only with
+   the person you work with).
    The page re-renders by itself after every edit (about 1–2 s) and stays on
    the current slide; a red banner shows Quarto errors while the last good
    render stays visible. Stop it with `qd stop`. The person you work with may
@@ -62,6 +64,7 @@ when the current directory has exactly one `.qmd`.
 | delete | `qd rm @4` |
 | retitle | `qd title results "Findings"` (`""` = untitled) |
 | replace content | `qd body results --md "New text"` (keeps positioned boxes) |
+| change a few characters anywhere (code, YAML, text) | `qd replace --old 'np.mean(xs' --new 'np.median(xs' --expect <version>` — `--old` must match exactly once (`E_AMBIGUOUS`: add surrounding text); only those bytes change |
 | edit one block | `qd edit results/0 --md "- three"` |
 | slide attributes | `qd set results --attr background-color=aquamarine --class center` |
 | remove attribute/class | `qd set results --unset background-color --unclass center` |
@@ -73,6 +76,9 @@ when the current directory has exactly one `.qmd`.
 | add / move / delete / duplicate one element | `qd block add results --after results/0 --md "- point"` (or `--before`, `--start`, `--end`), `qd block move results/2 --before results/0`, `qd block rm results/1`, `qd block dup results/1`, `qd block class results/1 --add fragment` (appears on click) — only that element's bytes move; the heading is untouched |
 | validate | `qd check` (add `--render` to run Quarto) |
 | final output | `qd render` (→ `output` path; `--to pdf` etc. for other formats) |
+| Python code cells | each deck has its own locked environment: `qd env init` (uv; `--tool pixi` for pixi with PyPI packages), `qd env add numpy matplotlib`, `qd env` (where, `lock_current`), `qd env sync` (install the lock on a new machine / relock after a hand edit). The manifest and lockfile are part of the deck: commit them. Never `pip install`; `qd render` runs the cells inside the environment |
+| run code / check a result | `qd run results/1` (JSON outputs; figures as files: `outputs[].path`), `qd run --all` (stops at the first error), `--fresh` to restart and run from the top, `--timeout 60`. With `qd serve` running it uses the editor's live session and the person sees the outputs; otherwise a fresh one-shot session. Fix a failing cell with `qd replace --old … --new …`, then run it again |
+| stored outputs | `qd outputs` (or `qd outputs results/1`): last outputs per cell, `stale: true` once the cell changed |
 | works without network? | `qd check --offline` (headless Chrome, network blocked; problems per slide with hints) |
 | live preview | `qd serve --detach`, then `qd url results`; `qd stop` when done |
 | undo / redo | `qd undo` / `qd redo` |
@@ -130,6 +136,11 @@ SHA-256; later exports work offline. `--no-download` forbids downloads.
 | `E_NO_QUARTO` | Quarto missing (preview/render only) | install Quarto; edits still work |
 | `E_OFFLINE` | the deck would not work offline | read `problems` in the stdout report; fix; re-run |
 | `E_OFFLINE_INCOMPATIBLE` | chalkboard/multiplex can't be one offline file | remove the feature for the export |
+| `E_NO_ENV` | deck has code cells but no environment | `qd env init`, then `qd env add <pkgs>` |
+| `E_LOCK_STALE` | manifest edited, lock out of date | `qd env sync` |
+| `E_ENV_TOOL` / `E_ENV` | uv/pixi missing, or it failed | install per the hint / read `details` |
+| `E_RUN` | a cell raised or was stopped (`qd run`) | read the error output in the stdout result; fix the cell; run again |
+| `E_NOT_CODE` / `E_ENGINE` | not an executable cell / not Python | run only ```` ```{python} ```` cells; `qd render` still runs others |
 | `E_NO_BROWSER` / `E_DOWNLOAD` | no Chrome, or a download failed its checksum | install Chrome, or allow the download; retry |
 
 ## Worked examples
@@ -149,6 +160,15 @@ qd check
 qd show @3                                  # check it is the right one
 qd title @3 "Key findings"                  # result.target is now its stable id
 qd set <target> --attr background-color="#1a1a2e" --class center
+```
+
+**Fix a failing code cell** — the run result names the cell, shows the
+traceback (with the failing line) and gives the deck `version`:
+
+```bash
+qd run --all                                # E_RUN; stdout: runs[-1] is the failing cell, its outputs the traceback
+qd replace --old 'df.colum' --new 'df.columns' --expect <version from that result>
+qd run --all                                # "ok": true; figures in outputs[].path
 ```
 
 **Positioned image** — boxes are Quarto `.absolute` blocks, in px on the

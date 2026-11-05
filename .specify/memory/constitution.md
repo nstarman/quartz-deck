@@ -1,6 +1,14 @@
 <!--
 Sync Impact Report
-- Version: 1.0.0 → 1.1.0 (MINOR: workflow gate added)
+- Version: 1.1.0 → 1.2.0 (MINOR: Constraints materially expanded, spec 004)
+- Constraints: external tools uv (default) or pixi (PyPI packages, not conda),
+  needed only to run code cells or render decks with code; one locked
+  environment per deck, never plain pip; code runs only on an explicit action
+  or `qd run`, and code-running endpoints require the per-session token
+- Principles, Development Workflow, Governance: unchanged
+- Templates: none need changes (plans already list external tools)
+- Deferred TODOs: none
+- Previous: 1.0.0 → 1.1.0 (MINOR: workflow gate added)
 - Development Workflow: added the pre-PR concision audit (`/pr-audit`),
   which enforces Principle VII on every PR's code and infrastructure
 - Templates: tasks-template.md gains a standard final "Concision audit" task;
@@ -79,6 +87,15 @@ Tracking table.
   plain HTML/CSS/JS served by the binary unless a plan justifies a framework.
 - Runs fully locally and offline; the server binds to localhost only.
 - External runtime dependency: the Quarto CLI (which bundles Pandoc).
+- Decks with code cells also need **uv** (default) or **pixi** (PyPI
+  packages, not conda) — only to run cells or render such decks; decks
+  without code never do. Each deck has its own locked environment (manifest
+  and lockfile beside the deck or at the Quarto project root, committed with
+  it); qd never installs into a global Python or uses plain pip.
+- Code runs only on an explicit action: the person's Run click or key in the
+  editor, or a `qd run` command. The server's code-running endpoints MUST
+  require the per-session token, which is never served to a page that did not
+  come from the editor link.
 - License: proprietary, personal use only (`LICENSE`). Third-party
   dependencies MUST have licenses compatible with private use and are listed
   in each plan.
@@ -108,4 +125,4 @@ with semantic versioning (MAJOR: principle removed or redefined; MINOR:
 principle or section added; PATCH: wording). Every plan and review verifies
 compliance.
 
-**Version**: 1.1.0 | **Ratified**: 2026-11-03 | **Last Amended**: 2026-11-04
+**Version**: 1.2.0 | **Ratified**: 2026-11-03 | **Last Amended**: 2026-11-04

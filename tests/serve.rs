@@ -10,7 +10,7 @@ use std::process::{Child, Stdio};
 use std::time::{Duration, Instant};
 
 mod common;
-use common::{have_quarto, qd};
+use common::{have, qd};
 
 const BASIC: &str = include_str!("fixtures/basic.qmd");
 
@@ -53,7 +53,15 @@ fn start(dir: &Path) -> Server {
     let v: Value =
         serde_json::from_str(&line).unwrap_or_else(|e| panic!("bad serve output {line:?}: {e}"));
     let port = v["port"].as_u64().unwrap() as u16;
-    assert_eq!(v["url"], format!("http://127.0.0.1:{port}/"));
+    // the editor link carries the run token in its fragment (never sent to the server)
+    let url = v["url"].as_str().unwrap();
+    let token = url
+        .strip_prefix(&format!("http://127.0.0.1:{port}/#t="))
+        .unwrap_or("");
+    assert!(
+        token.len() == 32 && token.bytes().all(|b| b.is_ascii_hexdigit()),
+        "{url}"
+    );
     Server { child, port }
 }
 
@@ -147,7 +155,7 @@ fn setup() -> (tempfile::TempDir, PathBuf) {
 
 #[test]
 fn serve_renders_and_live_reloads() {
-    if !have_quarto() {
+    if !have("quarto") {
         return;
     }
     let (_tmp, dir) = setup();
@@ -192,14 +200,11 @@ fn serve_renders_and_live_reloads() {
     // url command
     let (ok, url) = qd_json(&dir, &["url", "results"]);
     assert!(ok);
-    assert_eq!(
-        url["url"],
-        format!("http://127.0.0.1:{}/#/results", server.port)
-    );
-    assert_eq!(
-        qd_json(&dir, &["url", "@3"]).1["url"],
-        format!("http://127.0.0.1:{}/#/qd-3", server.port)
-    );
+    let base = format!("http://127.0.0.1:{}/", server.port);
+    let link = url["url"].as_str().unwrap();
+    assert!(link.starts_with(&format!("{base}#/results&t=")), "{link}");
+    let link = qd_json(&dir, &["url", "@3"]).1["url"].to_string();
+    assert!(link.contains(&format!("{base}#/qd-3&t=")), "{link}");
 
     // an edit through the CLI -> changed, then rendered within 3 s (SC-005)
     let t = Instant::now();
@@ -249,7 +254,7 @@ fn serve_renders_and_live_reloads() {
 
 #[test]
 fn check_render_reports_quarto_errors() {
-    if !have_quarto() {
+    if !have("quarto") {
         return;
     }
     let (_tmp, dir) = setup();
@@ -319,7 +324,7 @@ fn render_commands_without_quarto() {
 /// T033 over HTTP: POST /api/op edits the deck; non-JSON and foreign hosts are refused.
 #[test]
 fn api_op_over_http() {
-    if !have_quarto() {
+    if !have("quarto") {
         return;
     }
     let (_tmp, dir) = setup();
@@ -337,6 +342,18 @@ fn api_op_over_http() {
         body,
     );
     assert_eq!(status, 403, "foreign Host must be refused (DNS rebinding)");
+    let mut s = TcpStream::connect(("127.0.0.1", server.port)).unwrap();
+    write!(
+        s,
+        "GET /api/source HTTP/1.1\r\nHost: evil.example\r\nConnection: close\r\n\r\n"
+    )
+    .unwrap();
+    let mut reply = String::new();
+    s.read_to_string(&mut reply).unwrap();
+    assert!(
+        reply.starts_with("HTTP/1.1 403"),
+        "reads refused too: {reply}"
+    );
     assert_eq!(
         std::fs::read_to_string(dir.join("deck.qmd")).unwrap(),
         BASIC
@@ -426,7 +443,7 @@ fn api_op_over_http() {
 /// where the output went — next to the deck, or in a project's output-dir.
 #[test]
 fn render_reports_output() {
-    if !have_quarto() {
+    if !have("quarto") {
         return;
     }
     let (_tmp, dir) = setup();
@@ -480,4 +497,141 @@ fn render_reports_output() {
         v["error"]["details"].as_str().unwrap().contains("YAML"),
         "{v}"
     );
+}
+
+/// Spec 004 US3 (T023, T025): token-guarded runs, events, stored outputs, and
+/// a preview that shows them without executing anything. Needs uv and Quarto.
+#[test]
+fn run_cells_over_http() {
+    if !have("quarto") || !have("uv") {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let deck = dir.path().join("deck.qmd");
+    std::fs::write(&deck, include_str!("fixtures/run/basic.qmd")).unwrap();
+    assert!(qd_json(dir.path(), &["env", "init"]).0);
+    assert!(qd_json(dir.path(), &["env", "add", "matplotlib"]).0);
+    let before = std::fs::read(&deck).unwrap();
+    let server = start(dir.path());
+    let p = server.port;
+
+    // the token: in the editor page and the user-only session file, nowhere else
+    let session = std::fs::read_dir(dir.path().join(".cache"))
+        .unwrap()
+        .map(|e| e.unwrap().path().join("session.json"))
+        .find(|f| f.is_file())
+        .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&session).unwrap().permissions().mode();
+        assert_eq!(mode & 0o077, 0, "session file is user-only");
+    }
+    let token = serde_json::from_str::<Value>(&std::fs::read_to_string(&session).unwrap()).unwrap()
+        ["token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        !get(p, "/").1.contains(&token),
+        "the page never holds the token"
+    );
+    let auth = format!("application/json\r\nX-QD-Token: {token}");
+
+    let run = |body: &str, ctype: &str| post(p, "/api/run", "127.0.0.1", ctype, body).0;
+    let print = r#"{"cells":["print/0"]}"#;
+    assert_eq!(run(print, "application/json"), 403, "no token");
+    assert_eq!(
+        run(print, "application/json\r\nX-QD-Token: wrong"),
+        403,
+        "wrong token"
+    );
+    let evil = format!("{auth}\r\nOrigin: http://evil.example");
+    assert_eq!(run(print, &evil), 403, "right token, other origin");
+    let op = r#"{"op":"run","args":{"cells":["print/0"]}}"#;
+    assert_ne!(
+        post(p, "/api/op", "127.0.0.1", "application/json", op).0,
+        200,
+        "run_op refuses run"
+    );
+    assert_eq!(run(r#"{"cells":["plain/0"]}"#, &auth), 400, "E_NOT_CODE");
+    assert_eq!(run(r#"{"cells":["r/0"]}"#, &auth), 400, "E_ENGINE");
+
+    let mut ev = Events::open(p);
+    assert_eq!(run(print, &auth), 202);
+    let wait = Duration::from_secs(120);
+    assert!(ev.wait("kernel", wait).unwrap().contains("starting"));
+    let out = ev.wait("cell_output", wait).expect("cell output");
+    assert!(out.contains("42"), "{out}");
+    assert!(ev.wait("run_done", wait).unwrap().contains("\"done\""));
+
+    // Run all: in order, skipping eval:false and non-Python, stopping at the failure
+    assert_eq!(run(r#"{"all":true}"#, &auth), 202);
+    let started = ev.wait("run_started", wait).unwrap();
+    assert!(
+        started.contains("fails/0") && !started.contains("skipped/0") && !started.contains("r/0"),
+        "{started}"
+    );
+    let done = ev.wait("run_done", wait).unwrap();
+    assert!(done.contains("\"error\""), "{done}");
+
+    let outputs: Value = serde_json::from_str(&get(p, "/api/outputs").1).unwrap();
+    let cells = &outputs["cells"];
+    assert_eq!(cells["state/0"]["items"][0]["text"], "43", "{outputs}");
+    assert_eq!(cells["fails/0"]["items"][0]["ename"], "ZeroDivisionError");
+    let img = cells["plot/0"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["kind"] == "image")
+        .unwrap();
+    assert_eq!(get(p, img["url"].as_str().unwrap()).0, 200);
+    assert!(cells["print/0"]["stale"] == false && cells["print/0"]["counter"].is_number());
+    assert_eq!(
+        std::fs::read(&deck).unwrap(),
+        before,
+        "runs never touch the .qmd"
+    );
+
+    // the preview shows the stored outputs without running anything
+    let end = Instant::now() + wait;
+    let mut html = String::new();
+    while !html.contains("ZeroDivisionError") && Instant::now() < end {
+        std::thread::sleep(Duration::from_millis(200)); // the render after run_done
+        html = get(p, "/preview/deck.qd-preview.html").1;
+    }
+    assert!(
+        html.contains("qd-output")
+            && html.contains("/outputs/")
+            && html.contains("ZeroDivisionError")
+    );
+
+    // an edited cell's output is marked stale
+    assert!(
+        qd_json(
+            dir.path(),
+            &["replace", "--old", "21 * 2", "--new", "21 * 3"]
+        )
+        .0
+    );
+    let outputs: Value = serde_json::from_str(&get(p, "/api/outputs").1).unwrap();
+    assert_eq!(outputs["cells"]["print/0"]["stale"], true);
+
+    assert_eq!(
+        post(p, "/api/run/interrupt", "127.0.0.1", &auth, "{}").0,
+        200
+    );
+
+    // shutdown needs the token too; `qd stop` uses it
+    let shutdown = |ctype: &str| post(p, "/api/shutdown", "127.0.0.1", ctype, "{}").0;
+    assert_eq!(shutdown("application/json"), 403);
+    assert_eq!(get(p, "/api/deck").0, 200, "still serving");
+    assert!(qd_json(dir.path(), &["stop"]).0);
+    let mut server = server;
+    let end = Instant::now() + Duration::from_secs(20);
+    while server.child.try_wait().unwrap().is_none() {
+        assert!(Instant::now() < end, "server did not stop");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert!(!session.exists(), "session file removed on shutdown");
 }

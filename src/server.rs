@@ -2,8 +2,10 @@
 //! shell, the latest good Quarto render, a read API, and SSE live updates.
 
 use crate::cli::{run_op, show_json, slides_json};
-use crate::deck::{Deck, version_of};
+use crate::deck::{BlockKind, Deck, version_of};
 use crate::error::{QdError, Result};
+use crate::kernel::{Session as Kernel, cell_code};
+use crate::outputs::Outputs;
 use crate::render::{preview_copy, render};
 use crate::store::Store;
 use axum::extract::{Path as UrlPath, State};
@@ -17,6 +19,7 @@ use notify::Watcher;
 use serde_json::{Value, json};
 use std::convert::Infallible;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::{Notify, broadcast};
@@ -32,6 +35,8 @@ const UI_MODULES: &[(&str, &str)] = &[
     ("source.js", include_str!("ui/source.js")),
     ("actions.js", include_str!("ui/actions.js")),
     ("menu.js", include_str!("ui/menu.js")),
+    ("pane.js", include_str!("ui/pane.js")),
+    ("run.js", include_str!("ui/run.js")),
 ];
 
 #[derive(Clone, Debug)]
@@ -40,6 +45,8 @@ enum Ev {
     Rendering,
     Rendered(String),
     RenderError(String),
+    /// Code runs (contracts/http.md): `kernel`, `run_started`, `cell_output`, `run_done`.
+    Run(&'static str, Value),
 }
 
 impl Ev {
@@ -49,6 +56,7 @@ impl Ev {
             Ev::Rendering => ("rendering", json!({})),
             Ev::Rendered(v) => ("rendered", json!({"version": v, "html": html})),
             Ev::RenderError(m) => ("render_error", json!({"message": m})),
+            Ev::Run(name, data) => (*name, data.clone()),
         };
         Event::default().event(name).data(data.to_string())
     }
@@ -69,6 +77,35 @@ struct App {
     tx: broadcast::Sender<Ev>,
     st: Mutex<St>,
     kick: Notify,
+    /// Required (`X-QD-Token`) to run code: only the editor page knows it (FR-015).
+    token: String,
+    /// The deck's live session, started on the first run.
+    kernel: Mutex<Option<Arc<Kernel>>>,
+    runs: AtomicU64,
+    /// `POST /api/shutdown` (`qd stop`).
+    stop: Notify,
+    /// Held while Quarto renders; `true` once shutting down (no new renders).
+    /// Shutdown waits for a render in progress: Quarto left running would
+    /// clean up the deck folder under the next server's render.
+    rendering: Mutex<bool>,
+}
+
+impl App {
+    fn dir(&self) -> PathBuf {
+        self.store
+            .path
+            .parent()
+            .map(PathBuf::from)
+            .unwrap_or_default()
+    }
+
+    fn emit(&self, name: &'static str, data: Value) {
+        let _ = self.tx.send(Ev::Run(name, data));
+    }
+
+    fn state(&self, s: &str) {
+        self.emit("kernel", json!({ "state": s }));
+    }
 }
 
 type Shared = Arc<App>;
@@ -85,7 +122,9 @@ fn err_response(e: QdError) -> Response {
         QdError::UnsafeEdit(_) | QdError::OfflineIncompatible(_) => {
             StatusCode::UNPROCESSABLE_ENTITY
         }
-        QdError::NoBrowser(_) | QdError::Download(_) | QdError::NoQuarto => {
+        QdError::NotCode(_) | QdError::Engine(_) => StatusCode::BAD_REQUEST,
+        QdError::NoEnv(_) => StatusCode::NOT_FOUND,
+        QdError::NoBrowser(_) | QdError::Download(_) | QdError::NoQuarto | QdError::EnvTool(_) => {
             StatusCode::SERVICE_UNAVAILABLE
         }
         _ => StatusCode::INTERNAL_SERVER_ERROR,
@@ -104,8 +143,18 @@ fn asset(content_type: &'static str, body: &'static str) -> impl IntoResponse {
     )
 }
 
-async fn index() -> impl IntoResponse {
-    asset("text/html; charset=utf-8", INDEX)
+/// The editor page, carrying this session's run token.
+/// The editor page. It never holds the run token: that comes in the link's
+/// fragment (`#t=…`, from `qd serve` / `qd url`), which browsers don't send.
+async fn index() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
+        INDEX,
+    )
+        .into_response()
 }
 
 async fn editor_js() -> impl IntoResponse {
@@ -125,6 +174,14 @@ async fn ui_module(UrlPath(name): UrlPath<String>) -> Response {
 
 async fn present(State(app): State<Shared>) -> Redirect {
     Redirect::to(&app.html)
+}
+
+/// The whole deck text (spec 004 source pane).
+async fn api_source(State(app): State<Shared>) -> Response {
+    match app.store.read() {
+        Ok(d) => Json(json!({"text": d.text, "version": d.version})).into_response(),
+        Err(e) => err_response(e),
+    }
 }
 
 async fn api_deck(State(app): State<Shared>) -> Response {
@@ -169,6 +226,20 @@ fn local_host(h: &str) -> bool {
     matches!(host, "127.0.0.1" | "localhost")
 }
 
+/// Every route answers only to a loopback Host: a DNS-rebound page on
+/// another site can read nothing (source, outputs, the editor's token).
+async fn local_only(req: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let host = req
+        .headers()
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok());
+    if host.is_some_and(local_host) {
+        next.run(req).await
+    } else {
+        forbidden()
+    }
+}
+
 /// Only pages served by this server may edit: the Host must be loopback
 /// (blocks DNS rebinding) and any Origin must be too. The `Json` extractor
 /// already refuses non-JSON bodies, which browsers cannot send cross-site
@@ -187,7 +258,7 @@ async fn api_op(
     Json(body): Json<OpBody>,
 ) -> Response {
     if !same_origin(&headers) {
-        return (StatusCode::FORBIDDEN, "forbidden").into_response();
+        return forbidden();
     }
     let store = app.store.clone();
     let res = tokio::task::spawn_blocking(move || {
@@ -197,12 +268,7 @@ async fn api_op(
     match res {
         Ok(Ok(mut v)) => {
             // outputs inside the deck folder can be opened through /preview/'s fallback
-            let deck_dir = app
-                .store
-                .path
-                .parent()
-                .map(PathBuf::from)
-                .unwrap_or_default();
+            let deck_dir = app.dir();
             let href = |p: &Value| {
                 let path = std::path::Path::new(p.as_str()?);
                 if !matches!(
@@ -232,6 +298,275 @@ async fn api_op(
         Ok(Err(e)) => err_response(e),
         Err(e) => err_response(QdError::Io(std::io::Error::other(e))),
     }
+}
+
+/// Same origin *and* the session token: required for anything that runs code.
+fn authorized(app: &App, headers: &HeaderMap) -> bool {
+    same_origin(headers)
+        && headers.get("x-qd-token").and_then(|v| v.to_str().ok()) == Some(app.token.as_str())
+}
+
+/// 128 random bits from the OS, hex.
+fn token() -> Result<String> {
+    let mut b = [0u8; 16];
+    std::io::Read::read_exact(&mut std::fs::File::open("/dev/urandom")?, &mut b)?;
+    Ok(b.iter().map(|x| format!("{x:02x}")).collect())
+}
+
+fn forbidden() -> Response {
+    (StatusCode::FORBIDDEN, "forbidden").into_response()
+}
+
+/// Stored figure/full-text files get URLs (`/outputs/<file>`).
+fn with_urls(mut rec: Value) -> Value {
+    for item in rec["items"].as_array_mut().into_iter().flatten() {
+        for (key, url) in [("file", "url"), ("full", "full_url")] {
+            if let Some(f) = item[key].as_str() {
+                item[url] = json!(format!("/outputs/{f}"));
+            }
+        }
+    }
+    rec
+}
+
+#[derive(serde::Deserialize)]
+struct RunBody {
+    #[serde(default)]
+    cells: Vec<String>,
+    #[serde(default)]
+    all: bool,
+    /// Restart and run from the top through the last requested cell (FR-008b).
+    #[serde(default)]
+    fresh: bool,
+    /// Answer when the run ends, with its outputs (`qd run`), instead of 202 at once.
+    #[serde(default)]
+    wait: bool,
+    /// Seconds before a cell is interrupted.
+    timeout: Option<u64>,
+}
+
+/// `POST /api/run`: 202 at once; progress and outputs arrive as events.
+async fn api_run(
+    State(app): State<Shared>,
+    headers: HeaderMap,
+    Json(body): Json<RunBody>,
+) -> Response {
+    if !authorized(&app, &headers) {
+        return forbidden();
+    }
+    let plan = app
+        .store
+        .read()
+        .and_then(|d| crate::kernel::plan(&d, &body.cells, body.all, body.fresh));
+    let plan = match plan {
+        Ok(p) => p,
+        Err(e) => return err_response(e),
+    };
+    let run = app.runs.fetch_add(1, Ordering::Relaxed) + 1;
+    let cells: Vec<&String> = plan.iter().map(|(id, ..)| id).collect();
+    app.emit("run_started", json!({"run": run, "cells": cells}));
+    let a = app.clone();
+    let timeout = body.timeout.map(Duration::from_secs);
+    let go = move || run_cells(&a, run, plan, body.fresh, timeout);
+    if body.wait {
+        return blocking(move || Ok(go())).await;
+    }
+    tokio::task::spawn_blocking(go);
+    (StatusCode::ACCEPTED, Json(json!({"run": run}))).into_response()
+}
+
+/// The live session, started (in the deck's environment) if there is none.
+fn kernel(app: &App) -> Result<Arc<Kernel>> {
+    let mut k = app.kernel.lock().unwrap();
+    if let Some(s) = k.as_ref() {
+        return Ok(s.clone());
+    }
+    app.state("starting");
+    let dir = app.dir();
+    let s = crate::env::require(&dir).and_then(|env| Kernel::start(&env, &dir));
+    let s = Arc::new(s.inspect_err(|_| app.state("stopped"))?);
+    *k = Some(s.clone());
+    app.state("idle");
+    Ok(s)
+}
+
+/// Run `plan` (`kernel::run_plan`) in the live session, with events for the
+/// editor; the preview re-renders afterwards (R7). Returns `run_done`'s
+/// `{run, status, error?}` plus `runs`: each cell's entry as `qd run` reports it.
+fn run_cells(
+    app: &App,
+    run: u64,
+    plan: Vec<crate::kernel::Planned>,
+    fresh: bool,
+    timeout: Option<Duration>,
+) -> Value {
+    let outputs = Outputs::new(&app.store);
+    let mut runs = vec![];
+    let go = || -> Result<&'static str> {
+        if plan.is_empty() {
+            return Ok("done"); // nothing to run needs no kernel (nor an environment)
+        }
+        let k = kernel(app)?;
+        if fresh {
+            app.state("starting");
+            k.restart()?;
+        }
+        crate::kernel::run_plan(&k, &outputs, plan, timeout, |cell, rec| {
+            let Some(rec) = rec else {
+                return app.state("busy");
+            };
+            app.state("idle");
+            runs.push(outputs.entry(cell, rec));
+            let rec = with_urls(rec.clone());
+            app.emit(
+                "cell_output",
+                json!({"run": run, "cell": cell, "counter": rec["counter"],
+                "status": rec["status"], "items": rec["items"]}),
+            );
+        })
+    };
+    let mut done = match go() {
+        Ok(status) => json!({"run": run, "status": status}),
+        Err(e) => {
+            // the session is gone or never started: the next run starts a new one
+            app.kernel.lock().unwrap().take();
+            app.state("stopped");
+            json!({"run": run, "status": "failed", "error": e.to_json()["error"]})
+        }
+    };
+    app.emit("run_done", done.clone());
+    app.kick.notify_one();
+    done["runs"] = json!(runs);
+    done
+}
+
+/// `POST /api/run/interrupt`: stop the running cell (no-op when idle or starting).
+async fn api_interrupt(State(app): State<Shared>, headers: HeaderMap) -> Response {
+    if !authorized(&app, &headers) {
+        return forbidden();
+    }
+    let k = app.kernel.try_lock().ok().and_then(|k| k.clone());
+    match k.map_or(Ok(()), |k| k.interrupt()) {
+        Ok(()) => Json(json!({"ok": true})).into_response(),
+        Err(e) => err_response(e),
+    }
+}
+
+/// `POST /api/run/restart`: fresh kernel state (stops a running cell first).
+async fn api_restart(State(app): State<Shared>, headers: HeaderMap) -> Response {
+    if !authorized(&app, &headers) {
+        return forbidden();
+    }
+    let Some(k) = app.kernel.try_lock().ok().and_then(|k| k.clone()) else {
+        return Json(json!({"ok": true})).into_response();
+    };
+    let a = app.clone();
+    blocking(move || {
+        let _ = k.interrupt();
+        a.state("starting");
+        let r = k.restart();
+        a.state(if r.is_ok() { "idle" } else { "stopped" });
+        r.map(|_| json!({"ok": true}))
+    })
+    .await
+}
+
+/// Run `f` off the async runtime; its JSON or error as the response.
+async fn blocking(f: impl FnOnce() -> Result<Value> + Send + 'static) -> Response {
+    match tokio::task::spawn_blocking(f).await {
+        Ok(Ok(v)) => Json(v).into_response(),
+        Ok(Err(e)) => err_response(e),
+        Err(e) => err_response(QdError::Io(std::io::Error::other(e))),
+    }
+}
+
+/// `POST /api/shutdown` (token): stop serving, as Ctrl-C does (`qd stop`).
+async fn api_shutdown(State(app): State<Shared>, headers: HeaderMap) -> Response {
+    if !authorized(&app, &headers) {
+        return forbidden();
+    }
+    app.stop.notify_one();
+    Json(json!({"ok": true})).into_response()
+}
+
+/// `GET /api/outputs`: stored outputs per cell, stale ones marked, and every
+/// code cell in order with its lines (the source pane's Run buttons).
+async fn api_outputs(State(app): State<Shared>) -> Response {
+    match app.store.read() {
+        Ok(d) => {
+            let mut r = Outputs::new(&app.store).report(&d);
+            let order: Vec<Value> = d
+                .blocks()
+                .filter(|b| b.kind == BlockKind::Cell)
+                .map(|b| {
+                    json!({"cell": b.id, "lines": d.lines(b.span),
+                    "runnable": matches!(cell_code(&d, b), Ok(Some(_)))})
+                })
+                .collect();
+            r["order"] = json!(order);
+            for rec in r["cells"]
+                .as_object_mut()
+                .into_iter()
+                .flat_map(|m| m.values_mut())
+            {
+                *rec = with_urls(rec.take());
+            }
+            Json(r).into_response()
+        }
+        Err(e) => err_response(e),
+    }
+}
+
+/// `GET /outputs/<file>`: a stored figure or full text.
+async fn output_file(
+    State(app): State<Shared>,
+    UrlPath(name): UrlPath<String>,
+    req: axum::extract::Request,
+) -> Response {
+    let Some(path) = Outputs::new(&app.store).file(&name) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    match tower_http::services::ServeFile::new(path)
+        .try_call(req)
+        .await
+    {
+        Ok(r) => r.into_response(),
+        Err(e) => err_response(e.into()),
+    }
+}
+
+/// `GET /api/env`: as `qd env`.
+async fn api_env(State(app): State<Shared>) -> Response {
+    let dir = app.dir();
+    blocking(move || crate::env::require(&dir).map(|e| e.report())).await
+}
+
+#[derive(serde::Deserialize)]
+struct EnvBody {
+    #[serde(default)]
+    packages: Vec<String>,
+}
+
+/// `POST /api/env/init` and `/api/env/add` (token): create the environment / add packages.
+async fn api_env_change(
+    State(app): State<Shared>,
+    UrlPath(action): UrlPath<String>,
+    headers: HeaderMap,
+    Json(body): Json<EnvBody>,
+) -> Response {
+    if !authorized(&app, &headers) {
+        return forbidden();
+    }
+    let dir = app.dir();
+    let res = blocking(move || match action.as_str() {
+        "init" => crate::env::init(&dir, crate::env::Tool::Uv).map(|e| e.report()),
+        "add" => crate::env::require(&dir).and_then(|e| e.add(&body.packages).map(|_| e.report())),
+        _ => Err(QdError::NotFound(action)),
+    })
+    .await;
+    // a session started before the change runs the old packages: start afresh next time
+    app.kernel.lock().unwrap().take();
+    res
 }
 
 async fn events(
@@ -272,9 +607,17 @@ async fn render_loop(app: Shared) {
         tokio::time::sleep(Duration::from_millis(150)).await;
         let Ok(d) = app.store.read() else { continue };
         let _ = app.tx.send(Ev::Rendering);
-        let (path, out, copy) = (app.store.path.clone(), app.out.clone(), preview_copy(&d));
-        let res =
-            tokio::task::spawn_blocking(move || render(&path, &copy, "preview", &out, true)).await;
+        let outputs = Outputs::new(&app.store).report(&d);
+        let copy = preview_copy(&d, &outputs["cells"]);
+        let (path, out, a) = (app.store.path.clone(), app.out.clone(), app.clone());
+        let res = tokio::task::spawn_blocking(move || {
+            let closing = a.rendering.lock().unwrap();
+            if *closing {
+                return Err(QdError::NoServer);
+            }
+            render(&path, &copy, "preview", &out, true)
+        })
+        .await;
         let ev = match res {
             Ok(Ok(_)) => {
                 let mut st = app.st.lock().unwrap();
@@ -333,6 +676,8 @@ fn watch(app: Shared) -> Result<notify::RecommendedWatcher> {
 pub struct Session {
     pub url: String,
     pub port: u16,
+    /// The link to open: `url` plus the run token in its fragment.
+    pub editor: String,
 }
 
 /// Bind, then call `on_ready` (to print the URL) and serve until Ctrl-C.
@@ -344,7 +689,12 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
     rt.block_on(async move {
         let d: Deck = store.read()?;
         let out = store.cache_dir().join("preview");
-        let stem = store.path.file_stem().unwrap_or_default().to_string_lossy().into_owned();
+        let stem = store
+            .path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
         let deck_dir = store.path.parent().unwrap().to_path_buf();
         let (tx, _) = broadcast::channel(64);
         let session_file = store.cache_dir().join("session.json");
@@ -352,8 +702,16 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             html: format!("/preview/{stem}.qd-preview.html"),
             out: out.clone(),
             tx,
-            st: Mutex::new(St { version: d.version.clone(), ..Default::default() }),
+            st: Mutex::new(St {
+                version: d.version.clone(),
+                ..Default::default()
+            }),
             kick: Notify::new(),
+            token: token()?,
+            kernel: Mutex::new(None),
+            runs: AtomicU64::new(0),
+            stop: Notify::new(),
+            rendering: Mutex::new(false),
             store,
         });
         let router = Router::new()
@@ -363,33 +721,77 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             .route("/ui/{name}", get(ui_module))
             .route("/present/", get(present))
             .route("/api/deck", get(api_deck))
+            .route("/api/source", get(api_source))
             .route("/api/slide/{r}", get(api_slide))
             .route("/api/op", post(api_op))
+            .route("/api/run", post(api_run))
+            .route("/api/run/interrupt", post(api_interrupt))
+            .route("/api/run/restart", post(api_restart))
+            .route("/api/shutdown", post(api_shutdown))
+            .route("/api/outputs", get(api_outputs))
+            .route("/outputs/{name}", get(output_file))
+            .route("/api/env", get(api_env))
+            .route("/api/env/{action}", post(api_env_change))
             .route("/events", get(events))
-            .nest_service("/preview", ServeDir::new(&out).fallback(ServeDir::new(&deck_dir)))
+            .nest_service(
+                "/preview",
+                ServeDir::new(&out).fallback(ServeDir::new(&deck_dir)),
+            )
+            .layer(axum::middleware::from_fn(local_only))
             .with_state(app.clone());
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
         let port = listener.local_addr()?.port();
-        let session = Session { url: format!("http://127.0.0.1:{port}/"), port };
+        let session = Session {
+            url: format!("http://127.0.0.1:{port}/"),
+            port,
+            editor: format!("http://127.0.0.1:{port}/#t={}", app.token),
+        };
         std::fs::create_dir_all(app.store.cache_dir())?;
-        let info = json!({"deck_path": app.store.path, "url": session.url, "port": port, "pid": std::process::id()});
-        std::fs::write(&session_file, info.to_string())?;
+        let info = json!({"deck_path": app.store.path, "url": session.url, "port": port,
+            "pid": std::process::id(), "token": app.token});
+        // user-only: the token lets the CLI run code through this server
+        let mut f = std::fs::OpenOptions::new();
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut f, 0o600);
+        let _ = std::fs::remove_file(&session_file);
+        std::io::Write::write_all(
+            &mut f.write(true).create_new(true).open(&session_file)?,
+            info.to_string().as_bytes(),
+        )?;
         let _watcher = watch(app.clone())?;
         tokio::spawn(render_loop(app.clone()));
         app.kick.notify_one();
         on_ready(&session);
-        let res = axum::serve(listener, router)
-            .with_graceful_shutdown(async {
-                let _ = tokio::signal::ctrl_c().await;
-            })
-            .await;
+        let stopping = Arc::new(Notify::new());
+        let server = axum::serve(listener, router).with_graceful_shutdown({
+            let (app, stopping) = (app.clone(), stopping.clone());
+            async move {
+                tokio::select! {
+                    _ = tokio::signal::ctrl_c() => {}
+                    _ = app.stop.notified() => {}
+                }
+                stopping.notify_one();
+            }
+        });
+        // an open editor's event stream never ends by itself: don't wait on it
+        let grace = async {
+            stopping.notified().await;
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        };
+        let res = tokio::select! {
+            r = server => r,
+            _ = grace => Ok(()),
+        };
+        *app.rendering.lock().unwrap_or_else(|e| e.into_inner()) = true; // waits for a render in progress
+        app.kernel.lock().unwrap().take(); // shuts the kernel down
         let _ = std::fs::remove_file(&session_file);
         res.map_err(QdError::Io)
     })
 }
 
-/// URL of the running server for this deck, if it is still answering.
-pub fn running_url(store: &Store) -> Result<String> {
+/// The session file of the running server for this deck (`url`, `port`,
+/// `pid`, `token`), if it is still answering.
+pub fn running(store: &Store) -> Result<Value> {
     let text = std::fs::read_to_string(store.cache_dir().join("session.json"))
         .map_err(|_| QdError::NoServer)?;
     let v: Value = serde_json::from_str(&text).map_err(|_| QdError::NoServer)?;
@@ -397,13 +799,5 @@ pub fn running_url(store: &Store) -> Result<String> {
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
     std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(300))
         .map_err(|_| QdError::NoServer)?;
-    Ok(v["url"].as_str().ok_or(QdError::NoServer)?.to_string())
-}
-
-/// pid of the running server for this deck.
-pub fn running_pid(store: &Store) -> Result<u32> {
-    running_url(store)?;
-    let text = std::fs::read_to_string(store.cache_dir().join("session.json"))?;
-    let v: Value = serde_json::from_str(&text).map_err(|_| QdError::NoServer)?;
-    v["pid"].as_u64().map(|p| p as u32).ok_or(QdError::NoServer)
+    Ok(v)
 }

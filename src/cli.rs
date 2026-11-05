@@ -8,6 +8,7 @@ use clap::{Args, CommandFactory, Parser, Subcommand};
 use serde_json::{Value, json};
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 pub const SKILL: &str = include_str!("../skills/quartz-deck/SKILL.md");
 
@@ -152,12 +153,34 @@ enum Cmd {
         #[arg(long)]
         detach: bool,
     },
+    /// The deck's reproducible Python environment (uv, or pixi with PyPI packages)
+    Env {
+        #[command(subcommand)]
+        action: Option<EnvCmd>,
+    },
     /// Render the deck with Quarto (as `quarto render`) and report the output
     Render {
         /// Output format (default: the deck's own, usually revealjs)
         #[arg(long)]
         to: Option<String>,
     },
+    /// Run code cells: in the running `qd serve` session, else a fresh one-shot session
+    Run {
+        /// Cell refs (`<slide>/<i>`, `#id`)
+        #[arg(required_unless_present = "all")]
+        cells: Vec<String>,
+        /// Every cell in order, stopping at the first error
+        #[arg(long, conflicts_with = "cells")]
+        all: bool,
+        /// Restart and run from the top (through the last given cell)
+        #[arg(long)]
+        fresh: bool,
+        /// Interrupt a cell after this many seconds
+        #[arg(long)]
+        timeout: Option<u64>,
+    },
+    /// Stored outputs of code cells (all, or the given ones), with `stale`
+    Outputs { cells: Vec<String> },
     /// URL of the running preview (optionally opening on a slide)
     Url { slide: Option<String> },
     /// Stop the running preview server for this deck
@@ -246,6 +269,21 @@ enum Cmd {
         #[command(subcommand)]
         action: BoxCmd,
     },
+    /// Replace the one occurrence of some text in the deck (refused if missing or repeated)
+    Replace {
+        /// Text to replace (`-` reads stdin)
+        #[arg(long, allow_hyphen_values = true, required_unless_present = "old_file")]
+        old: Option<String>,
+        /// Read the text to replace from a file
+        #[arg(long, conflicts_with = "old")]
+        old_file: Option<PathBuf>,
+        /// Replacement text (`-` reads stdin)
+        #[arg(long, allow_hyphen_values = true, required_unless_present = "new_file")]
+        new: Option<String>,
+        /// Read the replacement from a file
+        #[arg(long, conflicts_with = "new")]
+        new_file: Option<PathBuf>,
+    },
     /// Single elements of a slide: add, move, remove, duplicate (ref: <slide>/<index> or #id)
     Block {
         #[command(subcommand)]
@@ -272,6 +310,22 @@ struct BoxSource {
     /// Image path or URL for an image box
     #[arg(long)]
     image: Option<String>,
+}
+
+#[derive(Subcommand)]
+enum EnvCmd {
+    /// Create the environment (manifest + lockfile) with the base Jupyter packages
+    Init {
+        #[arg(long, value_enum, default_value = "uv")]
+        tool: crate::env::Tool,
+    },
+    /// Add Python packages from PyPI and relock
+    Add {
+        #[arg(required = true)]
+        packages: Vec<String>,
+    },
+    /// Install exactly the locked versions (e.g. on another machine)
+    Sync,
 }
 
 #[derive(Subcommand)]
@@ -415,6 +469,13 @@ fn output_of(cmd: &str) -> &'static str {
         "browser" => r#"{"path","source":"env|installed|download","version"} or {"ok","removed"}"#,
         "render" => r#"{"ok","output":"<absolute path>","format","log"}"#,
         "stop" => r#"{"ok","pid"}"#,
+        "run" => {
+            r#"{"ok","op":"run","version","mode":"live|fresh","status":"done|error|stopped","runs":[{"cell","counter","status":"done|error|stopped","outputs":[{"kind":"text","text"}|{"kind":"html","html"}|{"kind":"image","mime","path"}|{"kind":"error","ename","evalue","traceback"}]}]} (ok false: E_RUN on stderr, exit 1)"#
+        }
+        "outputs" => r#"{"outputs":[{"cell","counter","status","stale","outputs":[...as run]}]}"#,
+        "env" => {
+            r#"{"tool","root","manifest","lockfile","lock_current"} (+ "ok","log" for init/add/sync)"#
+        }
         "schema" => r#"{"commands":[...],"errors":[...]}"#,
         "skill" => r#"{"skill":"<markdown>"} or {"ok","path"} with --install"#,
         "undo" | "redo" => r#"{"ok","op","undone|redone","version"}"#,
@@ -476,13 +537,97 @@ fn schema() -> Value {
         "E_NO_BROWSER",
         "E_DOWNLOAD",
         "E_OFFLINE",
-        "E_OFFLINE_INCOMPATIBLE"
+        "E_OFFLINE_INCOMPATIBLE",
+        "E_NO_ENV",
+        "E_ENV_TOOL",
+        "E_LOCK_STALE",
+        "E_ENV",
+        "E_NOT_CODE",
+        "E_ENGINE",
+        "E_RUN"
     ]);
     v["refs"] = json!({
         "slide": "explicit id | auto id | @N (1-based) | first | last",
         "element": "<slide>/<index> (0-based among the slide's blocks) | #id"
     });
     v
+}
+
+/// `qd run`: through the running server's live session (its outputs show in
+/// the editor), else a fresh one-shot session run from the top.
+fn run_cells(
+    s: &Store,
+    cells: &[String],
+    all: bool,
+    fresh: bool,
+    timeout: Option<u64>,
+) -> Result<Value> {
+    let d = s.read()?;
+    let mut r = if let Ok(session) = crate::server::running(s) {
+        crate::kernel::plan(&d, cells, all, fresh)?; // refs checked here, errors as CLI codes
+        let body =
+            json!({"cells": cells, "all": all, "fresh": fresh, "wait": true, "timeout": timeout});
+        let (status, text) = to_server(&session, "api/run", &body)?;
+        let mut v: Value = serde_json::from_str(&text).unwrap_or_default();
+        if status != 200 || !v["runs"].is_array() {
+            let error = match &v["error"] {
+                Value::Null => {
+                    json!({"code": "E_IO", "message": format!("qd serve answered {status}: {text}"),
+                    "hint": "restart `qd serve` (it may be from an older qd)"})
+                }
+                e => e.clone(),
+            };
+            v = json!({"status": "failed", "error": error, "runs": []});
+        }
+        v["mode"] = json!("live");
+        v
+    } else {
+        let plan = crate::kernel::plan(&d, cells, all, true)?;
+        let out = crate::outputs::Outputs::new(s);
+        let mut runs = vec![];
+        let res = if plan.is_empty() {
+            Ok("done") // nothing to run needs no environment
+        } else {
+            let dir = s.path.parent().unwrap_or(Path::new("."));
+            let k = crate::kernel::Session::start(&crate::env::require(dir)?, dir)?;
+            let t = timeout.map(std::time::Duration::from_secs);
+            crate::kernel::run_plan(&k, &out, plan, t, |cell, rec| {
+                runs.extend(rec.map(|rec| out.entry(cell, rec)));
+            })
+        };
+        // a kernel failure mid-run still reports the cells that finished
+        match res {
+            Ok(status) => json!({"mode": "fresh", "status": status, "runs": runs}),
+            Err(e) => {
+                json!({"mode": "fresh", "status": "failed", "error": e.to_json()["error"], "runs": runs})
+            }
+        }
+    };
+    r["ok"] = json!(r["status"] == "done");
+    r["op"] = json!("run");
+    r["version"] = json!(d.version); // runs never change the file: ready for an --expect
+    Ok(r)
+}
+
+/// POST `body` to the running server (its session file) with the run token:
+/// to the port that answered, never a redirect, so the token goes nowhere else.
+fn to_server(session: &Value, path: &str, body: &Value) -> Result<(u16, String)> {
+    let agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .max_redirects(0)
+        .build()
+        .new_agent();
+    let mut res = agent
+        .post(format!("http://127.0.0.1:{}/{path}", session["port"]))
+        .header("X-QD-Token", session["token"].as_str().unwrap_or_default())
+        .header("Content-Type", "application/json")
+        .send(body.to_string())
+        .map_err(std::io::Error::other)?;
+    let text = res
+        .body_mut()
+        .read_to_string()
+        .map_err(std::io::Error::other)?;
+    Ok((res.status().as_u16(), text))
 }
 
 fn find_deck(arg: &Option<PathBuf>) -> Result<PathBuf> {
@@ -546,7 +691,22 @@ fn attrs_json(a: Option<&crate::attrs::Attrs>) -> Value {
 fn block_json(d: &Deck, b: &Block) -> Value {
     let text = d.slice(b.span);
     let mut v = json!({"id": b.id, "explicit": b.id_explicit, "kind": b.kind, "text": text,
-        "hash": crate::deck::version_of(text.as_bytes()), "attrs": attrs_json(b.attrs.as_ref())});
+        "hash": crate::deck::version_of(text.as_bytes()), "lines": d.lines(b.span), "attrs": attrs_json(b.attrs.as_ref())});
+    if matches!(b.kind, BlockKind::Cell | BlockKind::Code) {
+        // ```{python} (kind "cell", executable) or ```python (kind "code", shown) → "python"
+        let info = text
+            .lines()
+            .next()
+            .and_then(crate::deck::code_open)
+            .map_or("", |(_, _, i)| i);
+        v["lang"] = json!(
+            info.trim()
+                .trim_start_matches('{')
+                .split(['}', ' ', ','])
+                .next()
+                .unwrap_or("")
+        );
+    }
     if b.kind == BlockKind::Box
         && let Some(a) = &b.attrs
     {
@@ -594,7 +754,7 @@ pub fn slides_json(d: &Deck) -> Value {
         .map(|s| {
             json!({
                 "id": s.id, "explicit": s.id_explicit, "index": s.index, "kind": s.kind, "title": s.title,
-                "summary": summary(d, s), "blocks": s.blocks.len(),
+                "summary": summary(d, s), "blocks": s.blocks.len(), "lines": d.lines(s.span),
                 "boxes": s.blocks.iter().filter(|b| b.kind == BlockKind::Box).count(), "opaque": s.opaque,
                 "anchor": crate::render::preview_id(s),
                 "hidden": s.attrs.as_ref().and_then(|a| a.get("visibility")) == Some("hidden"),
@@ -608,6 +768,7 @@ pub fn slides_json(d: &Deck) -> Value {
 pub fn show_json(d: &Deck, s: &Slide) -> Value {
     json!({"version": d.version, "slide": {
         "id": s.id, "explicit": s.id_explicit, "index": s.index, "kind": s.kind, "level": s.level, "title": s.title,
+        "lines": d.lines(s.span),
         "title_hash": s.title.as_ref().map(|t| crate::deck::version_of(t.as_bytes())),
         "attrs": attrs_json(s.attrs.as_ref()), "opaque": s.opaque, "source": d.slice(s.span),
         "blocks": s.blocks.iter().map(|b| block_json(d, b)).collect::<Vec<_>>(),
@@ -722,6 +883,7 @@ const API_OPS: &[&str] = &[
     "box move",
     "box resize",
     "box rm",
+    "replace",
     "block add",
     "block move",
     "block rm",
@@ -822,7 +984,13 @@ pub fn run_op(store: &Store, op: &str, args: &Value, expect: Option<&str>) -> Re
             "the API does not take file paths ('html'/'out')".into(),
         ));
     }
-    if obj.contains_key("file") || obj.get("md").is_some_and(|m| m == "-") {
+    let reads_input = ["file", "old-file", "new-file"]
+        .iter()
+        .any(|k| obj.contains_key(*k))
+        || ["md", "old", "new"]
+            .iter()
+            .any(|k| obj.get(*k).is_some_and(|m| m == "-"));
+    if reads_input {
         return Err(QdError::InvalidArg(
             "the API takes markdown inline via 'md' only".into(),
         ));
@@ -985,6 +1153,50 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             Ok(v)
         }
         Cmd::Serve { port, open, detach } => serve(&ctx.store()?, *port, *open, *detach),
+        Cmd::Env { action } => {
+            let s = ctx.store()?;
+            let dir = s.path.parent().unwrap_or(Path::new("."));
+            let env = match action {
+                Some(EnvCmd::Init { tool }) => crate::env::init(dir, *tool)?,
+                _ => crate::env::require(dir)?,
+            };
+            let log = match action {
+                None => return Ok(env.report()),
+                Some(EnvCmd::Init { .. }) => String::new(),
+                Some(EnvCmd::Add { packages }) => env.add(packages)?,
+                Some(EnvCmd::Sync) => env.sync()?,
+            };
+            let mut r = env.report();
+            r["ok"] = json!(true);
+            r["log"] = json!(log);
+            Ok(r)
+        }
+        Cmd::Run {
+            cells,
+            all,
+            fresh,
+            timeout,
+        } => run_cells(&ctx.store()?, cells, *all, *fresh, *timeout),
+        Cmd::Outputs { cells } => {
+            let (s, d) = read()?;
+            let out = crate::outputs::Outputs::new(&s);
+            let ids: Vec<String> = cells
+                .iter()
+                .map(|r| d.element(r).map(|(_, b)| b.id.clone()))
+                .collect::<Result<_>>()?;
+            let stored = out.report(&d);
+            let list: Vec<Value> = d
+                .blocks()
+                .filter(|b| ids.is_empty() || ids.contains(&b.id))
+                .filter_map(|b| {
+                    let rec = &stored["cells"][&b.id];
+                    let mut e = out.entry(&b.id, rec.as_object().map(|_| rec)?);
+                    e["stale"] = rec["stale"].clone();
+                    Some(e)
+                })
+                .collect();
+            Ok(json!({ "outputs": list }))
+        }
         Cmd::Render { to } => {
             let s = ctx.store()?;
             let (output, log) = crate::render::render_deck(&s.path, to.as_deref())?;
@@ -993,20 +1205,43 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
         }
         Cmd::Url { slide } => {
             let (s, d) = read()?;
-            let url = crate::server::running_url(&s)?;
+            let session = crate::server::running(&s)?;
+            let (Some(url), Some(token)) = (session["url"].as_str(), session["token"].as_str())
+            else {
+                return Err(QdError::NoServer);
+            };
+            // the editor link: the token rides in the fragment, which the editor keeps
             Ok(match slide {
                 Some(r) => {
-                    json!({"url": format!("{url}#/{}", crate::render::preview_id(d.slide(r)?))})
+                    let id = crate::render::preview_id(d.slide(r)?);
+                    json!({"url": format!("{url}#/{id}&t={token}")})
                 }
-                None => json!({"url": url}),
+                None => json!({"url": format!("{url}#t={token}")}),
             })
         }
         Cmd::Stop => {
-            let pid = crate::server::running_pid(&ctx.store()?)?;
-            std::process::Command::new("kill")
-                .arg(pid.to_string())
-                .status()?;
-            Ok(json!({"ok": true, "pid": pid}))
+            // asks the server itself (token-guarded): never signals a pid that may be reused
+            let store = ctx.store()?;
+            let session = crate::server::running(&store)?;
+            let (status, text) = to_server(&session, "api/shutdown", &json!({}))?;
+            if status != 200 {
+                return Err(QdError::Io(std::io::Error::other(format!(
+                    "qd serve refused to stop ({status}: {text}); one from an older qd stops with Ctrl-C"
+                ))));
+            }
+            // returns once it is gone (it removes its session file last, after any
+            // render), so a `qd serve` right after never overlaps it
+            let file = store.cache_dir().join("session.json");
+            let end = Instant::now() + Duration::from_secs(60);
+            while file.exists() {
+                if Instant::now() > end {
+                    return Err(QdError::Io(std::io::Error::other(
+                        "qd serve is still finishing a render; run `qd stop` again before `qd serve`",
+                    )));
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Ok(json!({"ok": true, "pid": session["pid"]}))
         }
         Cmd::Schema => Ok(schema()),
         Cmd::Skill { install: None } => Ok(json!({"skill": SKILL})),
@@ -1092,6 +1327,24 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             }
             BoxCmd::Rm { bx } => ctx.edit(|d| ops::box_rm(d, bx)),
         },
+        Cmd::Replace {
+            old,
+            old_file,
+            new,
+            new_file,
+        } => {
+            let old = read_input(&Input {
+                md: old.clone(),
+                file: old_file.clone(),
+            })?
+            .unwrap_or_default();
+            let new = read_input(&Input {
+                md: new.clone(),
+                file: new_file.clone(),
+            })?
+            .unwrap_or_default();
+            ctx.edit(|d| ops::replace(d, &old, &new))
+        }
         Cmd::Block { action } => match action {
             BlockCmd::Add { slide, at, input } => {
                 let md = required_input(input)?;
@@ -1181,12 +1434,12 @@ fn serve(store: &Store, port: u16, open: bool, detach: bool) -> Result<Value> {
     }
     crate::server::serve(Store::open(&store.path)?, port, |s| {
         use std::io::Write;
-        let line = json!({"url": s.url, "port": s.port, "pid": std::process::id()});
+        let line = json!({"url": s.editor, "port": s.port, "pid": std::process::id()});
         let mut out = std::io::stdout();
         let _ = writeln!(out, "{line}");
         let _ = out.flush();
         if open {
-            open_browser(&s.url);
+            open_browser(&s.editor);
         }
     })?;
     Ok(json!({"ok": true, "stopped": true}))
@@ -1257,6 +1510,22 @@ pub fn main() -> i32 {
             } else {
                 writeln!(out, "{v}")
             };
+            // a run that stopped at a cell: the result is on stdout, the error on stderr
+            if v["op"] == "run" && v["ok"] == false {
+                if !v["error"].is_null() {
+                    // the kernel or server failed (e.g. E_NO_ENV): its own error
+                    eprintln!("{}", json!({"error": v["error"]}));
+                    return 1;
+                }
+                let last = v["runs"].as_array().and_then(|r| r.last());
+                let e = QdError::Run(
+                    last.and_then(|c| c["cell"].as_str())
+                        .unwrap_or("a cell")
+                        .into(),
+                );
+                eprintln!("{}", e.to_json());
+                return e.exit_code();
+            }
             // a failed offline check: the report is on stdout, the error on stderr
             if (v["kind"] == "offline_check" || v["kind"] == "export") && v["ok"] == false {
                 let probs = if v["kind"] == "export" {

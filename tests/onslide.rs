@@ -11,21 +11,23 @@ use chromiumoxide::layout::Point;
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures_util::StreamExt;
 use serde_json::Value;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 mod common;
-use common::{have_quarto, qd};
+use common::{have, qd};
 
 const SRC: &str = "document.querySelector('#srcedit textarea')";
 /// Default wait: generous, since all browser tests (each with Quarto and Chrome) run in parallel.
 const WAIT: u64 = 20;
 
+const PANE: &str = "document.querySelector('#srcpane textarea')";
 const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/corpus");
 
 /// Chrome to use, or None (test skips) when Quarto or a browser is missing.
 fn chrome() -> Option<PathBuf> {
-    let quarto = have_quarto();
+    let quarto = have("quarto");
     let tmp = tempfile::tempdir().unwrap();
     let out = qd(tmp.path()).args(["browser"]).output().ok()?;
     let path = serde_json::from_slice::<Value>(&out.stdout).ok()?["path"]
@@ -38,11 +40,40 @@ fn chrome() -> Option<PathBuf> {
     path
 }
 
+/// The editor has loaded: preview ready, slide list drawn, session API up.
+const READY: &str = "(() => { const f = document.querySelector('#preview'); return !!(f && f.contentWindow?.Reveal?.isReady?.() && document.querySelector('#slides li') && window.qdSession); })()";
+
+/// Evaluate `js` in `page` (promises awaited); its JSON value.
+async fn eval(page: &Page, js: &str) -> Value {
+    let p = EvaluateParams::builder()
+        .expression(js)
+        .await_promise(true)
+        .return_by_value(true)
+        .build()
+        .unwrap();
+    let r = page
+        .evaluate_expression(p)
+        .await
+        .unwrap_or_else(|e| panic!("eval failed: {e}\n{js}"));
+    r.value().cloned().unwrap_or(Value::Null)
+}
+
 struct Ed {
     dir: tempfile::TempDir,
     page: Page,
     _browser: Browser,
     _profile: tempfile::TempDir,
+    _slot: tokio::sync::OwnedSemaphorePermit,
+}
+
+/// At most half the CPUs' worth of editors (Chrome + Quarto each) at once:
+/// on a 2-vCPU CI runner they otherwise starve each other past the waits.
+async fn slot() -> tokio::sync::OwnedSemaphorePermit {
+    static SLOTS: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
+        std::sync::OnceLock::new();
+    let n = std::thread::available_parallelism().map_or(1, |n| (n.get() / 2).max(1));
+    let s = SLOTS.get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(n)));
+    s.clone().acquire_owned().await.unwrap()
 }
 
 impl Drop for Ed {
@@ -54,6 +85,7 @@ impl Drop for Ed {
 impl Ed {
     async fn open(deck: &str) -> Option<Ed> {
         let chrome = chrome()?;
+        let slot = slot().await;
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("deck.qmd"), deck).unwrap();
         let out = qd(dir.path()).args(["serve", "--detach"]).output().unwrap();
@@ -76,8 +108,9 @@ impl Ed {
             page,
             _browser: browser,
             _profile: profile,
+            _slot: slot,
         };
-        ed.wait_secs("(() => { const f = document.querySelector('#preview'); return !!(f && f.contentWindow?.Reveal?.isReady?.() && document.querySelector('#slides li') && window.qdSession); })()", 60).await;
+        ed.wait_secs(READY, 60).await;
         Some(ed)
     }
 
@@ -85,28 +118,19 @@ impl Ed {
         std::fs::read_to_string(self.dir.path().join("deck.qmd")).unwrap()
     }
 
-    fn cli(&self, args: &[&str]) {
+    /// Run qd in the deck folder; it must succeed. Returns its JSON output.
+    fn cli(&self, args: &[&str]) -> Value {
         let out = qd(self.dir.path()).args(args).output().unwrap();
         assert!(
             out.status.success(),
             "qd {args:?}: {}",
             String::from_utf8_lossy(&out.stderr)
         );
+        serde_json::from_slice(&out.stdout).unwrap_or(Value::Null)
     }
 
     async fn eval(&self, js: &str) -> Value {
-        let p = EvaluateParams::builder()
-            .expression(js)
-            .await_promise(true)
-            .return_by_value(true)
-            .build()
-            .unwrap();
-        let r = self
-            .page
-            .evaluate_expression(p)
-            .await
-            .unwrap_or_else(|e| panic!("eval failed: {e}\n{js}"));
-        r.value().cloned().unwrap_or(Value::Null)
+        eval(&self.page, js).await
     }
 
     /// Wait (up to `WAIT` s) until the JS condition is true.
@@ -144,11 +168,11 @@ impl Ed {
 
     /// Show the slide with this preview anchor and wait for it.
     async fn go(&self, anchor: &str) {
-        self.eval(&format!(
-            "document.querySelector('#preview').contentWindow.location.hash = '#/{anchor}'"
+        // re-set the hash while waiting: a preview reload in between drops it
+        self.wait(&format!(
+            "(w => w.Reveal?.getCurrentSlide()?.id === '{anchor}' || (w.location.hash = '#/{anchor}', false))(document.querySelector('#preview').contentWindow)"
         ))
         .await;
-        self.wait(&format!("document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide()?.id === '{anchor}'")).await;
         tokio::time::sleep(Duration::from_millis(500)).await; // slide transition
     }
 
@@ -352,6 +376,27 @@ impl Ed {
     async fn click_menu(&self, label: &str) {
         self.wait(&format!("[...document.querySelectorAll('#ctxmenu li')].some((li) => li.firstChild?.textContent === {label:?} && li.offsetParent)")).await;
         self.click_js(&format!("(() => {{ const li = [...document.querySelectorAll('#ctxmenu li')].find((li) => li.firstChild?.textContent === {label:?} && li.offsetParent); li.dispatchEvent(new MouseEvent('mouseenter')); const r = li.getBoundingClientRect(); return [r.left + 20, r.top + r.height / 2]; }})()")).await;
+    }
+
+    async fn open_source(&self) {
+        self.click_editor("#toggle-source").await;
+        self.wait(&format!(
+            "{PANE}.value.length > 0 && !document.querySelector('#srcpane').hidden"
+        ))
+        .await;
+    }
+    /// Put the caret right after `after` in the source pane (or select `after` itself).
+    async fn pane_caret(&self, after: &str, select: bool) {
+        let len = after.chars().count();
+        let from = if select { 0 } else { len };
+        let js = format!(
+            "(() => {{ const t = {PANE}; const i = t.value.indexOf({after:?}); t.focus(); t.setSelectionRange(i + {from}, i + {len}); t.dispatchEvent(new KeyboardEvent('keyup')); return i >= 0; }})()"
+        );
+        assert_eq!(
+            self.eval(&js).await,
+            Value::Bool(true),
+            "{after:?} not in the pane"
+        );
     }
 }
 
@@ -926,8 +971,10 @@ async fn bars_set_properties_and_source_panel_is_hidden() {
         ed.wait_file(|f| f.contains(want), "fragment toggled").await;
     }
     assert_eq!(ed.file(), P2, "fragment removed, bytes as before");
-    // the Source button shows the panel
+    // the Source button shows the source pane; its Form button the old properties panel
     ed.click_editor("#toggle-source").await;
+    ed.wait("!document.querySelector('#srcpane').hidden").await;
+    ed.click_editor("#srcpane [data-act=form]").await;
     assert_eq!(
         ed.eval("getComputedStyle(document.querySelector('#panel')).display")
             .await,
@@ -1055,4 +1102,311 @@ async fn fragments_notes_and_keyboard_selection() {
     ed.key("Enter", "Enter", 13, 2).await;
     ed.wait_file(|f| f.contains("Say hello first."), "notes saved")
         .await;
+}
+
+// ---------- spec 004: source pane and sync (T008, T011) ----------
+
+#[tokio::test(flavor = "multi_thread")]
+async fn source_pane_saves_minimal_changes() {
+    let Some(ed) = Ed::open(DECK).await else {
+        return;
+    };
+    ed.open_source().await;
+    assert_eq!(
+        ed.eval(&format!("{PANE}.value")).await.as_str().unwrap(),
+        DECK
+    );
+    // a word in a paragraph and a value in the YAML, each saved after a pause
+    ed.pane_caret("two", true).await;
+    ed.type_text("2").await;
+    ed.wait_file(|f| f.contains("across 2 \"quoted\""), "paragraph saved")
+        .await;
+    ed.pane_caret("title: T", false).await;
+    ed.type_text("alk").await;
+    ed.wait_file(|f| f.contains("title: Talk\n"), "yaml saved")
+        .await;
+    assert_eq!(
+        ed.file(),
+        DECK.replace("across two", "across 2")
+            .replace("title: T\n", "title: Talk\n")
+    );
+    // undo restores the bytes, and the pane follows
+    ed.click_editor("#undo").await;
+    ed.wait_file(|f| f.contains("title: T\n"), "undone").await;
+    ed.wait(&format!("{PANE}.value.includes('title: T\\n')"))
+        .await;
+    // an agent's edit elsewhere merges into unsaved text without losing it
+    ed.pane_caret("- one", false).await;
+    ed.type_text(" (mine)").await;
+    ed.cli(&["title", "results", "Findings"]);
+    ed.wait_file(
+        |f| f.contains("- one (mine)") && f.contains("## Findings {#results}"),
+        "both kept",
+    )
+    .await;
+    ed.wait(&format!(
+        "{PANE}.value.includes('## Findings') && {PANE}.value.includes('- one (mine)')"
+    ))
+    .await;
+    // the same line changed by both: the conflict bar shows both versions
+    ed.settle().await;
+    ed.pane_caret("- two", false).await;
+    ed.type_text(" (pane)").await;
+    ed.cli(&["replace", "--old", "- two\n", "--new", "- two (agent)\n"]);
+    ed.wait("!document.querySelector('#conflict').hidden").await;
+    let bar = ed
+        .eval("document.querySelector('#conflict').textContent")
+        .await;
+    let bar = bar.as_str().unwrap();
+    assert!(bar.contains("(agent)") && bar.contains("(pane)"), "{bar}");
+    ed.click_editor("#conflict [data-act=mine]").await;
+    ed.wait_file(
+        |f| f.contains("- two (pane)\n") && !f.contains("(agent)"),
+        "mine applied",
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn source_and_slides_follow_each_other() {
+    let Some(ed) = Ed::open(DECK).await else {
+        return;
+    };
+    ed.open_source().await;
+    // caret in the Results slide's text shows that slide; focus stays in the pane
+    ed.pane_caret("Text.", false).await;
+    ed.wait("document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide().id === 'results'").await;
+    assert_eq!(
+        ed.eval(&format!("document.activeElement === {PANE}")).await,
+        true
+    );
+    // selecting an element on a slide highlights its lines in the pane
+    ed.go("methods").await;
+    let lines = ed.cli(&["show", "methods"])["slide"]["blocks"][1]["lines"].clone();
+    ed.select("[data-qd=\"methods/1\"]").await;
+    let want = format!("{}-{}", lines[0], lines[1]);
+    ed.wait(&format!(
+        "document.querySelector('#srcpane .band').dataset.lines === {want:?}"
+    ))
+    .await;
+    // full width hides the slides
+    ed.click_editor("#srcpane [data-act=full]").await;
+    assert_eq!(
+        ed.eval("getComputedStyle(document.querySelector('#stage')).display")
+            .await,
+        "none"
+    );
+}
+
+const RUN_DECK: &str = "---\ntitle: R\nformat: revealjs\n---\n\n## Print {#print}\n\n```{python}\nprint(6 * 7)\n```\n\n## Fails {#fails}\n\n```{python}\n1 / 0\n```\n\n## Slow {#slow}\n\n```{python}\nimport time\ntime.sleep(600)\n```\n";
+
+/// Spec 004 US3 (T027): Run from the source pane, outputs in its dock and on
+/// the slide, ⇧Enter, Stop; the deck file never changes. Needs uv too.
+#[tokio::test(flavor = "multi_thread")]
+async fn run_cells_in_the_editor() {
+    if !have("uv") {
+        return;
+    }
+    let Some(ed) = Ed::open(RUN_DECK).await else {
+        return;
+    };
+    ed.cli(&["env", "init"]);
+    ed.open_source().await;
+    let dock = "document.querySelector('#srcpane .outdock')";
+    ed.wait("document.querySelectorAll('#srcpane .gutter button').length === 3")
+        .await;
+
+    // the token came in the link's fragment: gone from the address bar and the page
+    assert_eq!(
+        ed.eval("!location.href.includes('t=') && !document.querySelector('meta[name=qd-token]') && !!sessionStorage.getItem('qd-token')").await,
+        true
+    );
+    ed.click_editor("#srcpane .gutter button[data-cell=\"print/0\"]")
+        .await;
+    ed.wait_secs(&format!("{dock}.textContent.includes('42')"), 120)
+        .await;
+    // and a reload in the same tab can still run code
+    ed.page.reload().await.unwrap();
+    ed.wait_secs(READY, 60).await;
+    if ed.eval("document.querySelector('#srcpane').hidden").await == true {
+        ed.open_source().await; // (the editor remembers an open pane across reloads)
+    }
+    ed.wait("document.querySelectorAll('#srcpane .gutter button').length === 3")
+        .await;
+    ed.click_editor("#srcpane .gutter button[data-cell=\"print/0\"]")
+        .await;
+    ed.wait_secs(
+        &format!("{dock}.querySelector('.head')?.textContent.includes('[2]')"),
+        60,
+    )
+    .await;
+    // the slide shows the stored output, rendered without running anything
+    ed.go("print").await;
+    ed.wait_secs(
+        "document.querySelector('#preview').contentDocument.querySelector('.qd-output')?.textContent.includes('42')",
+        60,
+    )
+    .await;
+
+    // ⇧Enter runs the cell under the caret (and types no newline)
+    ed.pane_caret("1 / 0", false).await;
+    ed.key("Enter", "Enter", 13, 8).await;
+    ed.wait_secs(
+        &format!("{dock}.querySelector('pre.error')?.textContent.includes('ZeroDivisionError')"),
+        60,
+    )
+    .await;
+    ed.wait("document.querySelector('#srcpane .gutter button[data-cell=\"fails/0\"]').classList.contains('err')")
+        .await;
+
+    // Stop interrupts a running cell
+    ed.pane_caret("time.sleep", false).await;
+    ed.key("Enter", "Enter", 13, 8).await;
+    ed.wait("document.querySelector('#srcpane .kernel').dataset.state === 'busy'")
+        .await;
+    ed.click_editor("#srcpane [data-act=stop]").await;
+    ed.wait_secs(
+        &format!("{dock}.textContent.includes('KeyboardInterrupt')"),
+        30,
+    )
+    .await;
+    assert_eq!(ed.file(), RUN_DECK, "running never changes the deck");
+}
+
+/// Spec 004 US5 (T032): outputs survive a restart of `qd serve` and show in
+/// the pane and on the slide without running anything; an edited cell's
+/// output is marked stale in both. Needs uv too.
+#[tokio::test(flavor = "multi_thread")]
+async fn outputs_persist_across_restarts_and_go_stale() {
+    if !have("uv") {
+        return;
+    }
+    let Some(ed) = Ed::open(RUN_DECK).await else {
+        return;
+    };
+    ed.cli(&["env", "init"]);
+    let run = ed.cli(&["run", "print/0"]);
+    assert_eq!(run["runs"][0]["outputs"][0]["text"], "42\n", "{run}");
+
+    // a new server (new port, new token), as when the deck is reopened
+    ed.cli(&["stop"]);
+    let info = ed.cli(&["serve", "--detach"]);
+    ed.page.goto(info["url"].as_str().unwrap()).await.unwrap();
+    ed.wait_secs(READY, 60).await;
+    ed.go("print").await;
+    let frame = "document.querySelector('#preview').contentDocument";
+    ed.wait_secs(
+        &format!("{frame}.querySelector('.qd-output')?.textContent.includes('42')"),
+        60,
+    )
+    .await;
+    if ed.eval("document.querySelector('#srcpane').hidden").await == true {
+        ed.open_source().await;
+    }
+    let print = "document.querySelector('#srcpane .gutter button[data-cell=\"print/0\"]')";
+    ed.wait(&format!("{print}?.textContent === '▶ 1'")).await;
+    ed.pane_caret("print(6", false).await;
+    let dock = "document.querySelector('#srcpane .outdock')";
+    ed.wait(&format!("{dock}.textContent.includes('42')")).await;
+    assert_eq!(
+        ed.eval("document.querySelector('#srcpane .kernel').dataset.state ?? 'none'")
+            .await,
+        "none",
+        "nothing ran: no kernel was started"
+    );
+
+    // an edit marks the stored output stale on the slide and in the pane
+    ed.cli(&["replace", "--old", "6 * 7", "--new", "6 * 8"]);
+    ed.wait_secs(
+        &format!("!!{frame}.querySelector('.qd-output.qd-stale')"),
+        60,
+    )
+    .await;
+    ed.wait(&format!("{print}.classList.contains('stale')"))
+        .await;
+    ed.pane_caret("print(6", false).await;
+    ed.wait(&format!("{dock}.classList.contains('stale')"))
+        .await;
+}
+
+/// Spec 004 SC-006 (T035): a page from another local origin, open in the same
+/// browser as the editor, tries every way a page can reach the editor's
+/// server — JSON fetch with a guessed token, no-cors posts, plain form posts —
+/// against the code-running and editing endpoints, and to read the page for
+/// the token. Nothing runs, nothing changes, the server stays up. Needs uv.
+#[tokio::test(flavor = "multi_thread")]
+async fn another_origin_cannot_run_code_or_edit() {
+    if !have("uv") {
+        return;
+    }
+    let Some(ed) = Ed::open(RUN_DECK).await else {
+        return;
+    };
+    ed.cli(&["env", "init"]);
+    let manifest = || std::fs::read(ed.dir.path().join("pyproject.toml")).unwrap();
+    let before = manifest();
+    let port = ed.eval("location.port").await;
+
+    // the hostile page: same machine, another port = another origin
+    let evil = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let evil_port = evil.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for s in evil.incoming() {
+            let mut s = s.unwrap();
+            let _ = s.read(&mut [0; 4096]);
+            let _ = s.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n<iframe name=\"sink\"></iframe>");
+        }
+    });
+    let attacker = ed
+        ._browser
+        .new_page(format!("http://127.0.0.1:{evil_port}/").as_str())
+        .await
+        .unwrap();
+    let attack = format!(
+        r#"(async () => {{
+const qd = 'http://127.0.0.1:{port}';
+const bodies = {{
+  '/api/run': JSON.stringify({{all: true}}),
+  '/api/env/init': '{{}}',
+  '/api/env/add': JSON.stringify({{packages: ['six']}}),
+  '/api/op': JSON.stringify({{op: 'replace', args: {{old: '6 * 7', new: '6 * 9'}}}}),
+  '/api/shutdown': '{{}}',
+}};
+for (const [path, body] of Object.entries(bodies)) {{
+  await fetch(qd + path, {{method: 'POST', headers: {{'Content-Type': 'application/json', 'X-QD-Token': 'guess'}}, body}}).catch(() => {{}});
+  await fetch(qd + path, {{method: 'POST', mode: 'no-cors', headers: {{'Content-Type': 'text/plain'}}, body}}).catch(() => {{}});
+  const f = Object.assign(document.createElement('form'), {{method: 'POST', action: qd + path, enctype: 'text/plain', target: 'sink'}});
+  f.append(Object.assign(document.createElement('input'), {{name: body, value: ''}}));
+  document.body.append(f);
+  f.submit();
+  await new Promise((r) => setTimeout(r, 300));
+}}
+// the editor page (and any token in it) must be unreadable from here
+return (await fetch(qd + '/').then((r) => r.text()).catch(() => null)) === null;
+}})()"#
+    );
+    assert_eq!(
+        eval(&attacker, &attack).await,
+        Value::Bool(true),
+        "the editor page is unreadable cross-origin"
+    );
+    tokio::time::sleep(Duration::from_secs(3)).await; // anything that got through would show by now
+
+    assert_eq!(ed.file(), RUN_DECK, "no edit landed");
+    assert_eq!(manifest(), before, "no package added");
+    assert_eq!(
+        ed.cli(&["outputs"])["outputs"],
+        serde_json::json!([]),
+        "nothing ran"
+    );
+    assert_eq!(
+        ed.eval("document.querySelector('#srcpane .kernel').dataset.state ?? 'none'")
+            .await,
+        "none",
+        "no kernel started"
+    );
+    assert!(
+        ed.cli(&["url"])["url"].is_string(),
+        "the server is still up"
+    );
 }

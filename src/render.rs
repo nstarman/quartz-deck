@@ -3,7 +3,8 @@
 
 use crate::deck::{BlockKind, Deck, Slide, SlideKind};
 use crate::error::{QdError, Result};
-use std::ffi::OsString;
+use serde_json::Value;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -21,11 +22,53 @@ fn find_quarto(explicit: Option<OsString>, path: Option<OsString>) -> Result<Pat
             Err(QdError::NoQuarto)
         };
     }
+    which("quarto", path).ok_or(QdError::NoQuarto)
+}
+
+/// `name` in the folders of `path` (a `$PATH` value).
+pub(crate) fn which(name: &str, path: Option<OsString>) -> Option<PathBuf> {
     path.iter()
         .flat_map(std::env::split_paths)
-        .map(|d| d.join("quarto"))
+        .map(|d| d.join(name))
         .find(|p| p.is_file())
-        .ok_or(QdError::NoQuarto)
+}
+
+/// A finished process's stdout then stderr, as text.
+pub(crate) fn log(out: &std::process::Output) -> String {
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    )
+}
+
+/// `quarto <args>` for a deck whose text is `text`, run in `dir`: inside the
+/// deck's environment when it has code cells and an environment exists (R3),
+/// using the environment's kernel unless the deck names one; else Quarto
+/// directly (code-free decks never need an environment; `""` = the run
+/// never executes code). The flag says which.
+fn quarto_cmd(dir: &Path, text: &str, args: &[&OsStr]) -> Result<(Command, bool)> {
+    let quarto = quarto()?;
+    let d = Deck::parse(text.to_string());
+    let cells = d.blocks().any(|b| b.kind == BlockKind::Cell);
+    let (mut cmd, wrapped) = match crate::env::find(dir).filter(|_| cells) {
+        Some(env) => (env.wrap(&quarto)?, true),
+        None => (Command::new(quarto), false),
+    };
+    cmd.args(args).current_dir(dir);
+    if wrapped && d.meta.get("jupyter").is_none() {
+        cmd.args(["-M", &format!("jupyter:{}", crate::env::KERNEL)]);
+    }
+    Ok((cmd, wrapped))
+}
+
+/// A failed Quarto run: `E_LOCK_STALE` if the environment refused a stale lock.
+fn failed(log: &str, wrapped: bool, name: &str) -> QdError {
+    if wrapped && crate::env::is_stale(log) {
+        QdError::LockStale(log.to_string())
+    } else {
+        QdError::Render(clean_log(log, name))
+    }
 }
 
 /// Id of a slide's `<section>` in the preview: its own id, or `qd-N` for
@@ -59,7 +102,7 @@ fn is_caption(t: &str) -> bool {
 
 /// Deck text with every slide-level block marked `data-qd="<slide>/<i>"`, and
 /// synthetic ids on rule/implicit slides. Never written back to the deck.
-pub fn preview_copy(d: &Deck) -> String {
+pub fn preview_copy(d: &Deck, outputs: &Value) -> String {
     let nl = d.nl;
     let mut out = d.slice(d.head).to_string();
     for s in &d.slides {
@@ -158,12 +201,62 @@ pub fn preview_copy(d: &Deck) -> String {
                 {
                     insert_attr(text, text.trim_end().len() - 1, &tag)
                 }
+                _ if b.kind == BlockKind::Cell => {
+                    let shown = output_html(&outputs[&b.id], nl);
+                    format!("::: {{data-qd=\"{tag}\"}}{nl}{text}{nl}{shown}:::")
+                }
                 _ => format!("::: {{data-qd=\"{tag}\"}}{nl}{text}{nl}:::"),
             };
         }
         out += &d.text[pos..s.span.end];
     }
     out
+}
+
+fn esc(t: &str) -> String {
+    t.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// A cell's stored outputs (`outputs::Outputs` record) as a raw HTML block for
+/// the preview, which never executes code (R7); stale ones dimmed.
+fn output_html(rec: &Value, nl: &str) -> String {
+    let Some(items) = rec["items"].as_array() else {
+        return String::new();
+    };
+    let pre = |class: &str, t: &str| format!("<pre class=\"{class}\">{}</pre>", esc(t));
+    let body: String = items
+        .iter()
+        .map(|o| match o["kind"].as_str() {
+            Some("html") => o["html"].as_str().unwrap_or_default().to_string(),
+            Some("image") => format!(
+                "<img src=\"/outputs/{}\" alt=\"cell output\">",
+                esc(o["file"].as_str().unwrap_or_default())
+            ),
+            Some("error") => {
+                let tb: Vec<&str> = o["traceback"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .collect();
+                pre("qd-out-error", &tb.join("\n"))
+            }
+            _ => pre("qd-out-text", o["text"].as_str().unwrap_or_default()),
+        })
+        .collect();
+    let stale = rec["stale"] == true;
+    format!(
+        "````{{=html}}{nl}<div class=\"cell-output qd-output{}\" data-counter=\"{}\"{}>{body}</div>{nl}````{nl}",
+        if stale { " qd-stale" } else { "" },
+        rec["counter"],
+        if stale {
+            " title=\"stale: the cell changed since this ran\" style=\"opacity:.45\""
+        } else {
+            ""
+        },
+    )
 }
 
 /// Render `text` as if it were the deck at `deck_path` into `out_dir`. The
@@ -180,32 +273,34 @@ pub fn render(
     out_dir: &Path,
     preview: bool,
 ) -> Result<PathBuf> {
-    let quarto = quarto()?;
     let dir = deck_path.parent().unwrap_or(Path::new("."));
     let stem = deck_path.file_stem().unwrap_or_default().to_string_lossy();
     let name = format!("{stem}.qd-{tag}");
     let copy = dir.join(format!("{name}.qmd"));
+    let mut args: Vec<&OsStr> = vec![
+        "render".as_ref(),
+        copy.as_os_str(),
+        "--to".as_ref(),
+        "revealjs".as_ref(),
+        "--output-dir".as_ref(),
+        out_dir.as_os_str(),
+    ];
+    if preview {
+        // stored outputs are in the copy; the preview never runs code (R7)
+        args.extend(["-M", "embed-resources:false", "--no-execute"].map(OsStr::new));
+    }
+    let (mut quarto, wrapped) = quarto_cmd(dir, if preview { "" } else { text }, &args)?;
     std::fs::create_dir_all(out_dir)?;
     std::fs::write(&copy, text)?;
-    let out = Command::new(quarto)
-        .arg("render")
-        .arg(&copy)
-        .args(["--to", "revealjs", "--output-dir"])
-        .arg(out_dir)
-        .args(if preview {
-            &["-M", "embed-resources:false"][..]
-        } else {
-            &[]
-        })
-        .current_dir(dir)
-        .output();
+    let out = quarto.output();
     let _ = std::fs::remove_file(&copy);
     let out = out?;
     if !out.status.success() {
-        return Err(QdError::Render(clean_log(
+        return Err(failed(
             &String::from_utf8_lossy(&out.stderr),
+            wrapped,
             &name,
-        )));
+        ));
     }
     Ok(out_dir.join(format!("{name}.html")))
 }
@@ -215,7 +310,6 @@ pub fn render(
 /// `output-dir`, `embed-resources` etc. apply. Returns the output path (from
 /// Quarto's "Output created:" line) and a cleaned log.
 pub fn render_deck(deck_path: &Path, to: Option<&str>) -> Result<(PathBuf, String)> {
-    let quarto = quarto()?;
     if let Some(f) = to
         && (f.is_empty()
             || f.starts_with('-')
@@ -228,21 +322,16 @@ pub fn render_deck(deck_path: &Path, to: Option<&str>) -> Result<(PathBuf, Strin
         )));
     }
     let dir = deck_path.parent().unwrap_or(Path::new("."));
-    let mut cmd = Command::new(quarto);
-    cmd.arg("render")
-        .arg(deck_path.file_name().unwrap())
-        .current_dir(dir);
+    let mut args = vec!["render".as_ref(), deck_path.file_name().unwrap()];
     if let Some(f) = to {
-        cmd.args(["--to", f]);
+        args.extend(["--to", f].map(OsStr::new));
     }
+    let text = std::fs::read_to_string(deck_path)?;
+    let (mut cmd, wrapped) = quarto_cmd(dir, &text, &args)?;
     let out = cmd.output()?;
-    let log = format!(
-        "{}{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
+    let log = log(&out);
     if !out.status.success() {
-        return Err(QdError::Render(clean_log(&log, "\u{0}")));
+        return Err(failed(&log, wrapped, "\u{0}"));
     }
     let created = log
         .lines()
@@ -287,7 +376,7 @@ mod tests {
     #[test]
     fn preview_copy_marks_blocks() {
         let d = Deck::parse(BASIC.to_string());
-        let c = preview_copy(&d);
+        let c = preview_copy(&d, &Value::Null);
         assert!(
             c.contains("## Intro\n\n::: {data-qd=\"intro/0\"}\nHello world.\n:::\n"),
             "{c}"
@@ -326,7 +415,7 @@ mod tests {
         let d = Deck::parse(
             "Pre.\n\n## T\n\n::: notes\nn\n:::\n\n::: aside\na\n:::\n\n. . .\n\n| a |\n|---|\n\n: Cap\n\n<!-- c -->\n\n![](x.png){.r}\n".into(),
         );
-        let c = preview_copy(&d);
+        let c = preview_copy(&d, &Value::Null);
         assert!(
             c.starts_with("## {#qd-1}\n\n```{=html}\n<style>#qd-1"),
             "{c}"
@@ -349,7 +438,7 @@ mod tests {
     #[test]
     fn preview_marks_headings_in_place_and_skips_opaque() {
         let d = Deck::parse("---\nslide-level: 3\n---\n\n### S\n\n#### Sub\n\n#### Sub2 {.c}\n\n## T\n\n```\nnever closed\n".into());
-        let c = preview_copy(&d);
+        let c = preview_copy(&d, &Value::Null);
         assert!(c.contains("#### Sub {data-qd=\"s/0\"}\n"), "{c}");
         assert!(c.contains("#### Sub2 {.c data-qd=\"s/1\"}\n"), "{c}");
         assert!(
@@ -362,7 +451,7 @@ mod tests {
     fn crlf_preview_copy() {
         let d = Deck::parse("## A\r\n\r\ntext\r\n".into());
         assert_eq!(
-            preview_copy(&d),
+            preview_copy(&d, &Value::Null),
             "## A\r\n\r\n::: {data-qd=\"a/0\"}\r\ntext\r\n:::\r\n"
         );
     }
@@ -407,7 +496,7 @@ mod tests {
         let d = Deck::parse(
             "## Draft {#draft visibility=\"hidden\"}\n\nx\n\n## B {visibility=hidden .c}\n".into(),
         );
-        let c = preview_copy(&d);
+        let c = preview_copy(&d, &Value::Null);
         assert!(
             c.contains("## Draft {#draft data-qd-hidden=\"true\"}"),
             "{c}"
@@ -443,7 +532,14 @@ mod tests {
         std::fs::write(&deck, BASIC).unwrap();
         let d = Deck::parse(BASIC.to_string());
         let out = p.join("cache");
-        let html = render(&deck, &preview_copy(&d), "preview", &out, true).unwrap();
+        let html = render(
+            &deck,
+            &preview_copy(&d, &Value::Null),
+            "preview",
+            &out,
+            true,
+        )
+        .unwrap();
         let h = std::fs::read_to_string(&html).unwrap();
         assert!(
             h.contains("from-project"),
@@ -519,7 +615,7 @@ mod tests {
         let d = Deck::parse(BASIC.to_string());
         let html = render(
             &deck,
-            &preview_copy(&d),
+            &preview_copy(&d, &Value::Null),
             "preview",
             &dir.path().join("out"),
             true,

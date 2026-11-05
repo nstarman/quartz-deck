@@ -1,4 +1,5 @@
 //! Helpers shared by the integration tests that run `qd` against Quarto.
+#![allow(dead_code)] // each test binary uses some of these
 
 use std::path::Path;
 use std::process::Command;
@@ -12,14 +13,14 @@ pub fn qd(dir: &Path) -> Command {
     c
 }
 
-/// Quarto is installed (tests that need it skip, with a message, when not).
-pub fn have_quarto() -> bool {
-    let ok = Command::new("quarto")
+/// `tool` (quarto, uv, pixi) is installed; tests that need it skip, with a message, when not.
+pub fn have(tool: &str) -> bool {
+    let ok = Command::new(tool)
         .arg("--version")
         .output()
         .is_ok_and(|o| o.status.success());
     if !ok {
-        eprintln!("quarto not found: skipping");
+        eprintln!("{tool} not found: skipping");
     }
     ok
 }
