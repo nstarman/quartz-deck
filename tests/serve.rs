@@ -935,24 +935,17 @@ fn settings_over_http() {
     assert!(err.contains("E_INVALID_SETTING"), "{err}");
 
     let mut ev = Events::open(p, "/events");
+    let mut next = |what: &str| -> Value {
+        serde_json::from_str(&ev.wait("settings", Duration::from_secs(5)).expect(what)).unwrap()
+    };
     let (status, ok) = post(p, "/api/settings", "127.0.0.1", &auth, body);
     assert_eq!(status, 200, "{ok}");
-    let e: Value = serde_json::from_str(
-        &ev.wait("settings", Duration::from_secs(5))
-            .expect("settings event"),
-    )
-    .unwrap();
-    assert_eq!(e["values"]["source.side"], "right");
+    assert_eq!(next("settings event")["values"]["source.side"], "right");
     assert_eq!(read()["values"]["source.side"], "right");
 
     // a change from the CLI reaches the open editor too
     assert!(qd_json(&dir, &["settings", "set", "theme", "dark"]).0);
-    let e: Value = serde_json::from_str(
-        &ev.wait("settings", Duration::from_secs(5))
-            .expect("event after the CLI"),
-    )
-    .unwrap();
-    assert_eq!(e["values"]["theme"], "dark");
+    assert_eq!(next("event after the CLI")["values"]["theme"], "dark");
 
     let (status, _) = post(p, "/api/settings", "127.0.0.1", &auth, r#"{"reset": true}"#);
     assert_eq!(status, 200);

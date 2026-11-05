@@ -20,8 +20,6 @@ struct Def {
     description: &'static str,
     kind: Kind,
     default: fn() -> Value,
-    /// Layout memory (`ui.*`): remembered, not shown in the window.
-    hidden: bool,
 }
 
 const fn def(
@@ -37,19 +35,12 @@ const fn def(
         description,
         kind,
         default,
-        hidden: false,
     }
 }
 
+/// Layout memory (`ui.*`): remembered, not shown in the window.
 const fn ui(key: &'static str, kind: Kind, default: fn() -> Value) -> Def {
-    Def {
-        key,
-        label: "",
-        description: "",
-        kind,
-        default,
-        hidden: true,
-    }
+    def(key, "", "", kind, default)
 }
 
 const DEFS: &[Def] = &[
@@ -204,7 +195,7 @@ fn save(path: &Path, m: &Map<String, Value>) -> Result<()> {
 /// The window's settings (not `ui.*`), for the editor and `qd settings`.
 pub fn defs() -> Value {
     DEFS.iter()
-        .filter(|d| !d.hidden)
+        .filter(|d| !d.key.starts_with("ui."))
         .map(|d| {
             let (kind, values) = match d.kind {
                 Kind::Choice(xs) => ("choice", json!(xs)),
@@ -228,7 +219,7 @@ mod tests {
 
     fn file() -> (tempfile::TempDir, PathBuf) {
         let d = tempfile::tempdir().unwrap();
-        let p = d.path().join("config/settings.json");
+        let p = d.path().join("settings.json");
         (d, p)
     }
 
@@ -246,7 +237,6 @@ mod tests {
     #[test]
     fn set_checks_every_value_and_keeps_unknown_keys() {
         let (_d, p) = file();
-        fs::create_dir_all(p.parent().unwrap()).unwrap();
         fs::write(&p, r#"{"future.thing": 7, "theme": "dark"}"#).unwrap();
         let m = |v: Value| v.as_object().unwrap().clone();
 
@@ -272,8 +262,9 @@ mod tests {
             (&v["source.side"], &v["theme"], &v["ui.source_width"]),
             (&json!("right"), &json!("dark"), &json!(420))
         );
-        let stored: Value = serde_json::from_str(&fs::read_to_string(&p).unwrap()).unwrap();
-        assert_eq!(stored["future.thing"], 7, "unknown keys survive a save");
+        let stored =
+            || -> Value { serde_json::from_str(&fs::read_to_string(&p).unwrap()).unwrap() };
+        assert_eq!(stored()["future.thing"], 7, "unknown keys survive a save");
         #[cfg(unix)]
         assert_eq!(
             std::os::unix::fs::PermissionsExt::mode(&fs::metadata(&p).unwrap().permissions())
@@ -286,9 +277,8 @@ mod tests {
             (&v["source.side"], &v["theme"]),
             (&json!("left"), &json!("system"))
         );
-        let stored: Value = serde_json::from_str(&fs::read_to_string(&p).unwrap()).unwrap();
         assert_eq!(
-            stored,
+            stored(),
             json!({"future.thing": 7}),
             "reset keeps unknown keys"
         );
@@ -297,7 +287,6 @@ mod tests {
     #[test]
     fn a_bad_value_or_file_reads_as_the_default_with_one_notice() {
         let (_d, p) = file();
-        fs::create_dir_all(p.parent().unwrap()).unwrap();
         fs::write(&p, r#"{"theme": "purple", "source.side": "right"}"#).unwrap();
         let (v, notices) = load(&p);
         assert_eq!(

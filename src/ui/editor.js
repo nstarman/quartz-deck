@@ -1308,8 +1308,8 @@ function layout(cls, key, on, btn, remember = true) {
   btn?.setAttribute('aria-pressed', String(on));
   if (remember && settings.get(key) !== on) settings.set({ [key]: on });
 }
-const setPanel = (on, remember) => layout('panel-open', 'ui.form_panel', on, null, remember);
-const setFull = (on, remember) => layout('source-full', 'ui.source_full', on, $('[data-act=full]', srcpane), remember);
+const setPanel = (on) => layout('panel-open', 'ui.form_panel', on);
+const setFull = (on) => layout('source-full', 'ui.source_full', on, $('[data-act=full]', srcpane));
 function setSource(open, remember) {
   layout('source-open', 'ui.source_was_open', open, toggleSource, remember);
   srcpane.hidden = !open;
@@ -1354,8 +1354,8 @@ settings.onChange((v) => {
 settings.ready((n) => say(n, true)).then(() => {
   const v = settings.get;
   if (v('ui.source_width')) setWidth(v('ui.source_width'), false);
-  setPanel(v('ui.form_panel'), false);
-  setFull(v('ui.source_full'), false);
+  setPanel(v('ui.form_panel'));
+  setFull(v('ui.source_full'));
   setSource(v('source.open') === 'open' || (v('source.open') === 'last' && v('ui.source_was_open')), false);
 });
 

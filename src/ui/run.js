@@ -27,7 +27,7 @@ let order = []; // [{cell, lines, runnable}]
 let outs = {}; // cell → stored record
 let focus = null; // cell shown in the dock
 const running = new Set();
-const el = (tag, props) => Object.assign(document.createElement(tag), props);
+export const el = (tag, props) => Object.assign(document.createElement(tag), props);
 const fmt = (e) => `${e.message} — ${e.hint}`;
 
 async function post(path, body = {}) {

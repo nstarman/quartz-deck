@@ -12,7 +12,8 @@ fn qd(dir: &Path) -> Command {
     let mut c = Command::new(assert_cmd::cargo::cargo_bin!("qd"));
     c.current_dir(dir)
         .env_remove("QD_DECK")
-        .env("QD_NO_DOWNLOAD", "1");
+        .env("QD_NO_DOWNLOAD", "1")
+        .env("QD_CONFIG_DIR", dir.join(".config"));
     c
 }
 
@@ -52,7 +53,6 @@ fn deck(name: &str) -> (tempfile::TempDir, PathBuf) {
 fn check(dir: &Path, extra: &[&str]) -> (i32, Value, Value) {
     let out = qd(dir)
         .env("QD_CACHE_DIR", dir.join(".cache"))
-        .env("QD_CONFIG_DIR", dir.join(".config"))
         .args(["check", "--offline"])
         .args(extra)
         .output()

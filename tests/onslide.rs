@@ -166,10 +166,10 @@ impl Ed {
         }
     }
 
-    /// Poll `qd focus` until `pred` holds (10 s).
-    async fn until_focus(&self, pred: impl Fn(&Value) -> bool, what: &str) {
+    /// Poll `qd <args>` until `pred` holds on its JSON (10 s).
+    async fn until_cli(&self, args: &[&str], pred: impl Fn(&Value) -> bool, what: &str) {
         let start = Instant::now();
-        while !pred(&self.cli(&["focus"])) {
+        while !pred(&self.cli(args)) {
             assert!(start.elapsed() < Duration::from_secs(10), "{what}");
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
@@ -1536,7 +1536,7 @@ async fn pointing_moves_or_offers() {
     ed.go("a").await;
     ed.open_source().await;
     // the server knows this tab once it has reported
-    ed.until_focus(|v| v["age"].is_number(), "tab never reported")
+    ed.until_cli(&["focus"], |v| v["age"].is_number(), "tab never reported")
         .await;
 
     let t = Instant::now();
@@ -1559,8 +1559,12 @@ async fn pointing_moves_or_offers() {
     ed.click_in_slide("[data-qd=\"a/0\"] p").await;
     ed.caret("[data-qd=\"a/0\"]", None).await;
     ed.type_text(" abc").await;
-    ed.until_focus(|v| v["editing"] == true, "editing never reported")
-        .await;
+    ed.until_cli(
+        &["focus"],
+        |v| v["editing"] == true,
+        "editing never reported",
+    )
+    .await;
     for _ in 0..20 {
         assert_eq!(ed.cli(&["focus", "--set", "b"])["result"], "deferred");
     }
@@ -1613,7 +1617,7 @@ async fn framed_editor_takes_theme_and_messages() {
         .await;
     ed.wait("document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide().id === 'b'")
         .await;
-    ed.until_focus(|v| v["line"] == 17, "focus never got the line")
+    ed.until_cli(&["focus"], |v| v["line"] == 17, "focus never got the line")
         .await;
     // an element chosen on a slide: its source lines go to VS Code
     // what the editor posts to its parent (here itself): reveal, focusText
@@ -1809,19 +1813,17 @@ async fn settings_apply_live_and_stick() {
 
     // layout memory: the source pane opened here is open in another deck, on a new server
     ed.open_source().await;
-    let start = Instant::now();
-    while ed.cli(&["settings"])["values"]["ui.source_was_open"] != true {
-        assert!(
-            start.elapsed() < Duration::from_secs(10),
-            "the open source pane was not remembered"
-        );
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+    ed.until_cli(
+        &["settings"],
+        |v| v["values"]["ui.source_was_open"] == true,
+        "the open source pane was not remembered",
+    )
+    .await;
     ed.cli(&["stop"]);
     let other = ed.dir.path().join("other");
     std::fs::create_dir(&other).unwrap();
-    std::fs::write(other.join("talk.qmd"), P2).unwrap();
     let deck = other.join("talk.qmd");
+    std::fs::write(&deck, P2).unwrap();
     let info = ed.cli(&["--deck", deck.to_str().unwrap(), "serve", "--detach"]);
     ed.page.goto(info["url"].as_str().unwrap()).await.unwrap();
     ed.wait_secs(READY, 60).await;
