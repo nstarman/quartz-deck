@@ -44,6 +44,14 @@ pub enum QdError {
     Offline(usize),
     #[error("cannot be exported as one offline file: {0}")]
     OfflineIncompatible(String),
+    #[error("no environment for this deck (looked from {0} up to the Quarto project root)")]
+    NoEnv(String),
+    #[error("{0} not found on PATH")]
+    EnvTool(&'static str),
+    #[error("the environment's lockfile is out of date with its manifest")]
+    LockStale(String),
+    #[error("the environment tool failed")]
+    Env(String),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -67,6 +75,10 @@ impl QdError {
             Self::Download(_) => "E_DOWNLOAD",
             Self::Offline(_) => "E_OFFLINE",
             Self::OfflineIncompatible(_) => "E_OFFLINE_INCOMPATIBLE",
+            Self::NoEnv(_) => "E_NO_ENV",
+            Self::EnvTool(_) => "E_ENV_TOOL",
+            Self::LockStale(_) => "E_LOCK_STALE",
+            Self::Env(_) => "E_ENV",
             Self::Io(_) => "E_IO",
         }
     }
@@ -108,6 +120,17 @@ impl QdError {
             Self::OfflineIncompatible(_) => {
                 "remove the feature from the deck (or render that deck as a folder instead)"
             }
+            Self::NoEnv(_) => "create one with `qd env init` (uv) or `qd env init --tool pixi`",
+            Self::EnvTool("pixi") => {
+                "install pixi: https://pixi.sh (curl -fsSL https://pixi.sh/install.sh | sh)"
+            }
+            Self::EnvTool(_) => {
+                "install uv: https://docs.astral.sh/uv/ (curl -LsSf https://astral.sh/uv/install.sh | sh)"
+            }
+            Self::LockStale(_) => {
+                "relock with `qd env sync` (or `qd env add <pkg>`); details hold the tool's output"
+            }
+            Self::Env(_) => "see details for the tool's output",
             Self::Io(_) => "check the path and permissions",
         }
     }
@@ -119,7 +142,7 @@ impl QdError {
     pub fn to_json(&self) -> Value {
         let mut e = json!({"code": self.code(), "message": self.to_string(), "hint": self.hint()});
         match self {
-            Self::Render(log) => e["details"] = json!(log),
+            Self::Render(log) | Self::LockStale(log) | Self::Env(log) => e["details"] = json!(log),
             Self::StaleElement {
                 current_source,
                 current_hash,

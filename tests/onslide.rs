@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 mod common;
-use common::{have_quarto, qd};
+use common::{have, qd};
 
 const SRC: &str = "document.querySelector('#srcedit textarea')";
 /// Default wait: generous, since all browser tests (each with Quarto and Chrome) run in parallel.
@@ -26,7 +26,7 @@ const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/corpus
 
 /// Chrome to use, or None (test skips) when Quarto or a browser is missing.
 fn chrome() -> Option<PathBuf> {
-    let quarto = have_quarto();
+    let quarto = have("quarto");
     let tmp = tempfile::tempdir().unwrap();
     let out = qd(tmp.path()).args(["browser"]).output().ok()?;
     let path = serde_json::from_slice::<Value>(&out.stdout).ok()?["path"]

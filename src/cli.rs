@@ -152,6 +152,11 @@ enum Cmd {
         #[arg(long)]
         detach: bool,
     },
+    /// The deck's reproducible Python environment (uv, or pixi with PyPI packages)
+    Env {
+        #[command(subcommand)]
+        action: Option<EnvCmd>,
+    },
     /// Render the deck with Quarto (as `quarto render`) and report the output
     Render {
         /// Output format (default: the deck's own, usually revealjs)
@@ -287,6 +292,22 @@ struct BoxSource {
     /// Image path or URL for an image box
     #[arg(long)]
     image: Option<String>,
+}
+
+#[derive(Subcommand)]
+enum EnvCmd {
+    /// Create the environment (manifest + lockfile) with the base Jupyter packages
+    Init {
+        #[arg(long, value_enum, default_value = "uv")]
+        tool: crate::env::Tool,
+    },
+    /// Add Python packages from PyPI and relock
+    Add {
+        #[arg(required = true)]
+        packages: Vec<String>,
+    },
+    /// Install exactly the locked versions (e.g. on another machine)
+    Sync,
 }
 
 #[derive(Subcommand)]
@@ -1023,6 +1044,24 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             Ok(v)
         }
         Cmd::Serve { port, open, detach } => serve(&ctx.store()?, *port, *open, *detach),
+        Cmd::Env { action } => {
+            let s = ctx.store()?;
+            let dir = s.path.parent().unwrap_or(Path::new("."));
+            let env = match action {
+                Some(EnvCmd::Init { tool }) => crate::env::init(dir, *tool)?,
+                _ => crate::env::require(dir)?,
+            };
+            let log = match action {
+                None => return Ok(env.report()),
+                Some(EnvCmd::Init { .. }) => String::new(),
+                Some(EnvCmd::Add { packages }) => env.add(packages)?,
+                Some(EnvCmd::Sync) => env.sync()?,
+            };
+            let mut r = env.report();
+            r["ok"] = json!(true);
+            r["log"] = json!(log);
+            Ok(r)
+        }
         Cmd::Render { to } => {
             let s = ctx.store()?;
             let (output, log) = crate::render::render_deck(&s.path, to.as_deref())?;
