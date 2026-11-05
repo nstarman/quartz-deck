@@ -11,6 +11,7 @@ use chromiumoxide::layout::Point;
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures_util::StreamExt;
 use serde_json::Value;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -41,6 +42,21 @@ fn chrome() -> Option<PathBuf> {
 
 /// The editor has loaded: preview ready, slide list drawn, session API up.
 const READY: &str = "(() => { const f = document.querySelector('#preview'); return !!(f && f.contentWindow?.Reveal?.isReady?.() && document.querySelector('#slides li') && window.qdSession); })()";
+
+/// Evaluate `js` in `page` (promises awaited); its JSON value.
+async fn eval(page: &Page, js: &str) -> Value {
+    let p = EvaluateParams::builder()
+        .expression(js)
+        .await_promise(true)
+        .return_by_value(true)
+        .build()
+        .unwrap();
+    let r = page
+        .evaluate_expression(p)
+        .await
+        .unwrap_or_else(|e| panic!("eval failed: {e}\n{js}"));
+    r.value().cloned().unwrap_or(Value::Null)
+}
 
 struct Ed {
     dir: tempfile::TempDir,
@@ -114,18 +130,7 @@ impl Ed {
     }
 
     async fn eval(&self, js: &str) -> Value {
-        let p = EvaluateParams::builder()
-            .expression(js)
-            .await_promise(true)
-            .return_by_value(true)
-            .build()
-            .unwrap();
-        let r = self
-            .page
-            .evaluate_expression(p)
-            .await
-            .unwrap_or_else(|e| panic!("eval failed: {e}\n{js}"));
-        r.value().cloned().unwrap_or(Value::Null)
+        eval(&self.page, js).await
     }
 
     /// Wait (up to `WAIT` s) until the JS condition is true.
@@ -1345,8 +1350,20 @@ async fn another_origin_cannot_run_code_or_edit() {
     // the hostile page: same machine, another port = another origin
     let evil = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let evil_port = evil.local_addr().unwrap().port();
-    let page = format!(
-        r#"<!doctype html><body><script>
+    std::thread::spawn(move || {
+        for s in evil.incoming() {
+            let mut s = s.unwrap();
+            let _ = s.read(&mut [0; 4096]);
+            let _ = s.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n<iframe name=\"sink\"></iframe>");
+        }
+    });
+    let attacker = ed
+        ._browser
+        .new_page(format!("http://127.0.0.1:{evil_port}/").as_str())
+        .await
+        .unwrap();
+    let attack = format!(
+        r#"(async () => {{
 const qd = 'http://127.0.0.1:{port}';
 const bodies = {{
   '/api/run': JSON.stringify({{all: true}}),
@@ -1355,62 +1372,24 @@ const bodies = {{
   '/api/op': JSON.stringify({{op: 'replace', args: {{old: '6 * 7', new: '6 * 9'}}}}),
   '/api/shutdown': '{{}}',
 }};
-(async () => {{
-  for (const [path, body] of Object.entries(bodies)) {{
-    await fetch(qd + path, {{method: 'POST', headers: {{'Content-Type': 'application/json', 'X-QD-Token': 'guess'}}, body}}).catch(() => {{}});
-    await fetch(qd + path, {{method: 'POST', mode: 'no-cors', headers: {{'Content-Type': 'text/plain'}}, body}}).catch(() => {{}});
-    const f = Object.assign(document.createElement('form'), {{method: 'POST', action: qd + path, enctype: 'text/plain', target: 'sink'}});
-    f.append(Object.assign(document.createElement('input'), {{name: body, value: ''}}));
-    document.body.append(f);
-    f.submit();
-    await new Promise((r) => setTimeout(r, 300));
-  }}
-  window.stolen = await fetch(qd + '/').then((r) => r.text()).catch(() => null);
-  window.done = true;
-}})();
-</script><iframe name="sink"></iframe></body>"#
+for (const [path, body] of Object.entries(bodies)) {{
+  await fetch(qd + path, {{method: 'POST', headers: {{'Content-Type': 'application/json', 'X-QD-Token': 'guess'}}, body}}).catch(() => {{}});
+  await fetch(qd + path, {{method: 'POST', mode: 'no-cors', headers: {{'Content-Type': 'text/plain'}}, body}}).catch(() => {{}});
+  const f = Object.assign(document.createElement('form'), {{method: 'POST', action: qd + path, enctype: 'text/plain', target: 'sink'}});
+  f.append(Object.assign(document.createElement('input'), {{name: body, value: ''}}));
+  document.body.append(f);
+  f.submit();
+  await new Promise((r) => setTimeout(r, 300));
+}}
+// the editor page (and any token in it) must be unreadable from here
+return (await fetch(qd + '/').then((r) => r.text()).catch(() => null)) === null;
+}})()"#
     );
-    std::thread::spawn(move || {
-        for s in evil.incoming() {
-            let mut s = s.unwrap();
-            let mut buf = [0; 4096];
-            let _ = std::io::Read::read(&mut s, &mut buf);
-            let _ = std::io::Write::write_all(
-                &mut s,
-                format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}",
-                    page.len()
-                )
-                .as_bytes(),
-            );
-        }
-    });
-    let attacker = ed
-        ._browser
-        .new_page(format!("http://127.0.0.1:{evil_port}/").as_str())
-        .await
-        .unwrap();
-    let start = Instant::now();
-    while attacker
-        .evaluate("window.done === true")
-        .await
-        .ok()
-        .and_then(|v| v.into_value::<bool>().ok())
-        != Some(true)
-    {
-        assert!(
-            start.elapsed() < Duration::from_secs(30),
-            "attack page never finished"
-        );
-        tokio::time::sleep(Duration::from_millis(200)).await;
-    }
-    let stolen: bool = attacker
-        .evaluate("window.stolen === null")
-        .await
-        .unwrap()
-        .into_value()
-        .unwrap();
-    assert!(stolen, "the editor page is unreadable cross-origin");
+    assert_eq!(
+        eval(&attacker, &attack).await,
+        Value::Bool(true),
+        "the editor page is unreadable cross-origin"
+    );
     tokio::time::sleep(Duration::from_secs(3)).await; // anything that got through would show by now
 
     assert_eq!(ed.file(), RUN_DECK, "no edit landed");
