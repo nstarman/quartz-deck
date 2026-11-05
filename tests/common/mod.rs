@@ -1,4 +1,5 @@
 //! Helpers shared by the integration tests that run `qd` against Quarto.
+#![allow(dead_code)] // each test binary uses some of these
 
 use std::path::Path;
 use std::process::Command;

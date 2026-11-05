@@ -6,6 +6,7 @@ pub mod deck;
 pub mod env;
 pub mod error;
 pub mod export;
+pub mod kernel;
 pub mod offline;
 pub mod ops;
 pub mod render;
