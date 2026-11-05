@@ -15,6 +15,18 @@ fn qd(dir: &Path, args: &[&str]) -> (bool, Value, Value) {
 }
 
 #[test]
+fn nothing_to_run_needs_no_environment() {
+    let d = tempfile::tempdir().unwrap();
+    let text = "---\ntitle: T\n---\n\n## R {#r}\n\n```{r}\n1 + 1\n```\n";
+    std::fs::write(d.path().join("deck.qmd"), text).unwrap();
+    let (ok, r, e) = qd(d.path(), &["run", "--all"]);
+    assert!(
+        ok && r["status"] == "done" && r["runs"] == serde_json::json!([]),
+        "{r} {e}"
+    );
+}
+
+#[test]
 fn agents_run_cells_from_the_cli() {
     if !have("uv") {
         return;
@@ -27,8 +39,9 @@ fn agents_run_cells_from_the_cli() {
     assert!(qd(dir, &["env", "add", "matplotlib"]).0);
     let before = std::fs::read(&deck).unwrap();
 
-    // no server: a fresh one-shot session runs from the top through the cell
-    let (ok, r, e) = qd(dir, &["run", "state/0"]);
+    // no server: a fresh one-shot session runs from the top through the
+    // furthest cell given (whatever order they are given in)
+    let (ok, r, e) = qd(dir, &["run", "state/0", "print/0"]);
     assert!(ok, "{r} {e}");
     assert_eq!(r["mode"], "fresh");
     let cells: Vec<&str> = r["runs"]

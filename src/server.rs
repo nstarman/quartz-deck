@@ -220,6 +220,20 @@ fn local_host(h: &str) -> bool {
     matches!(host, "127.0.0.1" | "localhost")
 }
 
+/// Every route answers only to a loopback Host: a DNS-rebound page on
+/// another site can read nothing (source, outputs, the editor's token).
+async fn local_only(req: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let host = req
+        .headers()
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok());
+    if host.is_some_and(local_host) {
+        next.run(req).await
+    } else {
+        forbidden()
+    }
+}
+
 /// Only pages served by this server may edit: the Host must be loopback
 /// (blocks DNS rebinding) and any Origin must be too. The `Json` extractor
 /// already refuses non-JSON bodies, which browsers cannot send cross-site
@@ -349,10 +363,7 @@ async fn api_run(
     let timeout = body.timeout.map(Duration::from_secs);
     let go = move || run_cells(&a, run, plan, body.fresh, timeout);
     if body.wait {
-        return blocking(move || {
-            go().map(|(status, runs)| json!({"run": run, "status": status, "runs": runs}))
-        })
-        .await;
+        return blocking(move || Ok(go())).await;
     }
     tokio::task::spawn_blocking(go);
     (StatusCode::ACCEPTED, Json(json!({"run": run}))).into_response()
@@ -374,18 +385,22 @@ fn kernel(app: &App) -> Result<Arc<Kernel>> {
 }
 
 /// Run `plan` (`kernel::run_plan`) in the live session, with events for the
-/// editor; the preview re-renders afterwards (R7). Returns the status and
-/// each cell's entry as `qd run` reports it.
+/// editor; the preview re-renders afterwards (R7). Returns `run_done`'s
+/// `{run, status, error?}` plus `runs`: each cell's entry as `qd run` reports it.
 fn run_cells(
     app: &App,
     run: u64,
     plan: Vec<crate::kernel::Planned>,
     fresh: bool,
     timeout: Option<Duration>,
-) -> Result<(&'static str, Vec<Value>)> {
+) -> Value {
     let outputs = Outputs::new(&app.store);
     let mut runs = vec![];
-    let res = kernel(app).and_then(|k| {
+    let go = || -> Result<&'static str> {
+        if plan.is_empty() {
+            return Ok("done"); // nothing to run needs no kernel (nor an environment)
+        }
+        let k = kernel(app)?;
         if fresh {
             app.state("starting");
             k.restart()?;
@@ -403,8 +418,8 @@ fn run_cells(
                 "status": rec["status"], "items": rec["items"]}),
             );
         })
-    });
-    let done = match &res {
+    };
+    let mut done = match go() {
         Ok(status) => json!({"run": run, "status": status}),
         Err(e) => {
             // the session is gone or never started: the next run starts a new one
@@ -413,9 +428,10 @@ fn run_cells(
             json!({"run": run, "status": "failed", "error": e.to_json()["error"]})
         }
     };
-    app.emit("run_done", done);
+    app.emit("run_done", done.clone());
     app.kick.notify_one();
-    res.map(|s| (s, runs))
+    done["runs"] = json!(runs);
+    done
 }
 
 /// `POST /api/run/interrupt`: stop the running cell (no-op when idle or starting).
@@ -695,6 +711,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
                 "/preview",
                 ServeDir::new(&out).fallback(ServeDir::new(&deck_dir)),
             )
+            .layer(axum::middleware::from_fn(local_only))
             .with_state(app.clone());
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
         let port = listener.local_addr()?.port();

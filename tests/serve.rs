@@ -337,6 +337,18 @@ fn api_op_over_http() {
         body,
     );
     assert_eq!(status, 403, "foreign Host must be refused (DNS rebinding)");
+    let mut s = TcpStream::connect(("127.0.0.1", server.port)).unwrap();
+    write!(
+        s,
+        "GET /api/source HTTP/1.1\r\nHost: evil.example\r\nConnection: close\r\n\r\n"
+    )
+    .unwrap();
+    let mut reply = String::new();
+    s.read_to_string(&mut reply).unwrap();
+    assert!(
+        reply.starts_with("HTTP/1.1 403"),
+        "reads refused too: {reply}"
+    );
     assert_eq!(
         std::fs::read_to_string(dir.join("deck.qmd")).unwrap(),
         BASIC

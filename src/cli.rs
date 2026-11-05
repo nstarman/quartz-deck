@@ -564,11 +564,13 @@ fn run_cells(
     let d = s.read()?;
     let mut r = if let Ok(session) = crate::server::running(s) {
         crate::kernel::plan(&d, cells, all, fresh)?; // refs checked here, errors as CLI codes
-        let url = format!("{}api/run", session["url"].as_str().unwrap_or_default());
+        // the port that answered, never a redirect: the token goes nowhere else
+        let url = format!("http://127.0.0.1:{}/api/run", session["port"]);
         let body =
             json!({"cells": cells, "all": all, "fresh": fresh, "wait": true, "timeout": timeout});
         let agent = ureq::Agent::config_builder()
             .http_status_as_error(false)
+            .max_redirects(0)
             .build()
             .new_agent();
         let mut res = agent
@@ -577,23 +579,45 @@ fn run_cells(
             .header("Content-Type", "application/json")
             .send(body.to_string())
             .map_err(std::io::Error::other)?;
-        let v: Value =
-            serde_json::from_reader(res.body_mut().as_reader()).map_err(std::io::Error::other)?;
-        if !res.status().is_success() {
-            return Err(QdError::Io(std::io::Error::other(format!("qd serve: {v}"))));
+        let status = res.status();
+        let text = res
+            .body_mut()
+            .read_to_string()
+            .map_err(std::io::Error::other)?;
+        let mut v: Value = serde_json::from_str(&text).unwrap_or_default();
+        if status != 200 || !v["runs"].is_array() {
+            let error = match &v["error"] {
+                Value::Null => {
+                    json!({"code": "E_IO", "message": format!("qd serve answered {status}: {text}"),
+                    "hint": "restart `qd serve` (it may be from an older qd)"})
+                }
+                e => e.clone(),
+            };
+            v = json!({"status": "failed", "error": error, "runs": []});
         }
-        json!({"mode": "live", "status": v["status"], "runs": v["runs"]})
+        v["mode"] = json!("live");
+        v
     } else {
         let plan = crate::kernel::plan(&d, cells, all, true)?;
-        let dir = s.path.parent().unwrap_or(Path::new("."));
-        let k = crate::kernel::Session::start(&crate::env::require(dir)?, dir)?;
         let out = crate::outputs::Outputs::new(s);
         let mut runs = vec![];
-        let t = timeout.map(std::time::Duration::from_secs);
-        let status = crate::kernel::run_plan(&k, &out, plan, t, |cell, rec| {
-            runs.extend(rec.map(|rec| out.entry(cell, rec)));
-        })?;
-        json!({"mode": "fresh", "status": status, "runs": runs})
+        let res = if plan.is_empty() {
+            Ok("done") // nothing to run needs no environment
+        } else {
+            let dir = s.path.parent().unwrap_or(Path::new("."));
+            let k = crate::kernel::Session::start(&crate::env::require(dir)?, dir)?;
+            let t = timeout.map(std::time::Duration::from_secs);
+            crate::kernel::run_plan(&k, &out, plan, t, |cell, rec| {
+                runs.extend(rec.map(|rec| out.entry(cell, rec)));
+            })
+        };
+        // a kernel failure mid-run still reports the cells that finished
+        match res {
+            Ok(status) => json!({"mode": "fresh", "status": status, "runs": runs}),
+            Err(e) => {
+                json!({"mode": "fresh", "status": "failed", "error": e.to_json()["error"], "runs": runs})
+            }
+        }
     };
     r["ok"] = json!(r["status"] == "done");
     r["op"] = json!("run");
@@ -1155,15 +1179,14 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                 .map(|r| d.element(r).map(|(_, b)| b.id.clone()))
                 .collect::<Result<_>>()?;
             let stored = out.report(&d);
-            let list: Vec<Value> = stored["cells"]
-                .as_object()
-                .into_iter()
-                .flatten()
-                .filter(|(id, _)| ids.is_empty() || ids.contains(id))
-                .map(|(id, rec)| {
-                    let mut e = out.entry(id, rec);
+            let list: Vec<Value> = d
+                .blocks()
+                .filter(|b| ids.is_empty() || ids.contains(&b.id))
+                .filter_map(|b| {
+                    let rec = &stored["cells"][&b.id];
+                    let mut e = out.entry(&b.id, rec.as_object().map(|_| rec)?);
                     e["stale"] = rec["stale"].clone();
-                    e
+                    Some(e)
                 })
                 .collect();
             Ok(json!({ "outputs": list }))
@@ -1465,6 +1488,11 @@ pub fn main() -> i32 {
             };
             // a run that stopped at a cell: the result is on stdout, the error on stderr
             if v["op"] == "run" && v["ok"] == false {
+                if !v["error"].is_null() {
+                    // the kernel or server failed (e.g. E_NO_ENV): its own error
+                    eprintln!("{}", json!({"error": v["error"]}));
+                    return 1;
+                }
                 let last = v["runs"].as_array().and_then(|r| r.last());
                 let e = QdError::Run(
                     last.and_then(|c| c["cell"].as_str())

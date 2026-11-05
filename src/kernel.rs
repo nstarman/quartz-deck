@@ -50,7 +50,7 @@ pub fn cell_code(d: &Deck, b: &Block) -> Result<Option<String>> {
 pub type Planned = (String, String, String);
 
 /// The cells to run, in order: the picked `cells` (in the order given), or
-/// every cell (`all`), or from the top through the last picked one (`fresh`,
+/// every cell (`all`), or from the top through the furthest picked one (`fresh`,
 /// a new session has no state). Run all / fresh skip what can't run here;
 /// picked cells must be runnable code.
 pub fn plan(d: &Deck, cells: &[String], all: bool, fresh: bool) -> Result<Vec<Planned>> {
@@ -60,7 +60,12 @@ pub fn plan(d: &Deck, cells: &[String], all: bool, fresh: bool) -> Result<Vec<Pl
         cell_code(d, b)?;
         picked.push(b.id.clone());
     }
-    let last = d.blocks().position(|b| picked.last() == Some(&b.id));
+    let last = d
+        .blocks()
+        .enumerate()
+        .filter(|(_, b)| picked.contains(&b.id))
+        .map(|(i, _)| i)
+        .max();
     let mut plan = vec![];
     for (i, b) in d.blocks().enumerate() {
         let wanted = all || picked.contains(&b.id) || (fresh && last.is_some_and(|l| i <= l));
