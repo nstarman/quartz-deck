@@ -53,9 +53,9 @@ fn agents_run_cells_from_the_cli() {
     assert!(!ok && e["error"]["code"] == "E_RUN", "{e}");
     assert_eq!(r["ok"], false);
     let last = r["runs"].as_array().unwrap().last().unwrap();
-    assert_eq!(
-        (last["cell"].as_str(), last["status"].as_str()),
-        (Some("fails/0"), Some("error"))
+    assert!(
+        last["cell"] == "fails/0" && last["status"] == "error",
+        "{last}"
     );
     assert_eq!(last["outputs"][0]["ename"], "ZeroDivisionError");
 

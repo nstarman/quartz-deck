@@ -741,19 +741,3 @@ pub fn running(store: &Store) -> Result<Value> {
         .map_err(|_| QdError::NoServer)?;
     Ok(v)
 }
-
-/// URL of the running server for this deck.
-pub fn running_url(store: &Store) -> Result<String> {
-    running(store)?["url"]
-        .as_str()
-        .map(String::from)
-        .ok_or(QdError::NoServer)
-}
-
-/// pid of the running server for this deck.
-pub fn running_pid(store: &Store) -> Result<u32> {
-    running(store)?["pid"]
-        .as_u64()
-        .map(|p| p as u32)
-        .ok_or(QdError::NoServer)
-}

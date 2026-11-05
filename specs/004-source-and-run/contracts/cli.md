@@ -40,7 +40,7 @@ qd outputs [<CELL>...]           # {"outputs":[run entry + "stale"]}
   editor). Without: a one-shot fresh session (cells 1…k run from the top).
 - `--fresh`: restart and run from the top (through the last given cell).
 - `--timeout`: interrupt a cell after SECS (status `stopped`).
-- Result: `{"ok", "mode":"live|fresh", "runs":[{"cell","counter","status":"done|error|stopped","outputs":[{"kind":"text","text"}|{"kind":"html","html"}|{"kind":"image","path","mime"}|{"kind":"error","ename","evalue","traceback"}]}]}`.
+- Result: `{"ok", "mode":"live|fresh", "status":"done|error|stopped", "runs":[{"cell","counter","status":"done|error|stopped","outputs":[{"kind":"text","text"}|{"kind":"html","html"}|{"kind":"image","path","mime"}|{"kind":"error","ename","evalue","traceback"}]}]}`.
   `ok` is false (exit 1, `E_RUN`) when a cell raised; `--all` stops at the
   first error.
 - `E_NOT_CODE` for a non-code element; `E_ENGINE` for a non-Python cell

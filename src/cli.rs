@@ -469,7 +469,7 @@ fn output_of(cmd: &str) -> &'static str {
         "render" => r#"{"ok","output":"<absolute path>","format","log"}"#,
         "stop" => r#"{"ok","pid"}"#,
         "run" => {
-            r#"{"ok","op":"run","mode":"live|fresh","runs":[{"cell","counter","status":"done|error|stopped","outputs":[{"kind":"text","text"}|{"kind":"html","html"}|{"kind":"image","mime","path"}|{"kind":"error","ename","evalue","traceback"}]}]} (ok false: E_RUN on stderr, exit 1)"#
+            r#"{"ok","op":"run","mode":"live|fresh","status":"done|error|stopped","runs":[{"cell","counter","status":"done|error|stopped","outputs":[{"kind":"text","text"}|{"kind":"html","html"}|{"kind":"image","mime","path"}|{"kind":"error","ename","evalue","traceback"}]}]} (ok false: E_RUN on stderr, exit 1)"#
         }
         "outputs" => r#"{"outputs":[{"cell","counter","status","stale","outputs":[...as run]}]}"#,
         "env" => {
@@ -577,15 +577,12 @@ fn run_cells(
             .header("Content-Type", "application/json")
             .send(body.to_string())
             .map_err(std::io::Error::other)?;
-        let text = res
-            .body_mut()
-            .read_to_string()
-            .map_err(std::io::Error::other)?;
-        let v: Value = serde_json::from_str(&text).map_err(std::io::Error::other)?;
+        let v: Value =
+            serde_json::from_reader(res.body_mut().as_reader()).map_err(std::io::Error::other)?;
         if !res.status().is_success() {
             return Err(QdError::Io(std::io::Error::other(format!("qd serve: {v}"))));
         }
-        json!({"mode": "live", "runs": v["runs"]})
+        json!({"mode": "live", "status": v["status"], "runs": v["runs"]})
     } else {
         let plan = crate::kernel::plan(&d, cells, all, true)?;
         let dir = s.path.parent().unwrap_or(Path::new("."));
@@ -593,17 +590,12 @@ fn run_cells(
         let out = crate::outputs::Outputs::new(s);
         let mut runs = vec![];
         let t = timeout.map(std::time::Duration::from_secs);
-        crate::kernel::run_plan(&k, &out, plan, t, |cell, rec| {
+        let status = crate::kernel::run_plan(&k, &out, plan, t, |cell, rec| {
             runs.extend(rec.map(|rec| out.entry(cell, rec)));
         })?;
-        json!({"mode": "fresh", "runs": runs})
+        json!({"mode": "fresh", "status": status, "runs": runs})
     };
-    let ok = r["runs"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .all(|c| c["status"] == "done");
-    r["ok"] = json!(ok);
+    r["ok"] = json!(r["status"] == "done");
     r["op"] = json!("run");
     Ok(r)
 }
@@ -1184,7 +1176,10 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
         }
         Cmd::Url { slide } => {
             let (s, d) = read()?;
-            let url = crate::server::running_url(&s)?;
+            let url = crate::server::running(&s)?["url"]
+                .as_str()
+                .ok_or(QdError::NoServer)?
+                .to_string();
             Ok(match slide {
                 Some(r) => {
                     json!({"url": format!("{url}#/{}", crate::render::preview_id(d.slide(r)?))})
@@ -1193,7 +1188,9 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             })
         }
         Cmd::Stop => {
-            let pid = crate::server::running_pid(&ctx.store()?)?;
+            let pid = crate::server::running(&ctx.store()?)?["pid"]
+                .as_u64()
+                .ok_or(QdError::NoServer)?;
             std::process::Command::new("kill")
                 .arg(pid.to_string())
                 .status()?;
@@ -1470,7 +1467,8 @@ pub fn main() -> i32 {
             if v["op"] == "run" && v["ok"] == false {
                 let last = v["runs"].as_array().and_then(|r| r.last());
                 let e = QdError::Run(
-                    last.map_or("a cell", |c| c["cell"].as_str().unwrap_or(""))
+                    last.and_then(|c| c["cell"].as_str())
+                        .unwrap_or("a cell")
                         .into(),
                 );
                 eprintln!("{}", e.to_json());
