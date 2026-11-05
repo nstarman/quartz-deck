@@ -842,11 +842,13 @@ fn watch(app: Shared) -> Result<notify::RecommendedWatcher> {
         {
             return;
         }
-        // the deck as qd sees it: the VS Code buffer overlay when attached
-        let Ok(d) = a.store.read() else { return };
-        {
-            // a qd edit to the attached buffer (panel op, CLI, undo): tell VS Code
+        let d = {
+            // read under the lock: a read from before the person's typing was
+            // stored would be compared with it and sent back as undoing it
             let mut known = a.buffer.lock().unwrap();
+            // the deck as qd sees it: the VS Code buffer overlay when attached
+            let Ok(d) = a.store.read() else { return };
+            // a qd edit to the attached buffer (panel op, CLI, undo): tell VS Code
             if let Some(old) = known
                 .as_ref()
                 .filter(|old| a.store.attached() && **old != d.text)
@@ -859,7 +861,8 @@ fn watch(app: Shared) -> Result<notify::RecommendedWatcher> {
                 );
                 *known = Some(d.text.clone());
             }
-        }
+            d
+        };
         let v = d.version;
         let mut st = a.st.lock().unwrap();
         if st.version != v {
