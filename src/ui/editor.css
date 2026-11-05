@@ -51,6 +51,20 @@ main.source-right aside { order: 4; }
 #settings .setting small { grid-column: 1 / -1; color: var(--muted); }
 #settings .buttons { display: flex; justify-content: space-between; margin-top: 12px; }
 
+#shortcuts { width: min(640px, calc(100vw - 32px)); box-sizing: border-box; max-height: 80vh; overflow-x: hidden; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel); color: var(--text); padding: 16px 20px; }
+#shortcuts::backdrop { background: rgba(0, 0, 0, 0.35); }
+#shortcuts h2 { margin: 0 0 10px; font-size: 17px; }
+#shortcuts h3 { margin: 14px 0 4px; font-size: 13px; color: var(--muted); }
+#shortcuts input { width: 100%; box-sizing: border-box; padding: 5px 8px; }
+#shortcuts table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13px; }
+#shortcuts td:first-child { width: 45%; }
+#shortcuts td:nth-child(2) { width: 25%; }
+#shortcuts td { padding: 3px 6px; border-top: 1px solid var(--line); }
+#shortcuts td:nth-child(2) { white-space: nowrap; font-family: ui-monospace, monospace; }
+#shortcuts td:nth-child(3) { color: var(--muted); }
+#shortcuts button { margin-top: 12px; float: right; }
+
 /* ---------- menu bar (spec 007) ---------- */
 #menubar { display: flex; gap: 2px; padding: 2px 8px; background: var(--panel); border-bottom: 1px solid var(--line); font-size: 13px; }
 #menubar [role=menuitem] { padding: 3px 9px; border-radius: 4px; cursor: default; user-select: none; }

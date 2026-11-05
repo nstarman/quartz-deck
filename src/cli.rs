@@ -153,6 +153,8 @@ enum Cmd {
         #[arg(long)]
         detach: bool,
     },
+    /// What the editor can do: every action, its menu, keyboard shortcut and qd command
+    Actions,
     /// Your editor settings, the same for every deck and editor (spec 007)
     Settings {
         #[command(subcommand)]
@@ -488,6 +490,9 @@ fn output_of(cmd: &str) -> &'static str {
         "browser" => r#"{"path","source":"env|installed|download","version"} or {"ok","removed"}"#,
         "render" => r#"{"ok","output":"<absolute path>","format","log"}"#,
         "stop" => r#"{"ok","pid"}"#,
+        "actions" => {
+            r#"[{"id","label","menu":[...],"key"?,"vscode_key"?,"where":[...],"toggle"?,"runs_code"?,"qd"?}]"#
+        }
         "settings" => {
             r#"{"values":{...},"defs":[{"key","label","description","type","values","default"}],"notices":[...],"path"}; set/reset: {"ok","values"}"#
         }
@@ -1183,6 +1188,11 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             Ok(v)
         }
         Cmd::Serve { port, open, detach } => serve(&ctx.store()?, *port, *open, *detach),
+        Cmd::Actions => {
+            // the editor's own list (spec 007), without the menus' separators
+            let list: Vec<Value> = serde_json::from_str(include_str!("ui/actions.json")).unwrap();
+            Ok(list.into_iter().filter(|a| a.get("id").is_some()).collect())
+        }
         Cmd::Settings { action } => {
             let path = crate::settings::path();
             let values = match action {

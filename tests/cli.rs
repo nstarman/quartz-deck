@@ -1031,3 +1031,35 @@ fn settings_read_set_and_reset() {
         (&json!("system"), &json!(true))
     );
 }
+
+/// Spec 007 US3: `qd actions` lists what the editor can do, with keys and the
+/// matching qd command (the same list the editor's menus and keys use).
+#[test]
+fn actions_lists_the_editors_actions() {
+    let e = Env::new();
+    let v = e.ok(&["actions"]);
+    let list = v.as_array().unwrap();
+    let dup = list.iter().find(|a| a["id"] == "slide-dup").unwrap();
+    assert_eq!(
+        (&dup["label"], &dup["key"], &dup["qd"], &dup["menu"]),
+        (
+            &json!("Duplicate slide"),
+            &json!("Mod+Shift+D"),
+            &json!("qd dup <slide>"),
+            &json!(["Slide"])
+        )
+    );
+    assert!(list.iter().all(|a| a["id"].is_string()), "no separators");
+    let listed: serde_json::Value =
+        serde_json::from_str(include_str!("../src/ui/actions.json")).unwrap();
+    let ids = |l: &[Value]| {
+        l.iter()
+            .filter_map(|a| a["id"].as_str().map(String::from))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        ids(list),
+        ids(listed.as_array().unwrap()),
+        "the editor's own list"
+    );
+}
