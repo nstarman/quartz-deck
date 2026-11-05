@@ -782,7 +782,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             r = server => r,
             _ = grace => Ok(()),
         };
-        *app.rendering.lock().unwrap() = true; // waits for a render in progress
+        *app.rendering.lock().unwrap_or_else(|e| e.into_inner()) = true; // waits for a render in progress
         app.kernel.lock().unwrap().take(); // shuts the kernel down
         let _ = std::fs::remove_file(&session_file);
         res.map_err(QdError::Io)
