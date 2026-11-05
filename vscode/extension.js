@@ -10,21 +10,29 @@ const readline = require('node:readline');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { Sync } = require('./sync.js');
+const { ARGS, report } = require('./commands.js');
 const { editorUrl, themeKind, html, fromEditor, follow } = require('./panel.js');
 
 /** Open decks: fsPath → { panel, doc, dispose() }. */
 const open = new Map();
 let out;
 
+/** `qd --deck <file> <args…>`, in the deck's folder. */
+function qd(file, args) {
+  const bin = vscode.workspace.getConfiguration('quartz-deck').get('qdPath') || 'qd';
+  const child = spawn(bin, ['--deck', file, ...args], { cwd: path.dirname(file) });
+  child.failed = (e) => new Error(e.code === 'ENOENT'
+    ? `qd not found ("${bin}"): install quartz-deck, or set quartz-deck.qdPath`
+    : e.message);
+  return child;
+}
+
 /** `qd serve` for `file`: resolves to `{child, port, token}` once it prints its link. */
 function serve(file) {
-  const qd = vscode.workspace.getConfiguration('quartz-deck').get('qdPath') || 'qd';
   return new Promise((resolve, reject) => {
-    const child = spawn(qd, ['--deck', file, 'serve', '--port', '0'], { cwd: path.dirname(file) });
+    const child = qd(file, ['serve', '--port', '0']);
     let err = '';
-    child.on('error', (e) => reject(new Error(e.code === 'ENOENT'
-      ? `qd not found ("${qd}"): install quartz-deck, or set quartz-deck.qdPath`
-      : e.message)));
+    child.on('error', (e) => reject(child.failed(e)));
     child.stderr.on('data', (d) => { err += d; });
     readline.createInterface({ input: child.stdout }).once('line', (l) => {
       try {
@@ -187,6 +195,30 @@ async function openDeck(doc, panel) {
   panel.onDidDispose(() => entry.dispose());
 }
 
+/** A palette command (US4): its qd command on the deck's saved file; the result shown. */
+async function runQd(name, doc) {
+  if (doc.isDirty) {
+    const pick = await vscode.window.showWarningMessage(
+      `${path.basename(doc.fileName)} has unsaved changes; qd works on the saved file.`,
+      { modal: true }, 'Save and continue', 'Use the saved file');
+    if (!pick || (pick === 'Save and continue' && !(await doc.save()))) return;
+  }
+  const { stdout, stderr } = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `quartz-deck: qd ${ARGS[name].join(' ')}…` },
+    () => new Promise((resolve, reject) => {
+      const child = qd(doc.uri.fsPath, ARGS[name]);
+      let [o, e] = ['', ''];
+      child.stdout.on('data', (d) => { o += d; });
+      child.stderr.on('data', (d) => { e += d; });
+      child.on('error', (err) => reject(child.failed(err)));
+      child.on('close', () => resolve({ stdout: o, stderr: e }));
+    }));
+  out.appendLine(`$ qd ${ARGS[name].join(' ')}\n${stdout}${stderr}`);
+  const r = report(name, stdout, stderr);
+  if (r.ok) return void vscode.window.showInformationMessage(`quartz-deck: ${r.text}`);
+  if ((await vscode.window.showErrorMessage(`quartz-deck: ${r.text}`, 'Show log')) === 'Show log') out.show();
+}
+
 function activate(context) {
   out = vscode.window.createOutputChannel('quartz-deck');
   const active = () => {
@@ -198,6 +230,7 @@ function activate(context) {
     try { await fn(); } catch (e) { vscode.window.showErrorMessage(`quartz-deck: ${e.message}`); }
   }));
   cmd('quartz-deck.open', () => openDeck(active()));
+  for (const name of Object.keys(ARGS)) cmd(`quartz-deck.${name}`, () => runQd(name, active()));
   cmd('quartz-deck.focusPanel', () => open.get(active().uri.fsPath)?.panel.reveal(undefined, false));
   cmd('quartz-deck.focusText', async () => {
     const e = [...open.values()].find((x) => x.panel.active);

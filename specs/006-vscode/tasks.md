@@ -139,8 +139,8 @@ cursor there without taking keyboard focus.
 
 ## Phase 5: User Story 4 — Run, render, export (P3)
 
-- [ ] T018 [P] [US4] Write failing tests in `vscode/test/commands.test.js`: render/export/exportPdf/checkOffline spawn `qd` with the right args in the deck's folder and turn its JSON (or its stderr error) into a success or error message; `quarto.quarto` installed → `run=external`
-- [ ] T019 [US4] Implement the palette commands and the Quarto-extension detection in `vscode/extension.js` (output channel `quartz-deck`) — T018 passes
+- [X] T018 [P] [US4] Write failing tests in `vscode/test/commands.test.js`: render/export/exportPdf/checkOffline spawn `qd` with the right args in the deck's folder and turn its JSON (or its stderr error) into a success or error message; `quarto.quarto` installed → `run=external`
+- [X] T019 [US4] Implement the palette commands and the Quarto-extension detection in `vscode/extension.js` (output channel `quartz-deck`) — T018 passes
 
 ---
 
