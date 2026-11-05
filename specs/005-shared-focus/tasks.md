@@ -81,8 +81,8 @@ Paths relative to repo root.
 - [X] T019 [P] Extend `another_origin_cannot_run_code_or_edit` in `tests/onslide.rs` with `GET /api/focus`, `POST /api/focus`, `POST /api/focus/set`: unreadable/unsettable from another origin (SC-006); note in `specs/005-shared-focus/checklists/security.md`
 - [X] T020 [P] README: "Shared focus" lines in the editor section; `specs/ROADMAP.md` status
 - [X] T021 Quickstart §1–§4 with the release build in the browser pane; record timings (SC-001, SC-002) in `checklists/quickstart-run.md`
-- [ ] T022 Agent eval (SC-004): 10 fresh agents, the person has a sentence selected in the editor, task "make this shorter"; grade: only that element changed, no "which one?" question, no usage errors; record in `checklists/agent-eval.md`
-- [ ] T023 Final constitution re-check in `plan.md`; fmt, clippy, full suite green
+- [X] T022 Agent eval (SC-004): 10 fresh agents, the person has a sentence selected in the editor, task "make this shorter"; grade: only that element changed, no "which one?" question, no usage errors; record in `checklists/agent-eval.md`
+- [X] T023 Final constitution re-check in `plan.md`; fmt, clippy, full suite green
 - [ ] T024 Concision audit (`/pr-audit`), last task before the PR is marked ready
 
 ---

@@ -63,6 +63,22 @@ chars; reading never changes anything.
 
 Post-design re-check: PASS — three small endpoints, one event, one module.
 
+Final re-check after implementation (T023, constitution 1.2.0): PASS.
+- I: our own code only.
+- II: focus never touches the deck; 100 reads leave it byte-identical
+  (`focus_over_http`); pointing only moves the view.
+- III: `qd focus [--set]` in `qd schema` and the skill; the editor's own
+  source↔slide sync goes through the same focus (FR-012).
+- IV: pointing shows the slide in 15–21 ms; the focus reaches `qd focus`
+  in ~120 ms (quickstart run).
+- V: pointing never interrupts typing (20× deferred, nothing lost); refs are
+  version-checked and stale ones dropped.
+- VI: every story landed with failing tests first (unit, HTTP, browser).
+- VII: no new dependency; both PRs passed the concision audit, which also
+  caught 8 real bugs before merge.
+- Constraints: all focus endpoints behind the session token and loopback
+  rules; memory only (`checklists/security.md`).
+
 ## Project Structure
 
 ### Documentation (this feature)
