@@ -42,6 +42,9 @@ fn chrome() -> Option<PathBuf> {
     path
 }
 
+/// A failed wait's report: the window, the top row and what has the keyboard.
+const PAGE_STATE: &str = "(() => { try { const q = (s) => document.querySelector(s); const r = (s) => { const b = q(s)?.getBoundingClientRect(); return b && [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)]; }; return { window: [innerWidth, innerHeight], menus: q('#menubar')?.className, menubar: r('#menubar'), header: r('header'), notice: q('#notice')?.textContent, status: q('#status')?.textContent, list: getComputedStyle(q('#slides')).display, focus: document.activeElement?.outerHTML.slice(0, 80), menuOpen: !q('#ctxmenu')?.hidden }; } catch (e) { return String(e); } })()";
+
 /// The editor has loaded: preview ready, slide list drawn, session API up.
 const READY: &str = "(() => { const f = document.querySelector('#preview'); return !!(f && f.contentWindow?.Reveal?.isReady?.() && document.querySelector('#slides li') && window.qdSession); })()";
 
@@ -184,10 +187,11 @@ impl Ed {
         );
         let start = Instant::now();
         while self.eval(&cond_safe).await != Value::Bool(true) {
-            assert!(
-                start.elapsed() < Duration::from_secs(secs),
-                "timed out waiting for: {cond}"
-            );
+            if start.elapsed() > Duration::from_secs(secs) {
+                // what the page looked like, so a failure elsewhere (CI) can be read
+                let state = self.eval(PAGE_STATE).await;
+                panic!("timed out waiting for: {cond}\npage: {state}");
+            }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }
