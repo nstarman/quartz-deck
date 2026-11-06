@@ -42,8 +42,12 @@ fn chrome() -> Option<PathBuf> {
     path
 }
 
+/// Records the last pointer presses and focus changes (target and point), for a
+/// failed wait's report: where a click really landed.
+const EVENT_LOG: &str = "(() => { window.__ev = []; const name = (t) => t?.nodeType === 1 ? t.tagName.toLowerCase() + (t.id ? '#' + t.id : '') + (t.dataset?.menu ? `[${t.dataset.menu}]` : '') + (t.className && typeof t.className === 'string' ? '.' + t.className.trim().split(/ +/)[0] : '') : String(t); const log = (e) => { __ev.push(`${e.type} ${name(e.target)}${e.clientX !== undefined ? ` @${Math.round(e.clientX)},${Math.round(e.clientY)}` : ''}${e.defaultPrevented ? ' (prevented)' : ''}`); if (__ev.length > 10) __ev.shift(); }; for (const t of ['mousedown', 'pointerdown', 'focusin', 'focusout']) addEventListener(t, log, true); addEventListener('mousedown', (e) => setTimeout(() => __ev.push(`  after: prevented=${e.defaultPrevented}`)), true); addEventListener('blur', () => __ev.push('window blur')); })()";
+
 /// A failed wait's report: the window, the top row and what has the keyboard.
-const PAGE_STATE: &str = "(() => { try { const q = (s) => document.querySelector(s); const r = (s) => { const b = q(s)?.getBoundingClientRect(); return b && [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)]; }; return { window: [innerWidth, innerHeight], menus: q('#menubar')?.className, menubar: r('#menubar'), header: r('header'), notice: q('#notice')?.textContent, status: q('#status')?.textContent, list: getComputedStyle(q('#slides')).display, focus: document.activeElement?.outerHTML.slice(0, 80), menuOpen: !q('#ctxmenu')?.hidden }; } catch (e) { return String(e); } })()";
+const PAGE_STATE: &str = "(() => { try { const q = (s) => document.querySelector(s); const r = (s) => { const b = q(s)?.getBoundingClientRect(); return b && [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)]; }; return { window: [innerWidth, innerHeight], menus: q('#menubar')?.className, menubar: r('#menubar'), header: r('header'), notice: q('#notice')?.textContent, status: q('#status')?.textContent, list: getComputedStyle(q('#slides')).display, focus: document.activeElement?.outerHTML.slice(0, 80), menuOpen: !q('#ctxmenu')?.hidden, events: window.__ev }; } catch (e) { return String(e); } })()";
 
 /// The editor has loaded: preview ready, slide list drawn, session API up.
 const READY: &str = "(() => { const f = document.querySelector('#preview'); return !!(f && f.contentWindow?.Reveal?.isReady?.() && document.querySelector('#slides li') && window.qdSession); })()";
@@ -152,6 +156,7 @@ impl Ed {
             _watchdog: watchdog,
         };
         ed.wait_secs(READY, 60).await;
+        ed.eval(EVENT_LOG).await;
         Some(ed)
     }
 
