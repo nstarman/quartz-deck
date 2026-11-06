@@ -6,7 +6,8 @@
 import LIST from '/ui/action-list.js';
 
 const mac = /Mac|iP(hone|ad|od)/.test(navigator.platform);
-const framed = new URLSearchParams(location.search).get('host') === 'vscode';
+/** In VS Code's panel (spec 006): its own keys win, and the menu bar folds. */
+export const framed = new URLSearchParams(location.search).get('host') === 'vscode';
 
 export const ACTIONS = LIST.filter((a) => a.id);
 const byId = new Map(ACTIONS.map((a) => [a.id, a]));

@@ -32,7 +32,7 @@ is in `vscode/default-keys.json`; every `runs_code` action has `where` ≠
 | `ui.*` (not shown) | layout memory: `ui.source_width` (px), `ui.source_was_open`, `ui.source_full`, `ui.form_panel` | absent |
 
 Each definition: key, label, description, type, allowed values, default.
-Later features append definitions (009: `history.commit_on_save`).
+Later features append definitions (010: `history.commit_on_save`).
 
 ## Settings file (`<config>/settings.json`)
 

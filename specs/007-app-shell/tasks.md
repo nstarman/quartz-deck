@@ -156,8 +156,8 @@ Paths relative to repo root.
 
 **Independent Test**: spec US5; quickstart §5.
 
-- [ ] T021 [P] [US5] Write `vscode/default-keys.json`: VS Code's default macOS bindings that apply while a webview has focus, from the public default-keybindings reference, minus the edit keys a webview receives (research R7). Write a failing test in `vscode/test/keys.test.js`: no action's effective key in the panel (its `vscode` key, else `mac`) is on that list.
-- [ ] T022 [US5] Give the clashing actions `vscode` keys or `null` in `src/ui/actions.json`. Make `keys.js` use them when `?host=vscode`. Fold the bar into a ☰ menu in framed mode and below the width where it fits. Have the reference list the panel's keys there. Extend `framed_editor_takes_theme_and_messages`: no menu bar, a ☰ button with the same menus, and ⌘B does nothing in the panel. T021 passes.
+- [X] T021 [P] [US5] Write `vscode/default-keys.json`: VS Code's default macOS bindings that apply while a webview has focus, from the public default-keybindings reference, minus the edit keys a webview receives (research R7). Write a failing test in `vscode/test/keys.test.js`: no action's effective key in the panel (its `vscode` key, else `mac`) is on that list.
+- [X] T022 [US5] Give the clashing actions `vscode` keys or `null` in `src/ui/actions.json`. Make `keys.js` use them when `?host=vscode`. Fold the bar into a ☰ menu in framed mode and below the width where it fits. Have the reference list the panel's keys there. Extend `framed_editor_takes_theme_and_messages`: no menu bar, a ☰ button with the same menus, and ⌘B does nothing in the panel. T021 passes.
 
 ---
 
