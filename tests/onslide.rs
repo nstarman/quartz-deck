@@ -2249,4 +2249,16 @@ async fn paste_key_uses_the_paste_event() {
     )
     .await;
     assert_eq!(ed.eval("__asked").await, false);
+
+    // an empty paste event (Chrome on Linux fires one for a devtools ⌘V, with
+    // its own empty clipboard) falls back to the clipboard API, not to nothing
+    ed.settle().await;
+    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.eval(&paste("document.activeElement", "").replace(
+        "__asked = true; return Promise.reject(new Error('no permission'));",
+        "return Promise.resolve('## Again {#again}\\n\\nFrom the API.\\n');",
+    ))
+    .await;
+    ed.wait_file(|f| f.contains("From the API."), "pasted from the API")
+        .await;
 }

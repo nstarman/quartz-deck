@@ -1576,7 +1576,9 @@ function copyElement(t) {
 
 /** The system clipboard if it answers within a second, else our own copy. */
 async function clipboardText() {
-  if (pasted !== null) { const t = pasted; pasted = null; return t; }
+  const fromEvent = pasted;
+  pasted = null;
+  if (fromEvent?.trim()) return fromEvent; // an empty paste event: try the API and our own copy
   const timeout = new Promise((resolve) => { setTimeout(() => resolve(null), 1000); });
   let text = null;
   try { text = await Promise.race([navigator.clipboard.readText(), timeout]); } catch { /* not allowed */ }
