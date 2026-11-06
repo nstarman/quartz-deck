@@ -3,6 +3,7 @@
 // The Settings window changes them; every open editor applies them live.
 
 import { token, el } from '/ui/run.js';
+import { confirmSheet } from '/ui/sheet.js';
 
 let values = {};
 let defs = [];
@@ -66,7 +67,7 @@ export function open() {
   const title = el('h2', { id: 'settings-title', textContent: 'Settings' });
   const reset = el('button', { type: 'button', textContent: 'Reset to defaults…' });
   reset.addEventListener('click', async () => {
-    if (confirm('Put every setting back to its default?') && (await set({ reset: true }))) open();
+    if ((await confirmSheet('Reset settings?', 'Every setting goes back to its default.', 'Reset', reset)) && (await set({ reset: true }))) open();
   });
   const close = el('button', { type: 'button', textContent: 'Close' });
   close.addEventListener('click', () => dialog.close());

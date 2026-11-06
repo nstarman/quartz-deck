@@ -138,9 +138,9 @@ dropped.
 **Security note** (for the security checklist): SVG can hold script. Images
 are shown through `<img>` (no script), but `/preview/` serves deck files on
 the editor's origin; a dropped SVG opened directly there could run script on
-that origin. The API needs the token, which is never in the page, so such a
-script still can't edit or run code; the checklist records this and the
-attack test gains a POST to `/api/images`.
+that origin and read the tab's token, as the deck's own rendered HTML already
+can: files beside the deck are trusted as the deck is (checklists/security.md).
+The attack test gains a POST to `/api/images`.
 
 ## R10. Contrast, sizes and themes
 

@@ -12,6 +12,7 @@ import { makeList } from '/ui/list.js';
 import * as pane from '/ui/pane.js';
 import * as run from '/ui/run.js';
 import * as focus from '/ui/focus.js';
+import { ask } from '/ui/sheet.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const frame = $('#preview');
@@ -349,6 +350,18 @@ function hookFrame() {
   const replace = new w.ResizeObserver(() => { placeElbar(); placeToolbar(frame); });
   for (const el of doc.querySelectorAll('[data-qd]')) replace.observe(el);
   doc.addEventListener('paste', onPaste);
+  // an image file dropped on the slide (spec 008 US5): copied beside the deck, placed where it fell
+  doc.addEventListener('dragover', (e) => {
+    if (presenting() || !e.dataTransfer?.types.includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  });
+  doc.addEventListener('drop', (e) => {
+    const file = [...(e.dataTransfer?.files || [])].find((f) => f.type.startsWith('image/'));
+    if (!file || presenting()) return;
+    e.preventDefault();
+    dropImage(file, e.target.closest?.('[data-qd]'), e.clientY);
+  });
   doc.addEventListener('contextmenu', (e) => {
     if (state.session || presenting()) return; // the browser's own menu (spelling) while typing
     const sec = e.target.closest('section');
@@ -1440,14 +1453,30 @@ function placeEmptyadd() {
   emptyadd.style.top = f.top + f.height / 2 + 'px';
 }
 
+/** Copy a dropped image file beside the deck, then insert it before or after `on` (the half it fell on). */
+async function dropImage(file, on, y) {
+  const slide = slideByAnchor(state.anchor);
+  if (!slide) return say('Images go on a content slide, not the title slide', true);
+  const res = await fetch(`/api/images?name=${encodeURIComponent(file.name)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream', 'X-QD-Token': run.token },
+    body: file,
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) return say(`${file.name}: ${body.error?.message || res.statusText}`, true);
+  const r = on?.getBoundingClientRect();
+  const where = on ? { [y > r.top + r.height / 2 ? 'after' : 'before']: on.dataset.qd } : { end: true };
+  await insertBlock(slide.id, where, { md: `![](${body.path})` });
+}
+
 /** Insert a new element of `kind` on a slide; it opens for editing once rendered. */
 async function insertBlock(slideId, where, kind) {
   if (kind.box) return newBox({ id: slideId }, { text: 'Text' });
   let md = kind.md;
   if (kind.image) {
-    const path = prompt('Image path (relative to the deck) or URL');
-    if (!path?.trim()) return;
-    md = `![](${path.trim()})`;
+    const v = await ask({ title: 'Image', fields: [{ name: 'src', kind: 'files', label: 'Path (beside the deck) or URL', validate: (x) => (x ? '' : 'Choose an image or type its path') }] });
+    if (!v) return;
+    md = `![](${v.src})`;
   }
   const r = await op('block add', { slide: slideId, ...where, md });
   if (!r) return;
@@ -1635,6 +1664,6 @@ const toggle = (cls, set) => ({ checked: () => mainEl.classList.contains(cls), r
 keys.on('toggle-source', { checked: () => !srcpane.hidden, run: () => setSource(srcpane.hidden) });
 keys.on('source-full', toggle('source-full', setFull));
 keys.on('form-panel', toggle('panel-open', setPanel));
-keys.on('about', () => alert('quartz-deck — a slide editor for Quarto reveal.js decks. Personal use only (see LICENSE).'));
+keys.on('about', () => ask({ title: 'About quartz-deck', message: 'A slide editor for Quarto reveal.js decks. Personal use only (see LICENSE).', cancel: null }));
 keys.on('settings', settings.open);
 
