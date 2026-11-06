@@ -1,7 +1,7 @@
 // quartz-deck editor. Every change is a CLI op sent to POST /api/op, so the GUI
 // can do nothing the CLI cannot (FR-010). The .qmd file stays the only state.
 import { region, hintsFor, gate, reserialize, splice } from '/ui/inline.js';
-import { showToolbar, hideToolbar, place as placeToolbar } from '/ui/toolbar.js';
+import { showToolbar, hideToolbar, place as placeToolbar, placeNear } from '/ui/toolbar.js';
 import { openSource, closeSource, sourceError, sourceText } from '/ui/source.js';
 import { makeActions, INSERTS, TRANSITIONS } from '/ui/actions.js';
 import * as keys from '/ui/keys.js';
@@ -163,6 +163,7 @@ function go(anchor) {
 
 const PREVIEW_CSS = `
   [data-qd] { cursor: pointer; }
+  .slide-menu-button { display: none !important; }
   /* an untitled slide (spec 008 US1): a placeholder on the canvas only, never in the file */
   .reveal .slides section > h2:empty::before { content: 'Click to add title'; color: #9a9aa0; font-weight: 400; }
   [data-qd]:hover { outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; }
@@ -338,7 +339,9 @@ function hookFrame() {
     // always: the pane may narrow later (panels, window), which would switch
     // Reveal into scroll view, where hash navigation to the last slide fails
     // Escape belongs to the editor (leave an edit / deselect), not Reveal's overview
-    w.Reveal.configure({ scrollActivationWidth: 1, keyboard: { 27: null } });
+    // reveal.js's own menu button, arrows and progress bar belong to presenting, not to
+    // editing (spec 008 US2: they sat in the canvas and the ☰ looked like ours)
+    w.Reveal.configure({ scrollActivationWidth: 1, keyboard: { 27: null }, controls: false, progress: false, slideNumber: false });
     w.dispatchEvent(new Event('resize'));
     // synchronously: a hash change lands a task later, and onSlide() below would
     // meanwhile report the first slide (hiding the slide bar under a click)
@@ -1145,10 +1148,8 @@ async function placeElbar() {
   const t = await elementTarget(state.sel);
   $('[data-act=run]', elbar).hidden = t?.block.kind !== 'cell';
   $('[data-act=fragment]', elbar).setAttribute('aria-pressed', String(!!t?.block.attrs?.classes?.includes('fragment')));
-  const p = pageRect(el);
   elbar.hidden = false;
-  elbar.style.left = Math.max(4, Math.min(p.left, innerWidth - elbar.offsetWidth - 4)) + 'px';
-  elbar.style.top = Math.max(frame.getBoundingClientRect().top + 2, p.top - elbar.offsetHeight - 10) + 'px';
+  placeNear(elbar, el, frame);
 }
 
 // the preview resized (source pane, panels, window): follow the element, or the bar
@@ -1159,7 +1160,10 @@ new ResizeObserver(() => requestAnimationFrame(() => requestAnimationFrame(place
 const slidebar = $('#slidebar');
 async function renderSlidebar() {
   const cur = slideByAnchor(state.anchor);
-  slidebar.hidden = !cur;
+  // the title slide has no slide properties: the bar keeps its row (the canvas
+  // doesn't jump, spec 008 US2) but shows nothing and can't be reached
+  slidebar.inert = !cur;
+  slidebar.style.visibility = cur ? '' : 'hidden';
   if (!cur) return;
   const full = await fetchSlide(cur.id);
   const kv = full?.attrs?.kv || {};

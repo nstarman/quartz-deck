@@ -12,7 +12,8 @@ export function makeList(api) {
   const nav = list.closest('nav');
   const thumbs = new Map(); // anchor → {host, html}: kept across redraws, rebuilt only when the slide changed
   const visible = new Set();
-  let justDragged = false; // the click that ends a drag isn't a click on the slide
+  let justDragged = false;
+  let shown; // the slide (and its place) the list last scrolled to // the click that ends a drag isn't a click on the slide
 
   const el = (tag, cls, text) => Object.assign(document.createElement(tag), cls ? { className: cls } : {}, text ? { textContent: text } : {});
   const frameDoc = () => { try { return api.frame.contentDocument?.querySelector('.reveal .slides') ? api.frame.contentDocument : null; } catch { return null; } };
@@ -164,13 +165,25 @@ export function makeList(api) {
   function render() {
     const deck = api.state.deck;
     if (!deck) return;
-    const focused = list.contains(document.activeElement); // redrawing must not drop the keyboard's place
+    // redrawing must not move the keyboard: back to the same slide afterwards
+    const focused = list.contains(document.activeElement) && document.activeElement.closest('li')?.dataset.id;
+    // building the items moves the thumbnails out of the old ones, and the list's
+    // scroll collapses with them: keep it (read first, put back after)
+    const [x, y] = [nav.scrollLeft, nav.scrollTop];
     const items = deck.slides.map((s) => item(s, false));
     if (deck.title_slide) items.unshift(item({ id: 'title-slide', anchor: 'title-slide' }, true));
     list.replaceChildren(...items);
+    nav.scrollLeft = x;
+    nav.scrollTop = y;
     const current = list.querySelector('li.current');
-    current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-    if (focused) current?.querySelector(':scope > button')?.focus();
+    // only when the shown slide changed or moved (undo, an agent's edit): a redraw
+    // must not scroll the list away from where the person scrolled it. On the next
+    // frame: the new items have their full height by then.
+    const at = `${api.state.anchor}@${items.indexOf(current)}`;
+    // (looked up again then: a second redraw in between replaces the items)
+    if (shown !== at) requestAnimationFrame(() => list.querySelector('li.current')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
+    shown = at;
+    if (focused) (list.querySelector(`li[data-id="${CSS.escape(focused)}"]`) || current)?.querySelector(':scope > button')?.focus({ preventScroll: true });
   }
 
   /** A new render is on the canvas: redraw the thumbnails in view (the rest as they scroll in). */

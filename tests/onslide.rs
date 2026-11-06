@@ -47,7 +47,7 @@ fn chrome() -> Option<PathBuf> {
 const EVENT_LOG: &str = "(() => { window.__ev = []; const name = (t) => t?.nodeType === 1 ? t.tagName.toLowerCase() + (t.id ? '#' + t.id : '') + (t.dataset?.menu ? `[${t.dataset.menu}]` : '') + (t.className && typeof t.className === 'string' ? '.' + t.className.trim().split(/ +/)[0] : '') : String(t); const log = (e) => { __ev.push(`${e.type} ${name(e.target)}${e.clientX !== undefined ? ` @${Math.round(e.clientX)},${Math.round(e.clientY)}` : ''}${e.defaultPrevented ? ' (prevented)' : ''}`); if (__ev.length > 10) __ev.shift(); }; for (const t of ['mousedown', 'pointerdown', 'focusin', 'focusout']) addEventListener(t, log, true); addEventListener('mousedown', (e) => setTimeout(() => __ev.push(`  after: prevented=${e.defaultPrevented}`)), true); addEventListener('blur', () => __ev.push('window blur')); })()";
 
 /// A failed wait's report: the window, the top row and what has the keyboard.
-const PAGE_STATE: &str = "(() => { try { const q = (s) => document.querySelector(s); const r = (s) => { const b = q(s)?.getBoundingClientRect(); return b && [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)]; }; return { window: [innerWidth, innerHeight], menus: q('#menubar')?.className, menubar: r('#menubar'), header: r('header'), notice: q('#notice')?.textContent, status: q('#status')?.textContent, list: getComputedStyle(q('#slides')).display, focus: document.activeElement?.outerHTML.slice(0, 80), menuOpen: !q('#ctxmenu')?.hidden, events: window.__ev }; } catch (e) { return String(e); } })()";
+const PAGE_STATE: &str = "(() => { try { const q = (s) => document.querySelector(s); const r = (s) => { const b = q(s)?.getBoundingClientRect(); return b && [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)]; }; return { window: [innerWidth, innerHeight], menus: q('#menubar')?.className, menubar: r('#menubar'), header: r('header'), notice: q('#notice')?.textContent, status: q('#status')?.textContent, list: getComputedStyle(q('#slides')).display, focus: document.activeElement?.outerHTML.slice(0, 80), menuOpen: !q('#ctxmenu')?.hidden, current: q('#slides li.current')?.dataset.id, currentBox: r('#slides li.current'), nav: [q('nav')?.scrollTop, q('nav')?.clientHeight, q('nav')?.scrollHeight], shown: q('#preview')?.contentWindow?.Reveal?.getCurrentSlide()?.id, events: window.__ev }; } catch (e) { return String(e); } })()";
 
 /// The editor has loaded: preview ready, slide list drawn, session API up.
 const READY: &str = "(() => { const f = document.querySelector('#preview'); return !!(f && f.contentWindow?.Reveal?.isReady?.() && document.querySelector('#slides li') && window.qdSession); })()";
@@ -243,6 +243,14 @@ impl Ed {
         self.click_editor(&format!("#slides li[data-id={id}] > button"))
             .await;
         self.wait(&format!("document.activeElement?.closest('#slides li')?.dataset.id === '{id}' && document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide()?.id === '{id}'")).await;
+    }
+
+    /// Show slide `id` on the canvas and wait until the list has scrolled it into view
+    /// (the list scrolls to the shown slide; a slide change still landing would undo
+    /// a scroll done by hand).
+    async fn show_in_list(&self, id: &str) {
+        self.go(id).await;
+        self.wait(&format!("(() => {{ const n = document.querySelector('nav').getBoundingClientRect(); const r = document.querySelector('#slides li[data-id={id}]').getBoundingClientRect(); return document.querySelector('#slides li.current')?.dataset.id === '{id}' && r.top >= n.top - 1 && r.bottom <= n.bottom + 1; }})()")).await;
     }
 
     /// Edit ▸ Undo once; the file must be back to `before` (one edit, one undo step).
@@ -1061,7 +1069,7 @@ async fn bars_set_properties_and_source_panel_is_hidden() {
         "none"
     );
     // slide bar: hidden toggle = visibility attribute
-    ed.wait("!document.querySelector('#slidebar').hidden").await;
+    ed.wait("!document.querySelector('#slidebar').inert").await;
     ed.click_editor("#slidebar [name=hidden]").await;
     ed.wait_file(|f| f.contains("## A {#a visibility=hidden}"), "hidden")
         .await;
@@ -2330,7 +2338,7 @@ const MEASURE: &str = r#"(() => {
   const out = [];
   for (const el of document.querySelectorAll('body *')) {
     if (!shown(el) || el.closest('#preview, #slides .thumb') || el.matches('#srcpane textarea') || el.disabled || el.getAttribute('aria-disabled') === 'true') continue;
-    const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.data.trim()) || ['SELECT', 'INPUT', 'TEXTAREA'].includes(el.tagName);
+    const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.data.trim()) || ['SELECT', 'TEXTAREA'].includes(el.tagName) || (el.tagName === 'INPUT' && !['checkbox', 'color', 'radio', 'range'].includes(el.type)); // swatches and boxes show no text
     if (own) {
       const s = getComputedStyle(el);
       const a = lum(s.color); const b = lum(bgOf(el));
@@ -2346,12 +2354,15 @@ const MEASURE: &str = r#"(() => {
   return out;
 })()"#;
 
+/// The element under the open element bar or formatting bar, if any (null when
+/// none is shown or it covers nothing): a bar must never cover the slide.
+const OVERLAP: &str = "(() => { const f = document.querySelector('#preview'); const a = f.getBoundingClientRect(); const bar = [...document.querySelectorAll('#elbar, #fmtbar')].find((b) => !b.hidden && b.getClientRects().length); if (!bar) return null; const r = bar.getBoundingClientRect(); const hit = [...f.contentDocument.querySelectorAll('section.present [data-qd], section.present > h2')].filter((el) => !el.classList.contains('qd-sel') && !el.classList.contains('qd-editing')).find((el) => { const e = el.getBoundingClientRect(); const x = a.left + e.left, y = a.top + e.top; return x < r.right && x + e.width > r.left && y < r.bottom && y + e.height > r.top; }); return hit ? (hit.dataset.qd || hit.tagName) : null; })()";
+
 /// T004 (spec 008 SC-004, SC-005, SC-003): in light, dark and high contrast,
 /// every text and control in the editor meets the contrast and size minimums,
-/// with the source pane open too, and the bars cover no element. Fails today
-/// as the audit found; 008 US3 (T014) and US2 make it pass.
+/// with the source pane open too, and the bars cover no element (the audit's
+/// failures, fixed by 008 US2 and US3).
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "passes once 008 US2 and US3 land (T012–T014); run with --ignored"]
 async fn audit_measures() {
     let Some(ed) = Ed::open(AUDIT).await else {
         return;
@@ -2387,7 +2398,7 @@ async fn audit_measures() {
         }
     }
     // the bars cover no element: select, then edit, the element under each title
-    let overlap = "(() => { const f = document.querySelector('#preview'); const a = f.getBoundingClientRect(); const bar = [...document.querySelectorAll('#elbar, #fmtbar')].find((b) => !b.hidden && b.getClientRects().length); if (!bar) return null; const r = bar.getBoundingClientRect(); const hit = [...f.contentDocument.querySelectorAll('section.present [data-qd], section.present > h2')].filter((el) => !el.classList.contains('qd-sel') && !el.classList.contains('qd-editing')).find((el) => { const e = el.getBoundingClientRect(); const x = a.left + e.left, y = a.top + e.top; return x < r.right && x + e.width > r.left && y < r.bottom && y + e.height > r.top; }); return hit ? (hit.dataset.qd || hit.tagName) : null; })()";
+    let overlap = OVERLAP;
     for (anchor, el) in [("highlights", "highlights/0"), ("model", "model/0")] {
         ed.go(anchor).await;
         ed.select(&format!("[data-qd=\"{el}\"]")).await;
@@ -2498,8 +2509,7 @@ async fn slide_list_like_a_slide_app() {
 
     // drag "code" by its handle above "model": a drag image and a gap; Escape cancels
     ed.settle().await;
-    ed.eval("document.querySelector('#slides li[data-id=code]').scrollIntoView({ block: 'end' })")
-        .await;
+    ed.show_in_list("code").await;
     let before = order();
     let from = ed
         .editor_point("#slides li[data-id=code] .handle", None)
@@ -2532,8 +2542,7 @@ async fn slide_list_like_a_slide_app() {
     ed.undo_to(&file).await;
     // held near the list's top edge, the list scrolls
     ed.settle().await;
-    ed.eval("document.querySelector('#slides li[data-id=code]').scrollIntoView({ block: 'end' })")
-        .await;
+    ed.show_in_list("code").await;
     let top = ed
         .point("(() => { const r = document.querySelector('nav').getBoundingClientRect(); return [r.left + 60, r.top + 10]; })()")
         .await;
@@ -2560,4 +2569,59 @@ async fn slide_list_like_a_slide_app() {
         "⌥↑ moved columns up",
     )
     .await;
+}
+
+/// T011 (spec 008 US2): nothing covers the slide. The bars for a selected or
+/// edited element never sit on another element or the title; reveal.js's own
+/// menu button, arrows and progress bar are hidden while editing; and the
+/// canvas doesn't move between the title slide and a content slide.
+#[tokio::test(flavor = "multi_thread")]
+async fn nothing_covers_the_slide() {
+    let Some(ed) = Ed::open(AUDIT).await else {
+        return;
+    };
+    let canvas_top = "Math.round(document.querySelector('#preview').getBoundingClientRect().top)";
+    ed.go("title-slide").await;
+    let top = ed.eval(canvas_top).await;
+    ed.go("highlights").await;
+    assert_eq!(ed.eval(canvas_top).await, top, "the canvas stays put");
+    assert_eq!(
+        ed.eval("(d => [...d.querySelectorAll('.slide-menu-button, .reveal .controls, .reveal .progress')].filter((e) => getComputedStyle(e).display !== 'none' && getComputedStyle(e).visibility !== 'hidden').length)(document.querySelector('#preview').contentDocument)").await,
+        0,
+        "no reveal.js chrome while editing"
+    );
+    for (anchor, el) in [
+        ("highlights", "highlights/0"),
+        ("model", "model/0"),
+        ("annotated", "annotated/0"),
+    ] {
+        ed.go(anchor).await;
+        ed.select(&format!("[data-qd=\"{el}\"]")).await;
+        assert_eq!(
+            ed.eval(OVERLAP).await,
+            Value::Null,
+            "element bar over another element when {el} is selected"
+        );
+        ed.key("Enter", "Enter", 13, 0).await; // edit it
+        // typed on the slide (the formatting bar) or in the markdown pop-up over it
+        ed.wait("window.qdSession() !== null").await;
+        assert_eq!(
+            ed.eval(OVERLAP).await,
+            Value::Null,
+            "formatting bar over another element while editing {el}"
+        );
+        ed.key("Escape", "Escape", 27, 0).await;
+        ed.key("Escape", "Escape", 27, 0).await;
+        ed.idle().await;
+    }
+    // typing on the slide: the formatting bar shows and covers nothing
+    ed.go("model").await;
+    ed.click_in_slide("[data-qd=\"model/0\"]").await;
+    ed.wait("window.qdSession() !== null && !document.querySelector('#fmtbar').hidden")
+        .await;
+    assert_eq!(
+        ed.eval(OVERLAP).await,
+        Value::Null,
+        "formatting bar over another element while typing"
+    );
 }

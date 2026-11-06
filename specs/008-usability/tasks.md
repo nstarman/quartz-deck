@@ -90,12 +90,12 @@ Paths are relative to the repo root.
 
 **Independent Test**: spec US2; quickstart §2.
 
-- [ ] T011 [P] [US2] Write failing browser tests `nothing_covers_the_slide` in `tests/onslide.rs`:
+- [X] T011 [P] [US2] Write failing browser tests `nothing_covers_the_slide` in `tests/onslide.rs`:
   - selecting and then editing the first element under the title on each slide puts no bar over another element (the overlap part of `audit_measures`, asserted per slide here);
   - the preview has no visible `.slide-menu-button`, `.controls` or `.progress`;
   - the canvas's top edge is the same on the title slide and on a content slide.
-- [ ] T012 [US2] One placement rule for the element bar and the formatting bar (research R5) in `src/ui/editor.js` and `src/ui/toolbar.js`: above, else below, else docked at the top of the canvas area; reject a position that intersects another element or the slide's heading. Keep the ResizeObserver re-placement.
-- [ ] T013 [US2] In the frame hook (`src/ui/editor.js`), `Reveal.configure({controls: false, progress: false, slideNumber: false})` and hide `.slide-menu-button`; the slide bar keeps its row on every slide (`visibility: hidden` and disabled on the title slide) (research R6). T011 passes.
+- [X] T012 [US2] One placement rule for the element bar and the formatting bar (research R5) in `src/ui/editor.js` and `src/ui/toolbar.js`: above, else below, else docked at the top of the canvas area; reject a position that intersects another element or the slide's heading. Keep the ResizeObserver re-placement.
+- [X] T013 [US2] In the frame hook (`src/ui/editor.js`), `Reveal.configure({controls: false, progress: false, slideNumber: false})` and hide `.slide-menu-button`; the slide bar keeps its row on every slide (`visibility: hidden` and disabled on the title slide) (research R6). T011 passes.
 
 ---
 
@@ -103,7 +103,7 @@ Paths are relative to the repo root.
 
 **Independent Test**: spec US3; quickstart §3; `audit_measures` contrast and size parts.
 
-- [ ] T014 [US3] Themes and sizes in `src/ui/editor.css` (and `PREVIEW_CSS` in `src/ui/editor.js`) (research R10):
+- [X] T014 [US3] Themes and sizes in `src/ui/editor.css` (and `PREVIEW_CSS` in `src/ui/editor.js`) (research R10):
   - `color-scheme` per theme;
   - theme colours for `select`, `input`, `textarea`, checkboxes and the colour swatch;
   - the source highlight colours as tokens with a light, dark and high-contrast value each, each ≥4.5:1 on the pane (record the chosen values and ratios in research R10);
