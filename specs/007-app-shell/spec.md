@@ -110,7 +110,7 @@ VS Code's panel: the source-pane side is as set there too.
 4. **Given** the person wants the defaults back, **When** they choose "Reset
    to defaults" in Settings, **Then** every setting returns to its default
    after a confirmation.
-5. **Given** a later feature adds a setting (for example 010's "Save as git
+5. **Given** a later feature adds a setting (for example 011's "Save as git
    commit"), **When** it is added, **Then** it appears in the same Settings
    window and is stored the same way, without changing this feature.
 
@@ -298,7 +298,7 @@ shortcuts overrides a default VS Code binding while the panel has focus.
   write them, MUST NOT contain deck content or secrets, and unknown keys MUST
   be preserved.
 - **FR-012**: Later features MUST be able to add settings to the same window
-  and store (010's "Save as git commit" is expected) without changing how
+  and store (011's "Save as git commit" is expected) without changing how
   existing settings are stored.
 
 **Shortcut reference (US3)**
@@ -406,7 +406,7 @@ shortcuts overrides a default VS Code binding while the panel has focus.
 - Settings sync between machines is out of scope.
 - Theme "follow the system" means the operating system's light/dark choice
   as the browser reports it.
-- The Export ▾ menu's extra formats arrive with spec 009 and slot into File
+- The Export ▾ menu's extra formats arrive with spec 010 and slot into File
   → Export; until then File → Export holds today's offline HTML and PDF.
 - Copying a slide or element to another application gives its markdown
   source; rich (HTML/image) clipboard formats are out of scope.
