@@ -1779,6 +1779,8 @@ async fn framed_editor_takes_theme_and_messages() {
     let focus_text = "__msgs.filter((m) => m.type === 'focusText').length";
     // Esc clears the selection first; Esc with nothing left hands the keyboard to the text
     let esc = || ed.key("Escape", "Escape", 27, 0);
+    ed.eval(EVENT_LOG).await;
+    ed.eval("(() => { const f = document.querySelector('#preview').contentWindow; const log = (w) => (e) => __ev.push(`${w} key ${e.key} -> ${e.target.tagName} sel=${document.querySelector('#preview').contentDocument.querySelector('.qd-sel')?.dataset.qd} src=${!document.querySelector('#srcpane').hidden}`); f.addEventListener('keydown', log('frame'), true); addEventListener('keydown', log('page'), true); f.addEventListener('unload', () => __ev.push('frame unload')); })()").await;
     ed.wait("window.qdSession() !== null").await;
     esc().await; // ends the edit the click started (the element stays selected)
     ed.wait(&format!("window.qdSession() === null && {SEL} === 'a/0'"))
@@ -2624,4 +2626,53 @@ async fn nothing_covers_the_slide() {
         Value::Null,
         "formatting bar over another element while typing"
     );
+}
+
+/// T015 (spec 008 US4): Present puts the canvas's own frame full screen at the
+/// slide on screen, with reveal.js's keys and the deck's own controls; leaving full screen
+/// gives the editor its settings back. "From the beginning" starts at the title.
+#[tokio::test(flavor = "multi_thread")]
+async fn present_from_here_and_from_start() {
+    let mut deck = String::from("---\ntitle: Talk\nformat: revealjs\n---\n");
+    for i in 1..=5 {
+        deck += &format!("\n## Slide {i} {{#s{i}}}\n\nSome text.\n");
+    }
+    let Some(ed) = Ed::open(&deck).await else {
+        return;
+    };
+    // full screen needs a real screen: record what asked for it, and say it happened
+    ed.eval(
+        "window.__fs = []; Element.prototype.requestFullscreen = function () { __fs.push(this.id); \
+         window.__full = this; document.dispatchEvent(new Event('fullscreenchange')); return Promise.resolve(); }; \
+         Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => window.__full ?? null })",
+    )
+    .await;
+    let reveal = "document.querySelector('#preview').contentWindow.Reveal";
+    let leave = "window.__full = null; document.dispatchEvent(new Event('fullscreenchange'))";
+    let presenting =
+        format!("{reveal}.getConfig().progress === true && {reveal}.getConfig().keyboard === true");
+    let editing = format!(
+        "{reveal}.getConfig().progress === false && {reveal}.getConfig().keyboard?.[27] === null"
+    );
+
+    ed.go("s4").await;
+    ed.click_editor("#present").await;
+    ed.wait(&format!("__fs.join() === 'preview' && {presenting}"))
+        .await;
+    assert_eq!(
+        ed.eval(&format!("{reveal}.getCurrentSlide().id")).await,
+        "s4"
+    );
+    ed.eval(leave).await;
+    ed.wait(&editing).await;
+
+    ed.click_editor("#present-more").await;
+    ed.click_menu("Present from the beginning").await;
+    ed.wait(&format!("__fs.length === 2 && {presenting}")).await;
+    assert_eq!(
+        ed.eval(&format!("{reveal}.getCurrentSlide().id")).await,
+        "title-slide"
+    );
+    ed.eval(leave).await;
+    ed.wait(&editing).await;
 }

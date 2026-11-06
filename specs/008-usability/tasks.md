@@ -119,11 +119,11 @@ Paths are relative to the repo root.
 
 **Independent Test**: spec US4; quickstart §4.
 
-- [ ] T015 [P] [US4] Write failing browser test `present_from_here_and_from_start` in `tests/onslide.rs`:
+- [X] T015 [P] [US4] Write failing browser test `present_from_here_and_from_start` in `tests/onslide.rs`:
   - with `Element.prototype.requestFullscreen` stubbed to record its element, Present on slide 4 asks for the preview frame full screen at slide 4, with reveal's keyboard on;
   - "From the beginning" goes to the title slide;
   - a `fullscreenchange` back restores the editing configuration (no controls, Escape the editor's).
-- [ ] T016 [US4] Actions `present` ("Present from this slide", ⌥⌘P) and `present-start` ("Present from the beginning", ⇧⌥⌘P) in `src/ui/actions.json` (View), checked against `vscode/default-keys.json` by the node test.
+- [X] T016 [US4] Actions `present` ("Present from this slide", ⌥⌘P) and `present-start` ("Present from the beginning", ⇧⌥⌘P) in `src/ui/actions.json` (View), checked against `vscode/default-keys.json` by the node test.
 
   A ▶ Present button with a ▾ in the header (`src/ui/index.html`, `src/ui/menubar.js`). Full screen in place in `src/ui/editor.js` (research R7). `preview` relabelled "Open in browser tab". T015 passes.
 

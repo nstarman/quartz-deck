@@ -12,6 +12,7 @@ export function makeList(api) {
   const nav = list.closest('nav');
   const thumbs = new Map(); // anchor → {host, html}: kept across redraws, rebuilt only when the slide changed
   const visible = new Set();
+  let drawn = ''; // what the items show (render)
   let justDragged = false; // the click that ends a drag isn't a click on the slide
   let shown; // the slide (and its place) the list last scrolled to
 
@@ -165,6 +166,11 @@ export function makeList(api) {
   function render() {
     const deck = api.state.deck;
     if (!deck) return;
+    // nothing to redraw: replacing the items under a press loses its click (the
+    // release lands on a new button), so a refetch of the same deck leaves them
+    const sig = JSON.stringify([deck.slides, deck.title_slide, api.state.anchor, titleText()]);
+    if (sig === drawn) return;
+    drawn = sig;
     // redrawing must not move the keyboard: back to the same slide afterwards
     const focused = list.contains(document.activeElement) && document.activeElement.closest('li')?.dataset.id;
     // building the items moves the thumbnails out of the old ones, and the list's

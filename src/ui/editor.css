@@ -93,6 +93,11 @@ header #status { color: var(--muted); font-size: 13px; }
 /* "rendered abc1234" while all is well: read out, not shown; problems and progress show */
 #status.quiet { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 header a { color: var(--accent); }
+/* Present (spec 008 US4): one button and its ▾, joined */
+header .split { flex: none; display: flex; }
+header .split button { height: 28px; }
+header .split button:first-child { border-radius: 6px 0 0 6px; }
+header .split button + button { border-radius: 0 6px 6px 0; border-left: 0; padding: 0; width: 24px; }
 #banner { padding: 8px 16px; background: var(--error-bg); color: var(--error);
   white-space: pre-wrap; font: 12px/1.4 ui-monospace, monospace; max-height: 30vh; overflow: auto; }
 
