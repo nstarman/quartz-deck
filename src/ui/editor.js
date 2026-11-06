@@ -321,6 +321,10 @@ function hookFrame() {
     });
   }, true);
   doc.addEventListener('keydown', onKey, true);
+  // an element changing size (math typesetting, an image loading) moves its neighbours:
+  // place the bars again, so they still cover nothing (spec 008 US2)
+  const replace = new w.ResizeObserver(() => { placeElbar(); placeToolbar(frame); });
+  for (const el of doc.querySelectorAll('[data-qd]')) replace.observe(el);
   doc.addEventListener('paste', onPaste);
   doc.addEventListener('contextmenu', (e) => {
     if (state.session) return; // the browser's own menu (spelling) while typing
@@ -1161,8 +1165,7 @@ const slidebar = $('#slidebar');
 async function renderSlidebar() {
   const cur = slideByAnchor(state.anchor);
   // the title slide has no slide properties: the bar keeps its row (the canvas
-  // doesn't jump, spec 008 US2) but shows nothing and can't be reached
-  slidebar.inert = !cur;
+  // doesn't jump, spec 008 US2) but shows nothing and can't be reached (hidden)
   slidebar.style.visibility = cur ? '' : 'hidden';
   if (!cur) return;
   const full = await fetchSlide(cur.id);

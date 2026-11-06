@@ -4,7 +4,6 @@
   --error-bg: #fdecea; --error: #8a1c12; --danger: #b3261e; --drop: #2a5bd7;
   /* source highlighting, each ≥4.5:1 on the pane in its theme (spec 008 US3) */
   --src-yaml: #755b2d; --src-fence: #7d3c98; --src-code: #17703d; --src-option: #806600;
-  --control: 28px; /* one height for bar buttons, selects and toggles */
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -43,7 +42,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* form controls take the theme's colours (spec 008 US3: in dark a select was 1.18:1) */
 select, input:not([type=checkbox], [type=color], [type=range]), textarea {
   background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; }
-select { height: var(--control); padding: 0 6px; }
+select { height: 28px; padding: 0 6px; }
 input[type=checkbox] { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); vertical-align: middle; }
 button { padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); cursor: pointer; }
 button:hover { border-color: var(--muted); }
@@ -143,7 +142,7 @@ aside h2 { font-size: 15px; margin: 4px 0 12px; }
 aside h2 code { font-size: 12px; color: var(--muted); font-weight: normal; }
 aside label { display: block; margin: 0 0 10px; color: var(--muted); font-size: 12px; }
 aside input:not([type=color]), aside select, aside textarea { display: block; width: 100%; margin-top: 3px;
-  padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 13px; }
+  padding: 5px 7px; background: var(--bg); font-size: 13px; }
 aside textarea { font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
 aside label.row { display: flex; align-items: center; gap: 6px; }
 aside label.row input[name=bg] { margin-top: 0; }
@@ -266,9 +265,9 @@ main.source-full > #srcpane { flex: 1; width: auto; }
 #srcpane .c { color: var(--src-code); } #srcpane .o { color: var(--src-option); }
 #srcpane .l { color: var(--accent); text-decoration: underline; }
 #srcpane .gutter { position: absolute; top: 0; right: 0; pointer-events: none; }
+/* ▶ Run: min-height makes it a target you can hit (spec 008 US3) */
 #srcpane .gutter button { position: absolute; right: 8px; pointer-events: auto; font: 11px/1.4 system-ui, sans-serif;
-  min-height: 20px; padding: 0 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--accent);
-  cursor: pointer; white-space: nowrap; } /* ≥20 px: a target you can hit (spec 008 US3) */
+  min-height: 20px; padding: 0 6px; border-radius: 4px; background: var(--bg); color: var(--accent); white-space: nowrap; }
 #srcpane .gutter button.err { color: var(--danger); border-color: var(--danger); }
 #srcpane .gutter button.stale { opacity: .55; }
 #srcpane .gutter button.busy { color: var(--muted); }

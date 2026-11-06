@@ -12,8 +12,8 @@ export function makeList(api) {
   const nav = list.closest('nav');
   const thumbs = new Map(); // anchor → {host, html}: kept across redraws, rebuilt only when the slide changed
   const visible = new Set();
-  let justDragged = false;
-  let shown; // the slide (and its place) the list last scrolled to // the click that ends a drag isn't a click on the slide
+  let justDragged = false; // the click that ends a drag isn't a click on the slide
+  let shown; // the slide (and its place) the list last scrolled to
 
   const el = (tag, cls, text) => Object.assign(document.createElement(tag), cls ? { className: cls } : {}, text ? { textContent: text } : {});
   const frameDoc = () => { try { return api.frame.contentDocument?.querySelector('.reveal .slides') ? api.frame.contentDocument : null; } catch { return null; } };
@@ -169,12 +169,11 @@ export function makeList(api) {
     const focused = list.contains(document.activeElement) && document.activeElement.closest('li')?.dataset.id;
     // building the items moves the thumbnails out of the old ones, and the list's
     // scroll collapses with them: keep it (read first, put back after)
-    const [x, y] = [nav.scrollLeft, nav.scrollTop];
+    const { scrollLeft, scrollTop } = nav;
     const items = deck.slides.map((s) => item(s, false));
     if (deck.title_slide) items.unshift(item({ id: 'title-slide', anchor: 'title-slide' }, true));
     list.replaceChildren(...items);
-    nav.scrollLeft = x;
-    nav.scrollTop = y;
+    Object.assign(nav, { scrollLeft, scrollTop });
     const current = list.querySelector('li.current');
     // only when the shown slide changed or moved (undo, an agent's edit): a redraw
     // must not scroll the list away from where the person scrolled it. On the next

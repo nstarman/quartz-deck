@@ -250,7 +250,7 @@ impl Ed {
     /// a scroll done by hand).
     async fn show_in_list(&self, id: &str) {
         self.go(id).await;
-        self.wait(&format!("(() => {{ const n = document.querySelector('nav').getBoundingClientRect(); const r = document.querySelector('#slides li[data-id={id}]').getBoundingClientRect(); return document.querySelector('#slides li.current')?.dataset.id === '{id}' && r.top >= n.top - 1 && r.bottom <= n.bottom + 1; }})()")).await;
+        self.wait(&format!("(() => {{ const n = document.querySelector('nav').getBoundingClientRect(); const r = document.querySelector('#slides li.current[data-id={id}]')?.getBoundingClientRect(); return !!r && r.top >= n.top - 1 && r.bottom <= n.bottom + 1; }})()")).await;
     }
 
     /// Edit ▸ Undo once; the file must be back to `before` (one edit, one undo step).
@@ -1069,7 +1069,8 @@ async fn bars_set_properties_and_source_panel_is_hidden() {
         "none"
     );
     // slide bar: hidden toggle = visibility attribute
-    ed.wait("!document.querySelector('#slidebar').inert").await;
+    ed.wait("document.querySelector('#slidebar').style.visibility !== 'hidden'")
+        .await;
     ed.click_editor("#slidebar [name=hidden]").await;
     ed.wait_file(|f| f.contains("## A {#a visibility=hidden}"), "hidden")
         .await;
@@ -2398,11 +2399,10 @@ async fn audit_measures() {
         }
     }
     // the bars cover no element: select, then edit, the element under each title
-    let overlap = OVERLAP;
     for (anchor, el) in [("highlights", "highlights/0"), ("model", "model/0")] {
         ed.go(anchor).await;
         ed.select(&format!("[data-qd=\"{el}\"]")).await;
-        let hit = ed.eval(overlap).await;
+        let hit = ed.eval(OVERLAP).await;
         if !hit.is_null() {
             failures.push(format!("element bar over {hit} when {el} is selected"));
         }
@@ -2586,7 +2586,7 @@ async fn nothing_covers_the_slide() {
     ed.go("highlights").await;
     assert_eq!(ed.eval(canvas_top).await, top, "the canvas stays put");
     assert_eq!(
-        ed.eval("(d => [...d.querySelectorAll('.slide-menu-button, .reveal .controls, .reveal .progress')].filter((e) => getComputedStyle(e).display !== 'none' && getComputedStyle(e).visibility !== 'hidden').length)(document.querySelector('#preview').contentDocument)").await,
+        ed.eval("(d => [...d.querySelectorAll('.slide-menu-button, .reveal .controls, .reveal .progress')].filter((e) => e.checkVisibility({ visibilityProperty: true })).length)(document.querySelector('#preview').contentDocument)").await,
         0,
         "no reveal.js chrome while editing"
     );
