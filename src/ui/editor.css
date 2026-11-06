@@ -160,7 +160,8 @@ aside .status.fail { color: var(--danger); }
   nav .add-here { top: calc(50% - 10px); left: -20px; transform: translateY(-50%); width: 20px; height: 28px; }
   /* the + after the last slide, level with the thumbnails */
   nav { align-items: flex-start; }
-  nav button.wide { flex: none; width: 32px; padding: 0; align-self: stretch; margin: 12px 12px 30px 20px; }
+  nav button.wide { flex: none; width: 28px; height: 28px; padding: 0; border-radius: 50%; align-self: center;
+    position: relative; top: -10px; margin: 0 12px 0 16px; } /* -10px: level with the thumbnails, not their titles */
 }
 
 /* ---------- on-slide editing (spec 003) ---------- */
