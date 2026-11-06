@@ -10,6 +10,10 @@
 
 ### Session 2026-11-05
 
+- Decision after the MVP (the person's): the header's Undo, Redo, Preview,
+  Render, Export and PDF controls are removed, since the menu bar holds them.
+  The header keeps the deck name, the status, the link to the last render and
+  the Source toggle.
 - Decision during the MVP: menus open with F10 only. Alt (Option) alone
   can't mean "go to the menus", because on macOS it is held to type accented
   characters.

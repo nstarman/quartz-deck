@@ -94,5 +94,6 @@
   {"id": "run-add-package", "label": "Add package…", "menu": ["Run"], "where": ["anywhere"], "qd": "qd env add <package>"},
   {"id": "run-env", "label": "Create environment", "menu": ["Run"], "where": ["anywhere"], "qd": "qd env init"},
 
+  {"id": "shortcuts", "label": "Keyboard shortcuts", "menu": ["Help"], "key": "?", "where": ["slides", "slide", "element"]},
   {"id": "about", "label": "About quartz-deck", "menu": ["Help"], "where": ["anywhere"]}
 ]

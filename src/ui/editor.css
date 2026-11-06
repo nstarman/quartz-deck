@@ -42,14 +42,25 @@ button.wide { display: block; width: calc(100% - 16px); margin: 0 8px 8px; }
 main.source-right #splitter { order: 2; }
 main.source-right #srcpane { order: 3; }
 main.source-right aside { order: 4; }
-#settings { width: min(520px, calc(100vw - 32px)); border: 1px solid var(--line); border-radius: 10px;
-  background: var(--panel); color: var(--text); padding: 16px 20px; }
-#settings::backdrop { background: rgba(0, 0, 0, 0.35); }
+#settings, #shortcuts { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); padding: 16px 20px; }
+#settings::backdrop, #shortcuts::backdrop { background: rgba(0, 0, 0, 0.35); }
+#settings { width: min(520px, calc(100vw - 32px)); }
 #settings h2 { margin: 0 0 12px; font-size: 17px; }
 #settings .setting { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: center; padding: 8px 0;
   border-top: 1px solid var(--line); }
 #settings .setting small { grid-column: 1 / -1; color: var(--muted); }
 #settings .buttons { display: flex; justify-content: space-between; margin-top: 12px; }
+
+#shortcuts { width: min(640px, calc(100vw - 32px)); box-sizing: border-box; max-height: 80vh; overflow-x: hidden; }
+#shortcuts h2 { margin: 0 0 10px; font-size: 17px; }
+#shortcuts h3 { margin: 14px 0 4px; font-size: 13px; color: var(--muted); }
+#shortcuts input { width: 100%; box-sizing: border-box; padding: 5px 8px; }
+#shortcuts table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13px; }
+#shortcuts td:first-child { width: 45%; }
+#shortcuts td { padding: 3px 6px; border-top: 1px solid var(--line); }
+#shortcuts td:nth-child(2) { width: 25%; white-space: nowrap; font-family: ui-monospace, monospace; }
+#shortcuts td:nth-child(3) { color: var(--muted); }
+#shortcuts button { margin-top: 12px; float: right; }
 
 /* ---------- menu bar (spec 007) ---------- */
 #menubar { display: flex; gap: 2px; padding: 2px 8px; background: var(--panel); border-bottom: 1px solid var(--line); font-size: 13px; }
@@ -59,7 +70,6 @@ main.source-right aside { order: 4; }
 
 header { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 8px 16px;
   border-bottom: 1px solid var(--line); background: var(--panel); }
-header .tools { display: flex; gap: 4px; }
 #notice { color: var(--accent); }
 #notice.error { color: var(--danger); }
 header #status { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -105,7 +115,6 @@ aside .hint { color: var(--muted); font-size: 12px; }
 aside h3 { font-size: 13px; margin: 8px 0 6px; }
 aside .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; }
 aside form.add-box { border-top: 1px solid var(--line); margin-top: 8px; }
-header label.inline { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
 aside ul.problems { list-style: none; padding: 0; margin: 0 0 12px; }
 aside ul.problems li { margin: 0 0 8px; }
 aside ul.problems button { all: unset; box-sizing: border-box; display: block; width: 100%; padding: 6px 8px;

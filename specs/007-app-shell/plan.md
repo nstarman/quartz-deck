@@ -130,7 +130,7 @@ src/
     ├── settings.js  # Settings window; apply settings live; ui.* layout memory
     ├── actions.js   # right-click menus become views of the list (handlers stay here)
     ├── editor.js    # handlers registered by id; Escape order; slide copy/paste
-    ├── index.html   # menubar container; header buttons kept as quick access
+    ├── index.html   # menubar container; header keeps the status and Source; its other buttons moved to the menus
     └── editor.css   # menubar, reference dialog, focus ring, source on the right
 vscode/default-keys.json   # VS Code defaults the panel must leave alone (R7)
 tests/{cli,serve,onslide}.rs, vscode/test/keys.test.js
