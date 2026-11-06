@@ -204,6 +204,19 @@ impl Ed {
         }
     }
 
+    /// ⌘V on `target` (a JS expression), then the paste event a browser fires
+    /// for it, carrying `text` (a JS expression). Devtools key presses don't
+    /// run the browser's paste command on macOS and paste Chrome's own
+    /// clipboard on Linux, so the test sends both itself.
+    async fn paste(&self, target: &str, text: &str) {
+        self.eval(&format!(
+            "(() => {{ const t = {target}; t.dispatchEvent(new KeyboardEvent('keydown', {{ key: 'v', code: 'KeyV', ctrlKey: true, bubbles: true, cancelable: true }}));
+              const dt = new DataTransfer(); dt.setData('text/plain', {text});
+              t.dispatchEvent(new ClipboardEvent('paste', {{ clipboardData: dt, bubbles: true, cancelable: true }})); }})()"
+        ))
+        .await;
+    }
+
     /// Edit ▸ Undo once; the file must be back to `before` (one edit, one undo step).
     async fn undo_to(&self, before: &str) {
         self.idle().await;
@@ -2087,13 +2100,14 @@ async fn same_rules_everywhere() {
     ed.click_editor("#toggle-source").await;
 
     // slides on the clipboard: copy in the slide list, paste with fresh ids.
-    // The system clipboard is stubbed (headless Chrome won't share one).
+    // Copying writes the system clipboard (caught here); pasting reads it from
+    // the paste event.
     ed.settle().await;
-    ed.eval("window.__clip = null; navigator.clipboard.writeText = (t) => { __clip = t; return Promise.resolve(); }; navigator.clipboard.readText = () => Promise.resolve(__clip)").await;
+    ed.eval("window.__clip = null; navigator.clipboard.writeText = (t) => { __clip = t; return Promise.resolve(); }").await;
     ed.click_editor("#slides li[data-id=b] button").await;
     ed.key("c", "KeyC", 67, 2).await;
     ed.wait("window.__clip?.startsWith('## B {#b}')").await;
-    ed.key("v", "KeyV", 86, 2).await;
+    ed.paste("document.activeElement", "__clip").await;
     ed.wait_file(|f| f.matches("Other slide.").count() == 2, "pasted")
         .await;
     let s = &ed.cli(&["slides"])["slides"];
@@ -2104,9 +2118,9 @@ async fn same_rules_everywhere() {
 
     // text from another application: a paragraph, never raw HTML
     ed.settle().await;
-    ed.eval("window.__clip = '1 < 2 & <b>x</b>'").await;
     ed.click_editor("#slides li[data-id=b] button").await;
-    ed.key("v", "KeyV", 86, 2).await;
+    ed.paste("document.activeElement", "'1 < 2 & <b>x</b>'")
+        .await;
     ed.wait_file(
         |f| f.contains("Other slide.\n\n1 &lt; 2 &amp; &lt;b>x&lt;/b>"),
         "escaped",
@@ -2206,20 +2220,13 @@ async fn paste_key_uses_the_paste_event() {
     let Some(ed) = Ed::open(P2).await else { return };
     ed.go("b").await;
     ed.click_editor("#slides li[data-id=b] button").await;
-    // ⌘V, then the paste event a real browser fires for it (devtools key
-    // presses don't run the browser's paste command)
-    let paste = |target: &str, text: &str| {
-        format!(
-            "(() => {{ window.__asked = false; navigator.clipboard.readText = () => {{ __asked = true; return Promise.reject(new Error('no permission')); }};
-              const t = {target}; t.dispatchEvent(new KeyboardEvent('keydown', {{ key: 'v', code: 'KeyV', ctrlKey: true, bubbles: true, cancelable: true }}));
-              const dt = new DataTransfer(); dt.setData('text/plain', {text:?});
-              t.dispatchEvent(new ClipboardEvent('paste', {{ clipboardData: dt, bubbles: true, cancelable: true }})); }})()"
-        )
-    };
-    ed.eval(&paste(
+    // the clipboard API refuses, as without permission, and records being asked
+    let refuse = "window.__asked = false; navigator.clipboard.readText = () => { __asked = true; return Promise.reject(new Error('no permission')); }";
+    ed.eval(refuse).await;
+    ed.paste(
         "document.activeElement",
-        "## Pasted {#b}\n\nFrom another deck.\n",
-    ))
+        "'## Pasted {#b}\\n\\nFrom another deck.\\n'",
+    )
     .await;
     ed.wait_file(|f| f.contains("From another deck."), "slide pasted")
         .await;
@@ -2238,10 +2245,10 @@ async fn paste_key_uses_the_paste_event() {
     ed.select("[data-qd=\"a/0\"]").await;
     ed.eval("document.querySelector('#preview').contentWindow.focus()")
         .await;
-    ed.eval(&paste(
+    ed.paste(
         "document.querySelector('#preview').contentDocument.body",
-        "1 < 2",
-    ))
+        "'1 < 2'",
+    )
     .await;
     ed.wait_file(
         |f| f.contains("First para.\n\n1 &lt; 2"),
@@ -2254,11 +2261,9 @@ async fn paste_key_uses_the_paste_event() {
     // its own empty clipboard) falls back to the clipboard API, not to nothing
     ed.settle().await;
     ed.click_editor("#slides li[data-id=b] button").await;
-    ed.eval(&paste("document.activeElement", "").replace(
-        "__asked = true; return Promise.reject(new Error('no permission'));",
-        "return Promise.resolve('## Again {#again}\\n\\nFrom the API.\\n');",
-    ))
-    .await;
+    ed.eval("navigator.clipboard.readText = () => Promise.resolve('## Again {#again}\\n\\nFrom the API.\\n')")
+        .await;
+    ed.paste("document.activeElement", "''").await;
     ed.wait_file(|f| f.contains("From the API."), "pasted from the API")
         .await;
 }
