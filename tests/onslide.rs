@@ -42,6 +42,13 @@ fn chrome() -> Option<PathBuf> {
     path
 }
 
+/// Records the last pointer presses and focus changes (target and point), for a
+/// failed wait's report: where a click really landed.
+const EVENT_LOG: &str = "(() => { window.__ev = []; const name = (t) => t?.nodeType === 1 ? t.tagName.toLowerCase() + (t.id ? '#' + t.id : '') + (t.dataset?.menu ? `[${t.dataset.menu}]` : '') + (t.className && typeof t.className === 'string' ? '.' + t.className.trim().split(/ +/)[0] : '') : String(t); const log = (e) => { __ev.push(`${e.type} ${name(e.target)}${e.clientX !== undefined ? ` @${Math.round(e.clientX)},${Math.round(e.clientY)}` : ''}${e.defaultPrevented ? ' (prevented)' : ''}`); if (__ev.length > 10) __ev.shift(); }; for (const t of ['mousedown', 'pointerdown', 'focusin', 'focusout']) addEventListener(t, log, true); addEventListener('mousedown', (e) => setTimeout(() => __ev.push(`  after: prevented=${e.defaultPrevented}`)), true); addEventListener('blur', () => __ev.push('window blur')); })()";
+
+/// A failed wait's report: the window, the top row and what has the keyboard.
+const PAGE_STATE: &str = "(() => { try { const q = (s) => document.querySelector(s); const r = (s) => { const b = q(s)?.getBoundingClientRect(); return b && [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)]; }; return { window: [innerWidth, innerHeight], menus: q('#menubar')?.className, menubar: r('#menubar'), header: r('header'), notice: q('#notice')?.textContent, status: q('#status')?.textContent, list: getComputedStyle(q('#slides')).display, focus: document.activeElement?.outerHTML.slice(0, 80), menuOpen: !q('#ctxmenu')?.hidden, events: window.__ev }; } catch (e) { return String(e); } })()";
+
 /// The editor has loaded: preview ready, slide list drawn, session API up.
 const READY: &str = "(() => { const f = document.querySelector('#preview'); return !!(f && f.contentWindow?.Reveal?.isReady?.() && document.querySelector('#slides li') && window.qdSession); })()";
 
@@ -149,6 +156,7 @@ impl Ed {
             _watchdog: watchdog,
         };
         ed.wait_secs(READY, 60).await;
+        ed.eval(EVENT_LOG).await;
         Some(ed)
     }
 
@@ -184,10 +192,11 @@ impl Ed {
         );
         let start = Instant::now();
         while self.eval(&cond_safe).await != Value::Bool(true) {
-            assert!(
-                start.elapsed() < Duration::from_secs(secs),
-                "timed out waiting for: {cond}"
-            );
+            if start.elapsed() > Duration::from_secs(secs) {
+                // what the page looked like, so a failure elsewhere (CI) can be read
+                let state = self.eval(PAGE_STATE).await;
+                panic!("timed out waiting for: {cond}\npage: {state}");
+            }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }
@@ -204,6 +213,17 @@ impl Ed {
         }
     }
 
+    /// Press at `from` and move to `to` in steps, the button still down.
+    async fn press_and_move(&self, from: (f64, f64), to: (f64, f64)) {
+        use DispatchMouseEventType::*;
+        self.mouse(MousePressed, from, false).await;
+        for i in 1..=8 {
+            let t = i as f64 / 8.0;
+            let at = (from.0 + (to.0 - from.0) * t, from.1 + (to.1 - from.1) * t);
+            self.mouse(MouseMoved, at, false).await;
+        }
+    }
+
     /// ⌘V on `target` (a JS expression), then the paste event a browser fires
     /// for it, carrying `text` (a JS expression). Devtools key presses don't
     /// run the browser's paste command on macOS and paste Chrome's own
@@ -215,6 +235,14 @@ impl Ed {
               t.dispatchEvent(new ClipboardEvent('paste', {{ clipboardData: dt, bubbles: true, cancelable: true }})); }})()"
         ))
         .await;
+    }
+
+    /// Click slide `id` in the list and wait until it is on the canvas and has the
+    /// keyboard: keys pressed straight after the click must reach that slide.
+    async fn pick_slide(&self, id: &str) {
+        self.click_editor(&format!("#slides li[data-id={id}] > button"))
+            .await;
+        self.wait(&format!("document.activeElement?.closest('#slides li')?.dataset.id === '{id}' && document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide()?.id === '{id}'")).await;
     }
 
     /// Edit ▸ Undo once; the file must be back to `before` (one edit, one undo step).
@@ -454,8 +482,15 @@ impl Ed {
         self.click_js(&format!("(() => {{ const li = [...document.querySelectorAll('#ctxmenu li')].find((li) => li.firstChild?.textContent === {label:?} && li.offsetParent); li.dispatchEvent(new MouseEvent('mouseenter')); const r = li.getBoundingClientRect(); return [r.left + 20, r.top + r.height / 2]; }})()")).await;
     }
 
+    /// View ▸ Source pane, run directly (the same action in every layout,
+    /// including VS Code's panel, where the menus are one ☰).
+    async fn toggle_source(&self) {
+        self.eval("import('/ui/keys.js').then((k) => k.run('toggle-source'))")
+            .await;
+    }
+
     async fn open_source(&self) {
-        self.click_editor("#toggle-source").await;
+        self.toggle_source().await;
         self.wait(&format!(
             "{PANE}.value.length > 0 && !document.querySelector('#srcpane').hidden"
         ))
@@ -1048,7 +1083,7 @@ async fn bars_set_properties_and_source_panel_is_hidden() {
     }
     assert_eq!(ed.file(), P2, "fragment removed, bytes as before");
     // the Source button shows the source pane; its Form button the old properties panel
-    ed.click_editor("#toggle-source").await;
+    ed.toggle_source().await;
     ed.wait("!document.querySelector('#srcpane').hidden").await;
     // the element bar follows the element when the layout moves; it never sits over other controls
     ed.wait("(() => { const b = document.querySelector('#elbar'); if (b.hidden) return true; const r = b.getBoundingClientRect(), f = document.querySelector('#srcpane [data-act=form]').getBoundingClientRect(); return r.right < f.left || f.right < r.left || r.bottom < f.top || f.bottom < r.top; })()").await;
@@ -1815,12 +1850,12 @@ async fn menu_bar_runs_every_action() {
         .await;
     assert_eq!(ed.eval(shown).await, true, "View's menu is open");
     ed.close_menu().await;
-    // too narrow for the menus: they fold into ☰ (and come back when there is room)
+    // a top row too narrow for the menus: they fold into ☰ (and come back when there is room)
     let folded = "document.querySelector('#menubar').classList.contains('folded')";
-    ed.eval("document.querySelector('#menubar').style.width = '200px'")
+    ed.eval("document.querySelector('header').style.width = '260px'")
         .await;
     ed.wait(folded).await;
-    ed.eval("document.querySelector('#menubar').style.width = ''")
+    ed.eval("document.querySelector('header').style.width = ''")
         .await;
     ed.wait(&format!("!{folded}")).await;
 
@@ -2081,7 +2116,7 @@ async fn same_rules_everywhere() {
     ed.undo_to(&before).await;
     ed.settle().await;
     ed.go("b").await;
-    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.pick_slide("b").await;
     ed.key("d", "KeyD", 68, 2 | 8).await; // Ctrl+Shift+D
     ed.wait_file(
         |f| f.matches("Other slide.").count() == 2,
@@ -2097,14 +2132,14 @@ async fn same_rules_everywhere() {
     ed.wait_file(|f| f.contains("Changed."), "saved from the pane")
         .await;
     ed.undo_to(&before).await;
-    ed.click_editor("#toggle-source").await;
+    ed.toggle_source().await;
 
     // slides on the clipboard: copy in the slide list, paste with fresh ids.
     // Copying writes the system clipboard (caught here); pasting reads it from
     // the paste event.
     ed.settle().await;
     ed.eval("window.__clip = null; navigator.clipboard.writeText = (t) => { __clip = t; return Promise.resolve(); }").await;
-    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.pick_slide("b").await;
     ed.key("c", "KeyC", 67, 2).await;
     ed.wait("window.__clip?.startsWith('## B {#b}')").await;
     ed.paste("document.activeElement", "__clip").await;
@@ -2118,7 +2153,7 @@ async fn same_rules_everywhere() {
 
     // text from another application: a paragraph, never raw HTML
     ed.settle().await;
-    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.pick_slide("b").await;
     ed.paste("document.activeElement", "'1 < 2 & <b>x</b>'")
         .await;
     ed.wait_file(
@@ -2219,7 +2254,7 @@ async fn menus_open_fast() {
 async fn paste_key_uses_the_paste_event() {
     let Some(ed) = Ed::open(P2).await else { return };
     ed.go("b").await;
-    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.pick_slide("b").await;
     // the clipboard API refuses, as without permission, and records being asked
     let refuse = "window.__asked = false; navigator.clipboard.readText = () => { __asked = true; return Promise.reject(new Error('no permission')); }";
     ed.eval(refuse).await;
@@ -2260,10 +2295,269 @@ async fn paste_key_uses_the_paste_event() {
     // an empty paste event (Chrome on Linux fires one for a devtools ⌘V, with
     // its own empty clipboard) falls back to the clipboard API, not to nothing
     ed.settle().await;
-    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.pick_slide("b").await;
     ed.eval("navigator.clipboard.readText = () => Promise.resolve('## Again {#again}\\n\\nFrom the API.\\n')")
         .await;
     ed.paste("document.activeElement", "''").await;
     ed.wait_file(|f| f.contains("From the API."), "pasted from the API")
         .await;
+}
+
+// ---------- spec 008: usability ----------
+
+/// The audit deck, the same file the audit's screenshots use.
+const AUDIT: &str = include_str!("../specs/008-usability/audit/deck/talk.qmd");
+
+/// The slide ids in `qd slides` output, in order.
+fn slide_ids(v: &Value) -> Vec<String> {
+    v["slides"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["id"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// In-page checks for 008's measurement test: contrast of every visible text
+/// and form value, and the size of every interactive target, in the editor's
+/// own document (the deck's slides are the deck's). Returns failures.
+const MEASURE: &str = r#"(() => {
+  const lum = (c) => { const [r, g, b] = c.match(/[\d.]+/g).slice(0, 3).map(Number).map((v) => v / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const opaque = (c) => !/rgba\([^)]*,\s*0\)|transparent/.test(c);
+  const bgOf = (el) => { for (let e = el; e; e = e.parentElement) { const c = getComputedStyle(e).backgroundColor; if (opaque(c)) return c; } return 'rgb(255, 255, 255)'; };
+  const shown = (el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.opacity !== '0' && !el.closest('[hidden], dialog:not([open])'); };
+  const name = (el) => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).join('.') : '') + ` "${(el.textContent || el.value || '').trim().slice(0, 20)}"`;
+  const out = [];
+  for (const el of document.querySelectorAll('body *')) {
+    if (!shown(el) || el.closest('#preview, #slides .thumb') || el.matches('#srcpane textarea') || el.disabled || el.getAttribute('aria-disabled') === 'true') continue;
+    const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.data.trim()) || ['SELECT', 'INPUT', 'TEXTAREA'].includes(el.tagName);
+    if (own) {
+      const s = getComputedStyle(el);
+      const a = lum(s.color); const b = lum(bgOf(el));
+      const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+      const px = parseFloat(s.fontSize); const large = px >= 24 || (px >= 18.66 && +s.fontWeight >= 700);
+      if (ratio < (large ? 3 : 4.5)) out.push(`contrast ${ratio.toFixed(2)}: ${name(el)}`);
+    }
+    if (el.matches('button, select, input:not([type=hidden]), [role=menuitem], [role=menuitemcheckbox], a[href]')) {
+      const r = el.getBoundingClientRect();
+      if (r.width < 20 || r.height < 20) out.push(`size ${Math.round(r.width)}x${Math.round(r.height)}: ${name(el)}`);
+    }
+  }
+  return out;
+})()"#;
+
+/// T004 (spec 008 SC-004, SC-005, SC-003): in light, dark and high contrast,
+/// every text and control in the editor meets the contrast and size minimums,
+/// with the source pane open too, and the bars cover no element. Fails today
+/// as the audit found; 008 US3 (T014) and US2 make it pass.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "passes once 008 US2 and US3 land (T012–T014); run with --ignored"]
+async fn audit_measures() {
+    let Some(ed) = Ed::open(AUDIT).await else {
+        return;
+    };
+    let link = ed.cli(&["url"])["url"].as_str().unwrap().to_string();
+    let mut failures = vec![];
+    for theme in ["light", "dark", "hc"] {
+        // through the link: settings (which opening the source pane writes) don't override it
+        ed.page
+            .goto(
+                link.replace("/#t=", &format!("/?theme={theme}#t="))
+                    .as_str(),
+            )
+            .await
+            .unwrap();
+        ed.wait_secs(READY, 60).await;
+        ed.go("highlights").await;
+        for source in [false, true] {
+            if source {
+                ed.open_source().await;
+            }
+            let found = ed.eval(MEASURE).await;
+            for f in found.as_array().unwrap() {
+                failures.push(format!(
+                    "{theme}{}: {}",
+                    if source { "+source" } else { "" },
+                    f.as_str().unwrap()
+                ));
+            }
+            if source {
+                ed.toggle_source().await;
+            }
+        }
+    }
+    // the bars cover no element: select, then edit, the element under each title
+    let overlap = "(() => { const f = document.querySelector('#preview'); const a = f.getBoundingClientRect(); const bar = [...document.querySelectorAll('#elbar, #fmtbar')].find((b) => !b.hidden && b.getClientRects().length); if (!bar) return null; const r = bar.getBoundingClientRect(); const hit = [...f.contentDocument.querySelectorAll('section.present [data-qd], section.present > h2')].filter((el) => !el.classList.contains('qd-sel') && !el.classList.contains('qd-editing')).find((el) => { const e = el.getBoundingClientRect(); const x = a.left + e.left, y = a.top + e.top; return x < r.right && x + e.width > r.left && y < r.bottom && y + e.height > r.top; }); return hit ? (hit.dataset.qd || hit.tagName) : null; })()";
+    for (anchor, el) in [("highlights", "highlights/0"), ("model", "model/0")] {
+        ed.go(anchor).await;
+        ed.select(&format!("[data-qd=\"{el}\"]")).await;
+        let hit = ed.eval(overlap).await;
+        if !hit.is_null() {
+            failures.push(format!("element bar over {hit} when {el} is selected"));
+        }
+        ed.key("Escape", "Escape", 27, 0).await;
+    }
+    assert!(
+        failures.is_empty(),
+        "{} failures:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+/// T005 (spec 008 US1): the slide list works like a slide app's: thumbnails,
+/// the title slide first, a + in every gap, untitled new slides with an
+/// editor-only placeholder, and a drag you can see (handle, drag image, gap,
+/// Escape, one undo step), plus the keyboard.
+#[tokio::test(flavor = "multi_thread")]
+async fn slide_list_like_a_slide_app() {
+    let Some(ed) = Ed::open(AUDIT).await else {
+        return;
+    };
+    let ids = "[...document.querySelectorAll('#slides li[data-id]')].map((li) => li.dataset.id)";
+    let order = || slide_ids(&ed.cli(&["slides"]));
+    let built = |id: &str| {
+        format!("+(document.querySelector('#slides li[data-id={id}] .thumb')?.dataset.built ?? 0)")
+    };
+
+    // the title slide first (unnumbered, not draggable), then every slide
+    ed.wait(&format!("{ids}.length === 8")).await;
+    assert_eq!(
+        ed.eval(&format!("{ids}[0]")).await,
+        "title-slide",
+        "the title slide is listed first"
+    );
+    assert_eq!(
+        ed.eval("(li => !li.querySelector('.idx')?.textContent.trim() && !li.querySelector('.handle'))(document.querySelector('#slides li[data-id=title-slide]'))").await,
+        true,
+        "unnumbered, no drag handle"
+    );
+    // thumbnails: a copy of the slide's section, for items in view; scrolled, all
+    ed.wait(&format!("{} > 0 && document.querySelector('#slides li[data-id=highlights] .thumb').shadowRoot.querySelector('section')?.textContent.includes('Revenue grew')", built("highlights"))).await;
+    assert_eq!(
+        ed.eval("!!document.querySelector('#peek')").await,
+        false,
+        "no hover pop-up"
+    );
+    ed.eval("document.querySelector('nav').scrollTop = 1e6")
+        .await;
+    ed.wait(&format!("{} > 0", built("next"))).await;
+    ed.eval("document.querySelector('nav').scrollTop = 0").await;
+    // an edit rebuilds that slide's thumbnail only
+    let (h, g) = (
+        ed.eval(&built("highlights")).await,
+        ed.eval(&built("growth")).await,
+    );
+    ed.cli(&["edit", "highlights/0", "--md", "- Changed bullet"]);
+    ed.wait(&format!("document.querySelector('#slides li[data-id=highlights] .thumb').shadowRoot.textContent.includes('Changed bullet') && {} > {h}", built("highlights"))).await;
+    assert_eq!(
+        ed.eval(&built("growth")).await,
+        g,
+        "other thumbnails untouched"
+    );
+
+    // + in the gap before "columns": an untitled slide there, a placeholder on the canvas only
+    ed.settle().await;
+    ed.click_editor("#slides li[data-id=columns] .add-here")
+        .await;
+    ed.wait_file(|f| f.contains("## {#s-"), "untitled slide added")
+        .await;
+    let new = order()[2].clone();
+    assert!(
+        new.starts_with("s-"),
+        "added between growth and columns: {:?}",
+        order()
+    );
+    assert!(!ed.file().contains("Click to add title"));
+    ed.settle().await;
+    ed.wait(&format!(
+        "document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide()?.id === '{new}'"
+    ))
+    .await;
+    assert!(
+        ed.eval(&format!("getComputedStyle(document.querySelector('#preview').contentDocument.querySelector('#{new} > h2'), '::before').content")).await
+            .as_str().unwrap().contains("Click to add title"),
+        "the placeholder shows on the canvas"
+    );
+
+    // Enter on a focused slide adds one after it
+    ed.eval("document.querySelector('#slides li[data-id=model] button').focus()")
+        .await;
+    ed.key("Enter", "Enter", 13, 0).await;
+    ed.until_cli(
+        &["slides"],
+        |v| v["slides"].as_array().unwrap().len() == 9,
+        "Enter added a slide",
+    )
+    .await;
+    let o = order();
+    assert!(
+        o[o.iter().position(|x| x == "model").unwrap() + 1].starts_with("s-"),
+        "{o:?}"
+    );
+
+    // drag "code" by its handle above "model": a drag image and a gap; Escape cancels
+    ed.settle().await;
+    ed.eval("document.querySelector('#slides li[data-id=code]').scrollIntoView({ block: 'end' })")
+        .await;
+    let before = order();
+    let from = ed
+        .editor_point("#slides li[data-id=code] .handle", None)
+        .await;
+    let to = ed
+        .editor_point("#slides li[data-id=model]", Some(20.0))
+        .await;
+    let to = (to.0, to.1 - 30.0);
+    use DispatchMouseEventType::*;
+    ed.press_and_move(from, to).await;
+    ed.wait("!!document.querySelector('.drag-ghost') && [...document.querySelectorAll('#slides li')].some((li) => li.style.transform && li.style.transform !== 'none')").await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.mouse(MouseReleased, to, false).await;
+    ed.wait("!document.querySelector('.drag-ghost')").await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(order(), before, "Escape cancelled the drag");
+    // again, dropped: one move, one undo
+    let file = ed.file();
+    ed.press_and_move(from, to).await;
+    ed.mouse(MouseReleased, to, false).await;
+    ed.until_cli(
+        &["slides"],
+        |v| {
+            let o = slide_ids(v);
+            o.iter().position(|x| x == "code") < o.iter().position(|x| x == "model")
+        },
+        "code moved above model",
+    )
+    .await;
+    ed.undo_to(&file).await;
+    // held near the list's top edge, the list scrolls
+    ed.settle().await;
+    ed.eval("document.querySelector('#slides li[data-id=code]').scrollIntoView({ block: 'end' })")
+        .await;
+    let top = ed
+        .point("(() => { const r = document.querySelector('nav').getBoundingClientRect(); return [r.left + 60, r.top + 10]; })()")
+        .await;
+    let scrolled = ed.eval("document.querySelector('nav').scrollTop").await;
+    ed.press_and_move(from, top).await;
+    ed.wait(&format!(
+        "document.querySelector('nav').scrollTop < {scrolled}"
+    ))
+    .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.mouse(MouseReleased, top, false).await;
+
+    // ⌥↑ on a focused slide moves it up
+    ed.settle().await;
+    ed.eval("document.querySelector('#slides li[data-id=columns] button').focus()")
+        .await;
+    ed.key("ArrowUp", "ArrowUp", 38, 1).await; // 1 = Alt
+    ed.until_cli(
+        &["slides"],
+        |v| {
+            let o = slide_ids(v);
+            o.iter().position(|x| x == "columns") < o.iter().position(|x| x.starts_with("s-"))
+        },
+        "⌥↑ moved columns up",
+    )
+    .await;
 }

@@ -7,20 +7,20 @@
 <link rel="stylesheet" href="/editor.css">
 </head>
 <body>
+<!-- one top row: the name, the menus (menubar.js puts them after it), and on the right
+     only what needs the person's attention: notices, problems, the last render's link -->
 <header>
-  <strong>quartz-deck</strong>
-  <!-- undo/redo, preview, render and export live in the menu bar (spec 007) -->
+  <strong class="app">quartz-deck</strong>
   <span id="notice" role="status" aria-live="polite"></span>
-  <span id="status">connecting…</span>
+  <span id="status" class="quiet">connecting…</span>
   <a id="rendered" target="_blank" rel="noopener" hidden>Open ↗</a>
-  <button type="button" id="toggle-source" aria-pressed="false" aria-controls="panel" title="Show the deck source (.qmd) beside the slides">Source</button>
 </header>
 <div id="banner" role="alert" hidden></div>
 <div id="gooffer" role="status" hidden><span class="msg"></span> <button type="button" data-act="go">Go there</button> <button type="button" data-act="dismiss" aria-label="Dismiss">×</button></div>
 <main>
   <nav aria-label="Slides">
     <ol id="slides"></ol>
-    <button type="button" id="add-slide" class="wide">+ Add slide</button>
+    <button type="button" id="add-slide" class="wide" title="Add a slide at the end" aria-label="Add a slide at the end">+</button>
   </nav>
   <section id="srcpane" aria-label="Source" hidden>
     <div class="srcbar">
