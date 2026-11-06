@@ -4,6 +4,7 @@
 
 import LIST from '/ui/action-list.js';
 import * as keys from '/ui/keys.js';
+import { el } from '/ui/run.js';
 import { openMenu, closeMenu, menuOpen, onClose } from '/ui/menu.js';
 
 /** The list as a tree: [{label, items: [...]}], separators as '-'. */
@@ -132,3 +133,48 @@ window.qdMenus = async () => {
   const flat = (items) => items.map((x) => (x === '-' ? '-' : { label: x.label, shortcut: x.shortcut, checked: x.checked, disabled: x.disabled, items: x.items && flat(x.items) }));
   return Object.fromEntries(visible().map((b) => [b.dataset.menu, flat(resolve(MENUS[buttons.indexOf(b)].items, ctx))]));
 };
+
+// ---------- the shortcut reference (spec 007 US3): Help ▸ Keyboard shortcuts, or ? ----------
+
+// where a key works, named only when it is restricted (on the slide generally: no note)
+const PLACES = { slides: 'slide list', element: 'selected element', text: 'while typing', source: 'source pane' };
+const ref = document.createElement('dialog');
+ref.id = 'shortcuts';
+ref.setAttribute('aria-labelledby', 'shortcuts-title');
+document.body.append(ref);
+
+/** Every action with a key here, grouped like the menus (keys only: "Other"). */
+function reference() {
+  // not type=search: there Escape clears the field instead of closing
+  const search = el('input', { type: 'text', placeholder: 'Search', ariaLabel: 'Search shortcuts' });
+  const td = (textContent) => el('td', { textContent });
+  const sections = [...MENUS.map((m) => m.label), 'Other'].map((name) => {
+    const rows = keys.ACTIONS.filter((a) => keys.keysOf(a).length && (a.menu?.[0] ?? 'Other') === name).map((a) => {
+      const tr = el('tr');
+      tr.dataset.id = a.id;
+      tr.append(td(a.menu?.length > 1 ? `${a.menu.slice(1).join(' ▸ ')} ▸ ${a.label}` : a.label),
+        td(keys.keysOf(a).map(keys.show).join(' or ')), td(a.where.some((w) => w === 'anywhere' || w === 'slide') ? '' : a.where.map((w) => PLACES[w]).join(', ')));
+      return tr;
+    });
+    if (!rows.length) return null;
+    const table = el('table');
+    table.append(...rows);
+    const sec = el('section');
+    sec.append(el('h3', { textContent: name }), table);
+    return sec;
+  }).filter(Boolean);
+  search.addEventListener('input', () => {
+    const q = search.value.trim().toLowerCase();
+    for (const sec of sections) {
+      const rows = [...sec.querySelectorAll('tr')];
+      for (const tr of rows) tr.hidden = !!q && !(tr.dataset.id + ' ' + tr.textContent).toLowerCase().includes(q);
+      sec.hidden = rows.every((tr) => tr.hidden);
+    }
+  });
+  const close = el('button', { type: 'button', textContent: 'Close' });
+  close.addEventListener('click', () => ref.close());
+  ref.replaceChildren(el('h2', { id: 'shortcuts-title', textContent: 'Keyboard shortcuts' }), search, ...sections, close);
+  ref.showModal(); // Escape closes it; focus returns where it was
+  search.focus();
+}
+keys.on('shortcuts', reference);

@@ -665,10 +665,11 @@ async function undoRedo(kind) {
   const r = await op(kind);
   if (r) { await fetchDeck(); await renderPanel(); }
 }
-$('#render').addEventListener('click', async (e) => {
-  const btn = e.currentTarget;
-  btn.disabled = true;
-  btn.textContent = 'Rendering…';
+/** File ▸ Render / Export…: one at a time each (the menu greys them out meanwhile). */
+const busy = { render: false, export: false };
+async function renderDeck() {
+  busy.render = true;
+  say('Rendering…');
   const link = $('#rendered');
   try {
     const r = await op('render');
@@ -680,10 +681,9 @@ $('#render').addEventListener('click', async (e) => {
       link.title = r.output;
     }
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'Render';
+    busy.render = false;
   }
-});
+}
 // ---------- export (spec 002 US4) ----------
 
 function renderExportPanel(r) {
@@ -728,21 +728,16 @@ function renderExportPanel(r) {
   panel.replaceChildren(view);
 }
 
-$('#export').addEventListener('click', async (e) => {
-  const btn = e.currentTarget;
-  btn.disabled = true;
-  btn.textContent = 'Exporting…';
+async function exportDeck(pdf) {
+  busy.export = true;
+  say(pdf ? 'Exporting (with PDF)…' : 'Exporting…');
   try {
-    const r = await op('export', { pdf: $('#export-pdf').checked });
+    const r = await op('export', { pdf });
     if (r) renderExportPanel(r);
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'Export';
+    busy.export = false;
   }
-});
-
-$('#undo').addEventListener('click', () => undoRedo('undo'));
-$('#redo').addEventListener('click', () => undoRedo('redo'));
+}
 
 /** Tab / Shift+Tab in the preview: select the next / previous element of the slide (FR-017). */
 function stepSelection(back) {
@@ -1606,10 +1601,9 @@ keys.setContext(async (e) => {
   const cur = slideByAnchor(state.anchor);
   return { e, el: state.sel ? await elementTarget(state.sel) : null, slide: cur ? await slideTarget(cur.id) : null };
 });
-keys.on('render', { enabled: () => !$('#render').disabled, run: () => $('#render').click() });
-const exportWith = (pdf) => ({ enabled: () => !$('#export').disabled, run: () => { $('#export-pdf').checked = pdf; $('#export').click(); } });
-keys.on('export', exportWith(false));
-keys.on('export-pdf', exportWith(true));
+keys.on('render', { enabled: () => !busy.render, run: renderDeck });
+keys.on('export', { enabled: () => !busy.export, run: () => exportDeck(false) });
+keys.on('export-pdf', { enabled: () => !busy.export, run: () => exportDeck(true) });
 keys.on('preview', () => window.open('/present/', '_blank', 'noopener'));
 keys.on('undo', () => undoRedo('undo'));
 keys.on('redo', () => undoRedo('redo'));
@@ -1657,6 +1651,5 @@ keys.on('toggle-source', { checked: () => !srcpane.hidden, run: () => setSource(
 keys.on('source-full', toggle('source-full', setFull));
 keys.on('form-panel', toggle('panel-open', setPanel));
 keys.on('about', () => alert('quartz-deck — a slide editor for Quarto reveal.js decks. Personal use only (see LICENSE).'));
-for (const id of ['undo', 'redo']) Object.assign($(`#${id}`).dataset, { hint: keys.action(id).label, key: keys.shortcut(id) });
 keys.on('settings', settings.open);
 

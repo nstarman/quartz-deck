@@ -580,7 +580,7 @@ async fn typing_writes_only_the_element() {
     assert_eq!(ed.file(), before);
 
     // undo restores the file byte-for-byte (shared history with the CLI)
-    ed.click_editor("#undo").await;
+    ed.menu("Edit", "Undo").await;
     ed.wait_file(|f| f == DECK, "restored by undo").await;
 }
 
@@ -1158,7 +1158,7 @@ async fn source_pane_saves_minimal_changes() {
             .replace("title: T\n", "title: Talk\n")
     );
     // undo restores the bytes, and the pane follows
-    ed.click_editor("#undo").await;
+    ed.menu("Edit", "Undo").await;
     ed.wait_file(|f| f.contains("title: T\n"), "undone").await;
     ed.wait(&format!("{PANE}.value.includes('title: T\\n')"))
         .await;
@@ -1859,4 +1859,52 @@ async fn settings_apply_live_and_stick() {
             .contains("default")
     );
     ed.cli(&["--deck", deck.to_str().unwrap(), "stop"]);
+}
+
+/// Spec 007 US3 (T015): ? opens the shortcut reference (not while typing),
+/// built from the same list as the keys: every action with a key is in it,
+/// grouped by menu; search filters it; Escape closes it.
+#[tokio::test(flavor = "multi_thread")]
+async fn shortcut_reference() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    let open = "document.querySelector('#shortcuts').open";
+    ed.go("a").await;
+    ed.click_blank().await;
+    ed.key("?", "Slash", 191, 8).await; // ⇧/
+    ed.wait(open).await;
+    let shown = "[...document.querySelectorAll('#shortcuts tr[data-id]')].filter((r) => !r.hidden).map((r) => r.dataset.id)";
+    let missing = ed
+        .eval(&format!("(async () => {{ const {{ ACTIONS, keysOf }} = await import('/ui/keys.js'); const s = new Set({shown}); return ACTIONS.filter((a) => keysOf(a).length && !s.has(a.id)).map((a) => a.id); }})()"))
+        .await;
+    assert_eq!(missing, json!([]), "every key is listed");
+    assert!(
+        ed.eval("[...document.querySelectorAll('#shortcuts h3')].map((h) => h.textContent).join()")
+            .await
+            .as_str()
+            .unwrap()
+            .starts_with("File,Edit"),
+        "grouped like the menus"
+    );
+    ed.eval("(() => { const s = document.querySelector('#shortcuts input'); s.value = 'duplicate'; s.dispatchEvent(new Event('input')); })()").await;
+    assert_eq!(
+        ed.eval(shown).await,
+        json!(["dup", "slide-dup"]),
+        "search filters"
+    );
+    let close = || async {
+        ed.key("Escape", "Escape", 27, 0).await;
+        ed.wait(&format!("!{open}")).await;
+    };
+    close().await;
+
+    // Help → Keyboard shortcuts opens it too; ? while typing on a slide just types
+    ed.menu("Help", "Keyboard shortcuts").await;
+    ed.wait(open).await;
+    close().await;
+    ed.click_in_slide("[data-qd=\"a/0\"]").await;
+    ed.caret("[data-qd=\"a/0\"]", None).await;
+    ed.type_text("?").await;
+    ed.wait("window.qdSession()?.draft?.includes('para.?')")
+        .await;
+    assert_eq!(ed.eval(open).await, false);
 }

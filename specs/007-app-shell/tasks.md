@@ -116,10 +116,10 @@ Paths relative to repo root.
 
 **Independent Test**: spec US3; quickstart §3.
 
-- [ ] T015 [P] [US3] Write failing tests.
+- [X] T015 [P] [US3] Write failing tests.
   - **Browser `shortcut_reference`:** ? opens it (not while typing), Help → Keyboard shortcuts too; it has a section per menu and lists every action with a key; search filters it; Escape closes it and returns focus.
   - **`tests/cli.rs`:** `qd actions` returns the list per contracts/cli.md, the same ids as `/ui/actions.js`.
-- [ ] T016 [US3] Implement the reference dialog in `src/ui/menubar.js`, `qd actions` in `src/cli.rs` (plus `qd schema`), and a skill section in `skills/quartz-deck/SKILL.md` ("`qd actions` lists what the editor can do and its keys"). T015 passes.
+- [X] T016 [US3] Implement the reference dialog in `src/ui/menubar.js`, `qd actions` in `src/cli.rs` (plus `qd schema`), and a skill section in `skills/quartz-deck/SKILL.md` ("`qd actions` lists what the editor can do and its keys"). T015 passes.
 
 ---
 
