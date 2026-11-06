@@ -18,6 +18,7 @@ open questions each spec must settle.
 | 009 | layouts-and-placement | planned | **Slide layouts** (title, title + content, two columns, image + text, section, big number, blank, and the person's own saved ones) to start a slide from, then drag **any** element anywhere on it, resize it, or put it back in the flow; all stored as plain Quarto (columns, absolute positioning) |
 | 010 | export-formats | planned | An **Export ▾** drop-down (and `qd export --to <format>`) for every format Quarto/Pandoc can write: PowerPoint, PDF (Beamer/LaTeX or Typst), Word, HTML, Markdown, Jupyter notebook, and more |
 | 011 | history | planned | Optional **save = git commit** (a setting), a **History** side panel to scroll back through versions with a side-by-side preview of the deck as it was, diff any version against now (source and rendered slides), and restore a whole version or just one slide/element |
+| 012 | run-on-slide | planned | A **Run ▶ button on the code shown on the slide** itself (the reveal.js side, not only the source pane), with the output updating in place; running through Quarto's own engines (Jupyter, knitr, Julia) so every language Quarto runs works, not only Python |
 
 Every PR — spec or small — passes a concision audit (`/pr-audit`,
 constitution 1.1.0) before it is marked ready.
@@ -244,3 +245,31 @@ the editor.
   do outside a git repository (offer `git init`, or keep a private history
   in qd's cache); rendering old versions (render on demand into the cache,
   with the code-execution rules of 004).
+
+### 012 run-on-slide
+
+Goal: run code where you see it, on the slide, with whatever engine Quarto
+uses for the deck.
+
+- Today (004): each cell has a ▶ in the source pane, ⇧Enter runs the cell
+  under the caret, and Run all / Stop / Restart sit in the source bar. On the
+  slide a cell can be run only from its right-click menu ("Run cell"); the
+  outputs do show on the slide.
+- **On the slide:** a ▶ on each code cell in the preview (shown on hover and
+  when the cell is selected, reachable from the keyboard), with the cell's
+  state (running, done, error, stale) and its output updating in place on
+  the slide. Same rules as 004: code runs only on the person's own click or
+  key, with the session token; nothing is written into the `.qmd`.
+- **Quarto's engines:** today qd runs Python through its own kernel bridge in
+  the deck's locked environment. Run should use the engine Quarto picks for
+  the deck (`engine:`/`jupyter:`/`knitr` in the front matter): Jupyter
+  kernels (Python, Julia, others) and knitr (R), so a cell runs here the way
+  `quarto render` would run it.
+- Open questions: how to run one cell with Quarto's backend (Quarto has no
+  per-cell API: a live Jupyter kernel for Jupyter decks, a persistent R
+  session for knitr, or re-render with `freeze` and pick out the cell's
+  output); environments for R and Julia (004 locks Python with uv/pixi);
+  whether the presented deck (`/present/`, no editor) ever gets Run (it has
+  no session token, so probably not); outputs Quarto makes that a kernel
+  doesn't (cross-references, figure captions, layout options).
+
