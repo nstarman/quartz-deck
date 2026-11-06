@@ -240,6 +240,8 @@ impl Ed {
     /// Click slide `id` in the list and wait until it is on the canvas and has the
     /// keyboard: keys pressed straight after the click must reach that slide.
     async fn pick_slide(&self, id: &str) {
+        // an edit still landing renumbers the items (a new item under the press loses the click)
+        self.settle().await;
         self.click_editor(&format!("#slides li[data-id={id}] > button"))
             .await;
         self.wait(&format!("document.activeElement?.closest('#slides li')?.dataset.id === '{id}' && document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide()?.id === '{id}'")).await;
@@ -400,7 +402,7 @@ impl Ed {
     /// Wait until the preview shows the file as it is now (render caught up, no edit open).
     async fn settle(&self) {
         self.wait_secs(
-            "(async () => { const v = (await fetch('/api/deck').then((r) => r.json())).version; const st = document.querySelector('#status').textContent; const f = document.querySelector('#preview').contentWindow; return window.qdSession() === null && st === 'rendered ' + v.slice(0, 7) && !!f.Reveal?.isReady?.(); })()",
+            "(async () => { const v = (await fetch('/api/deck').then((r) => r.json())).version; const st = document.querySelector('#status'); const f = document.querySelector('#preview').contentWindow; return window.qdSession() === null && st.textContent === 'Up to date' && st.title.endsWith(v.slice(0, 7)) && !!f.Reveal?.isReady?.(); })()",
             60,
         )
         .await;
@@ -990,7 +992,7 @@ async fn context_menus_list_and_run_actions() {
     let labels = ed.menu_labels().await;
     for l in [
         "Edit text",
-        "Edit source",
+        "Edit markdown",
         "Cut",
         "Copy",
         "Paste after",
@@ -1010,7 +1012,7 @@ async fn context_menus_list_and_run_actions() {
     assert_eq!(
         ed.eval("document.activeElement.firstChild.textContent")
             .await,
-        "Edit source"
+        "Edit markdown"
     );
     ed.close_menu().await;
     // each action is the qd command: Duplicate = `qd block dup`
@@ -2355,8 +2357,9 @@ const MEASURE: &str = r#"(() => {
 })()"#;
 
 /// The element under the open element bar or formatting bar, if any (null when
-/// none is shown or it covers nothing): a bar must never cover the slide.
-const OVERLAP: &str = "(() => { const f = document.querySelector('#preview'); const a = f.getBoundingClientRect(); const bar = [...document.querySelectorAll('#elbar, #fmtbar')].find((b) => !b.hidden && b.getClientRects().length); if (!bar) return null; const r = bar.getBoundingClientRect(); const hit = [...f.contentDocument.querySelectorAll('section.present [data-qd], section.present > h2')].filter((el) => !el.classList.contains('qd-sel') && !el.classList.contains('qd-editing')).find((el) => { const e = el.getBoundingClientRect(); const x = a.left + e.left, y = a.top + e.top; return x < r.right && x + e.width > r.left && y < r.bottom && y + e.height > r.top; }); return hit ? (hit.dataset.qd || hit.tagName) : null; })()";
+/// none is shown or it covers nothing): a bar must never cover what the slide shows
+/// (an element's contents, not the empty end of a block such as a short heading).
+const OVERLAP: &str = "(() => { const f = document.querySelector('#preview'); const a = f.getBoundingClientRect(); const bar = [...document.querySelectorAll('#elbar, #fmtbar')].find((b) => !b.hidden && b.getClientRects().length); if (!bar) return null; const r = bar.getBoundingClientRect(); const hit = [...f.contentDocument.querySelectorAll('section.present [data-qd], section.present > h2')].filter((el) => !el.classList.contains('qd-sel') && !el.classList.contains('qd-editing')).find((el) => { const g = el.ownerDocument.createRange(); g.selectNodeContents(el); const c = g.getBoundingClientRect(); const e = c.width && c.height ? c : el.getBoundingClientRect(); const x = a.left + e.left, y = a.top + e.top; return x < r.right && x + e.width > r.left && y < r.bottom && y + e.height > r.top; }); return hit ? (hit.dataset.qd || hit.tagName) : null; })()";
 
 /// T004 (spec 008 SC-004, SC-005, SC-003): in light, dark and high contrast,
 /// every text and control in the editor meets the contrast and size minimums,
@@ -2774,4 +2777,62 @@ async fn own_sheets_and_image_drop() {
         .await;
 
     assert_eq!(ed.eval("__native.length").await, 0, "a native box was used");
+}
+
+/// T023 (spec 008 US6): one top row — menus, the deck's title and file, the
+/// status, Present — the tab named after the deck, the status in words, and no
+/// jargon left in the menus or bars.
+#[tokio::test(flavor = "multi_thread")]
+async fn one_top_bar_in_plain_words() {
+    let Some(ed) = Ed::open(P2).await else {
+        return;
+    };
+    let row = |sel: &str| format!("document.querySelector('{sel}').closest('header') !== null");
+    for sel in ["#menubar", "#deck-name", "#status", "#present"] {
+        assert_eq!(ed.eval(&row(sel)).await, true, "{sel} in the top row");
+    }
+    ed.wait("document.querySelector('#deck-name').textContent.includes('T') && document.querySelector('#deck-name .file').textContent === 'deck.qmd'")
+        .await;
+    assert_eq!(ed.eval("document.title").await, "T");
+
+    // the status in words, the version as its tooltip (settle waits for both)
+    ed.settle().await;
+    ed.eval("window.__st = []; new MutationObserver(() => __st.push(document.querySelector('#status').textContent)).observe(document.querySelector('#status'), { childList: true, characterData: true, subtree: true })")
+        .await;
+    ed.type_into("a", "[data-qd=\"a/0\"]", "!").await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait_file(|f| f.contains("First para.!"), "saved").await;
+    ed.wait("__st.includes('Saving…') && __st.includes('Saved') && __st.at(-1) === 'Up to date'")
+        .await;
+
+    // no jargon in any menu or bar
+    let jargon = r#"(async () => {
+  const old = ['Render', 'Open preview', 'Export offline HTML', 'Export with PDF', 'Form', 'Form panel', 'On click', 'Edit source', '+ Package', 'Create environment'];
+  const menus = Object.values(await qdMenus()).flat().map((i) => i.label);
+  const bars = [...document.querySelectorAll('button')].map((b) => b.textContent.trim());
+  return [...menus, ...bars].filter((l) => old.includes(l));
+})()"#;
+    assert_eq!(ed.eval(jargon).await, json!([]));
+
+    // a render that fails says so in a banner the person can close
+    std::fs::write(
+        ed.dir.path().join("deck.qmd"),
+        format!("{P2}\n{{{{< include missing.qmd >}}}}\n"),
+    )
+    .unwrap();
+    ed.wait("!document.querySelector('#banner').hidden && document.querySelector('#banner .msg').textContent !== ''")
+        .await;
+    ed.click_editor("#banner .close").await;
+    ed.wait("document.querySelector('#banner').hidden").await;
+
+    // VS Code's panel: ☰ in that same row
+    let link = ed.cli(&["url"])["url"].as_str().unwrap().to_string();
+    ed.page
+        .goto(link.replace("/#t=", "/?host=vscode#t=").as_str())
+        .await
+        .unwrap();
+    ed.wait_secs(READY, 60).await;
+    ed.wait("document.querySelector('#menubar').classList.contains('folded')")
+        .await;
+    assert_eq!(ed.eval(&row("#menubar")).await, true);
 }

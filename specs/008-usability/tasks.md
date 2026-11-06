@@ -164,14 +164,14 @@ Paths are relative to the repo root.
 
 **Independent Test**: spec US6; quickstart §6.
 
-- [ ] T023 [P] [US6] Write failing browser test `one_top_bar_in_plain_words` in `tests/onslide.rs`:
+- [X] T023 [P] [US6] Write failing browser test `one_top_bar_in_plain_words` in `tests/onslide.rs`:
   - one bar above the slide area holds the menus, the deck's title, the status, Present and Source;
   - `document.title` is the deck's title, and the file name shows;
   - the status reads "Up to date" after a render and "Saving…"/"Saved" around an edit, with the version as its tooltip;
   - framed (`?host=vscode`), ☰ is in that same row;
   - none of the audit's jargon labels appears in any menu or bar.
-- [ ] T024 [US6] One top bar in `src/ui/index.html`, `src/ui/menubar.js` and `src/ui/editor.css` (menus or ☰ · title · file name · status · Present · Source). Status words and `document.title` in `src/ui/editor.js` (research R11).
-- [ ] T025 [US6] Plain labels in `src/ui/actions.json`, the bars and the right-click menus (research R11's list); "Edit markdown" for an element's source. Update `specs/007-app-shell/checklists/action-inventory.md` and every test that clicks an old label. T023 passes.
+- [X] T024 [US6] One top bar in `src/ui/index.html`, `src/ui/menubar.js` and `src/ui/editor.css` (menus or ☰ · title · file name · status · Present · Source). Status words and `document.title` in `src/ui/editor.js` (research R11).
+- [X] T025 [US6] Plain labels in `src/ui/actions.json`, the bars and the right-click menus (research R11's list); "Edit markdown" for an element's source. Update `specs/007-app-shell/checklists/action-inventory.md` and every test that clicks an old label. T023 passes.
 
 ---
 
