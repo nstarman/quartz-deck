@@ -1780,6 +1780,27 @@ async fn menu_bar_runs_every_action() {
         ed.eval("[...document.querySelectorAll('#menubar[role=menubar] > [role=menuitem][aria-haspopup=menu]')].filter((b) => b.offsetParent).length").await,
         7
     );
+    // clicking an open menu's name again closes it
+    let shown = "!document.querySelector('#ctxmenu').hidden";
+    ed.click_editor("#menubar [data-menu=Insert]").await;
+    ed.wait(shown).await;
+    ed.click_editor("#menubar [data-menu=Insert]").await;
+    ed.wait(&format!("!({shown})")).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        ed.eval(shown).await,
+        false,
+        "a second click closes the menu"
+    );
+    ed.click_editor("#menubar [data-menu=Insert]").await;
+    ed.wait(shown).await;
+    // moving onto another name while a menu is open switches to it (as on macOS)
+    let (x, y) = ed.editor_point("#menubar [data-menu=View]", None).await;
+    ed.page.move_mouse(Point { x, y }).await.unwrap();
+    ed.wait("document.querySelector('#menubar [data-menu=View]').getAttribute('aria-expanded') === 'true'")
+        .await;
+    assert_eq!(ed.eval(shown).await, true, "View's menu is open");
+    ed.close_menu().await;
     // too narrow for the menus: they fold into ☰ (and come back when there is room)
     let folded = "document.querySelector('#menubar').classList.contains('folded')";
     ed.eval("document.querySelector('#menubar').style.width = '200px'")
@@ -2174,4 +2195,54 @@ async fn menus_open_fast() {
             "{what} took {ms} ms: {times:?}"
         );
     }
+}
+
+/// ⌘V takes the text from the browser's own paste event, which needs no
+/// clipboard permission (pasting a slide copied in another deck failed in a
+/// page without it). The clipboard API is never asked.
+#[tokio::test(flavor = "multi_thread")]
+async fn paste_key_uses_the_paste_event() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    ed.go("b").await;
+    ed.click_editor("#slides li[data-id=b] button").await;
+    // ⌘V, then the paste event a real browser fires for it (devtools key
+    // presses don't run the browser's paste command)
+    let paste = |text: &str| {
+        format!(
+            "(() => {{ window.__asked = false; navigator.clipboard.readText = () => {{ __asked = true; return Promise.reject(new Error('no permission')); }};
+              const t = document.activeElement; t.dispatchEvent(new KeyboardEvent('keydown', {{ key: 'v', code: 'KeyV', ctrlKey: true, bubbles: true, cancelable: true }}));
+              const dt = new DataTransfer(); dt.setData('text/plain', {text:?});
+              t.dispatchEvent(new ClipboardEvent('paste', {{ clipboardData: dt, bubbles: true, cancelable: true }})); }})()"
+        )
+    };
+    ed.eval(&paste("## Pasted {#b}\n\nFrom another deck.\n"))
+        .await;
+    ed.wait_file(|f| f.contains("From another deck."), "slide pasted")
+        .await;
+    let s = &ed.cli(&["slides"])["slides"];
+    assert_eq!(s[1]["id"], "b");
+    assert_ne!(s[2]["id"], "b", "a fresh id: {s}");
+    assert_eq!(
+        ed.eval("__asked").await,
+        false,
+        "the clipboard API was not asked"
+    );
+
+    // an element selected: other text pastes after it, escaped
+    ed.settle().await;
+    ed.go("a").await;
+    ed.select("[data-qd=\"a/0\"]").await;
+    ed.eval("document.querySelector('#preview').contentWindow.focus()")
+        .await;
+    ed.eval(&paste("1 < 2").replace(
+        "const t = document.activeElement",
+        "const t = document.querySelector('#preview').contentDocument.body",
+    ))
+    .await;
+    ed.wait_file(
+        |f| f.contains("First para.\n\n1 &lt; 2"),
+        "pasted after the element",
+    )
+    .await;
+    assert_eq!(ed.eval("__asked").await, false);
 }

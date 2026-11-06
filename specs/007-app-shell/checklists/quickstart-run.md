@@ -50,8 +50,10 @@ needs the person, like 006's T022.
   this pane that permission is refused; Chrome asks the person once. Copy
   and paste within one deck, the fresh ids and the single undo are covered
   by `same_rules_everywhere` and `tests/cli.rs` `paste_slides_from_stdin`.
-  Follow-up: use the browser's native `copy`/`paste` events for ⌘C/⌘V, which
-  need no permission (and are how VS Code's webview delivers ⌘V).
+  Fixed afterwards (branch `clipboard-events`): ⌘V now takes the text from
+  the browser's own paste event, which needs no permission (and is how VS
+  Code's webview delivers ⌘V); `paste_key_uses_the_paste_event` checks it.
+  Copying already worked: writing the clipboard needs no permission.
 - Small: after undoing a duplicate that was on screen, the preview went to
   the first slide rather than the neighbouring one.
 
