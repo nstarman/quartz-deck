@@ -38,7 +38,7 @@ export function makeActions(api) {
   const element = [
     { id: 'run', label: 'Run cell', visible: (t) => t.block.kind === 'cell', run: (t) => api.runCells([t.ref]) },
     { id: 'edit', label: 'Edit text', run: (t) => api.beginEditRef(t) },
-    { id: 'source', label: 'Edit source', run: (t) => api.beginSourceEl(t) },
+    { id: 'source', label: 'Edit markdown', run: (t) => api.beginSourceEl(t) },
     '-',
     { id: 'cut', label: 'Cut', run: async (t) => { await api.copy(t); return api.op('block rm', { element: t.ref }); } },
     { id: 'copy', label: 'Copy', run: (t) => api.copy(t) },

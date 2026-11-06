@@ -11,12 +11,13 @@
      only what needs the person's attention: notices, problems, the last render's link -->
 <header>
   <strong class="app">quartz-deck</strong>
+  <span id="deck-name"><span class="title"></span> <small class="file"></small></span>
   <span id="notice" role="status" aria-live="polite"></span>
   <span id="status" class="quiet">connecting…</span>
   <span class="split"><button type="button" id="present" title="Present from this slide">▶ Present</button><button type="button" id="present-more" aria-label="More ways to present" aria-haspopup="menu">▾</button></span>
   <a id="rendered" target="_blank" rel="noopener" hidden>Open ↗</a>
 </header>
-<div id="banner" role="alert" hidden></div>
+<div id="banner" role="alert" hidden><span class="msg"></span><button type="button" class="close" aria-label="Dismiss" title="Dismiss">×</button></div>
 <div id="gooffer" role="status" hidden><span class="msg"></span> <button type="button" data-act="go">Go there</button> <button type="button" data-act="dismiss" aria-label="Dismiss">×</button></div>
 <main>
   <nav aria-label="Slides">
@@ -32,12 +33,12 @@
         <button type="button" data-act="stop" title="Stop the running cell">Stop</button>
         <button type="button" data-act="restart" title="Restart Python (clears its state)">Restart</button>
         <button type="button" data-act="fresh-all" title="Restart Python, then run every cell from the top">Restart &amp; run all</button>
-        <button type="button" data-act="add-pkg" title="Add Python packages to this deck's environment">+ Package</button>
-        <button type="button" data-act="env" hidden title="Create this deck's Python environment (uv, with a lockfile)">Create environment</button>
+        <button type="button" data-act="add-pkg" title="Add Python packages to this deck's environment">Add Python package…</button>
+        <button type="button" data-act="env" hidden title="Create this deck's Python environment (uv, with a lockfile)">Set up Python…</button>
         <span class="kernel" role="status" aria-label="Python state" title="Python kernel">stopped</span>
       </span>
       <button type="button" data-act="full" aria-pressed="false" title="Use the full width">Full width</button>
-      <button type="button" data-act="form" title="Slide/element properties form">Form</button>
+      <button type="button" data-act="form" title="Show the properties of the slide or element">Properties</button>
     </div>
     <div class="srcwrap">
       <pre aria-hidden="true"></pre>

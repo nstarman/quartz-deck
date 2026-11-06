@@ -106,7 +106,7 @@ function caretMoved() {
 async function envStatus() {
   const r = await fetch('/api/env');
   envBtn.hidden = r.ok || !order.length;
-  envBtn.textContent = 'Create environment';
+  envBtn.textContent = 'Set up Python…';
 }
 
 /** SSE events from the server (contracts/http.md). */
@@ -149,7 +149,7 @@ export function initRun(a) {
     enabled: () => !envBtn.hidden && !envBtn.disabled,
     run: async () => {
       envBtn.disabled = true;
-      envBtn.textContent = 'Creating…';
+      envBtn.textContent = 'Setting up…';
       if (await post('/api/env/init')) api.say('Environment created (uv): add packages with “qd env add”');
       envBtn.disabled = false;
       envStatus();
