@@ -28,7 +28,7 @@ Paths relative to repo root.
 ## Phase 1: Setup
 
 - [X] T001 Inventory today's actions and keys in `specs/007-app-shell/checklists/action-inventory.md`. List every header button, right-click item (element, slide, empty area), property-toolbar control, formatting-toolbar button and source-pane bar button. Also list every key the editor handles: `onKey`, `sessionKey`, the toolbar's typing keys, the source pane, the splitter and the slide list. Give each a proposed action id, menu and key. This is the baseline for SC-001.
-- [ ] T002 [P] Add `store::config_root()` next to `cache_root()` in `src/store.rs`: `$QD_CONFIG_DIR`, else `~/Library/Application Support/quartz-deck` on macOS, else `$XDG_CONFIG_HOME/quartz-deck` or `~/.config/quartz-deck`. Add a unit test for the env override.
+- [X] T002 [P] Add `store::config_root()` next to `cache_root()` in `src/store.rs`: `$QD_CONFIG_DIR`, else `~/Library/Application Support/quartz-deck` on macOS, else `$XDG_CONFIG_HOME/quartz-deck` or `~/.config/quartz-deck`. Add a unit test for the env override.
 
 ---
 
@@ -81,23 +81,23 @@ Paths relative to repo root.
 
 **Independent Test**: spec US2; quickstart §2.
 
-- [ ] T009 [P] [US2] Write failing unit tests in a new `src/settings.rs`:
+- [X] T009 [P] [US2] Write failing unit tests in a new `src/settings.rs`:
   - **Definitions:** the six of data-model.md, with defaults.
   - **Loading:** a missing file gives the defaults; an invalid value gives its default plus one notice; unknown keys survive a save.
   - **Saving:** atomic, mode 0600.
   - **Changes:** `set` validates (`E_INVALID_SETTING` names the key and the allowed values); `reset` keeps unknown keys.
-- [ ] T010 [US2] Implement `src/settings.rs` with `QdError::InvalidSetting` in `src/error.rs`. T009 passes.
-- [ ] T011 [P] [US2] Write failing tests.
+- [X] T010 [US2] Implement `src/settings.rs` with `QdError::InvalidSetting` in `src/error.rs`. T009 passes.
+- [X] T011 [P] [US2] Write failing tests.
   - **`tests/serve.rs` `settings_over_http`:** GET returns `{values, defs, notices}`. POST needs the token (403 without) and JSON; a bad value gives 400; a good one gives 200, and an SSE `settings` event reaches another `/events` stream. `qd settings set` from the CLI also gives the event (file watch).
   - **`tests/cli.rs`:** `qd settings`, `qd settings set theme dark` and `qd settings reset` (JSON per contracts/cli.md, using `QD_CONFIG_DIR`).
-- [ ] T012 [US2] Implement it. In `src/server.rs`: the routes, the event, and watching `<config>/settings.json`. In `src/cli.rs`: `qd settings [set KEY VALUE | reset]`, plus `qd schema`. T011 passes.
-- [ ] T013 [US2] Write failing browser tests `settings_apply_live_and_stick`:
+- [X] T012 [US2] Implement it. In `src/server.rs`: the routes, the event, and watching `<config>/settings.json`. In `src/cli.rs`: `qd settings [set KEY VALUE | reset]`, plus `qd schema`. T011 passes.
+- [X] T013 [US2] Write failing browser tests `settings_apply_live_and_stick`:
   - ⌘, opens Settings, and each setting applies at once: source pane right, theme dark, `source.save` explicit.
   - Restart the server on another deck: the settings hold.
   - The pane width and open state survive a port change (the `ui.*` keys).
   - Reset to defaults asks first.
   - Tests use `QD_CONFIG_DIR` in a temp folder.
-- [ ] T014 [US2] Implement `src/ui/settings.js` (the window and applying settings) and wire it into `src/ui/editor.js`/`editor.css`:
+- [X] T014 [US2] Implement `src/ui/settings.js` (the window and applying settings) and wire it into `src/ui/editor.js`/`editor.css`:
   - `source.side` by a class on `main`;
   - `theme` through `data-theme`, where "system" removes it;
   - `source.save` in `src/ui/pane.js`;

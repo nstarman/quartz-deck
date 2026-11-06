@@ -13,4 +13,5 @@ pub mod ops;
 pub mod outputs;
 pub mod render;
 pub mod server;
+pub mod settings;
 pub mod store;

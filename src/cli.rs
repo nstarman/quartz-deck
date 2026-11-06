@@ -153,6 +153,11 @@ enum Cmd {
         #[arg(long)]
         detach: bool,
     },
+    /// Your editor settings, the same for every deck and editor (spec 007)
+    Settings {
+        #[command(subcommand)]
+        action: Option<SettingsCmd>,
+    },
     /// The deck's reproducible Python environment (uv, or pixi with PyPI packages)
     Env {
         #[command(subcommand)]
@@ -319,6 +324,14 @@ struct BoxSource {
 }
 
 #[derive(Subcommand)]
+enum SettingsCmd {
+    /// Change one setting (VALUE as JSON when it parses: true, 420; else text: dark)
+    Set { key: String, value: String },
+    /// Every setting back to its default
+    Reset,
+}
+
+#[derive(Subcommand)]
 enum EnvCmd {
     /// Create the environment (manifest + lockfile) with the base Jupyter packages
     Init {
@@ -475,6 +488,9 @@ fn output_of(cmd: &str) -> &'static str {
         "browser" => r#"{"path","source":"env|installed|download","version"} or {"ok","removed"}"#,
         "render" => r#"{"ok","output":"<absolute path>","format","log"}"#,
         "stop" => r#"{"ok","pid"}"#,
+        "settings" => {
+            r#"{"values":{...},"defs":[{"key","label","description","type","values","default"}],"notices":[...],"path"}; set/reset: {"ok","values"}"#
+        }
         "run" => {
             r#"{"ok","op":"run","version","mode":"live|fresh","status":"done|error|stopped","runs":[{"cell","counter","status":"done|error|stopped","outputs":[{"kind":"text","text"}|{"kind":"html","html"}|{"kind":"image","mime","path"}|{"kind":"error","ename","evalue","traceback"}]}]} (ok false: E_RUN on stderr, exit 1)"#
         }
@@ -1167,6 +1183,19 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             Ok(v)
         }
         Cmd::Serve { port, open, detach } => serve(&ctx.store()?, *port, *open, *detach),
+        Cmd::Settings { action } => {
+            let path = crate::settings::path();
+            let values = match action {
+                None => return Ok(crate::settings::report(&path)),
+                Some(SettingsCmd::Set { key, value }) => {
+                    let v = serde_json::from_str(value)
+                        .unwrap_or_else(|_| Value::String(value.clone()));
+                    crate::settings::set(&path, &serde_json::Map::from_iter([(key.clone(), v)]))?
+                }
+                Some(SettingsCmd::Reset) => crate::settings::reset(&path)?,
+            };
+            Ok(json!({"ok": true, "values": values}))
+        }
         Cmd::Env { action } => {
             let s = ctx.store()?;
             let dir = s.path.parent().unwrap_or(Path::new("."));

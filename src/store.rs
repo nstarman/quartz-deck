@@ -42,21 +42,37 @@ fn replaced(_: &fs::File, _: &Path) -> bool {
     false
 }
 
-pub fn cache_root() -> PathBuf {
-    if let Some(d) = std::env::var_os("QD_CACHE_DIR") {
+/// A per-user folder: `$env`, else macOS `~/Library/<mac>/quartz-deck`, else
+/// `$xdg_env/quartz-deck` or `~/<dot>/quartz-deck`.
+fn user_dir(env: &str, mac: &str, xdg_env: &str, dot: &str) -> PathBuf {
+    if let Some(d) = std::env::var_os(env) {
         return PathBuf::from(d);
     }
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir);
     if cfg!(target_os = "macos") {
-        home.join("Library/Caches/quartz-deck")
+        home.join("Library").join(mac).join("quartz-deck")
     } else {
-        std::env::var_os("XDG_CACHE_HOME")
+        std::env::var_os(xdg_env)
             .map(PathBuf::from)
-            .unwrap_or_else(|| home.join(".cache"))
+            .unwrap_or_else(|| home.join(dot))
             .join("quartz-deck")
     }
+}
+
+/// The person's settings folder (spec 007).
+pub fn config_root() -> PathBuf {
+    user_dir(
+        "QD_CONFIG_DIR",
+        "Application Support",
+        "XDG_CONFIG_HOME",
+        ".config",
+    )
+}
+
+pub fn cache_root() -> PathBuf {
+    user_dir("QD_CACHE_DIR", "Caches", "XDG_CACHE_HOME", ".cache")
 }
 
 impl Store {

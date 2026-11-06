@@ -35,6 +35,7 @@ impl Env {
         let mut c = Command::cargo_bin("qd").unwrap();
         c.current_dir(self.dir.path())
             .env("QD_CACHE_DIR", self.dir.path().join(".cache"))
+            .env("QD_CONFIG_DIR", self.dir.path().join(".config"))
             .env_remove("QD_DECK");
         c
     }
@@ -982,4 +983,51 @@ fn replace_swaps_one_unique_occurrence() {
     let args = json!({"old": "Some \"quoted\"", "new": "Some 'quoted'"});
     run_op(&e.store(), "replace", &args, None).unwrap();
     assert!(e.text().contains("Some 'quoted' text"));
+}
+
+/// Spec 007 US2: `qd settings` reads, sets (checked) and resets the person's
+/// settings; no deck needed.
+#[test]
+fn settings_read_set_and_reset() {
+    let e = Env::new();
+    let v = e.ok(&["settings"]);
+    assert_eq!(v["values"]["source.side"], "left");
+    assert!(
+        v["defs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["key"] == "theme")
+    );
+    let v = e.ok(&["settings", "set", "theme", "dark"]);
+    assert_eq!(
+        (&v["ok"], &v["values"]["theme"]),
+        (&json!(true), &json!("dark"))
+    );
+    let v = e.ok(&["settings", "set", "confirm.slide_delete", "false"]);
+    assert_eq!(
+        v["values"]["confirm.slide_delete"], false,
+        "JSON values parse"
+    );
+    let err = e.err(
+        &["settings", "set", "theme", "purple"],
+        "E_INVALID_SETTING",
+        1,
+    );
+    assert!(
+        err["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("system, light, dark, hc")
+    );
+    assert_eq!(
+        e.ok(&["settings"])["values"]["theme"],
+        "dark",
+        "a refused value changes nothing"
+    );
+    let v = e.ok(&["settings", "reset"]);
+    assert_eq!(
+        (&v["values"]["theme"], &v["values"]["confirm.slide_delete"]),
+        (&json!("system"), &json!(true))
+    );
 }

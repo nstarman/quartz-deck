@@ -107,9 +107,16 @@ export async function save() {
   saving = false;
 }
 
+let autosave = true;
+/** Setting `source.save` (spec 007): as you pause (default), or only on ⌘S and leaving the pane. */
+export function setAutosave(on) {
+  autosave = on;
+  pane.querySelector('.hint').textContent = on ? 'saves as you pause · ⌘S saves now' : 'saves on ⌘S and when you leave the pane';
+}
+
 function schedule() {
   clearTimeout(timer);
-  timer = setTimeout(save, 700);
+  if (autosave) timer = setTimeout(save, 700);
 }
 
 /** Pull the file; merge it with unsaved text (or report a conflict). */

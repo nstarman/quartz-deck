@@ -1,4 +1,6 @@
 [
+  {"id": "settings", "label": "Settings…", "menu": ["File"], "key": "Mod+,", "where": ["anywhere"]},
+  {"separator": true, "menu": ["File"]},
   {"id": "render", "label": "Render", "menu": ["File"], "where": ["anywhere"], "qd": "qd render"},
   {"id": "export", "label": "Export offline HTML", "menu": ["File"], "where": ["anywhere"], "qd": "qd export"},
   {"id": "export-pdf", "label": "Export with PDF", "menu": ["File"], "where": ["anywhere"], "qd": "qd export --pdf"},

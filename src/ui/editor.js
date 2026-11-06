@@ -5,6 +5,7 @@ import { showToolbar, hideToolbar, place as placeToolbar } from '/ui/toolbar.js'
 import { openSource, closeSource, sourceError, sourceText } from '/ui/source.js';
 import { makeActions, INSERTS, TRANSITIONS } from '/ui/actions.js';
 import * as keys from '/ui/keys.js';
+import * as settings from '/ui/settings.js';
 import '/ui/menubar.js';
 import { openMenu, closeMenu, menuOpen } from '/ui/menu.js';
 import * as pane from '/ui/pane.js';
@@ -769,6 +770,7 @@ document.addEventListener('keydown', onKey);
 
 const es = new EventSource(`/events?tab=${focus.tabId}`);
 run.listen(es);
+settings.listen(es);
 es.addEventListener('open', () => { statusEl.textContent = 'connected'; });
 es.addEventListener('error', () => { statusEl.textContent = 'disconnected — is qd serve running?'; });
 es.addEventListener('changed', async (e) => {
@@ -1264,6 +1266,10 @@ async function placeElbar() {
   elbar.style.top = Math.max(frame.getBoundingClientRect().top + 2, p.top - elbar.offsetHeight - 10) + 'px';
 }
 
+// the preview resized (source pane, panels, window): follow the element, or the bar
+// is left floating over whatever is there now. After reveal.js has laid out again.
+new ResizeObserver(() => requestAnimationFrame(() => requestAnimationFrame(placeElbar))).observe(frame);
+
 // slide bar: the slide's common properties (US3)
 const slidebar = $('#slidebar');
 async function renderSlidebar() {
@@ -1295,43 +1301,70 @@ slidebar.addEventListener('click', async (e) => {
   else if (act === 'more') { const r = e.target.getBoundingClientRect(); openMenu(actions.slide(t), r.left, r.bottom + 4); }
 });
 
-// layout prefs (per browser): source pane, its width / full width, the old form panel
+// layout: source pane (which side, open, width, full width) and the old form panel,
+// remembered in the person's settings (spec 007), so the same in every deck and in VS Code
 const mainEl = document.querySelector('main');
 const toggleSource = $('#toggle-source');
 const srcpane = $('#srcpane');
-const pref = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch { /* storage unavailable */ } return null; };
-/** Toggle a layout class on <main>, its button's aria-pressed, and the remembered pref. */
-function layout(cls, key, on, btn) {
+/** Toggle a layout class on <main> and its button's aria-pressed; remember it unless applying settings. */
+function layout(cls, key, on, btn, remember = true) {
   mainEl.classList.toggle(cls, on);
   btn?.setAttribute('aria-pressed', String(on));
-  pref(key, on ? '1' : '');
+  if (remember && settings.get(key) !== on) settings.set({ [key]: on });
 }
-const setPanel = (on) => layout('panel-open', 'qd.panel', on);
-const setFull = (on) => layout('source-full', 'qd.sourcefull', on, $('[data-act=full]', srcpane));
-function setSource(open) {
-  layout('source-open', 'qd.source', open, toggleSource);
+const setPanel = (on) => layout('panel-open', 'ui.form_panel', on);
+const setFull = (on) => layout('source-full', 'ui.source_full', on, $('[data-act=full]', srcpane));
+function setSource(open, remember) {
+  layout('source-open', 'ui.source_was_open', open, toggleSource, remember);
   srcpane.hidden = !open;
   if (open) pane.load();
 }
-toggleSource.addEventListener('click', () => setSource(srcpane.hidden));
-$('[data-act=form]', srcpane).addEventListener('click', () => setPanel(!mainEl.classList.contains('panel-open')));
-$('[data-act=full]', srcpane).addEventListener('click', () => setFull(!mainEl.classList.contains('source-full')));
 const splitter = $('#splitter');
-const setWidth = (px) => { mainEl.style.setProperty('--srcw', Math.max(240, Math.min(px, innerWidth - 320)) + 'px'); pref('qd.srcw', String(px)); };
+let widthTimer = null;
+const setWidth = (px, remember = true) => {
+  mainEl.style.setProperty('--srcw', Math.max(240, Math.min(px, innerWidth - 320)) + 'px');
+  clearTimeout(widthTimer); // one write once the drag pauses
+  if (remember) widthTimer = setTimeout(() => settings.set({ 'ui.source_width': Math.round(px) }), 300);
+};
+const onRight = () => mainEl.classList.contains('source-right');
 splitter.addEventListener('pointerdown', (e) => {
   splitter.setPointerCapture(e.pointerId);
-  const move = (ev) => setWidth(ev.clientX - srcpane.getBoundingClientRect().left); // source on the left
+  const move = (ev) => {
+    const r = srcpane.getBoundingClientRect();
+    setWidth(onRight() ? r.right - ev.clientX : ev.clientX - r.left);
+  };
   splitter.addEventListener('pointermove', move);
   splitter.addEventListener('pointerup', () => splitter.removeEventListener('pointermove', move), { once: true });
 });
 splitter.addEventListener('keydown', (e) => {
   const d = { ArrowLeft: -20, ArrowRight: 20 }[e.key];
-  if (d) { e.preventDefault(); setWidth(srcpane.getBoundingClientRect().width + d); }
+  if (d) { e.preventDefault(); setWidth(srcpane.getBoundingClientRect().width + (onRight() ? -d : d)); }
 });
-if (pref('qd.srcw')) setWidth(Number(pref('qd.srcw')));
-setPanel(pref('qd.panel') === '1');
-setFull(pref('qd.sourcefull') === '1');
-setSource(pref('qd.source') === '1');
+
+// the person's settings: the layout once, then everything live (here, another editor, `qd settings`)
+const themed = new URLSearchParams(location.search).has('theme'); // VS Code sets the theme (spec 006)
+settings.onChange((v) => {
+  mainEl.classList.toggle('source-right', v['source.side'] === 'right');
+  if (!themed) {
+    if (v.theme === 'system') delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = v.theme;
+  }
+  pane.setAutosave(v['source.save'] === 'pause');
+  for (const el of document.querySelectorAll('[data-key]')) el.title = v['hints.shortcuts'] ? `${el.dataset.hint} (${el.dataset.key})` : el.dataset.hint;
+});
+// the saved layout before any button works: arriving late, it would undo a click
+await settings.ready((n) => say(n, true)).catch(() => say('settings could not be loaded; using the defaults', true));
+{
+  const v = settings.get;
+  if (v('ui.source_width')) setWidth(v('ui.source_width'), false);
+  setPanel(v('ui.form_panel'));
+  setFull(v('ui.source_full'));
+  setSource(v('source.open') === 'open' || (v('source.open') === 'last' && v('ui.source_was_open')), false);
+}
+toggleSource.addEventListener('click', () => setSource(srcpane.hidden));
+$('[data-act=form]', srcpane).addEventListener('click', () => setPanel(!mainEl.classList.contains('panel-open')));
+$('[data-act=full]', srcpane).addEventListener('click', () => setFull(!mainEl.classList.contains('source-full')));
+
 
 pane.initPane({
   op: (name, args) => op(name, args, { fileExpect: false }),
@@ -1624,5 +1657,6 @@ keys.on('toggle-source', { checked: () => !srcpane.hidden, run: () => setSource(
 keys.on('source-full', toggle('source-full', setFull));
 keys.on('form-panel', toggle('panel-open', setPanel));
 keys.on('about', () => alert('quartz-deck — a slide editor for Quarto reveal.js decks. Personal use only (see LICENSE).'));
-for (const id of ['undo', 'redo']) $(`#${id}`).title = `${keys.action(id).label} (${keys.shortcut(id)})`;
+for (const id of ['undo', 'redo']) Object.assign($(`#${id}`).dataset, { hint: keys.action(id).label, key: keys.shortcut(id) });
+keys.on('settings', settings.open);
 

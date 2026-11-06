@@ -166,10 +166,10 @@ impl Ed {
         }
     }
 
-    /// Poll `qd focus` until `pred` holds (10 s).
-    async fn until_focus(&self, pred: impl Fn(&Value) -> bool, what: &str) {
+    /// Poll `qd <args>` until `pred` holds on its JSON (10 s).
+    async fn until_cli(&self, args: &[&str], pred: impl Fn(&Value) -> bool, what: &str) {
         let start = Instant::now();
-        while !pred(&self.cli(&["focus"])) {
+        while !pred(&self.cli(args)) {
             assert!(start.elapsed() < Duration::from_secs(10), "{what}");
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
@@ -992,11 +992,20 @@ async fn bars_set_properties_and_source_panel_is_hidden() {
     // the Source button shows the source pane; its Form button the old properties panel
     ed.click_editor("#toggle-source").await;
     ed.wait("!document.querySelector('#srcpane').hidden").await;
+    // the element bar follows the element when the layout moves; it never sits over other controls
+    ed.wait("(() => { const b = document.querySelector('#elbar'); if (b.hidden) return true; const r = b.getBoundingClientRect(), f = document.querySelector('#srcpane [data-act=form]').getBoundingClientRect(); return r.right < f.left || f.right < r.left || r.bottom < f.top || f.bottom < r.top; })()").await;
+    ed.eval("window.__clicked = []; document.addEventListener('click', (e) => __clicked.push(e.target.outerHTML.slice(0, 60)), true)").await;
     ed.click_editor("#srcpane [data-act=form]").await;
+    let opened = ed
+        .eval("new Promise((r) => { const t = Date.now(); (function f() { if (getComputedStyle(document.querySelector('#panel')).display === 'block') r(true); else if (Date.now() - t > 5000) r(false); else setTimeout(f, 50); })(); })")
+        .await;
     assert_eq!(
-        ed.eval("getComputedStyle(document.querySelector('#panel')).display")
-            .await,
-        "block"
+        opened,
+        true,
+        "the Form button did not open the panel: main={} clicked={} under the button now={}",
+        ed.eval("document.querySelector('main').className").await,
+        ed.eval("JSON.stringify(window.__clicked)").await,
+        ed.eval("(() => { const r = document.querySelector('#srcpane [data-act=form]').getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.outerHTML.slice(0, 80); })()").await,
     );
 }
 
@@ -1536,7 +1545,7 @@ async fn pointing_moves_or_offers() {
     ed.go("a").await;
     ed.open_source().await;
     // the server knows this tab once it has reported
-    ed.until_focus(|v| v["age"].is_number(), "tab never reported")
+    ed.until_cli(&["focus"], |v| v["age"].is_number(), "tab never reported")
         .await;
 
     let t = Instant::now();
@@ -1559,8 +1568,12 @@ async fn pointing_moves_or_offers() {
     ed.click_in_slide("[data-qd=\"a/0\"] p").await;
     ed.caret("[data-qd=\"a/0\"]", None).await;
     ed.type_text(" abc").await;
-    ed.until_focus(|v| v["editing"] == true, "editing never reported")
-        .await;
+    ed.until_cli(
+        &["focus"],
+        |v| v["editing"] == true,
+        "editing never reported",
+    )
+    .await;
     for _ in 0..20 {
         assert_eq!(ed.cli(&["focus", "--set", "b"])["result"], "deferred");
     }
@@ -1613,7 +1626,7 @@ async fn framed_editor_takes_theme_and_messages() {
         .await;
     ed.wait("document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide().id === 'b'")
         .await;
-    ed.until_focus(|v| v["line"] == 17, "focus never got the line")
+    ed.until_cli(&["focus"], |v| v["line"] == 17, "focus never got the line")
         .await;
     // an element chosen on a slide: its source lines go to VS Code
     // what the editor posts to its parent (here itself): reveal, focusText
@@ -1775,4 +1788,75 @@ async fn menu_bar_runs_every_action() {
     ed.key("Escape", "Escape", 27, 0).await;
     ed.wait("document.activeElement.closest('#menubar') === null")
         .await;
+}
+
+/// Spec 007 US2 (T013): settings apply at once, are the person's (the CLI sees
+/// them, and changes there reach the open editor), and stick: another deck on
+/// a new server opens with the same settings and layout.
+#[tokio::test(flavor = "multi_thread")]
+async fn settings_apply_live_and_stick() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    let main = "document.querySelector('main').classList";
+    let theme = "document.documentElement.dataset.theme";
+    ed.key(",", "Comma", 188, 2).await; // ⌘, (Ctrl+, works too)
+    ed.wait("document.querySelector('#settings').open").await;
+    let choose = |key: &str, v: &str| {
+        format!(
+            "(() => {{ const s = document.getElementById('set-{key}'); s.value = {v:?}; s.dispatchEvent(new Event('change')); }})()"
+        )
+    };
+    ed.eval(&choose("source.side", "right")).await;
+    ed.wait(&format!("{main}.contains('source-right')")).await;
+    ed.eval(&choose("theme", "dark")).await;
+    ed.wait(&format!("{theme} === 'dark'")).await;
+    ed.eval(&choose("source.save", "explicit")).await;
+    ed.wait("document.querySelector('#srcpane .hint').textContent.includes('leave the pane')")
+        .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("!document.querySelector('#settings').open").await;
+
+    // they are the person's: the CLI sees them, and a change there applies at once
+    assert_eq!(ed.cli(&["settings"])["values"]["theme"], "dark");
+    ed.cli(&["settings", "set", "theme", "light"]);
+    ed.wait(&format!("{theme} === 'light'")).await;
+
+    // layout memory: the source pane opened here is open in another deck, on a new server
+    ed.open_source().await;
+    ed.until_cli(
+        &["settings"],
+        |v| v["values"]["ui.source_was_open"] == true,
+        "the open source pane was not remembered",
+    )
+    .await;
+    ed.cli(&["stop"]);
+    let other = ed.dir.path().join("other");
+    std::fs::create_dir(&other).unwrap();
+    let deck = other.join("talk.qmd");
+    std::fs::write(&deck, P2).unwrap();
+    let info = ed.cli(&["--deck", deck.to_str().unwrap(), "serve", "--detach"]);
+    ed.page.goto(info["url"].as_str().unwrap()).await.unwrap();
+    ed.wait_secs(READY, 60).await;
+    ed.wait(&format!(
+        "!document.querySelector('#srcpane').hidden && {main}.contains('source-right') && {theme} === 'light'"
+    ))
+    .await;
+
+    // Reset to defaults asks first, then everything is back (theme follows the system)
+    ed.eval("window.confirm = (m) => ((window.__asked = m), true)")
+        .await;
+    ed.key(",", "Comma", 188, 2).await;
+    ed.wait("document.querySelector('#settings').open").await;
+    ed.click_js("(r => [r.left + r.width / 2, r.top + r.height / 2])([...document.querySelectorAll('#settings button')].find((b) => b.textContent.startsWith('Reset')).getBoundingClientRect())").await;
+    ed.wait(&format!(
+        "{theme} === undefined && !{main}.contains('source-right')"
+    ))
+    .await;
+    assert!(
+        ed.eval("window.__asked")
+            .await
+            .as_str()
+            .unwrap()
+            .contains("default")
+    );
+    ed.cli(&["--deck", deck.to_str().unwrap(), "stop"]);
 }
