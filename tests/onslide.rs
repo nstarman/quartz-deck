@@ -237,6 +237,14 @@ impl Ed {
         .await;
     }
 
+    /// Click slide `id` in the list and wait until it is on the canvas and has the
+    /// keyboard: keys pressed straight after the click must reach that slide.
+    async fn pick_slide(&self, id: &str) {
+        self.click_editor(&format!("#slides li[data-id={id}] > button"))
+            .await;
+        self.wait(&format!("document.activeElement?.closest('#slides li')?.dataset.id === '{id}' && document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide()?.id === '{id}'")).await;
+    }
+
     /// Edit ▸ Undo once; the file must be back to `before` (one edit, one undo step).
     async fn undo_to(&self, before: &str) {
         self.idle().await;
@@ -2108,7 +2116,7 @@ async fn same_rules_everywhere() {
     ed.undo_to(&before).await;
     ed.settle().await;
     ed.go("b").await;
-    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.pick_slide("b").await;
     ed.key("d", "KeyD", 68, 2 | 8).await; // Ctrl+Shift+D
     ed.wait_file(
         |f| f.matches("Other slide.").count() == 2,
@@ -2131,7 +2139,7 @@ async fn same_rules_everywhere() {
     // the paste event.
     ed.settle().await;
     ed.eval("window.__clip = null; navigator.clipboard.writeText = (t) => { __clip = t; return Promise.resolve(); }").await;
-    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.pick_slide("b").await;
     ed.key("c", "KeyC", 67, 2).await;
     ed.wait("window.__clip?.startsWith('## B {#b}')").await;
     ed.paste("document.activeElement", "__clip").await;
@@ -2145,7 +2153,7 @@ async fn same_rules_everywhere() {
 
     // text from another application: a paragraph, never raw HTML
     ed.settle().await;
-    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.pick_slide("b").await;
     ed.paste("document.activeElement", "'1 < 2 & <b>x</b>'")
         .await;
     ed.wait_file(
@@ -2246,7 +2254,7 @@ async fn menus_open_fast() {
 async fn paste_key_uses_the_paste_event() {
     let Some(ed) = Ed::open(P2).await else { return };
     ed.go("b").await;
-    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.pick_slide("b").await;
     // the clipboard API refuses, as without permission, and records being asked
     let refuse = "window.__asked = false; navigator.clipboard.readText = () => { __asked = true; return Promise.reject(new Error('no permission')); }";
     ed.eval(refuse).await;
@@ -2287,7 +2295,7 @@ async fn paste_key_uses_the_paste_event() {
     // an empty paste event (Chrome on Linux fires one for a devtools ⌘V, with
     // its own empty clipboard) falls back to the clipboard API, not to nothing
     ed.settle().await;
-    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.pick_slide("b").await;
     ed.eval("navigator.clipboard.readText = () => Promise.resolve('## Again {#again}\\n\\nFrom the API.\\n')")
         .await;
     ed.paste("document.activeElement", "''").await;
