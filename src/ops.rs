@@ -370,14 +370,7 @@ pub fn dup(d: &Deck, slide: &str, after: Option<&str>) -> Result<Patch> {
 
     // copy: fresh slide id, fresh ids for blocks with explicit ids
     let new_id = ctx.slide_id(s.title.as_deref());
-    let mut rest = String::new();
-    let mut pos = s.content_start();
-    for b in &s.blocks {
-        rest.push_str(&d.text[pos..b.span.start]);
-        rest.push_str(&renew_id(&mut ctx, b, d.slice(b.span), &mut assigned));
-        pos = b.span.end;
-    }
-    rest.push_str(&d.text[pos..s.span.end]);
+    let rest = copy_body(&mut ctx, d, s, false, &mut assigned);
     let mut attrs = s.attrs.clone().unwrap_or_default();
     attrs.set_id(&new_id);
     let fake = Slide {
@@ -431,18 +424,7 @@ pub fn paste(d: &Deck, md: &str, pos: Pos) -> Result<Patch> {
         }
         first.get_or_insert(id);
         text.push_str(&head);
-        let mut pos = s.content_start();
-        for b in &s.blocks {
-            text.push_str(&src.text[pos..b.span.start]);
-            let t = src.slice(b.span);
-            if b.id_explicit && ctx.taken.insert(b.id.clone()) {
-                text.push_str(t);
-            } else {
-                text.push_str(&renew_id(&mut ctx, b, t, &mut assigned));
-            }
-            pos = b.span.end;
-        }
-        text.push_str(&src.text[pos..s.span.end]);
+        text.push_str(&copy_body(&mut ctx, &src, s, true, &mut assigned));
     }
     let text = with_nl(&text, d.nl);
     Ok(patch(
@@ -739,6 +721,31 @@ pub fn block_rm(d: &Deck, element: &str) -> Result<Patch> {
         vec![(span, new)],
         Vec::new(),
     ))
+}
+
+/// A copy of slide `s`'s content (from deck `src`), explicit block ids renewed;
+/// with `keep_free`, an id not yet in the deck is kept.
+fn copy_body(
+    ctx: &mut Ctx,
+    src: &Deck,
+    s: &Slide,
+    keep_free: bool,
+    assigned: &mut Vec<String>,
+) -> String {
+    let mut out = String::new();
+    let mut pos = s.content_start();
+    for b in &s.blocks {
+        out.push_str(&src.text[pos..b.span.start]);
+        let t = src.slice(b.span);
+        if keep_free && b.id_explicit && ctx.taken.insert(b.id.clone()) {
+            out.push_str(t);
+        } else {
+            out.push_str(&renew_id(ctx, b, t, assigned));
+        }
+        pos = b.span.end;
+    }
+    out.push_str(&src.text[pos..s.span.end]);
+    out
 }
 
 /// A copy's text: an explicit id is replaced by a fresh one.

@@ -32,6 +32,12 @@ fn run(d: &Deck, p: Patch, touched_before: &[&str]) -> Deck {
     after
 }
 
+fn unique_ids(d: &Deck) {
+    let ids = d.explicit_ids();
+    let set: std::collections::HashSet<_> = ids.iter().collect();
+    assert_eq!(ids.len(), set.len(), "duplicate ids: {ids:?}");
+}
+
 fn snap(name: &str, d: &Deck, p: &Patch) {
     let after = ops::apply(&d.text, p).unwrap();
     insta::assert_snapshot!(name, ops::diff(&d.text, &after));
@@ -114,11 +120,7 @@ fn dup_gets_fresh_ids() {
     snap("dup_results", &d, &p);
     let a = run(&d, p.clone(), &[]);
     assert_eq!(a.slides[2].id, p.target);
-    let ids = a.explicit_ids();
-    let mut uniq = ids.clone();
-    uniq.sort();
-    uniq.dedup();
-    assert_eq!(ids.len(), uniq.len(), "duplicate ids after dup: {ids:?}");
+    unique_ids(&a);
     assert!(
         a.slides[2]
             .blocks
@@ -649,11 +651,7 @@ fn paste_slides_with_fresh_ids_where_they_clash() {
     assert_eq!(ids[1], p.target);
     assert_ne!(ids[1], "results", "a clashing slide id is renewed");
     assert_eq!(ids[2], "extra", "an id that does not clash is kept");
-    let all = a.explicit_ids();
-    let mut uniq = all.clone();
-    uniq.sort();
-    uniq.dedup();
-    assert_eq!(all.len(), uniq.len(), "duplicate ids after paste: {all:?}");
+    unique_ids(&a);
     assert!(p.assigned_ids.iter().any(|i| i.starts_with("b-")), "{p:?}");
     assert!(!p.assigned_ids.contains(&"extra".to_string()));
 

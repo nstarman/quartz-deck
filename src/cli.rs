@@ -59,11 +59,7 @@ struct Where {
 
 impl Where {
     fn pos(&self) -> Pos<'_> {
-        match (&self.after, &self.before) {
-            (Some(a), _) => Pos::After(a),
-            (_, Some(b)) => Pos::Before(b),
-            _ => unreachable!("clap group is required"),
-        }
+        at(&self.after, &self.before) // the clap group requires one of them
     }
 }
 

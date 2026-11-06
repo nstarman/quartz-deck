@@ -18,6 +18,8 @@ use std::time::{Duration, Instant};
 mod common;
 use common::{have, qd};
 
+/// The selected preview element's ref, or null.
+const SEL: &str = "(document.querySelector('#preview').contentDocument.querySelector('.qd-sel')?.dataset.qd ?? null)";
 const SRC: &str = "document.querySelector('#srcedit textarea')";
 /// Default wait: generous, since all browser tests (each with Quarto and Chrome) run in parallel.
 const WAIT: u64 = 20;
@@ -584,9 +586,7 @@ async fn typing_writes_only_the_element() {
     ed.key("Escape", "Escape", 27, 0).await;
     ed.wait_file(|f| f.contains("two kept"), "kept by Escape")
         .await;
-    ed.idle().await;
-    ed.menu("Edit", "Undo").await;
-    ed.wait_file(|f| f == before, "one undo step").await;
+    ed.undo_to(&before).await;
 
     // undo restores the file byte-for-byte (shared history with the CLI)
     ed.menu("Edit", "Undo").await;
@@ -1105,19 +1105,17 @@ async fn fragments_notes_and_keyboard_selection() {
     assert_eq!(ed.eval(opacity).await, "1");
 
     // Tab / Shift+Tab move the selection; Enter edits; Escape leaves the edit, keeping the selection
-    let sel =
-        "document.querySelector('#preview').contentDocument.querySelector('.qd-sel')?.dataset.qd";
     ed.click_blank().await;
     for (shift, want) in [(0, "f/0"), (0, "f/1"), (8, "f/0")] {
         ed.key("Tab", "Tab", 9, shift).await; // 8 = Shift+Tab
-        ed.wait(&format!("{sel} === '{want}'")).await;
+        ed.wait(&format!("{SEL} === '{want}'")).await;
     }
     ed.wait("document.querySelector('#notice').textContent.startsWith('Selected')")
         .await;
     ed.key("Enter", "Enter", 13, 0).await;
     ed.wait("window.qdSession()?.ref === 'f/0'").await;
     ed.key("Escape", "Escape", 27, 0).await;
-    ed.wait(&format!("window.qdSession() === null && {sel} === 'f/0'"))
+    ed.wait(&format!("window.qdSession() === null && {SEL} === 'f/0'"))
         .await;
 
     // Speaker notes…: created when missing, then edited in the source box
@@ -1648,14 +1646,12 @@ async fn framed_editor_takes_theme_and_messages() {
     let focus_text = "__msgs.filter((m) => m.type === 'focusText').length";
     // Esc clears the selection first; Esc with nothing left hands the keyboard to the text
     let esc = || ed.key("Escape", "Escape", 27, 0);
-    let sel =
-        "document.querySelector('#preview').contentDocument.querySelector('.qd-sel')?.dataset.qd";
     ed.wait("window.qdSession() !== null").await;
     esc().await; // ends the edit the click started (the element stays selected)
-    ed.wait(&format!("window.qdSession() === null && {sel} === 'a/0'"))
+    ed.wait(&format!("window.qdSession() === null && {SEL} === 'a/0'"))
         .await;
     esc().await; // clears the selection
-    ed.wait(&format!("!{sel}")).await;
+    ed.wait(&format!("!{SEL}")).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert_eq!(
         ed.eval(focus_text).await,
@@ -1930,7 +1926,6 @@ async fn shortcut_reference() {
 #[tokio::test(flavor = "multi_thread")]
 async fn same_rules_everywhere() {
     let Some(ed) = Ed::open(P2).await else { return };
-    let sel = "(document.querySelector('#preview').contentDocument.querySelector('.qd-sel')?.dataset.qd ?? null)";
 
     // Escape: edit → selected element (the edit saved) → nothing selected
     let before = ed.file();
@@ -1938,10 +1933,10 @@ async fn same_rules_everywhere() {
     ed.key("Escape", "Escape", 27, 0).await;
     ed.wait_file(|f| f.contains("First para. More."), "kept by Escape")
         .await;
-    ed.wait(&format!("window.qdSession() === null && {sel} === 'a/0'"))
+    ed.wait(&format!("window.qdSession() === null && {SEL} === 'a/0'"))
         .await;
     ed.key("Escape", "Escape", 27, 0).await;
-    ed.wait(&format!("{sel} === null")).await;
+    ed.wait(&format!("{SEL} === null")).await;
     ed.undo_to(&before).await; // on-slide typing
 
     // a menu and a shortcut are one undo step each
@@ -1985,17 +1980,10 @@ async fn same_rules_everywhere() {
     ed.key("v", "KeyV", 86, 2).await;
     ed.wait_file(|f| f.matches("Other slide.").count() == 2, "pasted")
         .await;
-    let ids = ed.cli(&["slides"])["slides"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|s| s["id"].as_str().unwrap().to_string())
-        .collect::<Vec<_>>();
-    assert_eq!(ids.len(), 4, "{ids:?}");
-    assert!(
-        ids[2] != "b" && ids[1] == "b",
-        "the copy has a fresh id: {ids:?}"
-    );
+    let s = &ed.cli(&["slides"])["slides"];
+    assert_eq!(s.as_array().unwrap().len(), 4, "{s}");
+    assert_eq!(s[1]["id"], "b");
+    assert_ne!(s[2]["id"], "b", "the copy has a fresh id: {s}");
     ed.undo_to(&before).await;
 
     // text from another application: a paragraph, never raw HTML

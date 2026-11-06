@@ -1603,7 +1603,7 @@ function copySlide(t) {
 async function pasteSlides(t) {
   const text = await clipboardText();
   if (!text) { say('Nothing to paste', true); return; }
-  const slides = /^\s*(#{1,6}\s|---\s*$)/m.test(text.split('\n').find((l) => l.trim()) || '');
+  const slides = /^(#{1,6}\s|---[ \t]*(\n|$))/.test(text.trimStart());
   const r = slides
     ? await op('paste', { after: t.slideId, md: text })
     : await op('block add', { slide: t.slideId, end: true, md: outside(text) });
