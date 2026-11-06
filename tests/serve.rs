@@ -846,8 +846,8 @@ fn buffer_overlay_over_http() {
                 .expect("buffer_edit"),
         )
         .unwrap();
-        if e["base"] != json!("e3b0c44298fc1c14") {
-            break e; // not the open's (whose base is the empty text)
+        if e["base"] != json!(quartz_deck::deck::version_of(b"")) {
+            break e; // not the open's
         }
     };
     let now = source();

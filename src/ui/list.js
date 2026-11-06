@@ -75,7 +75,7 @@ export function makeList(api) {
   /** A copy of the slide's section from the canvas's own render, in `host`'s shadow root. */
   function draw(host, anchor, doc) {
     const sec = doc.getElementById(anchor);
-    if (!sec) return null;
+    if (!sec) return;
     const copy = sec.cloneNode(true);
     for (const n of copy.querySelectorAll('[src], [href], [poster], [data-src]')) {
       for (const a of ['src', 'href', 'poster']) if (n.hasAttribute(a)) n.setAttribute(a, new URL(n.getAttribute(a), doc.baseURI).href);
@@ -100,7 +100,6 @@ export function makeList(api) {
     host.shadowRoot.adoptedStyleSheets = [deckSheet(doc)];
     host.shadowRoot.replaceChildren(reveal);
     scale(host);
-    return sec;
   }
 
   function build(anchor) {

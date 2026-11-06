@@ -84,16 +84,16 @@ main { flex: 1; display: flex; min-height: 0; }
 nav { width: 220px; flex: none; overflow: auto; border-right: 1px solid var(--line); background: var(--panel); }
 nav ol { list-style: none; margin: 0; padding: 8px; }
 /* the slide list (spec 008 US1): thumbnails, a + in every gap, a drag you can see */
-nav li { position: relative; margin-top: 8px; border-radius: 8px; transition: transform 120ms ease; touch-action: none; }
-nav li:first-child { margin-top: 0; }
+nav li { position: relative; border-radius: 8px; transition: transform 120ms ease; touch-action: none; }
+nav li + li { margin-top: 8px; }
 body.dragging-slide, body.dragging-slide * { cursor: grabbing !important; user-select: none; }
 nav li.dragging { opacity: 0; }
 nav li > button:first-child { all: unset; box-sizing: border-box; display: block; width: 100%; padding: 4px; border-radius: 8px;
   cursor: default; }
 nav li > button:first-child:hover { background: var(--bg); }
 nav li > button:first-child:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
-nav .thumb { display: block; position: relative; width: 100%; aspect-ratio: 3 / 2; overflow: hidden; border-radius: 4px;
-  border: 1px solid var(--line); background: #fff; }
+.thumb { display: block; position: relative; width: 100%; aspect-ratio: 3 / 2; overflow: hidden; border-radius: 4px; }
+nav .thumb { border: 1px solid var(--line); background: #fff; }
 nav li.current .thumb { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 nav .meta { display: flex; gap: 6px; align-items: baseline; padding: 4px 2px 0; font-size: 12px; line-height: 1.3;
   white-space: nowrap; overflow: hidden; }
@@ -117,7 +117,6 @@ nav button.wide { margin: 10px 8px; width: calc(100% - 16px); }
 /* the picture under the pointer while dragging a slide */
 .drag-ghost { position: fixed; left: 0; top: 0; z-index: 30; pointer-events: none; padding: 4px; border-radius: 8px;
   background: var(--panel); opacity: .85; box-shadow: 0 8px 24px rgba(0, 0, 0, .3); font-size: 12px; }
-.drag-ghost .thumb { display: block; width: 100%; aspect-ratio: 3 / 2; overflow: hidden; border-radius: 4px; position: relative; }
 
 #stage { flex: 1; padding: 16px; min-width: 0; }
 #preview { width: 100%; height: 100%; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
@@ -157,13 +156,12 @@ aside .status.fail { color: var(--danger); }
   nav, aside { width: auto; max-height: 30vh; border: 0; border-bottom: 1px solid var(--line); }
   #stage { padding: 0; min-height: 50vh; }
   /* slide list becomes a side-scrolling strip; drag reorders left/right */
-  nav { display: flex; align-items: center; overflow-x: auto; overflow-y: hidden; }
+  nav { display: flex; align-items: flex-start; overflow-x: auto; overflow-y: hidden; }
   nav ol { display: flex; gap: 0; flex: none; align-items: flex-start; }
-  nav li { flex: none; width: 120px; margin: 0 0 0 8px; }
-  nav li:first-child { margin-left: 0; }
+  nav li { flex: none; width: 120px; }
+  nav li + li { margin: 0 0 0 8px; }
   nav .add-here { top: calc(50% - 10px); left: -4px; }
   /* the + after the last slide, level with the thumbnails */
-  nav { align-items: flex-start; }
   nav button.wide { flex: none; width: 28px; height: 28px; padding: 0; border-radius: 50%; align-self: center;
     position: relative; top: -10px; margin: 0 12px 0 16px; } /* -10px: level with the thumbnails, not their titles */
 }
@@ -203,7 +201,6 @@ aside .status.fail { color: var(--danger); }
 #slidebar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; }
 #slidebar input[type=color] { width: 28px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 4px; vertical-align: middle; }
 main:not(.panel-open) > aside { display: none; }
-#toggle-source[aria-pressed=true] { background: var(--bg); border-color: var(--accent); }
 
 #ctxmenu { position: fixed; z-index: 30; }
 #ctxmenu ul { list-style: none; margin: 0; padding: 4px; min-width: 210px; background: var(--panel); color: var(--text);

@@ -11,6 +11,7 @@ numbered PNGs in audit/shots/. A shot that fails is logged and skipped.
     uv run specs/008-usability/audit/shoot.py [path/to/qd]
 """
 
+import contextlib
 import json
 import os
 import shutil
@@ -27,9 +28,9 @@ QD = sys.argv[1] if len(sys.argv) > 1 else str(HERE.parents[2] / "target/release
 READY = "() => { const f = document.querySelector('#preview'); return !!(f && f.contentWindow?.Reveal?.isReady?.() && document.querySelector('#slides li') && window.qdSession); }"
 
 tmp = Path(tempfile.mkdtemp(prefix="qd-audit-"))
-shutil.copytree(HERE / "deck", tmp / "deck")
-env = {**os.environ, "QD_CONFIG_DIR": str(tmp / "config"), "QD_CACHE_DIR": str(tmp / "cache")}
 deck = tmp / "deck"
+shutil.copytree(HERE / "deck", deck)
+env = {**os.environ, "QD_CONFIG_DIR": str(tmp / "config"), "QD_CACHE_DIR": str(tmp / "cache")}
 url = json.loads(subprocess.run([QD, "serve", "--detach"], cwd=deck, env=env, capture_output=True, text=True, check=True).stdout)["url"]
 SHOTS.mkdir(exist_ok=True)
 failed = []
@@ -74,10 +75,8 @@ def shot(page, name, steps):
     except Exception as e:  # one broken shot shouldn't stop the rest
         failed.append(f"{name}: {e}".splitlines()[0])
     finally:
-        try:
+        with contextlib.suppress(Exception):
             reset(page)
-        except Exception:
-            pass
 
 
 def editor_shots(page, prefix):
@@ -118,23 +117,19 @@ def editor_shots(page, prefix):
         shot(page, f"{prefix}08-menu-{menu.lower()}", open_menu)
 
     def list_hover(p):
-        p.hover("#slides li:nth-child(3) button")
+        p.hover("#slides li:nth-child(3) > button:first-child")
         p.wait_for_timeout(600)
 
     shot(page, f"{prefix}09-slide-list-hover", list_hover)
 
-    def list_menu(p):
-        p.click("#slides li:nth-child(3) button", button="right")
-
-    shot(page, f"{prefix}10-slide-list-menu", list_menu)
+    shot(page, f"{prefix}10-slide-list-menu", lambda p: p.click("#slides li:nth-child(3) > button:first-child", button="right"))
 
     def dragging(p):
-        src = p.locator("#slides li:nth-child(5) button").bounding_box()
-        dst = p.locator("#slides li:nth-child(2) button").bounding_box()
+        src = p.locator("#slides li:nth-child(5) > button:first-child").bounding_box()
+        dst = p.locator("#slides li:nth-child(2) > button:first-child").bounding_box()
         p.mouse.move(src["x"] + 20, src["y"] + src["height"] / 2)
         p.mouse.down()
-        for i in range(1, 11):
-            p.mouse.move(dst["x"] + 20, src["y"] + (dst["y"] + 4 - src["y"]) * i / 10)
+        p.mouse.move(dst["x"] + 20, dst["y"] + 4, steps=10)
         p.wait_for_timeout(300)
 
     try:
@@ -158,7 +153,7 @@ def editor_shots(page, prefix):
     shot(page, f"{prefix}13-settings", settings)
 
     def shortcuts(p):
-        p.click("#slides li:nth-child(2) button")
+        p.click("#slides li:nth-child(2) > button:first-child")
         p.keyboard.press("?")
         p.wait_for_function("() => document.querySelector('#shortcuts').open")
 

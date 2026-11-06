@@ -385,10 +385,6 @@ frame.addEventListener('load', () => {
   fetchDeck().then(renderPanel);
 });
 
-// ---------- hover preview of a slide in the list ----------
-
-// One small second copy of the rendered deck, steered by hash. Reloaded only when
-// the main preview re-renders, so hovering is instant after the first time.
 // ---------- slide list (spec 008 US1: list.js) ----------
 
 const slideList = makeList({
@@ -1194,16 +1190,15 @@ slidebar.addEventListener('click', async (e) => {
 // remembered in the person's settings (spec 007), so the same in every deck and in VS Code
 const mainEl = document.querySelector('main');
 const srcpane = $('#srcpane');
-/** Toggle a layout class on <main> and its button's aria-pressed; remember it unless applying settings. */
-function layout(cls, key, on, btn, remember = true) {
+/** Toggle a layout class on <main>; remember it unless applying settings. */
+function layout(cls, key, on, remember = true) {
   mainEl.classList.toggle(cls, on);
-  btn?.setAttribute('aria-pressed', String(on));
   if (remember && settings.get(key) !== on) settings.set({ [key]: on });
 }
 const setPanel = (on) => layout('panel-open', 'ui.form_panel', on);
-const setFull = (on) => layout('source-full', 'ui.source_full', on, $('[data-act=full]', srcpane));
+const setFull = (on) => { $('[data-act=full]', srcpane).setAttribute('aria-pressed', String(on)); layout('source-full', 'ui.source_full', on); };
 function setSource(open, remember) {
-  layout('source-open', 'ui.source_was_open', open, null, remember);
+  layout('source-open', 'ui.source_was_open', open, remember);
   srcpane.hidden = !open;
   if (open) pane.load();
 }

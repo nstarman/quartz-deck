@@ -25,7 +25,7 @@ Paths are relative to the repo root.
 ## Phase 1: Setup
 
 - [X] T001 [P] Write `specs/008-usability/audit/status.md`: one row per audit finding (L1–L5, C1–C6, E1–E3, B1, S1–S2, D1–D2, T1–T5, H1–H4, N1–N2) with its requirement(s), the task that fixes it, and a status column (`open`). Updated as tasks land; the evidence column is filled in T039.
-- [X] T002 [P] Copy the audit deck into `tests/fixtures/audit/` (`talk.qmd`, `chart.svg`) for the browser tests, unchanged.
+- [X] T002 [P] The browser tests use the audit deck itself (`include_str!` of `specs/008-usability/audit/deck/talk.qmd`), so the tests and the audit can't drift apart.
 
 ---
 

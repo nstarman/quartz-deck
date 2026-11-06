@@ -2288,8 +2288,18 @@ async fn paste_key_uses_the_paste_event() {
 
 // ---------- spec 008: usability ----------
 
-/// The audit deck (specs/008-usability/audit/deck).
-const AUDIT: &str = include_str!("fixtures/audit/talk.qmd");
+/// The audit deck, the same file the audit's screenshots use.
+const AUDIT: &str = include_str!("../specs/008-usability/audit/deck/talk.qmd");
+
+/// The slide ids in `qd slides` output, in order.
+fn slide_ids(v: &Value) -> Vec<String> {
+    v["slides"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["id"].as_str().unwrap().to_string())
+        .collect()
+}
 
 /// In-page checks for 008's measurement test: contrast of every visible text
 /// and form value, and the size of every interactive target, in the editor's
@@ -2388,14 +2398,7 @@ async fn slide_list_like_a_slide_app() {
         return;
     };
     let ids = "[...document.querySelectorAll('#slides li[data-id]')].map((li) => li.dataset.id)";
-    let order = || {
-        ed.cli(&["slides"])["slides"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|s| s["id"].as_str().unwrap().to_string())
-            .collect::<Vec<_>>()
-    };
+    let order = || slide_ids(&ed.cli(&["slides"]));
     let built = |id: &str| {
         format!("+(document.querySelector('#slides li[data-id={id}] .thumb')?.dataset.built ?? 0)")
     };
@@ -2503,13 +2506,8 @@ async fn slide_list_like_a_slide_app() {
     ed.until_cli(
         &["slides"],
         |v| {
-            let o: Vec<&str> = v["slides"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|s| s["id"].as_str().unwrap())
-                .collect();
-            o.iter().position(|x| *x == "code") < o.iter().position(|x| *x == "model")
+            let o = slide_ids(v);
+            o.iter().position(|x| x == "code") < o.iter().position(|x| x == "model")
         },
         "code moved above model",
     )
@@ -2539,13 +2537,8 @@ async fn slide_list_like_a_slide_app() {
     ed.until_cli(
         &["slides"],
         |v| {
-            let o: Vec<&str> = v["slides"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|s| s["id"].as_str().unwrap())
-                .collect();
-            o.iter().position(|x| *x == "columns") < o.iter().position(|x| x.starts_with("s-"))
+            let o = slide_ids(v);
+            o.iter().position(|x| x == "columns") < o.iter().position(|x| x.starts_with("s-"))
         },
         "⌥↑ moved columns up",
     )
