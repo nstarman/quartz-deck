@@ -158,9 +158,9 @@ aside .status.fail { color: var(--danger); }
   nav li { flex: none; width: 120px; margin: 0 0 0 20px; }
   nav li:first-child { margin-left: 0; }
   nav .add-here { top: calc(50% - 10px); left: -20px; transform: translateY(-50%); width: 20px; height: 28px; }
-  /* add-slide first, so it stays in reach however long the strip is */
+  /* the + after the last slide, level with the thumbnails */
   nav { align-items: flex-start; }
-  nav button.wide { order: -1; flex: none; width: auto; align-self: stretch; margin: 12px 8px 30px; white-space: nowrap; }
+  nav button.wide { flex: none; width: 32px; padding: 0; align-self: stretch; margin: 12px 12px 30px 20px; }
 }
 
 /* ---------- on-slide editing (spec 003) ---------- */
