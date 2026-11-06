@@ -756,7 +756,8 @@ function stepSelection(back) {
 
 function onKey(e) {
   // widget key: Esc closes an open menu even when focus stayed elsewhere (the preview)
-  if (menuOpen()) { if (e.key === 'Escape') { e.preventDefault(); closeMenu(); } return; }
+  // (and only that: an edit under a menu opened with the mouse stays open, one level per Esc)
+  if (menuOpen()) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeMenu(); } return; }
   if (state.session || editing()) return; // edits and form fields handle their own keys
   // every other key is an action from the list (spec 007): the selected element first, then the slide
   keys.dispatch(e, state.sel ? ['element', 'slide'] : [e.target.closest?.('nav') ? 'slides' : 'slide']);
