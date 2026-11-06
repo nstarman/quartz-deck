@@ -2,10 +2,8 @@
 // itself uses while the panel has focus (default-keys.json, from VS Code's reference).
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const path = require('node:path');
-const fs = require('node:fs');
 
-const actions = JSON.parse(fs.readFileSync(path.join(__dirname, '../../src/ui/actions.json'), 'utf8')).filter((a) => a.id);
+const actions = require('../../src/ui/actions.json').filter((a) => a.id);
 const { keys: vscode } = require('../default-keys.json');
 
 /** One spelling per key: modifiers sorted, letters upper-case. */

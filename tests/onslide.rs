@@ -1629,9 +1629,9 @@ async fn framed_editor_takes_theme_and_messages() {
 
     // US5: no menu bar, one ☰ holding the same menus; F10 reaches it
     let shown =
-        |sel: &str| format!("getComputedStyle(document.querySelector({sel:?})).display !== 'none'");
-    assert_eq!(ed.eval(&shown("#menubar [data-menu=File]")).await, false);
-    assert_eq!(ed.eval(&shown("#menubar [data-menu=Menu]")).await, true);
+        |m: &str| format!("!!document.querySelector('#menubar [data-menu={m}]').offsetParent");
+    assert_eq!(ed.eval(&shown("File")).await, false);
+    assert_eq!(ed.eval(&shown("Menu")).await, true);
     ed.go("a").await;
     ed.click_editor("#menubar [data-menu=Menu]").await;
     assert_eq!(
@@ -1654,13 +1654,9 @@ async fn framed_editor_takes_theme_and_messages() {
     assert_eq!(ed.eval(&resolve("Mod+B", "text")).await, Value::Null);
     assert_eq!(ed.eval(&resolve("Mod+Shift+D", "slide")).await, Value::Null);
     assert_eq!(ed.eval(&resolve("Mod+I", "text")).await, "italic");
-    let menus = ed.eval("window.qdMenus()").await;
-    let dup = menus["Slide"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|i| i["label"] == "Duplicate slide")
-        .unwrap();
+    let dup = ed
+        .eval("qdMenus().then((m) => m.Slide.find((i) => i.label === 'Duplicate slide'))")
+        .await;
     assert_eq!(dup["shortcut"], Value::Null, "{dup}");
 
     // VS Code's cursor in slide B's text shows B, and qd focus has it (US3)

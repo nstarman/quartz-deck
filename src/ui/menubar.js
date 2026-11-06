@@ -54,7 +54,7 @@ bar.id = 'menubar';
 bar.setAttribute('role', 'menubar');
 bar.setAttribute('aria-label', 'Menu');
 document.body.prepend(bar);
-const item = (label, text = label) => {
+const item = (label, items, text = label) => {
   const b = document.createElement('div');
   b.setAttribute('role', 'menuitem');
   b.setAttribute('aria-haspopup', 'menu');
@@ -62,13 +62,15 @@ const item = (label, text = label) => {
   b.dataset.menu = label;
   b.tabIndex = -1;
   b.textContent = text;
+  b.items = items;
   bar.append(b);
   return b;
 };
 // folded (in VS Code's panel, or when the bar doesn't fit): one ☰ holding the same menus
-const fold = item('Menu', '☰');
+const fold = item('Menu', null, '☰');
 fold.setAttribute('aria-label', 'Menu');
-const buttons = MENUS.map((m) => item(m.label));
+const buttons = MENUS.map((m) => item(m.label, m.items));
+const all = [fold, ...buttons];
 
 let open = null; // the button whose menu is open
 let before = null; // where focus was before F10
@@ -84,8 +86,8 @@ const menus = () => buttons.filter((b) => !(b.dataset.menu === 'Run' && document
 const folded = () => bar.classList.contains('folded');
 const visible = () => (folded() ? [fold] : menus());
 const itemsOf = (b, ctx) => (b === fold
-  ? menus().map((m) => ({ label: m.dataset.menu, items: resolve(MENUS[buttons.indexOf(m)].items, ctx) }))
-  : resolve(MENUS[buttons.indexOf(b)].items, ctx));
+  ? menus().map((m) => ({ label: m.dataset.menu, items: resolve(m.items, ctx) }))
+  : resolve(b.items, ctx));
 
 /** Fold when framed or when the menus don't fit (re-checked as the window changes). */
 function refold() {
@@ -97,7 +99,7 @@ new ResizeObserver(refold).observe(bar);
 
 async function show(b, { focus = true } = {}) {
   const ctx = await keys.currentContext();
-  [fold, ...buttons].forEach((x) => x.setAttribute('aria-expanded', String(x === b)));
+  all.forEach((x) => x.setAttribute('aria-expanded', String(x === b)));
   open = b;
   const r = b.getBoundingClientRect();
   openMenu(itemsOf(b, ctx), r.left, r.bottom + 2, { focus, onSide: (d) => step(d, true) });
@@ -111,7 +113,7 @@ function step(d, opened) {
   if (opened) show(next);
 }
 
-onClose(() => { open = null; [fold, ...buttons].forEach((x) => x.setAttribute('aria-expanded', 'false')); });
+onClose(() => { open = null; all.forEach((x) => x.setAttribute('aria-expanded', 'false')); });
 
 bar.addEventListener('mousedown', (e) => {
   const b = e.target.closest('[role=menuitem]');
