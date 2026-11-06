@@ -62,7 +62,7 @@ main.source-right aside { order: 4; }
 #shortcuts button { margin-top: 12px; float: right; }
 
 /* ---------- menu bar (spec 007) ---------- */
-#menubar { flex: 1 1 auto; min-width: 0; display: flex; gap: 2px; font-size: 13px; overflow: hidden; }
+#menubar { flex: none; display: flex; gap: 2px; font-size: 13px; overflow: hidden; }
 #menubar:not(.folded) [data-menu=Menu], #menubar.folded [role=menuitem]:not([data-menu=Menu]) { display: none; }
 #menubar [role=menuitem] { padding: 3px 9px; border-radius: 4px; cursor: default; user-select: none; }
 #menubar [role=menuitem]:hover, #menubar [role=menuitem]:focus, #menubar [aria-expanded=true] { background: var(--accent); color: var(--accent-text); outline: none; }
@@ -70,7 +70,9 @@ main.source-right aside { order: 4; }
 
 header { display: flex; gap: 4px 12px; align-items: center; padding: 2px 12px 2px 8px;
   border-bottom: 1px solid var(--line); background: var(--panel); white-space: nowrap; }
-header .app { font-size: 13px; padding: 3px 4px; }
+header .app { flex: none; font-size: 13px; padding: 3px 4px; }
+header #notice { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+header #status, header #rendered { flex: none; }
 #notice { color: var(--accent); }
 #notice.error { color: var(--danger); }
 header #status { color: var(--muted); font-size: 13px; }
