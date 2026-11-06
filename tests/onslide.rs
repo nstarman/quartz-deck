@@ -66,6 +66,40 @@ struct Ed {
     _browser: Browser,
     _profile: tempfile::TempDir,
     _slot: tokio::sync::OwnedSemaphorePermit,
+    _watchdog: Watchdog,
+}
+
+/// A browser test that runs over 5 minutes is stuck, not slow: under heavy load
+/// Chrome can go away, and a CDP call then waits forever. Name the test and
+/// stop the run rather than hang it.
+struct Watchdog(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl Watchdog {
+    fn start() -> Watchdog {
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (flag, name) = (
+            done.clone(),
+            std::thread::current().name().unwrap_or("?").to_string(),
+        );
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(300));
+            if !flag.load(std::sync::atomic::Ordering::Relaxed) {
+                // straight to stderr: the harness captures eprintln!, and exit() drops that
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "{name}: still running after 5 minutes (is Chrome gone?); stopping the run"
+                );
+                std::process::exit(101);
+            }
+        });
+        Watchdog(done)
+    }
+}
+
+impl Drop for Watchdog {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 /// At most half the CPUs' worth of editors (Chrome + Quarto each) at once:
@@ -88,6 +122,7 @@ impl Ed {
     async fn open(deck: &str) -> Option<Ed> {
         let chrome = chrome()?;
         let slot = slot().await;
+        let watchdog = Watchdog::start();
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("deck.qmd"), deck).unwrap();
         let out = qd(dir.path()).args(["serve", "--detach"]).output().unwrap();
@@ -111,6 +146,7 @@ impl Ed {
             _browser: browser,
             _profile: profile,
             _slot: slot,
+            _watchdog: watchdog,
         };
         ed.wait_secs(READY, 60).await;
         Some(ed)
@@ -1410,6 +1446,7 @@ const bodies = {{
   '/api/buffer/open': JSON.stringify({{text: '## Pwned\\n'}}),
   '/api/buffer': JSON.stringify({{base: '', text: '## Pwned\\n'}}),
   '/api/buffer/close': '{{}}',
+  '/api/settings': JSON.stringify({{theme: 'dark', 'source.side': 'right', 'confirm.slide_delete': false}}),
 }};
 for (const [path, body] of Object.entries(bodies)) {{
   await fetch(qd + path, {{method: 'POST', headers: {{'Content-Type': 'application/json', 'X-QD-Token': 'guess'}}, body}}).catch(() => {{}});
@@ -1433,6 +1470,13 @@ return (await unreadable('/')) && (await unreadable('/api/focus'));
     tokio::time::sleep(Duration::from_secs(3)).await; // anything that got through would show by now
 
     assert_eq!(ed.file(), RUN_DECK, "no edit landed");
+    // spec 007: the person's settings are unchanged
+    let v = &ed.cli(&["settings"])["values"];
+    assert_eq!(
+        (&v["theme"], &v["source.side"], &v["confirm.slide_delete"]),
+        (&json!("system"), &json!("left"), &json!(true)),
+        "no setting changed"
+    );
     // spec 006: no VS Code buffer was attached in the person's place
     assert!(
         !ed.cli(&["slides"]).to_string().contains("Pwned"),
@@ -1967,9 +2011,19 @@ async fn shortcut_reference() {
 async fn same_rules_everywhere() {
     let Some(ed) = Ed::open(P2).await else { return };
 
-    // Escape: edit → selected element (the edit saved) → nothing selected
+    // Escape: menu over the edit → edit (saved) → selected element → nothing selected
     let before = ed.file();
     ed.type_into("a", "[data-qd=\"a/0\"]", " More.").await;
+    ed.click_editor("#menubar [data-menu=Edit]").await;
+    ed.wait("!document.querySelector('#ctxmenu').hidden").await;
+    ed.close_menu().await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        ed.session().await["draft"]
+            .as_str()
+            .is_some_and(|d| d.contains("More.")),
+        "the first Esc closed only the menu"
+    );
     ed.key("Escape", "Escape", 27, 0).await;
     ed.wait_file(|f| f.contains("First para. More."), "kept by Escape")
         .await;
@@ -2060,5 +2114,64 @@ async fn same_rules_everywhere() {
         }
         let ring = ed.eval("getComputedStyle(document.querySelector('#preview').contentDocument.querySelector('.qd-sel')).outlineStyle").await;
         assert_eq!(ring, "solid", "{theme}: selected element");
+    }
+}
+
+/// T025 (spec 007 SC-008): on a 30-slide deck every menu and the shortcut
+/// reference open in under 100 ms (median of 5, so one slow frame on a busy
+/// machine doesn't decide it).
+#[tokio::test(flavor = "multi_thread")]
+async fn menus_open_fast() {
+    let mut deck = String::from("---\ntitle: T\nformat: revealjs\n---\n");
+    for i in 1..=30 {
+        deck += &format!("\n## Slide {i} {{#s{i}}}\n\nSome text.\n\n- one\n- two\n");
+    }
+    let Some(ed) = Ed::open(&deck).await else {
+        return;
+    };
+    ed.go("s15").await;
+    let times = ed
+        .eval(
+            r#"(async () => {
+  const until = async (f, what) => { const t = performance.now(); while (!f()) { if (performance.now() - t > 5000) throw new Error('stuck: ' + what); await new Promise(requestAnimationFrame); } };
+  const median = (xs) => xs.sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+  const menu = document.querySelector('#ctxmenu');
+  const out = {};
+  for (const b of document.querySelectorAll('#menubar [role=menuitem]')) {
+    if (!b.offsetParent) continue;
+    const ts = [];
+    for (let i = 0; i < 5; i++) {
+      const t = performance.now();
+      b.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      await until(() => !menu.hidden, 'open ' + b.dataset.menu);
+      ts.push(performance.now() - t);
+      b.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); // closes it
+      await until(() => menu.hidden, 'close ' + b.dataset.menu);
+    }
+    out[b.dataset.menu] = median(ts);
+  }
+  const ref = document.querySelector('#shortcuts');
+  const keys = await import('/ui/keys.js');
+  const ts = [];
+  for (let i = 0; i < 5; i++) {
+    const t = performance.now();
+    keys.run('shortcuts'); // what ? runs
+    await until(() => ref.open, 'reference');
+    ts.push(performance.now() - t);
+    ref.close();
+  }
+  out.reference = median(ts);
+  return out;
+})()"#,
+        )
+        .await;
+    let times = times.as_object().unwrap();
+    eprintln!("menu and reference open times (ms): {times:?}");
+    assert_eq!(times.len(), 8, "7 menus and the reference: {times:?}");
+    for (what, ms) in times {
+        assert!(
+            ms.as_f64().unwrap() < 100.0,
+            "{what} took {ms} ms: {times:?}"
+        );
     }
 }

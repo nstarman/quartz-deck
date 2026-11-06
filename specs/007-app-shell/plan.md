@@ -103,6 +103,22 @@ handlers.
 Post-design re-check: PASS. The one behaviour change, Escape saving instead
 of cancelling, is the person's own choice (spec Clarifications).
 
+Final re-check (T027, after US1–US5 and polish): PASS.
+- **I/II:** our own menus and layouts; the `.qmd` is still the only deck
+  state (settings live in qd's config folder, never in the deck).
+- **III:** every new editor capability has its command: `qd actions`, `qd
+  settings [set|reset]`, `qd paste`.
+- **V:** `paste` is one patch through the store's version check; settings
+  writes are atomic.
+- **VI:** each story's tests were written first and seen failing (the Esc
+  level fix found in the quickstart run included).
+- **VII:** no new dependency; one data file drives menus, keys, the reference
+  and `qd actions`.
+- **Constraints:** Run actions fire only on the person's own key or click;
+  `POST /api/settings` is token-guarded and covered by the cross-origin
+  attack test (`checklists/security.md`).
+
+
 ## Project Structure
 
 ### Documentation (this feature)
