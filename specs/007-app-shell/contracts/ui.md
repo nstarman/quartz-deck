@@ -5,7 +5,7 @@ becomes Ctrl elsewhere. The final keys are fixed in implementation, from an
 inventory of today's keys. This is the shape:
 
 - **File:** Settings… (⌘,) · Render · Export offline HTML · Export with PDF ·
-  Check offline · Open preview ↗ · (009 adds export formats here)
+  Check offline · Open preview ↗ · (010 adds export formats here)
 - **Edit:**
   - Undo (⌘Z) · Redo (⇧⌘Z)
   - Cut · Copy · Paste · Duplicate (⌘D) · Delete (⌫)

@@ -66,7 +66,7 @@ settings reset` change them, with the same checks as the server. A running
 server notices the file changed (it already watches files) and emits the
 SSE event, so a change from the CLI also applies live.
 
-**Rationale**: constitution III. Agents and later features (010's "save as
+**Rationale**: constitution III. Agents and later features (011's "save as
 git commit") need to read and set settings without the editor.
 
 ## R4. Menus: the existing menu code, plus a menu bar

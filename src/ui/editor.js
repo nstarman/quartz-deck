@@ -312,6 +312,7 @@ function hookFrame() {
     });
   }, true);
   doc.addEventListener('keydown', onKey, true);
+  doc.addEventListener('paste', onPaste);
   doc.addEventListener('contextmenu', (e) => {
     if (state.session) return; // the browser's own menu (spelling) while typing
     const sec = e.target.closest('section');
@@ -1575,11 +1576,41 @@ function copyElement(t) {
 
 /** The system clipboard if it answers within a second, else our own copy. */
 async function clipboardText() {
+  const fromEvent = pasted;
+  pasted = null;
+  if (fromEvent?.trim()) return fromEvent; // an empty paste event: try the API and our own copy
   const timeout = new Promise((resolve) => { setTimeout(() => resolve(null), 1000); });
   let text = null;
   try { text = await Promise.race([navigator.clipboard.readText(), timeout]); } catch { /* not allowed */ }
   return text?.trim() ? text : state.clip;
 }
+// ⌘V: the keydown is let through, and the browser's own paste event brings the
+// text, with no clipboard permission needed (unlike readText: a deck in another
+// page, or VS Code's panel). No paste event (nothing on the page can take one)?
+// Then the clipboard API, as from the menu.
+let pasted = null;
+let pasteKey = null; // {id, e}: the paste action the last ⌘V reached
+const runPaste = async ({ id, e }) => keys.run(id, await keys.currentContext(e));
+function onPaste(e) {
+  if (!pasteKey) return; // set only by a ⌘V that onKey let through (not while typing)
+  const k = pasteKey;
+  pasteKey = null;
+  e.preventDefault();
+  pasted = e.clipboardData.getData('text/plain');
+  runPaste(k);
+}
+document.addEventListener('paste', onPaste);
+/** The `key` check of the paste actions: note it, let the browser fire its paste event. */
+function pasteKeyFor(id) {
+  return (e) => {
+    if (pasteKey?.e !== e) { // the most specific place's action (dispatch tries them in order)
+      pasteKey = { id, e };
+      setTimeout(() => { if (pasteKey?.e === e) { pasteKey = null; runPaste({ id, e }); } }, 100);
+    }
+    return false;
+  };
+}
+
 /** Text that isn't qd's own copy is never taken as raw HTML (spec 007 edge case). */
 const outside = (text) => (text === state.clip ? text : text.replace(/&/g, '&amp;').replace(/</g, '&lt;'));
 
@@ -1649,6 +1680,7 @@ const SLIDE = ['slide-before', 'slide-after', 'slide-dup', 'slide-cut', 'slide-c
 for (const [ids, on, table] of [[ELEMENT, 'el', 'element'], [SLIDE, 'slide', 'slide']]) {
   for (const id of ids) {
     keys.on(id, {
+      key: id.endsWith('paste') ? pasteKeyFor(id) : undefined,
       // Paste reads the system clipboard on a key press; from a menu it needs our own copy
       enabled: (ctx) => !!ctx[on] && actions.can(id, ctx[on], table) && (!id.endsWith('paste') || !!ctx.e || !!state.clip),
       checked: (ctx) => ctx[on] && actions.checked(id, ctx[on], table),
