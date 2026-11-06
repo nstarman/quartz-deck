@@ -5,7 +5,7 @@
   {"id": "export", "label": "Export offline HTML", "menu": ["File"], "where": ["anywhere"], "qd": "qd export"},
   {"id": "export-pdf", "label": "Export with PDF", "menu": ["File"], "where": ["anywhere"], "qd": "qd export --pdf"},
   {"separator": true, "menu": ["File"]},
-  {"id": "preview", "label": "Open preview ↗", "menu": ["File"], "where": ["anywhere"], "qd": "qd url"},
+  {"id": "preview", "label": "Open in browser tab ↗", "menu": ["File"], "where": ["anywhere"], "qd": "qd url"},
   {"id": "source-save", "label": "Save source now", "menu": ["File"], "key": "Mod+S", "vscode_key": null, "where": ["source"]},
 
   {"id": "undo", "label": "Undo", "menu": ["Edit"], "key": "Mod+Z", "where": ["slides", "slide", "element"], "qd": "qd undo"},
@@ -85,6 +85,8 @@
   {"id": "toggle-source", "label": "Source pane", "menu": ["View"], "toggle": true, "where": ["anywhere"]},
   {"id": "source-full", "label": "Source full width", "menu": ["View"], "toggle": true, "where": ["anywhere"]},
   {"id": "form-panel", "label": "Form panel", "menu": ["View"], "toggle": true, "where": ["anywhere"]},
+  {"id": "present", "label": "Present from this slide", "menu": ["View"], "key": "Alt+Mod+P", "where": ["anywhere"]},
+  {"id": "present-start", "label": "Present from the beginning", "menu": ["View"], "key": "Alt+Mod+Shift+P", "where": ["anywhere"]},
   {"id": "focus-text", "label": "Back to the text", "vscode_key": "Escape", "where": ["slide"]},
   {"id": "menubar", "label": "Go to the menu bar", "key": "F10", "where": ["anywhere"]},
 

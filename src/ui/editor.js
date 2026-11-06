@@ -1,7 +1,7 @@
 // quartz-deck editor. Every change is a CLI op sent to POST /api/op, so the GUI
 // can do nothing the CLI cannot (FR-010). The .qmd file stays the only state.
 import { region, hintsFor, gate, reserialize, splice } from '/ui/inline.js';
-import { showToolbar, hideToolbar, place as placeToolbar } from '/ui/toolbar.js';
+import { showToolbar, hideToolbar, place as placeToolbar, placeNear } from '/ui/toolbar.js';
 import { openSource, closeSource, sourceError, sourceText } from '/ui/source.js';
 import { makeActions, INSERTS, TRANSITIONS } from '/ui/actions.js';
 import * as keys from '/ui/keys.js';
@@ -161,8 +161,10 @@ function go(anchor) {
   if (w) w.location.hash = hash;
 }
 
-const PREVIEW_CSS = `
+// (none of it while presenting: html.qd-present)
+const PREVIEW_CSS = `html:not(.qd-present) {
   [data-qd] { cursor: pointer; }
+  .slide-menu-button { display: none !important; }
   /* an untitled slide (spec 008 US1): a placeholder on the canvas only, never in the file */
   .reveal .slides section > h2:empty::before { content: 'Click to add title'; color: #9a9aa0; font-weight: 400; }
   [data-qd]:hover { outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; }
@@ -181,7 +183,7 @@ const PREVIEW_CSS = `
   section[data-qd-hidden]::after { content: "hidden slide (visibility=hidden): not in the rendered deck";
     position: absolute; top: 0; right: 0; font: 14px system-ui, sans-serif; padding: 2px 8px;
     background: #fff3c4; color: #5c4400; border-radius: 4px; }
-`;
+}`;
 
 function highlight() {
   const doc = frame.contentDocument;
@@ -277,6 +279,27 @@ function attachOverlay(box) {
   });
 }
 
+// ---------- present (spec 008 US4) ----------
+// The canvas's own frame goes full screen: the render already on screen, from the
+// slide on screen, with reveal.js's keys and controls; leaving gives the editor them back.
+// Escape belongs to the editor (leave an edit / deselect), not Reveal's overview;
+// reveal.js's menu button, arrows and progress bar belong to presenting (US2)
+const EDITING = { keyboard: { 27: null }, controls: false, progress: false, slideNumber: false };
+let deckConfig = null; // the deck's own settings for those, read when the frame loads
+const presenting = () => document.fullscreenElement === frame;
+async function present(fromStart) {
+  if (state.session) await saveSession();
+  select(null);
+  if (fromStart) frameWin()?.Reveal.slide(0, 0);
+  await frame.requestFullscreen();
+}
+document.addEventListener('fullscreenchange', () => {
+  const R = frameWin()?.Reveal;
+  if (!R || !deckConfig) return;
+  frame.contentDocument.documentElement.classList.toggle('qd-present', presenting());
+  R.configure(presenting() ? deckConfig : EDITING);
+});
+
 function hookFrame() {
   const w = frameWin();
   const doc = frame.contentDocument;
@@ -287,6 +310,7 @@ function hookFrame() {
   doc.head.append(style);
 
   doc.addEventListener('click', (e) => {
+    if (presenting()) return;
     if (state.session) {
       if (state.session.root.contains(e.target)) return; // caret moves inside the edit
       saveSession(); // clicking elsewhere ends the edit
@@ -310,7 +334,7 @@ function hookFrame() {
     });
   }, true);
   doc.addEventListener('dblclick', (e) => {
-    if (state.session) return;
+    if (state.session || presenting()) return;
     const el = e.target.closest('[data-qd]') || doc.querySelector(`[data-qd="${CSS.escape(state.sel || '')}"]`);
     if (!el) return;
     e.preventDefault();
@@ -320,9 +344,13 @@ function hookFrame() {
     });
   }, true);
   doc.addEventListener('keydown', onKey, true);
+  // an element changing size (math typesetting, an image loading) moves its neighbours:
+  // place the bars again, so they still cover nothing (spec 008 US2)
+  const replace = new w.ResizeObserver(() => { placeElbar(); placeToolbar(frame); });
+  for (const el of doc.querySelectorAll('[data-qd]')) replace.observe(el);
   doc.addEventListener('paste', onPaste);
   doc.addEventListener('contextmenu', (e) => {
-    if (state.session) return; // the browser's own menu (spelling) while typing
+    if (state.session || presenting()) return; // the browser's own menu (spelling) while typing
     const sec = e.target.closest('section');
     if (!sec) return;
     e.preventDefault();
@@ -337,8 +365,9 @@ function hookFrame() {
     // always wants the normal slide view.
     // always: the pane may narrow later (panels, window), which would switch
     // Reveal into scroll view, where hash navigation to the last slide fails
-    // Escape belongs to the editor (leave an edit / deselect), not Reveal's overview
-    w.Reveal.configure({ scrollActivationWidth: 1, keyboard: { 27: null } });
+    const { controls, progress, slideNumber } = w.Reveal.getConfig();
+    deckConfig = { controls, progress, slideNumber, keyboard: true };
+    w.Reveal.configure({ scrollActivationWidth: 1, ...EDITING });
     w.dispatchEvent(new Event('resize'));
     // synchronously: a hash change lands a task later, and onSlide() below would
     // meanwhile report the first slide (hiding the slide bar under a click)
@@ -640,6 +669,7 @@ function stepSelection(back) {
 }
 
 function onKey(e) {
+  if (presenting()) return; // reveal.js's keys while presenting
   // widget key: Esc closes an open menu even when focus stayed elsewhere (the preview)
   // (and only that: an edit under a menu opened with the mouse stays open, one level per Esc)
   if (menuOpen()) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeMenu(); } return; }
@@ -1145,10 +1175,8 @@ async function placeElbar() {
   const t = await elementTarget(state.sel);
   $('[data-act=run]', elbar).hidden = t?.block.kind !== 'cell';
   $('[data-act=fragment]', elbar).setAttribute('aria-pressed', String(!!t?.block.attrs?.classes?.includes('fragment')));
-  const p = pageRect(el);
   elbar.hidden = false;
-  elbar.style.left = Math.max(4, Math.min(p.left, innerWidth - elbar.offsetWidth - 4)) + 'px';
-  elbar.style.top = Math.max(frame.getBoundingClientRect().top + 2, p.top - elbar.offsetHeight - 10) + 'px';
+  placeNear(elbar, el, frame);
 }
 
 // the preview resized (source pane, panels, window): follow the element, or the bar
@@ -1159,7 +1187,9 @@ new ResizeObserver(() => requestAnimationFrame(() => requestAnimationFrame(place
 const slidebar = $('#slidebar');
 async function renderSlidebar() {
   const cur = slideByAnchor(state.anchor);
-  slidebar.hidden = !cur;
+  // the title slide has no slide properties: the bar keeps its row (the canvas
+  // doesn't jump, spec 008 US2) but shows nothing and can't be reached (hidden)
+  slidebar.style.visibility = cur ? '' : 'hidden';
   if (!cur) return;
   const full = await fetchSlide(cur.id);
   const kv = full?.attrs?.kv || {};
@@ -1552,6 +1582,13 @@ keys.on('render', { enabled: () => !busy.render, run: renderDeck });
 keys.on('export', { enabled: () => !busy.export, run: () => exportDeck(false) });
 keys.on('export-pdf', { enabled: () => !busy.export, run: () => exportDeck(true) });
 keys.on('preview', () => window.open('/present/', '_blank', 'noopener'));
+keys.on('present', () => present(false));
+keys.on('present-start', () => present(true));
+$('#present').addEventListener('click', () => keys.run('present'));
+$('#present-more').addEventListener('click', (e) => {
+  const r = e.currentTarget.getBoundingClientRect();
+  openMenu(['present', 'present-start', 'preview'].map((id) => ({ label: keys.action(id).label, shortcut: keys.shortcut(id), run: () => keys.run(id) })), r.left, r.bottom + 2);
+});
 keys.on('undo', () => undoRedo('undo'));
 keys.on('redo', () => undoRedo('redo'));
 // element and slide actions: the right-click menus' own (actions.js), on what is selected / shown
