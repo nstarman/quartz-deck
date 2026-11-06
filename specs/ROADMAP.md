@@ -260,6 +260,11 @@ uses for the deck.
   state (running, done, error, stale) and its output updating in place on
   the slide. Same rules as 004: code runs only on the person's own click or
   key, with the session token; nothing is written into the `.qmd`.
+- **In the source pop-up:** editing a cell's code over the slide (the box
+  that opens on a code cell, today with only "⌘Enter or Esc saves" and
+  Cancel) gets a **Run** button and ⇧Enter, as in the source pane: it saves
+  the edit, runs the cell and shows the new output (a re-drawn plot) on the
+  slide, so you can change a plot and see it without leaving the slide.
 - **Quarto's engines:** today qd runs Python through its own kernel bridge in
   the deck's locked environment. Run should use the engine Quarto picks for
   the deck (`engine:`/`jupyter:`/`knitr` in the front matter): Jupyter
