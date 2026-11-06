@@ -2,12 +2,17 @@
   --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70;
   --line: #dcdcd8; --accent: #2a5bd7; --accent-text: #ffffff;
   --error-bg: #fdecea; --error: #8a1c12; --danger: #b3261e; --drop: #2a5bd7;
+  /* source highlighting, each ≥4.5:1 on the pane in its theme (spec 008 US3) */
+  --src-yaml: #755b2d; --src-fence: #7d3c98; --src-code: #17703d; --src-option: #806600;
+  color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     --bg: #18181a; --panel: #222225; --text: #ececee; --muted: #9a9aa0;
     --line: #3a3a3e; --accent: #7aa2ff; --accent-text: #0d1430;
     --error-bg: #3b1d1a; --error: #ffb4a8; --danger: #ff8a80; --drop: #7aa2ff;
+    --src-yaml: #d9bc85; --src-fence: #c9a0e8; --src-code: #7fc99a; --src-option: #e3c75f;
+    color-scheme: dark;
   }
 }
 /* an explicit theme (VS Code's, spec 006) wins over the OS setting */
@@ -15,11 +20,15 @@
   --bg: #18181a; --panel: #222225; --text: #ececee; --muted: #9a9aa0;
   --line: #3a3a3e; --accent: #7aa2ff; --accent-text: #0d1430;
   --error-bg: #3b1d1a; --error: #ffb4a8; --danger: #ff8a80; --drop: #7aa2ff;
+  --src-yaml: #d9bc85; --src-fence: #c9a0e8; --src-code: #7fc99a; --src-option: #e3c75f;
+  color-scheme: dark;
 }
 :root[data-theme="hc"] {
   --bg: #000000; --panel: #000000; --text: #ffffff; --muted: #e6e6e6;
   --line: #ffffff; --accent: #ffd400; --accent-text: #000000;
   --error-bg: #000000; --error: #ff7b72; --danger: #ff7b72; --drop: #ffd400;
+  --src-yaml: #ffd98a; --src-fence: #e0b8ff; --src-code: #9cf0b8; --src-option: #fff07a;
+  color-scheme: dark;
 }
 /* the Quarto extension runs cells (spec 006): no second Run */
 .run-external #srcpane .runbar, .run-external #srcpane .gutter { display: none; }
@@ -30,6 +39,11 @@ html, body { height: 100%; margin: 0; }
 body { display: flex; flex-direction: column; background: var(--bg); color: var(--text);
   font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
 button, input, select, textarea { font: inherit; color: inherit; }
+/* form controls take the theme's colours (spec 008 US3: in dark a select was 1.18:1) */
+select, input:not([type=checkbox], [type=color], [type=range]), textarea {
+  background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; }
+select { height: 28px; padding: 0 6px; }
+input[type=checkbox] { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); vertical-align: middle; }
 button { padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); cursor: pointer; }
 button:hover { border-color: var(--muted); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; } /* focus always shows (spec 007) */
@@ -79,6 +93,11 @@ header #status { color: var(--muted); font-size: 13px; }
 /* "rendered abc1234" while all is well: read out, not shown; problems and progress show */
 #status.quiet { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 header a { color: var(--accent); }
+/* Present (spec 008 US4): one button and its ▾, joined */
+header .split { flex: none; display: flex; }
+header .split button { height: 28px; }
+header .split button:first-child { border-radius: 6px 0 0 6px; }
+header .split button + button { border-radius: 0 6px 6px 0; border-left: 0; padding: 0; width: 24px; }
 #banner { padding: 8px 16px; background: var(--error-bg); color: var(--error);
   white-space: pre-wrap; font: 12px/1.4 ui-monospace, monospace; max-height: 30vh; overflow: auto; }
 
@@ -128,7 +147,7 @@ aside h2 { font-size: 15px; margin: 4px 0 12px; }
 aside h2 code { font-size: 12px; color: var(--muted); font-weight: normal; }
 aside label { display: block; margin: 0 0 10px; color: var(--muted); font-size: 12px; }
 aside input:not([type=color]), aside select, aside textarea { display: block; width: 100%; margin-top: 3px;
-  padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 13px; }
+  padding: 5px 7px; background: var(--bg); font-size: 13px; }
 aside textarea { font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
 aside label.row { display: flex; align-items: center; gap: 6px; }
 aside label.row input[name=bg] { margin-top: 0; }
@@ -245,14 +264,15 @@ main.source-full > #srcpane { flex: 1; width: auto; }
 #srcpane textarea { width: 100%; height: 100%; resize: none; outline: none; overflow: auto;
   background: transparent; color: transparent; caret-color: var(--text); }
 #srcpane textarea::selection { background: rgba(42, 91, 215, 0.3); }
-#srcpane .y { color: #8a6d3b; } #srcpane .k { font-weight: 600; }
+#srcpane .y { color: var(--src-yaml); } #srcpane .k { font-weight: 600; }
 #srcpane .h { color: var(--accent); font-weight: 700; }
-#srcpane .d, #srcpane .f { color: #7d3c98; }
-#srcpane .c { color: #1e8449; } #srcpane .o { color: #b7950b; }
+#srcpane .d, #srcpane .f { color: var(--src-fence); }
+#srcpane .c { color: var(--src-code); } #srcpane .o { color: var(--src-option); }
 #srcpane .l { color: var(--accent); text-decoration: underline; }
 #srcpane .gutter { position: absolute; top: 0; right: 0; pointer-events: none; }
+/* ▶ Run: min-height makes it a target you can hit (spec 008 US3) */
 #srcpane .gutter button { position: absolute; right: 8px; pointer-events: auto; font: 11px/1.4 system-ui, sans-serif;
-  padding: 0 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--accent); cursor: pointer; white-space: nowrap; }
+  min-height: 20px; padding: 0 6px; border-radius: 4px; background: var(--bg); color: var(--accent); white-space: nowrap; }
 #srcpane .gutter button.err { color: var(--danger); border-color: var(--danger); }
 #srcpane .gutter button.stale { opacity: .55; }
 #srcpane .gutter button.busy { color: var(--muted); }

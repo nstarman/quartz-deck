@@ -13,6 +13,7 @@
   <strong class="app">quartz-deck</strong>
   <span id="notice" role="status" aria-live="polite"></span>
   <span id="status" class="quiet">connecting…</span>
+  <span class="split"><button type="button" id="present" title="Present from this slide">▶ Present</button><button type="button" id="present-more" aria-label="More ways to present" aria-haspopup="menu">▾</button></span>
   <a id="rendered" target="_blank" rel="noopener" hidden>Open ↗</a>
 </header>
 <div id="banner" role="alert" hidden></div>
@@ -48,7 +49,7 @@
   </section>
   <div id="splitter" role="separator" aria-orientation="vertical" aria-label="Resize the source pane" tabindex="0"></div>
   <section id="stage" aria-label="Preview">
-    <div id="slidebar" role="toolbar" aria-label="Slide properties" hidden>
+    <div id="slidebar" role="toolbar" aria-label="Slide properties">
       <label class="inline">Background <input type="color" name="bg" aria-label="Background colour"></label>
       <button type="button" data-act="bg-clear" title="Remove the background colour">⌀</button>
       <button type="button" data-act="bg-image">Image…</button>

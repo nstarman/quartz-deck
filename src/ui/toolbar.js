@@ -187,12 +187,29 @@ export function showToolbar(s, frame) {
 }
 
 export function place(frame) {
-  if (!session || bar.hidden) return;
+  if (session && !bar.hidden) placeNear(bar, session.root, frame);
+}
+
+/**
+ * Put a bar for element `el` (in the preview `frame`) where it covers nothing else
+ * on the slide (spec 008 US2): above the element, else below it, else just inside
+ * its own top edge (over part of itself, never another element). Not shown while
+ * the canvas is (full-width source pane).
+ */
+export function placeNear(b, el, frame) {
   const f = frame.getBoundingClientRect();
-  const r = session.root.getBoundingClientRect();
-  const top = f.top + r.top - bar.offsetHeight - 8;
-  bar.style.top = Math.max(4, top < f.top ? f.top + r.bottom + 8 : top) + 'px';
-  bar.style.left = Math.max(4, Math.min(f.left + r.left, innerWidth - bar.offsetWidth - 4)) + 'px';
+  b.style.visibility = f.width && f.height ? '' : 'hidden';
+  const r = el.getBoundingClientRect();
+  const [w, h] = [b.offsetWidth, b.offsetHeight];
+  const left = Math.max(4, Math.min(f.left + r.left, innerWidth - w - 4));
+  const others = [...el.ownerDocument.querySelectorAll('section.present [data-qd], section.present > :is(h1, h2, h3)')]
+    .filter((o) => !o.contains(el) && !el.contains(o))
+    .map((o) => o.getBoundingClientRect());
+  const free = (top) => top >= f.top + 2 && top + h <= f.bottom - 2
+    && !others.some((o) => f.left + o.left < left + w && f.left + o.right > left && f.top + o.top < top + h && f.top + o.bottom > top);
+  const top = [f.top + r.top - h - 8, f.top + r.bottom + 8].find(free) ?? Math.max(f.top + 2, f.top + r.top + 4);
+  b.style.top = `${top}px`;
+  b.style.left = `${left}px`;
 }
 
 export function hideToolbar() {

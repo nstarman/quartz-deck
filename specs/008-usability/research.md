@@ -153,6 +153,13 @@ attack test gains a POST to `/api/images`.
   minimum 20 px targets for handles (larger hit area than the visible square),
   the gutter's ▶ and checkboxes (T3); the preview's outline colours from the
   theme accent (T5).
+- Chosen (2026-11-06), contrast on the pane (white / #222225 / black) and on
+  the page background: light — YAML #755b2d 6.38/5.90, fences #7d3c98
+  7.07/6.53, code #17703d 6.14/5.67, options #806600 5.50/5.08; dark — #d9bc85
+  8.68, #c9a0e8 7.31, #7fc99a 8.10, #e3c75f 9.52; high contrast — #ffd98a 15.5,
+  #e0b8ff 12.5, #9cf0b8 15.6, #fff07a 18.0.
+- The selection outline on the slide stays blue in every theme: the slide is
+  white, so the high-contrast yellow would be 1.07:1 (T5 kept).
 - A browser test (`audit_measures`) walks every visible control and text in
   each theme on the audit deck and fails on contrast below the minimum or
   targets below 20×20 (SC-004, SC-005), and checks that no bar overlaps
