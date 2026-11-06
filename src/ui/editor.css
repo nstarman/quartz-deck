@@ -81,7 +81,7 @@ main { flex: 1; display: flex; min-height: 0; }
 nav { width: 220px; flex: none; overflow: auto; border-right: 1px solid var(--line); background: var(--panel); }
 nav ol { list-style: none; margin: 0; padding: 8px; }
 /* the slide list (spec 008 US1): thumbnails, a + in every gap, a drag you can see */
-nav li { position: relative; margin-top: 14px; border-radius: 8px; transition: transform 120ms ease; touch-action: none; }
+nav li { position: relative; margin-top: 20px; border-radius: 8px; transition: transform 120ms ease; touch-action: none; }
 nav li:first-child { margin-top: 0; }
 body.dragging-slide, body.dragging-slide * { cursor: grabbing !important; user-select: none; }
 nav li.dragging { opacity: 0; }
@@ -100,7 +100,7 @@ nav .idx { color: var(--muted); flex: none; }
 nav .idx:empty { display: none; }
 nav .tag { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 /* the + between slides: faint while the list is hovered, clear when pointed at or focused */
-nav .add-here { position: absolute; top: -14px; left: 50%; transform: translateX(-50%); z-index: 1; width: 28px; height: 20px;
+nav .add-here { position: absolute; top: -20px; left: 50%; transform: translateX(-50%); z-index: 1; width: 28px; height: 20px;
   padding: 0; border-radius: 10px; line-height: 1; font-size: 14px; opacity: 0; }
 nav:hover .add-here { opacity: .45; }
 nav .add-here:hover, nav .add-here:focus-visible { opacity: 1; background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
@@ -154,12 +154,13 @@ aside .status.fail { color: var(--danger); }
   #stage { padding: 0; min-height: 50vh; }
   /* slide list becomes a side-scrolling strip; drag reorders left/right */
   nav { display: flex; align-items: center; overflow-x: auto; overflow-y: hidden; }
-  nav ol { display: flex; gap: 4px; flex: none; }
-  nav li { flex: none; width: 120px; margin: 0 0 0 14px; }
+  nav ol { display: flex; gap: 0; flex: none; align-items: flex-start; }
+  nav li { flex: none; width: 120px; margin: 0 0 0 20px; }
   nav li:first-child { margin-left: 0; }
-  nav .add-here { top: 50%; left: -14px; transform: translate(-50%, -50%); width: 20px; }
+  nav .add-here { top: calc(50% - 10px); left: -20px; transform: translateY(-50%); width: 20px; height: 28px; }
   /* add-slide first, so it stays in reach however long the strip is */
-  nav button.wide { order: -1; flex: none; width: auto; margin: 0 0 0 8px; white-space: nowrap; }
+  nav { align-items: flex-start; }
+  nav button.wide { order: -1; flex: none; width: auto; align-self: stretch; margin: 12px 8px 30px; white-space: nowrap; }
 }
 
 /* ---------- on-slide editing (spec 003) ---------- */
