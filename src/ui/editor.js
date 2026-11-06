@@ -37,6 +37,12 @@ const state = {
 
 // ---------- helpers ----------
 
+/** The connection/render state: shown only when it needs attention (`quiet` hides it, still read out). */
+function status(text, quiet = false) {
+  statusEl.textContent = text;
+  statusEl.classList.toggle('quiet', quiet);
+}
+
 function say(msg, isError = false) {
   notice.textContent = msg;
   notice.className = isError ? 'error' : '';
@@ -652,10 +658,10 @@ document.addEventListener('keydown', onKey);
 const es = new EventSource(`/events?tab=${focus.tabId}`);
 run.listen(es);
 settings.listen(es);
-es.addEventListener('open', () => { statusEl.textContent = 'connected'; });
-es.addEventListener('error', () => { statusEl.textContent = 'disconnected — is qd serve running?'; });
+es.addEventListener('open', () => status('connected', true));
+es.addEventListener('error', () => status('disconnected — is qd serve running?'));
 es.addEventListener('changed', async (e) => {
-  statusEl.textContent = 'changed…';
+  status('changed…');
   const { version } = JSON.parse(e.data);
   if (version !== state.version) {
     slides = { version: null, map: new Map() };
@@ -693,10 +699,10 @@ offer.addEventListener('click', (e) => {
   if (act === 'go' && offered) showPoint(offered);
   if (act) offer.hidden = true;
 });
-es.addEventListener('rendering', () => { statusEl.textContent = 'rendering…'; });
+es.addEventListener('rendering', () => status('rendering…'));
 es.addEventListener('rendered', (e) => {
   const d = JSON.parse(e.data);
-  statusEl.textContent = 'rendered ' + d.version.slice(0, 7);
+  status('rendered ' + d.version.slice(0, 7), true);
   banner.hidden = true;
   if (state.session) {
     // reloading now would throw away the open edit (research R4)
@@ -708,7 +714,7 @@ es.addEventListener('rendered', (e) => {
 });
 es.addEventListener('render_error', (e) => {
   const d = JSON.parse(e.data);
-  statusEl.textContent = 'render failed (showing last good render)';
+  status('render failed (showing last good render)');
   banner.textContent = d.message;
   banner.hidden = false;
 });
@@ -1187,7 +1193,6 @@ slidebar.addEventListener('click', async (e) => {
 // layout: source pane (which side, open, width, full width) and the old form panel,
 // remembered in the person's settings (spec 007), so the same in every deck and in VS Code
 const mainEl = document.querySelector('main');
-const toggleSource = $('#toggle-source');
 const srcpane = $('#srcpane');
 /** Toggle a layout class on <main> and its button's aria-pressed; remember it unless applying settings. */
 function layout(cls, key, on, btn, remember = true) {
@@ -1198,7 +1203,7 @@ function layout(cls, key, on, btn, remember = true) {
 const setPanel = (on) => layout('panel-open', 'ui.form_panel', on);
 const setFull = (on) => layout('source-full', 'ui.source_full', on, $('[data-act=full]', srcpane));
 function setSource(open, remember) {
-  layout('source-open', 'ui.source_was_open', open, toggleSource, remember);
+  layout('source-open', 'ui.source_was_open', open, null, remember);
   srcpane.hidden = !open;
   if (open) pane.load();
 }
@@ -1244,7 +1249,6 @@ await settings.ready((n) => say(n, true)).catch(() => say('settings could not be
   setFull(v('ui.source_full'));
   setSource(v('source.open') === 'open' || (v('source.open') === 'last' && v('ui.source_was_open')), false);
 }
-toggleSource.addEventListener('click', () => setSource(srcpane.hidden));
 $('[data-act=form]', srcpane).addEventListener('click', () => setPanel(!mainEl.classList.contains('panel-open')));
 $('[data-act=full]', srcpane).addEventListener('click', () => setFull(!mainEl.classList.contains('source-full')));
 

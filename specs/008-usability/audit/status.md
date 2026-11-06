@@ -32,7 +32,7 @@ the audit rerun.
 | T5 HC selection colour | FR-012 | T014 | open | |
 | H1 Header and tab title | FR-017 | T024 | open | |
 | H2 No Present | FR-013 | T016 | open | |
-| H3 Three bars | FR-018 | T024 | open | |
+| H3 Three bars | FR-018 | T024 | open | partly: the name and menus share one row, the status and Source button are gone (2026-11-06, the person); Present and the deck title come with US6 |
 | H4 Jargon | FR-019 | T025 | open | |
-| N1 VS Code ☰ row | FR-018 | T024 | open | |
+| N1 VS Code ☰ row | FR-018 | T024 | open | partly: ☰ now sits in the one top row beside the name |
 | N2 Narrow window | FR-024 | T033 | open | |

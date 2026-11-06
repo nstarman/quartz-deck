@@ -465,8 +465,15 @@ impl Ed {
         self.click_js(&format!("(() => {{ const li = [...document.querySelectorAll('#ctxmenu li')].find((li) => li.firstChild?.textContent === {label:?} && li.offsetParent); li.dispatchEvent(new MouseEvent('mouseenter')); const r = li.getBoundingClientRect(); return [r.left + 20, r.top + r.height / 2]; }})()")).await;
     }
 
+    /// View ▸ Source pane, run directly (the same action in every layout,
+    /// including VS Code's panel, where the menus are one ☰).
+    async fn toggle_source(&self) {
+        self.eval("import('/ui/keys.js').then((k) => k.run('toggle-source'))")
+            .await;
+    }
+
     async fn open_source(&self) {
-        self.click_editor("#toggle-source").await;
+        self.toggle_source().await;
         self.wait(&format!(
             "{PANE}.value.length > 0 && !document.querySelector('#srcpane').hidden"
         ))
@@ -1059,7 +1066,7 @@ async fn bars_set_properties_and_source_panel_is_hidden() {
     }
     assert_eq!(ed.file(), P2, "fragment removed, bytes as before");
     // the Source button shows the source pane; its Form button the old properties panel
-    ed.click_editor("#toggle-source").await;
+    ed.toggle_source().await;
     ed.wait("!document.querySelector('#srcpane').hidden").await;
     // the element bar follows the element when the layout moves; it never sits over other controls
     ed.wait("(() => { const b = document.querySelector('#elbar'); if (b.hidden) return true; const r = b.getBoundingClientRect(), f = document.querySelector('#srcpane [data-act=form]').getBoundingClientRect(); return r.right < f.left || f.right < r.left || r.bottom < f.top || f.bottom < r.top; })()").await;
@@ -1826,12 +1833,12 @@ async fn menu_bar_runs_every_action() {
         .await;
     assert_eq!(ed.eval(shown).await, true, "View's menu is open");
     ed.close_menu().await;
-    // too narrow for the menus: they fold into ☰ (and come back when there is room)
+    // a top row too narrow for the menus: they fold into ☰ (and come back when there is room)
     let folded = "document.querySelector('#menubar').classList.contains('folded')";
-    ed.eval("document.querySelector('#menubar').style.width = '200px'")
+    ed.eval("document.querySelector('header').style.width = '260px'")
         .await;
     ed.wait(folded).await;
-    ed.eval("document.querySelector('#menubar').style.width = ''")
+    ed.eval("document.querySelector('header').style.width = ''")
         .await;
     ed.wait(&format!("!{folded}")).await;
 
@@ -2108,7 +2115,7 @@ async fn same_rules_everywhere() {
     ed.wait_file(|f| f.contains("Changed."), "saved from the pane")
         .await;
     ed.undo_to(&before).await;
-    ed.click_editor("#toggle-source").await;
+    ed.toggle_source().await;
 
     // slides on the clipboard: copy in the slide list, paste with fresh ids.
     // Copying writes the system clipboard (caught here); pasting reads it from
@@ -2348,7 +2355,7 @@ async fn audit_measures() {
                 ));
             }
             if source {
-                ed.click_editor("#toggle-source").await;
+                ed.toggle_source().await;
             }
         }
     }

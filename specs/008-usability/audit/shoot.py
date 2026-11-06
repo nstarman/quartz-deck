@@ -144,12 +144,12 @@ def editor_shots(page, prefix):
 
     def source_pane(p):
         go(p, "model")
-        p.click("#toggle-source")
+        p.evaluate("import('/ui/keys.js').then((k) => k.run('toggle-source'))")  # View ▸ Source pane
         p.wait_for_function("() => !document.querySelector('#srcpane').hidden")
         p.wait_for_timeout(800)
 
     shot(page, f"{prefix}12-source-pane", source_pane)
-    page.click("#toggle-source")  # back to closed
+    page.evaluate("import('/ui/keys.js').then((k) => k.run('toggle-source'))")  # back to closed
 
     def settings(p):
         p.keyboard.press("Control+,")

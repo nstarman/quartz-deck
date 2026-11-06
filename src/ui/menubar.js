@@ -53,7 +53,9 @@ const bar = document.createElement('div');
 bar.id = 'menubar';
 bar.setAttribute('role', 'menubar');
 bar.setAttribute('aria-label', 'Menu');
-document.body.prepend(bar);
+// in the top row, after the app's name (spec 008); a page without one gets it on top
+const top = document.querySelector('header .app');
+if (top) top.after(bar); else document.body.prepend(bar);
 const item = (label, items, text = label) => {
   const b = document.createElement('div');
   b.setAttribute('role', 'menuitem');

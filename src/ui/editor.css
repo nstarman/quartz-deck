@@ -62,17 +62,20 @@ main.source-right aside { order: 4; }
 #shortcuts button { margin-top: 12px; float: right; }
 
 /* ---------- menu bar (spec 007) ---------- */
-#menubar { display: flex; gap: 2px; padding: 2px 8px; background: var(--panel); border-bottom: 1px solid var(--line); font-size: 13px; overflow: hidden; }
+#menubar { flex: 1 1 auto; min-width: 0; display: flex; gap: 2px; font-size: 13px; overflow: hidden; }
 #menubar:not(.folded) [data-menu=Menu], #menubar.folded [role=menuitem]:not([data-menu=Menu]) { display: none; }
 #menubar [role=menuitem] { padding: 3px 9px; border-radius: 4px; cursor: default; user-select: none; }
 #menubar [role=menuitem]:hover, #menubar [role=menuitem]:focus, #menubar [aria-expanded=true] { background: var(--accent); color: var(--accent-text); outline: none; }
 #menubar [role=menuitem]:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
 
-header { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 8px 16px;
-  border-bottom: 1px solid var(--line); background: var(--panel); }
+header { display: flex; gap: 4px 12px; align-items: center; padding: 2px 12px 2px 8px;
+  border-bottom: 1px solid var(--line); background: var(--panel); white-space: nowrap; }
+header .app { font-size: 13px; padding: 3px 4px; }
 #notice { color: var(--accent); }
 #notice.error { color: var(--danger); }
-header #status { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+header #status { color: var(--muted); font-size: 13px; }
+/* "rendered abc1234" while all is well: read out, not shown; problems and progress show */
+#status.quiet { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 header a { color: var(--accent); }
 #banner { padding: 8px 16px; background: var(--error-bg); color: var(--error);
   white-space: pre-wrap; font: 12px/1.4 ui-monospace, monospace; max-height: 30vh; overflow: auto; }
