@@ -35,6 +35,7 @@ impl Env {
         let mut c = Command::cargo_bin("qd").unwrap();
         c.current_dir(self.dir.path())
             .env("QD_CACHE_DIR", self.dir.path().join(".cache"))
+            .env("QD_CONFIG_DIR", self.dir.path().join(".config"))
             .env_remove("QD_DECK");
         c
     }
@@ -982,4 +983,109 @@ fn replace_swaps_one_unique_occurrence() {
     let args = json!({"old": "Some \"quoted\"", "new": "Some 'quoted'"});
     run_op(&e.store(), "replace", &args, None).unwrap();
     assert!(e.text().contains("Some 'quoted' text"));
+}
+
+/// Spec 007 US2: `qd settings` reads, sets (checked) and resets the person's
+/// settings; no deck needed.
+#[test]
+fn settings_read_set_and_reset() {
+    let e = Env::new();
+    let v = e.ok(&["settings"]);
+    assert_eq!(v["values"]["source.side"], "left");
+    assert!(
+        v["defs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["key"] == "theme")
+    );
+    let v = e.ok(&["settings", "set", "theme", "dark"]);
+    assert_eq!(
+        (&v["ok"], &v["values"]["theme"]),
+        (&json!(true), &json!("dark"))
+    );
+    let v = e.ok(&["settings", "set", "confirm.slide_delete", "false"]);
+    assert_eq!(
+        v["values"]["confirm.slide_delete"], false,
+        "JSON values parse"
+    );
+    let err = e.err(
+        &["settings", "set", "theme", "purple"],
+        "E_INVALID_SETTING",
+        1,
+    );
+    assert!(
+        err["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("system, light, dark, hc")
+    );
+    assert_eq!(
+        e.ok(&["settings"])["values"]["theme"],
+        "dark",
+        "a refused value changes nothing"
+    );
+    let v = e.ok(&["settings", "reset"]);
+    assert_eq!(
+        (&v["values"]["theme"], &v["values"]["confirm.slide_delete"]),
+        (&json!("system"), &json!(true))
+    );
+}
+
+/// Spec 007 US3: `qd actions` lists what the editor can do, with keys and the
+/// matching qd command (the same list the editor's menus and keys use).
+#[test]
+fn actions_lists_the_editors_actions() {
+    let e = Env::new();
+    let v = e.ok(&["actions"]);
+    let list = v.as_array().unwrap();
+    let dup = list.iter().find(|a| a["id"] == "slide-dup").unwrap();
+    assert_eq!(
+        (&dup["label"], &dup["key"], &dup["qd"], &dup["menu"]),
+        (
+            &json!("Duplicate slide"),
+            &json!("Mod+Shift+D"),
+            &json!("qd dup <slide>"),
+            &json!(["Slide"])
+        )
+    );
+    assert!(list.iter().all(|a| a["id"].is_string()), "no separators");
+    let listed: Value = serde_json::from_str(include_str!("../src/ui/actions.json")).unwrap();
+    let ids = |l: &[Value]| {
+        l.iter()
+            .filter_map(|a| a["id"].as_str().map(String::from))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        ids(list),
+        ids(listed.as_array().unwrap()),
+        "the editor's own list"
+    );
+}
+
+#[test]
+fn paste_slides_from_stdin() {
+    let e = Env::new();
+    let copy = "## Results {#results}\n\n- pasted\n";
+    let out = e
+        .cmd()
+        .args(["paste", "--after", "intro", "--md", "-"])
+        .write_stdin(copy)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_edit(&v, "paste");
+    assert_ne!(v["target"], "results", "the clashing id is renewed");
+    let t = e.text();
+    assert!(
+        t.contains(&format!(
+            "{{#{}}}\n\n- pasted",
+            v["target"].as_str().unwrap()
+        )),
+        "{t}"
+    );
+    e.err(&["paste", "--md", "no heading here"], "E_PARSE", 1);
+    assert_eq!(e.ok(&["undo"])["undone"], "paste", "one undo step");
+    assert!(!e.text().contains("- pasted"));
 }

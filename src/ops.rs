@@ -370,14 +370,7 @@ pub fn dup(d: &Deck, slide: &str, after: Option<&str>) -> Result<Patch> {
 
     // copy: fresh slide id, fresh ids for blocks with explicit ids
     let new_id = ctx.slide_id(s.title.as_deref());
-    let mut rest = String::new();
-    let mut pos = s.content_start();
-    for b in &s.blocks {
-        rest.push_str(&d.text[pos..b.span.start]);
-        rest.push_str(&renew_id(&mut ctx, b, d.slice(b.span), &mut assigned));
-        pos = b.span.end;
-    }
-    rest.push_str(&d.text[pos..s.span.end]);
+    let rest = copy_body(&mut ctx, d, s, false, &mut assigned);
     let mut attrs = s.attrs.clone().unwrap_or_default();
     attrs.set_id(&new_id);
     let fake = Slide {
@@ -399,6 +392,47 @@ pub fn dup(d: &Deck, slide: &str, after: Option<&str>) -> Result<Patch> {
         reps.push((s.span, src_text));
     }
     Ok(patch("dup", new_id, reps, assigned))
+}
+
+/// Insert slides given as markdown (a copy from this or another deck). An
+/// explicit id already in the deck, or repeated in the paste, gets a fresh one.
+pub fn paste(d: &Deck, md: &str, pos: Pos) -> Result<Patch> {
+    let src = Deck::parse(md.replace("\r\n", "\n"));
+    if src.slides.is_empty() || src.slides[0].kind == SlideKind::Implicit {
+        return Err(QdError::Parse(
+            "the pasted text does not start with a slide heading or ---".into(),
+        ));
+    }
+    if let Some(s) = src.slides.iter().find(|s| s.opaque) {
+        return Err(QdError::UnsafeEdit(format!(
+            "pasted slide '{}' has an unterminated construct",
+            s.id
+        )));
+    }
+    let mut ctx = Ctx::new(d);
+    let at = ctx.insertion(pos)?;
+    let mut assigned = Vec::new();
+    let mut text = String::new();
+    let mut first = None;
+    for s in &src.slides {
+        let mut head = src.text[s.span.start..s.content_start()].to_string();
+        let mut id = s.id.clone();
+        if s.id_explicit && !ctx.taken.insert(id.clone()) {
+            id = ctx.slide_id(s.title.as_deref());
+            head = head.replacen(&format!("#{}", s.id), &format!("#{id}"), 1);
+            assigned.push(id.clone());
+        }
+        first.get_or_insert(id);
+        text.push_str(&head);
+        text.push_str(&copy_body(&mut ctx, &src, s, true, &mut assigned));
+    }
+    let text = with_nl(&text, d.nl);
+    Ok(patch(
+        "paste",
+        first.unwrap(),
+        vec![(Span { start: at, end: at }, ctx.place(at, &text))],
+        assigned,
+    ))
 }
 
 pub fn mv(d: &Deck, slide: &str, pos: Pos) -> Result<Patch> {
@@ -687,6 +721,31 @@ pub fn block_rm(d: &Deck, element: &str) -> Result<Patch> {
         vec![(span, new)],
         Vec::new(),
     ))
+}
+
+/// A copy of slide `s`'s content (from deck `src`), explicit block ids renewed;
+/// with `keep_free`, an id not yet in the deck is kept.
+fn copy_body(
+    ctx: &mut Ctx,
+    src: &Deck,
+    s: &Slide,
+    keep_free: bool,
+    assigned: &mut Vec<String>,
+) -> String {
+    let mut out = String::new();
+    let mut pos = s.content_start();
+    for b in &s.blocks {
+        out.push_str(&src.text[pos..b.span.start]);
+        let t = src.slice(b.span);
+        if keep_free && b.id_explicit && ctx.taken.insert(b.id.clone()) {
+            out.push_str(t);
+        } else {
+            out.push_str(&renew_id(ctx, b, t, assigned));
+        }
+        pos = b.span.end;
+    }
+    out.push_str(&src.text[pos..s.span.end]);
+    out
 }
 
 /// A copy's text: an explicit id is replaced by a fresh one.

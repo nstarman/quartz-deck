@@ -901,3 +901,64 @@ fn buffer_overlay_over_http() {
     );
     assert_eq!(source()["text"], BASIC, "detached: back to the file");
 }
+
+/// Spec 007 US2 (T011): the settings over HTTP. Anyone local may read them;
+/// only the editor (token) may change them; every open editor hears of a
+/// change, whether made here or by `qd settings`.
+#[test]
+fn settings_over_http() {
+    if !have("quarto") {
+        return;
+    }
+    let (_tmp, dir) = setup();
+    let server = start(&dir);
+    let p = server.port;
+    let auth = format!("application/json\r\nX-QD-Token: {}", server.token);
+    let read = || -> Value { serde_json::from_str(&get(p, "/api/settings").1).unwrap() };
+    let v = read();
+    assert_eq!(v["values"]["source.side"], "left");
+    assert_eq!(v["defs"].as_array().unwrap().len(), 6);
+
+    let body = r#"{"source.side": "right"}"#;
+    assert_eq!(
+        post(p, "/api/settings", "127.0.0.1", "application/json", body).0,
+        403
+    );
+    let (status, err) = post(
+        p,
+        "/api/settings",
+        "127.0.0.1",
+        &auth,
+        r#"{"theme": "purple"}"#,
+    );
+    assert_eq!(status, 400, "{err}");
+    assert!(err.contains("E_INVALID_SETTING"), "{err}");
+
+    let mut ev = Events::open(p, "/events");
+    // one write can raise several file events (and so several `settings` events):
+    // wait for the one that shows the change
+    let mut until = |key: &str, want: &str| {
+        let end = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < end {
+            let e = ev
+                .wait("settings", end - Instant::now())
+                .expect("settings event");
+            if serde_json::from_str::<Value>(&e).unwrap()["values"][key] == want {
+                return;
+            }
+        }
+        panic!("no settings event with {key} = {want}");
+    };
+    let (status, ok) = post(p, "/api/settings", "127.0.0.1", &auth, body);
+    assert_eq!(status, 200, "{ok}");
+    until("source.side", "right");
+    assert_eq!(read()["values"]["source.side"], "right");
+
+    // a change from the CLI reaches the open editor too
+    assert!(qd_json(&dir, &["settings", "set", "theme", "dark"]).0);
+    until("theme", "dark");
+
+    let (status, _) = post(p, "/api/settings", "127.0.0.1", &auth, r#"{"reset": true}"#);
+    assert_eq!(status, 200);
+    assert_eq!(read()["values"]["source.side"], "left");
+}

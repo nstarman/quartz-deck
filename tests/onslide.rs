@@ -18,6 +18,8 @@ use std::time::{Duration, Instant};
 mod common;
 use common::{have, qd};
 
+/// The selected preview element's ref, or null.
+const SEL: &str = "(document.querySelector('#preview').contentDocument.querySelector('.qd-sel')?.dataset.qd ?? null)";
 const SRC: &str = "document.querySelector('#srcedit textarea')";
 /// Default wait: generous, since all browser tests (each with Quarto and Chrome) run in parallel.
 const WAIT: u64 = 20;
@@ -64,6 +66,40 @@ struct Ed {
     _browser: Browser,
     _profile: tempfile::TempDir,
     _slot: tokio::sync::OwnedSemaphorePermit,
+    _watchdog: Watchdog,
+}
+
+/// A browser test that runs over 5 minutes is stuck, not slow: under heavy load
+/// Chrome can go away, and a CDP call then waits forever. Name the test and
+/// stop the run rather than hang it.
+struct Watchdog(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl Watchdog {
+    fn start() -> Watchdog {
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (flag, name) = (
+            done.clone(),
+            std::thread::current().name().unwrap_or("?").to_string(),
+        );
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(300));
+            if !flag.load(std::sync::atomic::Ordering::Relaxed) {
+                // straight to stderr: the harness captures eprintln!, and exit() drops that
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "{name}: still running after 5 minutes (is Chrome gone?); stopping the run"
+                );
+                std::process::exit(101);
+            }
+        });
+        Watchdog(done)
+    }
+}
+
+impl Drop for Watchdog {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 /// At most half the CPUs' worth of editors (Chrome + Quarto each) at once:
@@ -86,6 +122,7 @@ impl Ed {
     async fn open(deck: &str) -> Option<Ed> {
         let chrome = chrome()?;
         let slot = slot().await;
+        let watchdog = Watchdog::start();
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("deck.qmd"), deck).unwrap();
         let out = qd(dir.path()).args(["serve", "--detach"]).output().unwrap();
@@ -109,6 +146,7 @@ impl Ed {
             _browser: browser,
             _profile: profile,
             _slot: slot,
+            _watchdog: watchdog,
         };
         ed.wait_secs(READY, 60).await;
         Some(ed)
@@ -166,12 +204,41 @@ impl Ed {
         }
     }
 
-    /// Poll `qd focus` until `pred` holds (10 s).
-    async fn until_focus(&self, pred: impl Fn(&Value) -> bool, what: &str) {
+    /// ⌘V on `target` (a JS expression), then the paste event a browser fires
+    /// for it, carrying `text` (a JS expression). Devtools key presses don't
+    /// run the browser's paste command on macOS and paste Chrome's own
+    /// clipboard on Linux, so the test sends both itself.
+    async fn paste(&self, target: &str, text: &str) {
+        self.eval(&format!(
+            "(() => {{ const t = {target}; t.dispatchEvent(new KeyboardEvent('keydown', {{ key: 'v', code: 'KeyV', ctrlKey: true, bubbles: true, cancelable: true }}));
+              const dt = new DataTransfer(); dt.setData('text/plain', {text});
+              t.dispatchEvent(new ClipboardEvent('paste', {{ clipboardData: dt, bubbles: true, cancelable: true }})); }})()"
+        ))
+        .await;
+    }
+
+    /// Edit ▸ Undo once; the file must be back to `before` (one edit, one undo step).
+    async fn undo_to(&self, before: &str) {
+        self.idle().await;
+        self.menu("Edit", "Undo").await;
+        self.wait_file(|f| f == before, "one undo step").await;
+    }
+
+    /// Poll `qd <args>` until `pred` holds on its JSON (10 s).
+    async fn until_cli(&self, args: &[&str], pred: impl Fn(&Value) -> bool, what: &str) {
         let start = Instant::now();
-        while !pred(&self.cli(&["focus"])) {
+        while !pred(&self.cli(args)) {
             assert!(start.elapsed() < Duration::from_secs(10), "{what}");
             tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    /// Run `label` from the menu bar's `top` menu with the mouse (submenus: "Format/Bold").
+    async fn menu(&self, top: &str, label: &str) {
+        self.click_editor(&format!("#menubar [data-menu={top:?}]"))
+            .await;
+        for part in label.split('/') {
+            self.click_menu(part).await;
         }
     }
 
@@ -559,19 +626,19 @@ async fn typing_writes_only_the_element() {
         DECK.replace("lines -- here.", "lines -- here. Truly \"new\".")
     );
 
-    // Escape abandons an edit
+    // Escape keeps an edit, like clicking elsewhere (spec 007); undo takes it back
     let before = ed.file();
     ed.idle().await;
     ed.click_in_slide("[data-qd=\"methods/1\"] li").await;
     ed.caret("[data-qd=\"methods/1\"]", None).await;
-    ed.type_text(" nope").await;
+    ed.type_text(" kept").await;
     ed.key("Escape", "Escape", 27, 0).await;
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    assert_eq!(ed.session().await, Value::Null);
-    assert_eq!(ed.file(), before);
+    ed.wait_file(|f| f.contains("two kept"), "kept by Escape")
+        .await;
+    ed.undo_to(&before).await;
 
     // undo restores the file byte-for-byte (shared history with the CLI)
-    ed.click_editor("#undo").await;
+    ed.menu("Edit", "Undo").await;
     ed.wait_file(|f| f == DECK, "restored by undo").await;
 }
 
@@ -983,11 +1050,20 @@ async fn bars_set_properties_and_source_panel_is_hidden() {
     // the Source button shows the source pane; its Form button the old properties panel
     ed.click_editor("#toggle-source").await;
     ed.wait("!document.querySelector('#srcpane').hidden").await;
+    // the element bar follows the element when the layout moves; it never sits over other controls
+    ed.wait("(() => { const b = document.querySelector('#elbar'); if (b.hidden) return true; const r = b.getBoundingClientRect(), f = document.querySelector('#srcpane [data-act=form]').getBoundingClientRect(); return r.right < f.left || f.right < r.left || r.bottom < f.top || f.bottom < r.top; })()").await;
+    ed.eval("window.__clicked = []; document.addEventListener('click', (e) => __clicked.push(e.target.outerHTML.slice(0, 60)), true)").await;
     ed.click_editor("#srcpane [data-act=form]").await;
+    let opened = ed
+        .eval("new Promise((r) => { const t = Date.now(); (function f() { if (getComputedStyle(document.querySelector('#panel')).display === 'block') r(true); else if (Date.now() - t > 5000) r(false); else setTimeout(f, 50); })(); })")
+        .await;
     assert_eq!(
-        ed.eval("getComputedStyle(document.querySelector('#panel')).display")
-            .await,
-        "block"
+        opened,
+        true,
+        "the Form button did not open the panel: main={} clicked={} under the button now={}",
+        ed.eval("document.querySelector('main').className").await,
+        ed.eval("JSON.stringify(window.__clicked)").await,
+        ed.eval("(() => { const r = document.querySelector('#srcpane [data-act=form]').getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.outerHTML.slice(0, 80); })()").await,
     );
 }
 
@@ -1078,19 +1154,17 @@ async fn fragments_notes_and_keyboard_selection() {
     assert_eq!(ed.eval(opacity).await, "1");
 
     // Tab / Shift+Tab move the selection; Enter edits; Escape leaves the edit, keeping the selection
-    let sel =
-        "document.querySelector('#preview').contentDocument.querySelector('.qd-sel')?.dataset.qd";
     ed.click_blank().await;
     for (shift, want) in [(0, "f/0"), (0, "f/1"), (8, "f/0")] {
         ed.key("Tab", "Tab", 9, shift).await; // 8 = Shift+Tab
-        ed.wait(&format!("{sel} === '{want}'")).await;
+        ed.wait(&format!("{SEL} === '{want}'")).await;
     }
     ed.wait("document.querySelector('#notice').textContent.startsWith('Selected')")
         .await;
     ed.key("Enter", "Enter", 13, 0).await;
     ed.wait("window.qdSession()?.ref === 'f/0'").await;
     ed.key("Escape", "Escape", 27, 0).await;
-    ed.wait(&format!("window.qdSession() === null && {sel} === 'f/0'"))
+    ed.wait(&format!("window.qdSession() === null && {SEL} === 'f/0'"))
         .await;
 
     // Speaker notes…: created when missing, then edited in the source box
@@ -1140,7 +1214,7 @@ async fn source_pane_saves_minimal_changes() {
             .replace("title: T\n", "title: Talk\n")
     );
     // undo restores the bytes, and the pane follows
-    ed.click_editor("#undo").await;
+    ed.menu("Edit", "Undo").await;
     ed.wait_file(|f| f.contains("title: T\n"), "undone").await;
     ed.wait(&format!("{PANE}.value.includes('title: T\\n')"))
         .await;
@@ -1385,6 +1459,7 @@ const bodies = {{
   '/api/buffer/open': JSON.stringify({{text: '## Pwned\\n'}}),
   '/api/buffer': JSON.stringify({{base: '', text: '## Pwned\\n'}}),
   '/api/buffer/close': '{{}}',
+  '/api/settings': JSON.stringify({{theme: 'dark', 'source.side': 'right', 'confirm.slide_delete': false}}),
 }};
 for (const [path, body] of Object.entries(bodies)) {{
   await fetch(qd + path, {{method: 'POST', headers: {{'Content-Type': 'application/json', 'X-QD-Token': 'guess'}}, body}}).catch(() => {{}});
@@ -1408,6 +1483,13 @@ return (await unreadable('/')) && (await unreadable('/api/focus'));
     tokio::time::sleep(Duration::from_secs(3)).await; // anything that got through would show by now
 
     assert_eq!(ed.file(), RUN_DECK, "no edit landed");
+    // spec 007: the person's settings are unchanged
+    let v = &ed.cli(&["settings"])["values"];
+    assert_eq!(
+        (&v["theme"], &v["source.side"], &v["confirm.slide_delete"]),
+        (&json!("system"), &json!("left"), &json!(true)),
+        "no setting changed"
+    );
     // spec 006: no VS Code buffer was attached in the person's place
     assert!(
         !ed.cli(&["slides"]).to_string().contains("Pwned"),
@@ -1527,7 +1609,7 @@ async fn pointing_moves_or_offers() {
     ed.go("a").await;
     ed.open_source().await;
     // the server knows this tab once it has reported
-    ed.until_focus(|v| v["age"].is_number(), "tab never reported")
+    ed.until_cli(&["focus"], |v| v["age"].is_number(), "tab never reported")
         .await;
 
     let t = Instant::now();
@@ -1550,8 +1632,12 @@ async fn pointing_moves_or_offers() {
     ed.click_in_slide("[data-qd=\"a/0\"] p").await;
     ed.caret("[data-qd=\"a/0\"]", None).await;
     ed.type_text(" abc").await;
-    ed.until_focus(|v| v["editing"] == true, "editing never reported")
-        .await;
+    ed.until_cli(
+        &["focus"],
+        |v| v["editing"] == true,
+        "editing never reported",
+    )
+    .await;
     for _ in 0..20 {
         assert_eq!(ed.cli(&["focus", "--set", "b"])["result"], "deferred");
     }
@@ -1598,13 +1684,45 @@ async fn framed_editor_takes_theme_and_messages() {
     );
     assert_eq!(ed.eval(bg).await, "#000000");
 
+    // US5: no menu bar, one ☰ holding the same menus; F10 reaches it
+    let shown =
+        |m: &str| format!("!!document.querySelector('#menubar [data-menu={m}]').offsetParent");
+    assert_eq!(ed.eval(&shown("File")).await, false);
+    assert_eq!(ed.eval(&shown("Menu")).await, true);
+    ed.go("a").await;
+    ed.click_editor("#menubar [data-menu=Menu]").await;
+    assert_eq!(
+        ed.menu_labels().await,
+        ["File", "Edit", "Insert", "Slide", "View", "Run", "Help"]
+    );
+    ed.click_menu("Slide").await;
+    ed.click_menu("Duplicate slide").await;
+    ed.wait_file(|f| f.matches("First para.").count() == 2, "ran from ☰")
+        .await;
+    ed.cli(&["undo"]);
+    ed.settle().await;
+    ed.key("F10", "F10", 121, 0).await;
+    ed.wait("document.activeElement?.dataset.menu === 'Menu'")
+        .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    // VS Code's keys stay VS Code's: ⌘B is not Bold here, and the menus and the
+    // reference show only the panel's keys
+    let resolve = |k: &str, place: &str| format!("window.qdActions().resolve({k:?}, [{place:?}])");
+    assert_eq!(ed.eval(&resolve("Mod+B", "text")).await, Value::Null);
+    assert_eq!(ed.eval(&resolve("Mod+Shift+D", "slide")).await, Value::Null);
+    assert_eq!(ed.eval(&resolve("Mod+I", "text")).await, "italic");
+    let dup = ed
+        .eval("qdMenus().then((m) => m.Slide.find((i) => i.label === 'Duplicate slide'))")
+        .await;
+    assert_eq!(dup["shortcut"], Value::Null, "{dup}");
+
     // VS Code's cursor in slide B's text shows B, and qd focus has it (US3)
     ed.go("a").await;
     ed.eval("window.postMessage({type: 'follow', line: 17, first: 17, last: 17, text: ''}, '*')")
         .await;
     ed.wait("document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide().id === 'b'")
         .await;
-    ed.until_focus(|v| v["line"] == 17, "focus never got the line")
+    ed.until_cli(&["focus"], |v| v["line"] == 17, "focus never got the line")
         .await;
     // an element chosen on a slide: its source lines go to VS Code
     // what the editor posts to its parent (here itself): reveal, focusText
@@ -1617,8 +1735,12 @@ async fn framed_editor_takes_theme_and_messages() {
     let focus_text = "__msgs.filter((m) => m.type === 'focusText').length";
     // Esc clears the selection first; Esc with nothing left hands the keyboard to the text
     let esc = || ed.key("Escape", "Escape", 27, 0);
+    ed.wait("window.qdSession() !== null").await;
     esc().await; // ends the edit the click started (the element stays selected)
+    ed.wait(&format!("window.qdSession() === null && {SEL} === 'a/0'"))
+        .await;
     esc().await; // clears the selection
+    ed.wait(&format!("!{SEL}")).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert_eq!(
         ed.eval(focus_text).await,
@@ -1640,4 +1762,508 @@ async fn framed_editor_takes_theme_and_messages() {
         json!(["none", "none"])
     );
     assert_eq!(ed.eval(theme).await, "light");
+}
+
+// ---------- spec 007: one action list, the menu bar ----------
+
+/// Every listed key, in each place it works, resolves to its own action.
+const KEYS_RESOLVE: &str = "(async () => { const { ACTIONS, keysOf } = await import('/ui/keys.js'); const bad = []; for (const a of ACTIONS) for (const k of keysOf(a)) for (const w of a.where) { const r = qdActions().resolve(k, [w]); if (r !== a.id) bad.push([a.id, k, w, r]); } return bad; })()";
+
+/// Spec 007 US1 (T005, T007): the menu bar holds every action. Run from a menu
+/// it does what its button, key or right-click item does; the menus work from
+/// the keyboard alone and carry the menu roles screen readers need.
+#[tokio::test(flavor = "multi_thread")]
+async fn menu_bar_runs_every_action() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    assert_eq!(
+        ed.eval("qdActions().missing").await,
+        json!([]),
+        "every action has a handler"
+    );
+    assert_eq!(
+        ed.eval(KEYS_RESOLVE).await,
+        json!([]),
+        "every key reaches its action"
+    );
+    assert_eq!(
+        ed.eval("qdMenus().then(Object.keys)").await,
+        json!(["File", "Edit", "Insert", "Slide", "View", "Run", "Help"])
+    );
+    assert_eq!(
+        ed.eval("[...document.querySelectorAll('#menubar[role=menubar] > [role=menuitem][aria-haspopup=menu]')].filter((b) => b.offsetParent).length").await,
+        7
+    );
+    // clicking an open menu's name again closes it
+    let shown = "!document.querySelector('#ctxmenu').hidden";
+    let insert = "#menubar [data-menu=Insert]";
+    ed.click_editor(insert).await;
+    ed.wait(shown).await;
+    ed.click_editor(insert).await;
+    ed.wait(&format!("!({shown})")).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        ed.eval(shown).await,
+        false,
+        "a second click closes the menu"
+    );
+    ed.click_editor(insert).await;
+    ed.wait(shown).await;
+    // moving onto another name while a menu is open switches to it (as on macOS)
+    let (x, y) = ed.editor_point("#menubar [data-menu=View]", None).await;
+    ed.page.move_mouse(Point { x, y }).await.unwrap();
+    ed.wait("document.querySelector('#menubar [data-menu=View]').getAttribute('aria-expanded') === 'true'")
+        .await;
+    assert_eq!(ed.eval(shown).await, true, "View's menu is open");
+    ed.close_menu().await;
+    // too narrow for the menus: they fold into ☰ (and come back when there is room)
+    let folded = "document.querySelector('#menubar').classList.contains('folded')";
+    ed.eval("document.querySelector('#menubar').style.width = '200px'")
+        .await;
+    ed.wait(folded).await;
+    ed.eval("document.querySelector('#menubar').style.width = ''")
+        .await;
+    ed.wait(&format!("!{folded}")).await;
+
+    // Slide → Duplicate slide, then Edit → Undo
+    ed.go("a").await;
+    ed.menu("Slide", "Duplicate slide").await;
+    ed.wait_file(|f| f.matches("## A").count() == 2, "duplicated")
+        .await;
+    ed.menu("Edit", "Undo").await;
+    ed.wait_file(|f| f == P2, "undone").await;
+
+    // with an element selected: Paste shows disabled (nothing copied yet), Insert goes after it
+    ed.go("a").await;
+    ed.select("[data-qd=\"a/0\"]").await;
+    let paste = ed
+        .eval("qdMenus().then((m) => m.Edit.find((i) => i.label === 'Paste after'))")
+        .await;
+    assert_eq!(paste["disabled"], true, "{paste}");
+    ed.menu("Insert", "Paragraph").await;
+    ed.wait_file(
+        |f| f.contains("First para.\n\nNew paragraph."),
+        "inserted after the selection",
+    )
+    .await;
+
+    ed.wait("window.qdSession()?.ref === 'a/1'").await; // it opens for typing
+    ed.click_blank().await;
+    ed.wait("window.qdSession() === null").await;
+    ed.settle().await;
+    ed.go("a").await;
+
+    // while typing on the slide, Edit → Format → Bold applies and keeps the edit open
+    ed.click_in_slide("[data-qd=\"a/0\"]").await;
+    ed.caret("[data-qd=\"a/0\"]", Some("First")).await;
+    ed.menu("Edit", "Format/Bold").await;
+    ed.wait("window.qdSession()?.draft?.includes('**First**')")
+        .await;
+    ed.key("Enter", "Enter", 13, 2).await; // Ctrl+Enter saves
+    ed.wait_file(|f| f.contains("**First** para."), "bold saved")
+        .await;
+
+    // View → Source pane is a toggle, checked once open
+    ed.menu("View", "Source pane").await;
+    ed.wait("!document.querySelector('#srcpane').hidden").await;
+    let view = ed
+        .eval("qdMenus().then((m) => m.View.find((i) => i.label === 'Source pane'))")
+        .await;
+    assert_eq!(view["checked"], true, "{view}");
+    ed.menu("View", "Source pane").await;
+    ed.wait("document.querySelector('#srcpane').hidden").await;
+
+    // keyboard only: F10, arrows, Enter, Escape; focus comes back to where it was
+    let active = "(document.activeElement.dataset.menu || document.activeElement.id || document.activeElement.textContent.trim().split('\\n')[0])";
+    ed.go("a").await;
+    ed.eval("document.querySelector('#add-slide').focus()")
+        .await;
+    ed.key("F10", "F10", 121, 0).await;
+    ed.wait(&format!("{active} === 'File'")).await;
+    for _ in 0..3 {
+        ed.key("ArrowRight", "ArrowRight", 39, 0).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    ed.wait(&format!("{active} === 'Slide'")).await;
+    ed.key("ArrowDown", "ArrowDown", 40, 0).await;
+    ed.wait("document.activeElement.closest('#ctxmenu') && document.activeElement.firstChild.textContent === 'Duplicate slide'").await;
+    assert!(
+        ed.eval("document.activeElement.getAttribute('aria-keyshortcuts')")
+            .await
+            .as_str()
+            .is_some_and(|k| k.ends_with("Shift+D")),
+        "the shortcut is announced"
+    );
+    assert_eq!(
+        ed.eval(
+            "document.querySelector('#menubar [data-menu=Slide]').getAttribute('aria-expanded')"
+        )
+        .await,
+        "true"
+    );
+    ed.key("Enter", "Enter", 13, 0).await;
+    ed.wait_file(
+        |f| f.matches("## A").count() == 2,
+        "duplicated from the keyboard",
+    )
+    .await;
+    ed.key("F10", "F10", 121, 0).await;
+    ed.wait(&format!("{active} === 'File'")).await;
+    ed.key("ArrowDown", "ArrowDown", 40, 0).await;
+    ed.wait("!document.querySelector('#ctxmenu').hidden").await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait(&format!(
+        "document.querySelector('#ctxmenu').hidden && {active} === 'File'"
+    ))
+    .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("document.activeElement.closest('#menubar') === null")
+        .await;
+}
+
+/// Spec 007 US2 (T013): settings apply at once, are the person's (the CLI sees
+/// them, and changes there reach the open editor), and stick: another deck on
+/// a new server opens with the same settings and layout.
+#[tokio::test(flavor = "multi_thread")]
+async fn settings_apply_live_and_stick() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    let main = "document.querySelector('main').classList";
+    let theme = "document.documentElement.dataset.theme";
+    ed.key(",", "Comma", 188, 2).await; // ⌘, (Ctrl+, works too)
+    ed.wait("document.querySelector('#settings').open").await;
+    let choose = |key: &str, v: &str| {
+        format!(
+            "(() => {{ const s = document.getElementById('set-{key}'); s.value = {v:?}; s.dispatchEvent(new Event('change')); }})()"
+        )
+    };
+    ed.eval(&choose("source.side", "right")).await;
+    ed.wait(&format!("{main}.contains('source-right')")).await;
+    ed.eval(&choose("theme", "dark")).await;
+    ed.wait(&format!("{theme} === 'dark'")).await;
+    ed.eval(&choose("source.save", "explicit")).await;
+    ed.wait("document.querySelector('#srcpane .hint').textContent.includes('leave the pane')")
+        .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("!document.querySelector('#settings').open").await;
+
+    // they are the person's: the CLI sees them, and a change there applies at once
+    assert_eq!(ed.cli(&["settings"])["values"]["theme"], "dark");
+    ed.cli(&["settings", "set", "theme", "light"]);
+    ed.wait(&format!("{theme} === 'light'")).await;
+
+    // layout memory: the source pane opened here is open in another deck, on a new server
+    ed.open_source().await;
+    ed.until_cli(
+        &["settings"],
+        |v| v["values"]["ui.source_was_open"] == true,
+        "the open source pane was not remembered",
+    )
+    .await;
+    ed.cli(&["stop"]);
+    let other = ed.dir.path().join("other");
+    std::fs::create_dir(&other).unwrap();
+    let deck = other.join("talk.qmd");
+    std::fs::write(&deck, P2).unwrap();
+    let info = ed.cli(&["--deck", deck.to_str().unwrap(), "serve", "--detach"]);
+    ed.page.goto(info["url"].as_str().unwrap()).await.unwrap();
+    ed.wait_secs(READY, 60).await;
+    ed.wait(&format!(
+        "!document.querySelector('#srcpane').hidden && {main}.contains('source-right') && {theme} === 'light'"
+    ))
+    .await;
+
+    // Reset to defaults asks first, then everything is back (theme follows the system)
+    ed.eval("window.confirm = (m) => ((window.__asked = m), true)")
+        .await;
+    ed.key(",", "Comma", 188, 2).await;
+    ed.wait("document.querySelector('#settings').open").await;
+    ed.click_js("(r => [r.left + r.width / 2, r.top + r.height / 2])([...document.querySelectorAll('#settings button')].find((b) => b.textContent.startsWith('Reset')).getBoundingClientRect())").await;
+    ed.wait(&format!(
+        "{theme} === undefined && !{main}.contains('source-right')"
+    ))
+    .await;
+    assert!(
+        ed.eval("window.__asked")
+            .await
+            .as_str()
+            .unwrap()
+            .contains("default")
+    );
+    ed.cli(&["--deck", deck.to_str().unwrap(), "stop"]);
+}
+
+/// Spec 007 US3 (T015): ? opens the shortcut reference (not while typing),
+/// built from the same list as the keys: every action with a key is in it,
+/// grouped by menu; search filters it; Escape closes it.
+#[tokio::test(flavor = "multi_thread")]
+async fn shortcut_reference() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    let open = "document.querySelector('#shortcuts').open";
+    ed.go("a").await;
+    ed.click_blank().await;
+    ed.key("?", "Slash", 191, 8).await; // ⇧/
+    ed.wait(open).await;
+    let shown = "[...document.querySelectorAll('#shortcuts tr[data-id]')].filter((r) => !r.hidden).map((r) => r.dataset.id)";
+    let missing = ed
+        .eval(&format!("(async () => {{ const {{ ACTIONS, keysOf }} = await import('/ui/keys.js'); const s = new Set({shown}); return ACTIONS.filter((a) => keysOf(a).length && !s.has(a.id)).map((a) => a.id); }})()"))
+        .await;
+    assert_eq!(missing, json!([]), "every key is listed");
+    assert!(
+        ed.eval("[...document.querySelectorAll('#shortcuts h3')].map((h) => h.textContent).join()")
+            .await
+            .as_str()
+            .unwrap()
+            .starts_with("File,Edit"),
+        "grouped like the menus"
+    );
+    ed.eval("(() => { const s = document.querySelector('#shortcuts input'); s.value = 'duplicate'; s.dispatchEvent(new Event('input')); })()").await;
+    assert_eq!(
+        ed.eval(shown).await,
+        json!(["dup", "slide-dup"]),
+        "search filters"
+    );
+    let close = || async {
+        ed.key("Escape", "Escape", 27, 0).await;
+        ed.wait(&format!("!{open}")).await;
+    };
+    close().await;
+
+    // Help → Keyboard shortcuts opens it too; ? while typing on a slide just types
+    ed.menu("Help", "Keyboard shortcuts").await;
+    ed.wait(open).await;
+    close().await;
+    ed.click_in_slide("[data-qd=\"a/0\"]").await;
+    ed.caret("[data-qd=\"a/0\"]", None).await;
+    ed.type_text("?").await;
+    ed.wait("window.qdSession()?.draft?.includes('para.?')")
+        .await;
+    assert_eq!(ed.eval(open).await, false);
+}
+
+/// T019 (spec 007 US4): Escape backs out one level and keeps the edit; slides
+/// copy and paste with fresh ids; text from elsewhere is escaped; each edit is
+/// one undo step; focus always shows.
+#[tokio::test(flavor = "multi_thread")]
+async fn same_rules_everywhere() {
+    let Some(ed) = Ed::open(P2).await else { return };
+
+    // Escape: menu over the edit → edit (saved) → selected element → nothing selected
+    let before = ed.file();
+    ed.type_into("a", "[data-qd=\"a/0\"]", " More.").await;
+    ed.click_editor("#menubar [data-menu=Edit]").await;
+    ed.wait("!document.querySelector('#ctxmenu').hidden").await;
+    ed.close_menu().await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        ed.session().await["draft"]
+            .as_str()
+            .is_some_and(|d| d.contains("More.")),
+        "the first Esc closed only the menu"
+    );
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait_file(|f| f.contains("First para. More."), "kept by Escape")
+        .await;
+    ed.wait(&format!("window.qdSession() === null && {SEL} === 'a/0'"))
+        .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait(&format!("{SEL} === null")).await;
+    ed.undo_to(&before).await; // on-slide typing
+
+    // a menu and a shortcut are one undo step each
+    ed.settle().await;
+    ed.go("b").await;
+    let before = ed.file();
+    ed.menu("Slide", "Duplicate slide").await;
+    ed.wait_file(
+        |f| f.matches("Other slide.").count() == 2,
+        "duplicated by the menu",
+    )
+    .await;
+    ed.undo_to(&before).await;
+    ed.settle().await;
+    ed.go("b").await;
+    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.key("d", "KeyD", 68, 2 | 8).await; // Ctrl+Shift+D
+    ed.wait_file(
+        |f| f.matches("Other slide.").count() == 2,
+        "duplicated by the key",
+    )
+    .await;
+    ed.undo_to(&before).await;
+
+    // the source pane
+    ed.open_source().await;
+    ed.pane_caret("Other slide.", true).await;
+    ed.type_text("Changed.").await;
+    ed.wait_file(|f| f.contains("Changed."), "saved from the pane")
+        .await;
+    ed.undo_to(&before).await;
+    ed.click_editor("#toggle-source").await;
+
+    // slides on the clipboard: copy in the slide list, paste with fresh ids.
+    // Copying writes the system clipboard (caught here); pasting reads it from
+    // the paste event.
+    ed.settle().await;
+    ed.eval("window.__clip = null; navigator.clipboard.writeText = (t) => { __clip = t; return Promise.resolve(); }").await;
+    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.key("c", "KeyC", 67, 2).await;
+    ed.wait("window.__clip?.startsWith('## B {#b}')").await;
+    ed.paste("document.activeElement", "__clip").await;
+    ed.wait_file(|f| f.matches("Other slide.").count() == 2, "pasted")
+        .await;
+    let s = &ed.cli(&["slides"])["slides"];
+    assert_eq!(s.as_array().unwrap().len(), 4, "{s}");
+    assert_eq!(s[1]["id"], "b");
+    assert_ne!(s[2]["id"], "b", "the copy has a fresh id: {s}");
+    ed.undo_to(&before).await;
+
+    // text from another application: a paragraph, never raw HTML
+    ed.settle().await;
+    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.paste("document.activeElement", "'1 < 2 & <b>x</b>'")
+        .await;
+    ed.wait_file(
+        |f| f.contains("Other slide.\n\n1 &lt; 2 &amp; &lt;b>x&lt;/b>"),
+        "escaped",
+    )
+    .await;
+    ed.undo_to(&before).await;
+
+    // focus shows in every theme: a control, a slide in the list, an element
+    ed.settle().await;
+    ed.go("a").await;
+    ed.select("[data-qd=\"a/0\"]").await;
+    for theme in ["light", "dark", "hc"] {
+        ed.eval(&format!(
+            "document.documentElement.dataset.theme = '{theme}'"
+        ))
+        .await;
+        for target in ["#menubar [data-menu=File]", "#slides li button"] {
+            ed.eval(&format!("document.querySelector({target:?}).focus()"))
+                .await;
+            ed.key("Shift", "ShiftLeft", 16, 8).await; // a key press: focus-visible
+            let ring = ed.eval("(s => s.outlineStyle !== 'none' || s.boxShadow !== 'none')(getComputedStyle(document.activeElement))").await;
+            assert_eq!(
+                ring,
+                Value::Bool(true),
+                "{theme}: no focus ring on {target}"
+            );
+        }
+        let ring = ed.eval("getComputedStyle(document.querySelector('#preview').contentDocument.querySelector('.qd-sel')).outlineStyle").await;
+        assert_eq!(ring, "solid", "{theme}: selected element");
+    }
+}
+
+/// T025 (spec 007 SC-008): on a 30-slide deck every menu and the shortcut
+/// reference open in under 100 ms (median of 5, so one slow frame on a busy
+/// machine doesn't decide it).
+#[tokio::test(flavor = "multi_thread")]
+async fn menus_open_fast() {
+    let mut deck = String::from("---\ntitle: T\nformat: revealjs\n---\n");
+    for i in 1..=30 {
+        deck += &format!("\n## Slide {i} {{#s{i}}}\n\nSome text.\n\n- one\n- two\n");
+    }
+    let Some(ed) = Ed::open(&deck).await else {
+        return;
+    };
+    ed.go("s15").await;
+    let times = ed
+        .eval(
+            r#"(async () => {
+  const until = async (f, what) => { const t = performance.now(); while (!f()) { if (performance.now() - t > 5000) throw new Error('stuck: ' + what); await new Promise(requestAnimationFrame); } };
+  const median = (xs) => xs.sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+  const menu = document.querySelector('#ctxmenu');
+  const out = {};
+  for (const b of document.querySelectorAll('#menubar [role=menuitem]')) {
+    if (!b.offsetParent) continue;
+    const ts = [];
+    for (let i = 0; i < 5; i++) {
+      const t = performance.now();
+      b.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      await until(() => !menu.hidden, 'open ' + b.dataset.menu);
+      ts.push(performance.now() - t);
+      b.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); // closes it
+      await until(() => menu.hidden, 'close ' + b.dataset.menu);
+    }
+    out[b.dataset.menu] = median(ts);
+  }
+  const ref = document.querySelector('#shortcuts');
+  const keys = await import('/ui/keys.js');
+  const ts = [];
+  for (let i = 0; i < 5; i++) {
+    const t = performance.now();
+    keys.run('shortcuts'); // what ? runs
+    await until(() => ref.open, 'reference');
+    ts.push(performance.now() - t);
+    ref.close();
+  }
+  out.reference = median(ts);
+  return out;
+})()"#,
+        )
+        .await;
+    let times = times.as_object().unwrap();
+    eprintln!("menu and reference open times (ms): {times:?}");
+    assert_eq!(times.len(), 8, "7 menus and the reference: {times:?}");
+    for (what, ms) in times {
+        assert!(
+            ms.as_f64().unwrap() < 100.0,
+            "{what} took {ms} ms: {times:?}"
+        );
+    }
+}
+
+/// ⌘V takes the text from the browser's own paste event, which needs no
+/// clipboard permission (pasting a slide copied in another deck failed in a
+/// page without it). The clipboard API is never asked.
+#[tokio::test(flavor = "multi_thread")]
+async fn paste_key_uses_the_paste_event() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    ed.go("b").await;
+    ed.click_editor("#slides li[data-id=b] button").await;
+    // the clipboard API refuses, as without permission, and records being asked
+    let refuse = "window.__asked = false; navigator.clipboard.readText = () => { __asked = true; return Promise.reject(new Error('no permission')); }";
+    ed.eval(refuse).await;
+    ed.paste(
+        "document.activeElement",
+        "'## Pasted {#b}\\n\\nFrom another deck.\\n'",
+    )
+    .await;
+    ed.wait_file(|f| f.contains("From another deck."), "slide pasted")
+        .await;
+    let s = &ed.cli(&["slides"])["slides"];
+    assert_eq!(s[1]["id"], "b");
+    assert_ne!(s[2]["id"], "b", "a fresh id: {s}");
+    assert_eq!(
+        ed.eval("__asked").await,
+        false,
+        "the clipboard API was not asked"
+    );
+
+    // an element selected: other text pastes after it, escaped
+    ed.settle().await;
+    ed.go("a").await;
+    ed.select("[data-qd=\"a/0\"]").await;
+    ed.eval("document.querySelector('#preview').contentWindow.focus()")
+        .await;
+    ed.paste(
+        "document.querySelector('#preview').contentDocument.body",
+        "'1 < 2'",
+    )
+    .await;
+    ed.wait_file(
+        |f| f.contains("First para.\n\n1 &lt; 2"),
+        "pasted after the element",
+    )
+    .await;
+    assert_eq!(ed.eval("__asked").await, false);
+
+    // an empty paste event (Chrome on Linux fires one for a devtools ⌘V, with
+    // its own empty clipboard) falls back to the clipboard API, not to nothing
+    ed.settle().await;
+    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.eval("navigator.clipboard.readText = () => Promise.resolve('## Again {#again}\\n\\nFrom the API.\\n')")
+        .await;
+    ed.paste("document.activeElement", "''").await;
+    ed.wait_file(|f| f.contains("From the API."), "pasted from the API")
+        .await;
 }

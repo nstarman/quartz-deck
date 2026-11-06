@@ -1,9 +1,12 @@
 // quartz-deck editor. Every change is a CLI op sent to POST /api/op, so the GUI
 // can do nothing the CLI cannot (FR-010). The .qmd file stays the only state.
 import { region, hintsFor, gate, reserialize, splice } from '/ui/inline.js';
-import { showToolbar, hideToolbar, formatKey, place as placeToolbar } from '/ui/toolbar.js';
+import { showToolbar, hideToolbar, place as placeToolbar } from '/ui/toolbar.js';
 import { openSource, closeSource, sourceError, sourceText } from '/ui/source.js';
-import { makeActions } from '/ui/actions.js';
+import { makeActions, INSERTS, TRANSITIONS } from '/ui/actions.js';
+import * as keys from '/ui/keys.js';
+import * as settings from '/ui/settings.js';
+import '/ui/menubar.js';
 import { openMenu, closeMenu, menuOpen } from '/ui/menu.js';
 import * as pane from '/ui/pane.js';
 import * as run from '/ui/run.js';
@@ -26,7 +29,8 @@ const state = {
   want: null, // anchor the freshly loaded preview should open on
   selectIdAfterRender: null, // element id (e.g. a new box) to select once rendered
   session: null, // open on-slide edit (spec 003), see beginSession
-  pendingRender: null, // newest render that arrived while editing (applied when it ends)
+  pendingRender: null, // newest render {html, version} that arrived while editing (applied when it ends)
+  loading: null, // deck version of the render the preview is loading
   editAfterRender: null, // {ref, mode}: open a just-inserted element for editing once rendered
   clip: null, // last copied element markdown (fallback when the clipboard can't be read)
 };
@@ -75,9 +79,18 @@ async function fetchDeck() {
   renderSlidebar();
 }
 
-async function fetchSlide(ref) {
-  const res = await fetch('/api/slide/' + encodeURIComponent(ref));
-  return res.ok ? (await res.json()).slide : null;
+// slides as of the deck version we last saw: menus and keys resolve their target
+// at once (spec 007 SC-008); any change on disk empties it (the 'changed' event)
+let slides = { version: null, map: new Map() };
+function fetchSlide(ref) {
+  if (slides.version !== state.version) slides = { version: state.version, map: new Map() };
+  let p = slides.map.get(ref);
+  if (!p) {
+    p = fetch('/api/slide/' + encodeURIComponent(ref)).then(async (res) => (res.ok ? (await res.json()).slide : null));
+    p.catch(() => slides.map.delete(ref));
+    slides.map.set(ref, p);
+  }
+  return p;
 }
 
 /** The block for an element ref `<slide>/<i>`, or null. */
@@ -126,7 +139,8 @@ async function op(name, args = {}, { fileExpect = true } = {}) {
 
 // ---------- preview ----------
 
-function load(path) {
+function load(path, version = null) {
+  state.loading = version;
   // Reveal may ignore the initial URL hash (e.g. when it starts in scroll view),
   // so remember where to go and steer it once it reports ready (see hookFrame).
   state.want = state.goAfterRender || state.anchor || location.hash.replace(/^#\//, '') || null;
@@ -298,6 +312,7 @@ function hookFrame() {
     });
   }, true);
   doc.addEventListener('keydown', onKey, true);
+  doc.addEventListener('paste', onPaste);
   doc.addEventListener('contextmenu', (e) => {
     if (state.session) return; // the browser's own menu (spelling) while typing
     const sec = e.target.closest('section');
@@ -330,7 +345,9 @@ function hookFrame() {
       state.selectIdAfterRender = null;
       if (el?.dataset.qd) state.sel = el.dataset.qd;
     }
-    if (state.editAfterRender) openInserted(state.editAfterRender);
+    // only the render that has the inserted element: an older one still loading would
+    // show other text at that ref, and the edit would not open
+    if (state.editAfterRender?.version === state.loading) openInserted(state.editAfterRender);
     onSlide();
   };
   const onSlide = () => {
@@ -417,6 +434,7 @@ function clearDrop() {
 function renderList() {
   const slides = state.deck?.slides || [];
   const cur = slideByAnchor(state.anchor);
+  const focused = list.contains(document.activeElement); // redrawing must not drop the keyboard's place
   list.replaceChildren(...slides.map((s) => {
     const li = document.createElement('li');
     li.draggable = true;
@@ -479,6 +497,7 @@ function renderList() {
     return li;
   }));
   list.querySelector('li.current')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  if (focused) list.querySelector('li.current button')?.focus();
 }
 
 $('#add-slide').addEventListener('click', async () => {
@@ -649,10 +668,11 @@ async function undoRedo(kind) {
   const r = await op(kind);
   if (r) { await fetchDeck(); await renderPanel(); }
 }
-$('#render').addEventListener('click', async (e) => {
-  const btn = e.currentTarget;
-  btn.disabled = true;
-  btn.textContent = 'Rendering…';
+/** File ▸ Render / Export…: one at a time each (the menu greys them out meanwhile). */
+const busy = { render: false, export: false };
+async function renderDeck() {
+  busy.render = true;
+  say('Rendering…');
   const link = $('#rendered');
   try {
     const r = await op('render');
@@ -664,10 +684,9 @@ $('#render').addEventListener('click', async (e) => {
       link.title = r.output;
     }
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'Render';
+    busy.render = false;
   }
-});
+}
 // ---------- export (spec 002 US4) ----------
 
 function renderExportPanel(r) {
@@ -712,29 +731,15 @@ function renderExportPanel(r) {
   panel.replaceChildren(view);
 }
 
-$('#export').addEventListener('click', async (e) => {
-  const btn = e.currentTarget;
-  btn.disabled = true;
-  btn.textContent = 'Exporting…';
+async function exportDeck(pdf) {
+  busy.export = true;
+  say(pdf ? 'Exporting (with PDF)…' : 'Exporting…');
   try {
-    const r = await op('export', { pdf: $('#export-pdf').checked });
+    const r = await op('export', { pdf });
     if (r) renderExportPanel(r);
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'Export';
+    busy.export = false;
   }
-});
-
-$('#undo').addEventListener('click', () => undoRedo('undo'));
-$('#redo').addEventListener('click', () => undoRedo('redo'));
-
-/** Element action for a key press on the selected element (contracts/ui.md), or undefined. */
-function elementKey(e, mod) {
-  if (mod) return e.shiftKey ? undefined : { c: 'copy', x: 'cut', v: 'paste', d: 'dup' }[e.key.toLowerCase()];
-  if (e.key === 'Enter') return e.altKey ? 'source' : 'edit';
-  if (e.key === 'Backspace' || e.key === 'Delete') return 'delete';
-  if (e.altKey) return { ArrowUp: 'up', ArrowDown: 'down' }[e.key];
-  return undefined;
 }
 
 /** Tab / Shift+Tab in the preview: select the next / previous element of the slide (FR-017). */
@@ -751,31 +756,12 @@ function stepSelection(back) {
 }
 
 function onKey(e) {
-  if (menuOpen()) { if (e.key === 'Escape') { e.preventDefault(); closeMenu(); } return; }
+  // widget key: Esc closes an open menu even when focus stayed elsewhere (the preview)
+  // (and only that: an edit under a menu opened with the mouse stays open, one level per Esc)
+  if (menuOpen()) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeMenu(); } return; }
   if (state.session || editing()) return; // edits and form fields handle their own keys
-  // Tab moves between elements only while the slide has focus; elsewhere it moves focus as usual
-  if (e.key === 'Tab' && e.target.ownerDocument === frame.contentDocument && stepSelection(e.shiftKey)) { e.preventDefault(); e.stopPropagation(); return; }
-  const mod = e.metaKey || e.ctrlKey;
-  if ((e.shiftKey && e.key === 'F10') || e.key === 'ContextMenu') { e.preventDefault(); keyboardMenu(); return; }
-  if (state.sel) {
-    const id = elementKey(e, mod);
-    if (id) { e.preventDefault(); e.stopPropagation(); elementTarget(state.sel).then((t) => t && actions.run(id, t)); return; }
-  }
-  if (mod && e.shiftKey && (e.key.toLowerCase() === 'n' || e.key.toLowerCase() === 'd')) {
-    const cur = slideByAnchor(state.anchor);
-    if (cur) { e.preventDefault(); slideTarget(cur.id).then((t) => actions.run(e.key.toLowerCase() === 'n' ? 'slide-after' : 'slide-dup', t, 'slide')); }
-    return;
-  }
-  if (e.key === 'Escape' && state.sel) { e.preventDefault(); e.stopPropagation(); select(null); return; }
-  // in VS Code, Esc with nothing selected or open hands the keyboard back to the text (006)
-  if (e.key === 'Escape' && inVSCode) {
-    e.preventDefault(); e.stopPropagation(); // not reveal.js's overview too
-    window.parent.postMessage({ type: 'focusText' }, '*');
-    return;
-  }
-  if (!mod || e.key.toLowerCase() !== 'z' || editing()) return;
-  e.preventDefault();
-  undoRedo(e.shiftKey ? 'redo' : 'undo');
+  // every other key is an action from the list (spec 007): the selected element first, then the slide
+  keys.dispatch(e, state.sel ? ['element', 'slide'] : [e.target.closest?.('nav') ? 'slides' : 'slide']);
 }
 document.addEventListener('keydown', onKey);
 
@@ -783,12 +769,14 @@ document.addEventListener('keydown', onKey);
 
 const es = new EventSource(`/events?tab=${focus.tabId}`);
 run.listen(es);
+settings.listen(es);
 es.addEventListener('open', () => { statusEl.textContent = 'connected'; });
 es.addEventListener('error', () => { statusEl.textContent = 'disconnected — is qd serve running?'; });
 es.addEventListener('changed', async (e) => {
   statusEl.textContent = 'changed…';
   const { version } = JSON.parse(e.data);
   if (version !== state.version) {
+    slides = { version: null, map: new Map() };
     await fetchDeck();
     if (!editing()) await renderPanel();
   }
@@ -830,10 +818,10 @@ es.addEventListener('rendered', (e) => {
   banner.hidden = true;
   if (state.session) {
     // reloading now would throw away the open edit (research R4)
-    state.pendingRender = d.html;
+    state.pendingRender = d;
     pendingBadge(true);
   } else {
-    load(d.html);
+    load(d.html, d.version);
   }
 });
 es.addEventListener('render_error', (e) => {
@@ -942,12 +930,13 @@ function beginSession(s, point) {
   });
   on('input', () => { s.failed = false; placeToolbar(frame); });
   showToolbar(s, frame);
-  say(s.reg.mode === 'inline' ? 'Editing — Enter or click elsewhere saves, Esc cancels' : 'Editing — ⌘Enter, Tab or click elsewhere saves, Esc cancels');
+  say(s.reg.mode === 'inline' ? 'Editing — Enter, Esc or click elsewhere saves' : 'Editing — ⌘Enter, Tab, Esc or click elsewhere saves');
 }
 
 function sessionKey(e, s) {
   e.stopPropagation(); // keep Reveal and the editor's own keys out of the edit
-  if (e.key === 'Escape') { e.preventDefault(); endSession(s, false); if (s.ref) select(s.ref); return; }
+  // Escape saves, like clicking elsewhere (spec 007); after a refused save it discards
+  if (e.key === 'Escape') { e.preventDefault(); if (s.failed) { endSession(s, false); if (s.ref) select(s.ref); } else saveSession().then(() => { if (!state.session && s.ref) select(s.ref); }); return; }
   if (e.key === 'Enter' && e.altKey && s.kind === 'block') {
     // switch to the source, carrying over what was typed so far
     e.preventDefault();
@@ -967,7 +956,7 @@ function sessionKey(e, s) {
     s.root.ownerDocument.execCommand(e.shiftKey ? 'outdent' : 'indent');
     return;
   }
-  formatKey(e);
+  keys.dispatch(e, ['text']); // formatting keys while typing (the action list)
 }
 
 function inList(s) {
@@ -1002,7 +991,7 @@ async function saveSession() {
   const md = draftSource(s);
   if (md === null) {
     s.failed = true;
-    say('This formatting can’t be written as markdown here — undo it (⌘Z) or press Esc to cancel', true);
+    say('This formatting can’t be written as markdown here — undo it (⌘Z) or press Esc again to discard the edit', true);
     return;
   }
   if (md === s.source) { endSession(s, false); return; }
@@ -1038,10 +1027,10 @@ function endSession(s, saved, { keepPending = false } = {}) {
   state.session = null;
   syncFocus();
   if (state.pendingRender && !keepPending) {
-    const html = state.pendingRender;
+    const { html, version } = state.pendingRender;
     state.pendingRender = null;
     pendingBadge(false);
-    load(html);
+    load(html, version);
   }
 }
 
@@ -1056,7 +1045,7 @@ function pageRect(el) {
 function startSourceSession(s, text) {
   openSession(s);
   openSource(pageRect(s.root), text, { save: () => saveSession(), cancel: () => endSession(s, false) });
-  say('Editing source — ⌘Enter or click elsewhere saves, Esc cancels');
+  say('Editing source — ⌘Enter, Esc or click elsewhere saves; Cancel discards');
 }
 
 /** Edit one element's markdown over it; `draft` and `base` carry over a typing session. */
@@ -1212,6 +1201,8 @@ const actions = makeActions({
   insert: insertBlock,
   copy: copyElement,
   paste: pasteAfter,
+  copySlide,
+  pasteSlides,
   say,
   slideUrl: (anchor) => `${location.origin}/#/${anchor}`,
 });
@@ -1277,6 +1268,10 @@ async function placeElbar() {
   elbar.style.top = Math.max(frame.getBoundingClientRect().top + 2, p.top - elbar.offsetHeight - 10) + 'px';
 }
 
+// the preview resized (source pane, panels, window): follow the element, or the bar
+// is left floating over whatever is there now. After reveal.js has laid out again.
+new ResizeObserver(() => requestAnimationFrame(() => requestAnimationFrame(placeElbar))).observe(frame);
+
 // slide bar: the slide's common properties (US3)
 const slidebar = $('#slidebar');
 async function renderSlidebar() {
@@ -1308,43 +1303,70 @@ slidebar.addEventListener('click', async (e) => {
   else if (act === 'more') { const r = e.target.getBoundingClientRect(); openMenu(actions.slide(t), r.left, r.bottom + 4); }
 });
 
-// layout prefs (per browser): source pane, its width / full width, the old form panel
+// layout: source pane (which side, open, width, full width) and the old form panel,
+// remembered in the person's settings (spec 007), so the same in every deck and in VS Code
 const mainEl = document.querySelector('main');
 const toggleSource = $('#toggle-source');
 const srcpane = $('#srcpane');
-const pref = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch { /* storage unavailable */ } return null; };
-/** Toggle a layout class on <main>, its button's aria-pressed, and the remembered pref. */
-function layout(cls, key, on, btn) {
+/** Toggle a layout class on <main> and its button's aria-pressed; remember it unless applying settings. */
+function layout(cls, key, on, btn, remember = true) {
   mainEl.classList.toggle(cls, on);
   btn?.setAttribute('aria-pressed', String(on));
-  pref(key, on ? '1' : '');
+  if (remember && settings.get(key) !== on) settings.set({ [key]: on });
 }
-const setPanel = (on) => layout('panel-open', 'qd.panel', on);
-const setFull = (on) => layout('source-full', 'qd.sourcefull', on, $('[data-act=full]', srcpane));
-function setSource(open) {
-  layout('source-open', 'qd.source', open, toggleSource);
+const setPanel = (on) => layout('panel-open', 'ui.form_panel', on);
+const setFull = (on) => layout('source-full', 'ui.source_full', on, $('[data-act=full]', srcpane));
+function setSource(open, remember) {
+  layout('source-open', 'ui.source_was_open', open, toggleSource, remember);
   srcpane.hidden = !open;
   if (open) pane.load();
 }
-toggleSource.addEventListener('click', () => setSource(srcpane.hidden));
-$('[data-act=form]', srcpane).addEventListener('click', () => setPanel(!mainEl.classList.contains('panel-open')));
-$('[data-act=full]', srcpane).addEventListener('click', () => setFull(!mainEl.classList.contains('source-full')));
 const splitter = $('#splitter');
-const setWidth = (px) => { mainEl.style.setProperty('--srcw', Math.max(240, Math.min(px, innerWidth - 320)) + 'px'); pref('qd.srcw', String(px)); };
+let widthTimer = null;
+const setWidth = (px, remember = true) => {
+  mainEl.style.setProperty('--srcw', Math.max(240, Math.min(px, innerWidth - 320)) + 'px');
+  clearTimeout(widthTimer); // one write once the drag pauses
+  if (remember) widthTimer = setTimeout(() => settings.set({ 'ui.source_width': Math.round(px) }), 300);
+};
+const onRight = () => mainEl.classList.contains('source-right');
 splitter.addEventListener('pointerdown', (e) => {
   splitter.setPointerCapture(e.pointerId);
-  const move = (ev) => setWidth(ev.clientX - srcpane.getBoundingClientRect().left); // source on the left
+  const move = (ev) => {
+    const r = srcpane.getBoundingClientRect();
+    setWidth(onRight() ? r.right - ev.clientX : ev.clientX - r.left);
+  };
   splitter.addEventListener('pointermove', move);
   splitter.addEventListener('pointerup', () => splitter.removeEventListener('pointermove', move), { once: true });
 });
 splitter.addEventListener('keydown', (e) => {
   const d = { ArrowLeft: -20, ArrowRight: 20 }[e.key];
-  if (d) { e.preventDefault(); setWidth(srcpane.getBoundingClientRect().width + d); }
+  if (d) { e.preventDefault(); setWidth(srcpane.getBoundingClientRect().width + (onRight() ? -d : d)); }
 });
-if (pref('qd.srcw')) setWidth(Number(pref('qd.srcw')));
-setPanel(pref('qd.panel') === '1');
-setFull(pref('qd.sourcefull') === '1');
-setSource(pref('qd.source') === '1');
+
+// the person's settings: the layout once, then everything live (here, another editor, `qd settings`)
+const themed = new URLSearchParams(location.search).has('theme'); // VS Code sets the theme (spec 006)
+settings.onChange((v) => {
+  mainEl.classList.toggle('source-right', v['source.side'] === 'right');
+  if (!themed) {
+    if (v.theme === 'system') delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = v.theme;
+  }
+  pane.setAutosave(v['source.save'] === 'pause');
+  for (const el of document.querySelectorAll('[data-key]')) el.title = v['hints.shortcuts'] ? `${el.dataset.hint} (${el.dataset.key})` : el.dataset.hint;
+});
+// the saved layout before any button works: arriving late, it would undo a click
+await settings.ready((n) => say(n, true)).catch(() => say('settings could not be loaded; using the defaults', true));
+{
+  const v = settings.get;
+  if (v('ui.source_width')) setWidth(v('ui.source_width'), false);
+  setPanel(v('ui.form_panel'));
+  setFull(v('ui.source_full'));
+  setSource(v('source.open') === 'open' || (v('source.open') === 'last' && v('ui.source_was_open')), false);
+}
+toggleSource.addEventListener('click', () => setSource(srcpane.hidden));
+$('[data-act=form]', srcpane).addEventListener('click', () => setPanel(!mainEl.classList.contains('panel-open')));
+$('[data-act=full]', srcpane).addEventListener('click', () => setFull(!mainEl.classList.contains('source-full')));
+
 
 pane.initPane({
   op: (name, args) => op(name, args, { fileExpect: false }),
@@ -1402,8 +1424,7 @@ setTheme(framed.get('theme'));
 const runExternal = framed.get('run') === 'external';
 document.documentElement.classList.toggle('run-external', runExternal);
 if (!runExternal) run.initRun({ say, flush: pane.save });
-const inVSCode = framed.get('host') === 'vscode';
-if (inVSCode) {
+if (keys.framed) {
   // only the panel that framed this page, and only navigation/display — never edits or code
   addEventListener('message', (e) => {
     if (e.source !== window.parent || typeof e.data !== 'object' || !e.data) return;
@@ -1418,12 +1439,12 @@ if (inVSCode) {
 
 /** Element (or slide title) → its source lines, in the pane (US2) and in VS Code's text (006 US3). */
 async function revealSource(s) {
-  if (srcpane.hidden && !inVSCode) return;
+  if (srcpane.hidden && !keys.framed) return;
   const sl = !s?.ref && s?.slide && (await fetchSlide(s.slide));
   const lines = s?.ref ? (await fetchBlock(s.ref))?.lines : sl && [sl.lines[0], sl.lines[0]];
   if (!lines) return;
   if (!srcpane.hidden) pane.reveal(lines);
-  if (inVSCode) window.parent.postMessage({ type: 'reveal', lines }, '*');
+  if (keys.framed) window.parent.postMessage({ type: 'reveal', lines }, '*');
 }
 
 // insert (+) and drag (⠿) handles beside the element under the mouse (US4)
@@ -1520,7 +1541,7 @@ async function insertBlock(slideId, where, kind) {
   }
   const r = await op('block add', { slide: slideId, ...where, md });
   if (!r) return;
-  if (kind.edit) state.editAfterRender = { ref: r.target, mode: kind.edit };
+  if (kind.edit) state.editAfterRender = { ref: r.target, mode: kind.edit, version: r.version };
   else state.sel = r.target;
   await fetchDeck();
 }
@@ -1553,15 +1574,74 @@ function copyElement(t) {
   say('Copied');
 }
 
-async function pasteAfter(t) {
-  let text = null;
-  // the system clipboard if it answers within a second, else our own copy
+/** The system clipboard if it answers within a second, else our own copy. */
+async function clipboardText() {
+  const fromEvent = pasted;
+  pasted = null;
+  if (fromEvent?.trim()) return fromEvent; // an empty paste event: try the API and our own copy
   const timeout = new Promise((resolve) => { setTimeout(() => resolve(null), 1000); });
+  let text = null;
   try { text = await Promise.race([navigator.clipboard.readText(), timeout]); } catch { /* not allowed */ }
-  text = text?.trim() ? text : state.clip;
+  return text?.trim() ? text : state.clip;
+}
+// ⌘V: the keydown is let through, and the browser's own paste event brings the
+// text, with no clipboard permission needed (unlike readText: a deck in another
+// page, or VS Code's panel). No paste event (nothing on the page can take one)?
+// Then the clipboard API, as from the menu.
+let pasted = null;
+let pasteKey = null; // {id, e}: the paste action the last ⌘V reached
+const runPaste = async ({ id, e }) => keys.run(id, await keys.currentContext(e));
+function onPaste(e) {
+  if (!pasteKey) return; // set only by a ⌘V that onKey let through (not while typing)
+  const k = pasteKey;
+  pasteKey = null;
+  e.preventDefault();
+  pasted = e.clipboardData.getData('text/plain');
+  runPaste(k);
+}
+document.addEventListener('paste', onPaste);
+/** The `key` check of the paste actions: note it, let the browser fire its paste event. */
+function pasteKeyFor(id) {
+  return (e) => {
+    if (pasteKey?.e !== e) { // the most specific place's action (dispatch tries them in order)
+      pasteKey = { id, e };
+      setTimeout(() => { if (pasteKey?.e === e) { pasteKey = null; runPaste({ id, e }); } }, 100);
+    }
+    return false;
+  };
+}
+
+/** Text that isn't qd's own copy is never taken as raw HTML (spec 007 edge case). */
+const outside = (text) => (text === state.clip ? text : text.replace(/&/g, '&amp;').replace(/</g, '&lt;'));
+
+async function pasteAfter(t) {
+  const text = await clipboardText();
   if (!text) { say('Nothing to paste', true); return; }
-  const r = await op('block add', { slide: t.slideId, after: t.ref, md: text });
+  const r = await op('block add', { slide: t.slideId, after: t.ref, md: outside(text) });
   if (r) { state.sel = r.target; await fetchDeck(); }
+}
+
+/** Copy a whole slide's markdown (it pastes into this or another deck with fresh ids). */
+function copySlide(t) {
+  const text = t.full?.source;
+  if (!text) return;
+  state.clip = text;
+  navigator.clipboard.writeText(text).catch(() => {});
+  say('Slide copied');
+}
+
+/** Slides (markdown starting with a slide heading or ---) go in after `t`; other text becomes a paragraph on it. */
+async function pasteSlides(t) {
+  const text = await clipboardText();
+  if (!text) { say('Nothing to paste', true); return; }
+  const slides = /^(#{1,6}\s|---[ \t]*(\n|$))/.test(text.trimStart());
+  const r = slides
+    ? await op('paste', { after: t.slideId, md: text })
+    : await op('block add', { slide: t.slideId, end: true, md: outside(text) });
+  if (!r) return;
+  if (slides) state.goAfterRender = r.target;
+  else state.sel = r.target;
+  await fetchDeck();
 }
 
 /** Speaker notes (`::: notes`): edit them in the source box over the slide, creating them if missing. */
@@ -1579,3 +1659,65 @@ async function editNotes(t) {
   const b = await fetchBlock(ref);
   if (b) startSourceSession({ kind: 'block', mode: 'source', root: sec, ref, source: b.text, hash: b.hash }, b.text);
 }
+
+// ---------- what each action in the list does (spec 007) ----------
+
+keys.setContext(async (e) => {
+  // a key in the slide list acts on its focused slide, which may not be shown yet
+  const li = e?.target?.closest?.('#slides li');
+  const cur = li ? slideById(li.dataset.id) : slideByAnchor(state.anchor);
+  return { e, el: state.sel ? await elementTarget(state.sel) : null, slide: cur ? await slideTarget(cur.id) : null };
+});
+keys.on('render', { enabled: () => !busy.render, run: renderDeck });
+keys.on('export', { enabled: () => !busy.export, run: () => exportDeck(false) });
+keys.on('export-pdf', { enabled: () => !busy.export, run: () => exportDeck(true) });
+keys.on('preview', () => window.open('/present/', '_blank', 'noopener'));
+keys.on('undo', () => undoRedo('undo'));
+keys.on('redo', () => undoRedo('redo'));
+// element and slide actions: the right-click menus' own (actions.js), on what is selected / shown
+const ELEMENT = ['edit', 'source', 'cut', 'copy', 'paste', 'dup', 'delete', 'up', 'down', 'fragment', 'class-smaller', 'class-incremental', 'class-custom'];
+const SLIDE = ['slide-before', 'slide-after', 'slide-dup', 'slide-cut', 'slide-copy', 'slide-paste', 'slide-hide', 'slide-rm', 'slide-bg', 'slide-bgimg', 'slide-notes', 'slide-source', 'slide-link'];
+for (const [ids, on, table] of [[ELEMENT, 'el', 'element'], [SLIDE, 'slide', 'slide']]) {
+  for (const id of ids) {
+    keys.on(id, {
+      key: id.endsWith('paste') ? pasteKeyFor(id) : undefined,
+      // Paste reads the system clipboard on a key press; from a menu it needs our own copy
+      enabled: (ctx) => !!ctx[on] && actions.can(id, ctx[on], table) && (!id.endsWith('paste') || !!ctx.e || !!state.clip),
+      checked: (ctx) => ctx[on] && actions.checked(id, ctx[on], table),
+      run: (ctx) => actions.run(id, ctx[on], table),
+    });
+  }
+}
+const inSlide = (e) => e.target.ownerDocument === frame.contentDocument && !!frameWin()?.Reveal?.getCurrentSlide()?.querySelector('[data-qd]');
+keys.on('next-element', { key: inSlide, enabled: (ctx) => !!ctx.slide, run: () => stepSelection(false) });
+keys.on('prev-element', { key: inSlide, enabled: (ctx) => !!ctx.slide, run: () => stepSelection(true) });
+keys.on('deselect', { enabled: () => !!state.sel, run: () => select(null) });
+keys.on('actions-menu', keyboardMenu);
+keys.on('focus-text', () => window.parent.postMessage({ type: 'focusText' }, '*')); // VS Code's panel only
+for (const kind of INSERTS) {
+  keys.on(`insert-${kind.id}`, {
+    enabled: (ctx) => !!(ctx.el || ctx.slide),
+    run: (ctx) => insertBlock(ctx.el?.slideId ?? ctx.slide.slideId, ctx.el ? { after: ctx.el.ref } : { end: true }, kind),
+  });
+}
+for (const x of ['default', ...TRANSITIONS]) {
+  keys.on(`transition-${x}`, {
+    enabled: (ctx) => !!ctx.slide,
+    checked: (ctx) => (ctx.slide?.full?.attrs?.kv?.transition || 'default') === x,
+    run: (ctx) => actions.setAttr(ctx.slide, 'transition', x === 'default' ? null : x),
+  });
+}
+const neighbour = (ctx, d) => { const ss = state.deck?.slides || []; return ss[ss.findIndex((x) => x.id === ctx.slide?.slideId) + d]; };
+for (const [id, d, where] of [['slide-move-up', -1, 'before'], ['slide-move-down', 1, 'after']]) {
+  keys.on(id, {
+    enabled: (ctx) => !!neighbour(ctx, d),
+    run: async (ctx) => { if (await op('move', { slide: ctx.slide.slideId, [where]: neighbour(ctx, d).id })) { state.goAfterRender = ctx.slide.anchor; await fetchDeck(); } },
+  });
+}
+const toggle = (cls, set) => ({ checked: () => mainEl.classList.contains(cls), run: () => set(!mainEl.classList.contains(cls)) });
+keys.on('toggle-source', { checked: () => !srcpane.hidden, run: () => setSource(srcpane.hidden) });
+keys.on('source-full', toggle('source-full', setFull));
+keys.on('form-panel', toggle('panel-open', setPanel));
+keys.on('about', () => alert('quartz-deck — a slide editor for Quarto reveal.js decks. Personal use only (see LICENSE).'));
+keys.on('settings', settings.open);
+

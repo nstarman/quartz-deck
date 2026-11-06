@@ -6,6 +6,7 @@
 // merged in when they don't overlap the person's unsaved text (FR-004).
 
 import { diffRegion as region } from '/ui/inline.js';
+import * as keys from '/ui/keys.js';
 
 const pane = document.querySelector('#srcpane');
 const ta = pane.querySelector('textarea');
@@ -106,9 +107,16 @@ export async function save() {
   saving = false;
 }
 
+let autosave = true;
+/** Setting `source.save` (spec 007): as you pause (default), or only on ⌘S and leaving the pane. */
+export function setAutosave(on) {
+  autosave = on;
+  pane.querySelector('.hint').textContent = on ? 'saves as you pause · ⌘S saves now' : 'saves on ⌘S and when you leave the pane';
+}
+
 function schedule() {
   clearTimeout(timer);
-  timer = setTimeout(save, 700);
+  if (autosave) timer = setTimeout(save, 700);
 }
 
 /** Pull the file; merge it with unsaved text (or report a conflict). */
@@ -188,7 +196,8 @@ export function initPane(a) {
   ta.addEventListener('keyup', caretMoved);
   ta.addEventListener('click', caretMoved);
   ta.addEventListener('keydown', (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); save(); }
-    e.stopPropagation(); // the editor's own shortcuts don't apply while typing source
+    keys.dispatch(e, ['source']); // only the source pane's own actions (⌘S, ⇧Enter)
+    e.stopPropagation(); // the editor's slide shortcuts don't apply while typing source
   });
+  keys.on('source-save', { enabled: () => !pane.hidden, run: save });
 }

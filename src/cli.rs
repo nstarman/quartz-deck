@@ -59,11 +59,7 @@ struct Where {
 
 impl Where {
     fn pos(&self) -> Pos<'_> {
-        match (&self.after, &self.before) {
-            (Some(a), _) => Pos::After(a),
-            (_, Some(b)) => Pos::Before(b),
-            _ => unreachable!("clap group is required"),
-        }
+        at(&self.after, &self.before) // the clap group requires one of them
     }
 }
 
@@ -153,6 +149,13 @@ enum Cmd {
         #[arg(long)]
         detach: bool,
     },
+    /// What the editor can do: every action, its menu, keyboard shortcut and qd command
+    Actions,
+    /// Your editor settings, the same for every deck and editor (spec 007)
+    Settings {
+        #[command(subcommand)]
+        action: Option<SettingsCmd>,
+    },
     /// The deck's reproducible Python environment (uv, or pixi with PyPI packages)
     Env {
         #[command(subcommand)]
@@ -221,6 +224,15 @@ enum Cmd {
         slide: String,
         #[arg(long)]
         after: Option<String>,
+    },
+    /// Paste slides given as markdown (fresh ids where they clash; default: at the end)
+    Paste {
+        #[arg(long, conflicts_with = "before")]
+        after: Option<String>,
+        #[arg(long)]
+        before: Option<String>,
+        #[command(flatten)]
+        input: Input,
     },
     /// Move a slide
     Move {
@@ -316,6 +328,14 @@ struct BoxSource {
     /// Image path or URL for an image box
     #[arg(long)]
     image: Option<String>,
+}
+
+#[derive(Subcommand)]
+enum SettingsCmd {
+    /// Change one setting (VALUE as JSON when it parses: true, 420; else text: dark)
+    Set { key: String, value: String },
+    /// Every setting back to its default
+    Reset,
 }
 
 #[derive(Subcommand)]
@@ -475,6 +495,12 @@ fn output_of(cmd: &str) -> &'static str {
         "browser" => r#"{"path","source":"env|installed|download","version"} or {"ok","removed"}"#,
         "render" => r#"{"ok","output":"<absolute path>","format","log"}"#,
         "stop" => r#"{"ok","pid"}"#,
+        "actions" => {
+            r#"[{"id","label","menu":[...],"key"?,"vscode_key"?,"where":[...],"toggle"?,"runs_code"?,"qd"?}]"#
+        }
+        "settings" => {
+            r#"{"values":{...},"defs":[{"key","label","description","type","values","default"}],"notices":[...],"path"}; set/reset: {"ok","values"}"#
+        }
         "run" => {
             r#"{"ok","op":"run","version","mode":"live|fresh","status":"done|error|stopped","runs":[{"cell","counter","status":"done|error|stopped","outputs":[{"kind":"text","text"}|{"kind":"html","html"}|{"kind":"image","mime","path"}|{"kind":"error","ename","evalue","traceback"}]}]} (ok false: E_RUN on stderr, exit 1)"#
         }
@@ -667,6 +693,15 @@ fn find_deck(arg: &Option<PathBuf>) -> Result<PathBuf> {
             "{} .qmd files in the current directory",
             many.len()
         ))),
+    }
+}
+
+/// `--after`/`--before`, else the end.
+fn at<'a>(after: &'a Option<String>, before: &'a Option<String>) -> Pos<'a> {
+    match (after, before) {
+        (Some(a), _) => Pos::After(a),
+        (_, Some(b)) => Pos::Before(b),
+        _ => Pos::End,
     }
 }
 
@@ -911,6 +946,7 @@ const API_OPS: &[&str] = &[
     "check",
     "add",
     "dup",
+    "paste",
     "move",
     "rm",
     "title",
@@ -1167,6 +1203,24 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             Ok(v)
         }
         Cmd::Serve { port, open, detach } => serve(&ctx.store()?, *port, *open, *detach),
+        Cmd::Actions => {
+            // the editor's own list (spec 007), without the menus' separators
+            let list: Vec<Value> = serde_json::from_str(include_str!("ui/actions.json")).unwrap();
+            Ok(list.into_iter().filter(|a| a.get("id").is_some()).collect())
+        }
+        Cmd::Settings { action } => {
+            let path = crate::settings::path();
+            let values = match action {
+                None => return Ok(crate::settings::report(&path)),
+                Some(SettingsCmd::Set { key, value }) => {
+                    let v = serde_json::from_str(value)
+                        .unwrap_or_else(|_| Value::String(value.clone()));
+                    crate::settings::set(&path, &serde_json::Map::from_iter([(key.clone(), v)]))?
+                }
+                Some(SettingsCmd::Reset) => crate::settings::reset(&path)?,
+            };
+            Ok(json!({"ok": true, "values": values}))
+        }
         Cmd::Env { action } => {
             let s = ctx.store()?;
             let dir = s.path.parent().unwrap_or(Path::new("."));
@@ -1304,14 +1358,17 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                 attrs: attrs.clone(),
                 classes: classes.clone(),
             };
-            let pos = match (after, before) {
-                (Some(a), _) => Pos::After(a),
-                (_, Some(b)) => Pos::Before(b),
-                _ => Pos::End,
-            };
-            ctx.edit(|d| ops::add(d, &spec, pos))
+            ctx.edit(|d| ops::add(d, &spec, at(after, before)))
         }
         Cmd::Dup { slide, after } => ctx.edit(|d| ops::dup(d, slide, after.as_deref())),
+        Cmd::Paste {
+            after,
+            before,
+            input,
+        } => {
+            let md = required_input(input)?;
+            ctx.edit(|d| ops::paste(d, &md, at(after, before)))
+        }
         Cmd::Move { slide, to } => ctx.edit(|d| ops::mv(d, slide, to.pos())),
         Cmd::Rm { slide } => ctx.edit(|d| ops::rm(d, slide)),
         Cmd::Title {
