@@ -24,15 +24,15 @@ Paths are relative to the repo root.
 
 ## Phase 1: Setup
 
-- [ ] T001 [P] Write `specs/008-usability/audit/status.md`: one row per audit finding (L1–L5, C1–C6, E1–E3, B1, S1–S2, D1–D2, T1–T5, H1–H4, N1–N2) with its requirement(s), the task that fixes it, and a status column (`open`). Updated as tasks land; the evidence column is filled in T039.
-- [ ] T002 [P] Copy the audit deck into `tests/fixtures/audit/` (`talk.qmd`, `chart.svg`) for the browser tests, unchanged.
+- [X] T001 [P] Write `specs/008-usability/audit/status.md`: one row per audit finding (L1–L5, C1–C6, E1–E3, B1, S1–S2, D1–D2, T1–T5, H1–H4, N1–N2) with its requirement(s), the task that fixes it, and a status column (`open`). Updated as tasks land; the evidence column is filled in T039.
+- [X] T002 [P] Copy the audit deck into `tests/fixtures/audit/` (`talk.qmd`, `chart.svg`) for the browser tests, unchanged.
 
 ---
 
 ## Phase 2: Foundational (blocks US1, US8, US9; T004 is the yardstick for US2, US3, US7)
 
-- [ ] T003 Move the slide list out of `src/ui/editor.js` into a new `src/ui/list.js` (rendering, drag, the hover pop-up, "+ Add slide"), with the editor calling it through a small interface (`render(deck, current)`, `onPick(id)`, `focus()`); add it to the served UI modules in `src/server.rs`. No behaviour change: every existing browser test stays green.
-- [ ] T004 [P] Write the failing measurement test `audit_measures` in `tests/onslide.rs` on the audit fixture. In light, dark and high contrast it walks every visible control and text in the editor and fails on:
+- [X] T003 (Done together with T006–T009: `list.js` was written once, in its new form, rather than moved and then rewritten.) Move the slide list out of `src/ui/editor.js` into a new `src/ui/list.js` (rendering, drag, the hover pop-up, "+ Add slide"), with the editor calling it through a small interface (`render(deck, current)`, `onPick(id)`, `focus()`); add it to the served UI modules in `src/server.rs`. No behaviour change: every existing browser test stays green.
+- [X] T004 [P] Write the failing measurement test `audit_measures` in `tests/onslide.rs` on the audit fixture. In light, dark and high contrast it walks every visible control and text in the editor and fails on:
   - contrast below 4.5:1 (3:1 for ≥18 pt or bold);
   - an interactive target below 20×20 px;
   - a bar overlapping another `[data-qd]` element as each element is selected and then edited.
@@ -49,7 +49,7 @@ Paths are relative to the repo root.
 
 **Independent Test**: spec US1; quickstart §1.
 
-- [ ] T005 [P] [US1] Write failing browser tests `slide_list_like_a_slide_app` in `tests/onslide.rs` (audit fixture):
+- [X] T005 [P] [US1] Write failing browser tests `slide_list_like_a_slide_app` in `tests/onslide.rs` (audit fixture):
   - every item has a thumbnail (a shadow root holding a copy of its section), and editing slide 2's text refreshes only slide 2's thumbnail;
   - the title slide is first, unnumbered, not draggable;
   - hovering the gap between items 2 and 3 shows a +, and clicking it adds an untitled slide at index 3;
@@ -58,21 +58,21 @@ Paths are relative to the repo root.
   - dragging item 6 by its handle to second shows a drag image and a gap, Escape cancels (order unchanged), and dropping moves it with one undo step;
   - ⌥↑/⌥↓ on a focused item move it;
   - on a 40-slide deck, dragging near the bottom edge scrolls the list.
-- [ ] T006 [US1] Thumbnails in `src/ui/list.js` (research R1):
+- [X] T006 [US1] Thumbnails in `src/ui/list.js` (research R1):
   - a copy of each slide's `<section>` from the preview frame, in a shadow root, sharing one constructed stylesheet made from the deck's styles per render;
   - relative `src`/`href` made absolute, and the slide's background colour/image on the box;
   - built for items in view only (IntersectionObserver), rebuilt when a render lands and the slide's source hash changed;
   - remove the hover pop-up (`#peek` in `editor.js`).
 
   A `ponytail:` comment notes the ceiling (script-drawn outputs show static).
-- [ ] T007 [US1] The title slide as the list's first item when `qd slides` reports `title_slide`: unnumbered, not draggable, not deletable from the list (research R2).
-- [ ] T008 [US1] Adding anywhere (research R3) in `src/ui/list.js`:
+- [X] T007 [US1] The title slide as the list's first item when `qd slides` reports `title_slide`: unnumbered, not draggable, not deletable from the list (research R2).
+- [X] T008 [US1] Adding anywhere (research R3) in `src/ui/list.js`:
   - a + in each gap on hover and after the last item, each running `qd add --after/--before` without a title;
   - Enter on a focused item runs `slide-after`;
   - "+ Add slide" goes;
   - in `PREVIEW_CSS` (`src/ui/editor.js`), `section > h2:empty::before { content: "Click to add title" }` in the muted colour, editor only;
   - clicking it starts the existing title edit.
-- [ ] T009 [US1] Pointer-driven drag in `src/ui/list.js` (research R4), replacing HTML5 drag and drop:
+- [X] T009 [US1] Pointer-driven drag in `src/ui/list.js` (research R4), replacing HTML5 drag and drop:
   - a ⠿ handle on hover (target ≥20 px), and dragging starts after 4 px of movement;
   - a translucent copy of the thumbnail follows the pointer;
   - items move apart (transform with a 120 ms transition) to open a gap at the landing index;
@@ -80,7 +80,7 @@ Paths are relative to the repo root.
   - the drop runs one `qd move`.
 
   In `src/ui/actions.json`, give `slide-move-up`/`slide-move-down` keys `Alt+ArrowUp`/`Alt+ArrowDown` where `slides` (check `tests/actions.rs` for clashes with the element's `up`/`down`; they apply in different places).
-- [ ] T010 [US1] List styles in `src/ui/editor.css`: 16:9 thumbnail boxes at the list's width, the number and title under each, the current slide's ring, the gap +, the drag states, and focus rings; checked against `audit_measures` for the list's controls. T005 passes.
+- [X] T010 [US1] List styles in `src/ui/editor.css`: 16:9 thumbnail boxes at the list's width, the number and title under each, the current slide's ring, the gap +, the drag states, and focus rings; checked against `audit_measures` for the list's controls. T005 passes.
 
 **Checkpoint**: the slide list is usable on its own (MVP).
 

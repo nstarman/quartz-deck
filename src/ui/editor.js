@@ -8,6 +8,7 @@ import * as keys from '/ui/keys.js';
 import * as settings from '/ui/settings.js';
 import '/ui/menubar.js';
 import { openMenu, closeMenu, menuOpen } from '/ui/menu.js';
+import { makeList } from '/ui/list.js';
 import * as pane from '/ui/pane.js';
 import * as run from '/ui/run.js';
 import * as focus from '/ui/focus.js';
@@ -17,7 +18,6 @@ const frame = $('#preview');
 const statusEl = $('#status');
 const notice = $('#notice');
 const banner = $('#banner');
-const list = $('#slides');
 const panel = $('#panel');
 
 const state = {
@@ -75,7 +75,7 @@ async function fetchDeck() {
   state.deck = await res.json();
   state.version = state.deck.version;
   focus.setVersion(state.version);
-  renderList();
+  slideList.render();
   renderSlidebar();
 }
 
@@ -157,6 +157,8 @@ function go(anchor) {
 
 const PREVIEW_CSS = `
   [data-qd] { cursor: pointer; }
+  /* an untitled slide (spec 008 US1): a placeholder on the canvas only, never in the file */
+  .reveal .slides section > h2:empty::before { content: 'Click to add title'; color: #9a9aa0; font-weight: 400; }
   [data-qd]:hover { outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; }
   .qd-sel, .qd-sel:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 2px; }
   .qd-editing, .qd-editing:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 4px; cursor: text; }
@@ -348,6 +350,8 @@ function hookFrame() {
     // only the render that has the inserted element: an older one still loading would
     // show other text at that ref, and the edit would not open
     if (state.editAfterRender?.version === state.loading) openInserted(state.editAfterRender);
+    slideList.refresh();
+    w.MathJax?.startup?.promise?.then(() => slideList.refresh()); // math typesets after ready
     onSlide();
   };
   const onSlide = () => {
@@ -360,7 +364,7 @@ function hookFrame() {
     // a slide change that followed the focus isn't a new one (keeps the source pane's)
     if (state.followed === id) state.followed = null;
     else syncFocus();
-    renderList();
+    slideList.render();
     renderPanel();
     renderSlidebar();
   };
@@ -379,133 +383,11 @@ frame.addEventListener('load', () => {
 
 // One small second copy of the rendered deck, steered by hash. Reloaded only when
 // the main preview re-renders, so hovering is instant after the first time.
-const peek = Object.assign(document.createElement('iframe'), { id: 'peek', tabIndex: -1, hidden: true });
-peek.setAttribute('aria-hidden', 'true');
-document.body.append(peek);
-let peekSrc = null;
-let peekWant = null;
-let peekTimer;
+// ---------- slide list (spec 008 US1: list.js) ----------
 
-peek.addEventListener('load', () => {
-  const w = peek.contentWindow;
-  const ready = () => {
-    // as in hookFrame: the small frame would otherwise switch Reveal to scroll view
-    w.Reveal.configure({ scrollActivationWidth: 1, controls: false, progress: false, slideNumber: false });
-    const style = w.document.createElement('style');
-    style.textContent = '.slide-menu-button { display: none !important; }';
-    w.document.head.append(style);
-    w.dispatchEvent(new Event('resize'));
-    if (peekWant) w.location.hash = '#/' + peekWant;
-  };
-  if (w.Reveal?.isReady?.()) ready(); else w.Reveal?.on?.('ready', ready);
-});
-
-function showPeek(li, anchor) {
-  clearTimeout(peekTimer);
-  peekTimer = setTimeout(() => {
-    peekWant = anchor;
-    const src = frame.getAttribute('src');
-    if (!src) return;
-    if (peekSrc !== src) { peekSrc = src; peek.src = src + '#/' + anchor; }
-    else peek.contentWindow.location.hash = '#/' + anchor;
-    const r = li.getBoundingClientRect();
-    const W = 300; const H = 200; const m = 8;
-    const across = getComputedStyle(list).display === 'flex';
-    const clamp = (v, max) => Math.max(m, Math.min(v, max - m));
-    peek.style.left = (across ? clamp(r.left, innerWidth - W) : r.right + m) + 'px';
-    peek.style.top = (across ? r.bottom + 6 : clamp(r.top, innerHeight - H)) + 'px';
-    peek.hidden = false;
-  }, 200);
-}
-
-function hidePeek() {
-  clearTimeout(peekTimer);
-  peek.hidden = true;
-}
-
-// ---------- slide list (drag to reorder) ----------
-
-let dragId = null;
-
-function clearDrop() {
-  list.querySelectorAll('.drop-before, .drop-after, .dragging').forEach((li) => li.classList.remove('drop-before', 'drop-after', 'dragging'));
-}
-
-function renderList() {
-  const slides = state.deck?.slides || [];
-  const cur = slideByAnchor(state.anchor);
-  const focused = list.contains(document.activeElement); // redrawing must not drop the keyboard's place
-  list.replaceChildren(...slides.map((s) => {
-    const li = document.createElement('li');
-    li.draggable = true;
-    li.dataset.id = s.id;
-    if (cur && s.id === cur.id) li.classList.add('current');
-    const b = document.createElement('button');
-    b.type = 'button';
-    const idx = document.createElement('span');
-    idx.className = 'idx';
-    idx.textContent = s.index;
-    b.append(idx, s.title || s.summary || '(untitled)');
-    if (s.hidden) {
-      const tag = document.createElement('span');
-      tag.className = 'tag';
-      tag.textContent = 'hidden';
-      b.append(' ', tag);
-    }
-    if (cur && s.id === cur.id) b.setAttribute('aria-current', 'true');
-    b.addEventListener('click', () => { hidePeek(); state.sel = null; go(s.anchor); });
-    li.append(b);
-    li.addEventListener('mouseenter', () => { if (!dragId && !state.session) showPeek(li, s.anchor); });
-    li.addEventListener('contextmenu', async (e) => {
-      e.preventDefault();
-      hidePeek();
-      openMenu(actions.slide(await slideTarget(s.id)), e.clientX, e.clientY);
-    });
-    li.addEventListener('mouseleave', hidePeek);
-
-    li.addEventListener('dragstart', (e) => {
-      hidePeek();
-      dragId = s.id;
-      li.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', s.id);
-    });
-    li.addEventListener('dragend', () => { dragId = null; clearDrop(); });
-    li.addEventListener('dragover', (e) => {
-      if (!dragId || dragId === s.id) return;
-      e.preventDefault();
-      const r = li.getBoundingClientRect();
-      const across = getComputedStyle(list).display === 'flex'; // narrow layout: horizontal strip
-      const before = across ? e.clientX < r.left + r.width / 2 : e.clientY < r.top + r.height / 2;
-      li.classList.toggle('drop-before', before);
-      li.classList.toggle('drop-after', !before);
-    });
-    li.addEventListener('dragleave', () => li.classList.remove('drop-before', 'drop-after'));
-    li.addEventListener('drop', async (e) => {
-      e.preventDefault();
-      const before = li.classList.contains('drop-before');
-      const moving = dragId;
-      clearDrop();
-      if (!moving || moving === s.id) return;
-      const ids = (state.deck?.slides || []).map((x) => x.id);
-      const from = ids.indexOf(moving);
-      const to = ids.indexOf(s.id) + (before ? 0 : 1);
-      if (to === from || to === from + 1) return; // already there
-      const res = await op('move', { slide: moving, [before ? 'before' : 'after']: s.id });
-      if (res) await fetchDeck();
-    });
-    return li;
-  }));
-  list.querySelector('li.current')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  if (focused) list.querySelector('li.current button')?.focus();
-}
-
-$('#add-slide').addEventListener('click', async () => {
-  const cur = slideByAnchor(state.anchor);
-  const args = { title: 'New slide' };
-  if (cur) args.after = cur.id;
-  const res = await op('add', args);
-  if (res) { state.goAfterRender = res.target; state.sel = null; await fetchDeck(); }
+const slideList = makeList({
+  state, frame, go, op, fetchDeck, openMenu,
+  slideMenu: async (id) => actions.slide(await slideTarget(id)),
 });
 
 // ---------- properties panel ----------
@@ -895,7 +777,6 @@ async function beginEdit(target, point) {
 
 /** Common start of a typing or source session. */
 function openSession(s) {
-  hidePeek();
   hoverbar.hidden = true;
   emptyadd.hidden = true;
   state.session = s;
