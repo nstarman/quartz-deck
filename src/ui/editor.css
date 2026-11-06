@@ -113,6 +113,9 @@ header { display: flex; gap: 4px 12px; align-items: center; padding: 2px 12px 2p
 header .app { flex: none; font-size: 13px; padding: 3px 4px; }
 header #notice { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
 header #status, header #rendered { flex: none; }
+/* the deck's title and file (spec 008 US6): gives way before the menus fold */
+header #deck-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 13px; font-weight: 600; }
+header #deck-name .file { color: var(--muted); font-weight: 400; }
 #notice { color: var(--accent); }
 #notice.error { color: var(--danger); }
 header #status { color: var(--muted); font-size: 13px; }
@@ -124,8 +127,11 @@ header .split { flex: none; display: flex; }
 header .split button { height: 28px; }
 header .split button:first-child { border-radius: 6px 0 0 6px; }
 header .split button + button { border-radius: 0 6px 6px 0; border-left: 0; padding: 0; width: 24px; }
-#banner { padding: 8px 16px; background: var(--error-bg); color: var(--error);
+#banner { display: flex; gap: 8px; align-items: flex-start; padding: 8px 8px 8px 16px; background: var(--error-bg); color: var(--error);
   white-space: pre-wrap; font: 12px/1.4 ui-monospace, monospace; max-height: 30vh; overflow: auto; }
+#banner[hidden] { display: none; }
+#banner .msg { flex: 1; min-width: 0; }
+#banner .close { flex: none; width: 28px; height: 28px; padding: 0; font-size: 16px; position: sticky; top: 0; }
 
 main { flex: 1; display: flex; min-height: 0; }
 nav { width: 220px; flex: none; overflow: auto; border-right: 1px solid var(--line); background: var(--panel); }
@@ -265,7 +271,7 @@ main:not(.panel-open) > aside { display: none; }
 #ctxmenu li > ul.left { left: auto; right: 100%; }
 #ctxmenu li.open > ul { display: block; }
 
-#elbar, #hoverbar { position: fixed; z-index: 15; display: flex; gap: 2px; padding: 3px; background: var(--panel);
+#elbar, #hoverbar { position: fixed; z-index: 15; display: flex; gap: 2px; padding: 3px; background: var(--panel); width: max-content;
   border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18); }
 #elbar button, #hoverbar button { height: 26px; min-width: 26px; padding: 0 6px; font-size: 13px; }
 #elbar button[aria-pressed=true] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }

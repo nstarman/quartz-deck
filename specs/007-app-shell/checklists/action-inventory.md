@@ -32,10 +32,10 @@ reason is given.
 | Stop | — | `run-stop` |
 | Restart | — | `run-restart` |
 | Restart & run all | — | `run-fresh-all` |
-| + Package | — | `run-add-package` |
-| Create environment | — | `run-env` |
+| Add Python package… (was + Package) | — | `run-add-package` |
+| Set up Python… (was Create environment) | — | `run-env` |
 | Full width | — | `source-full` |
-| Form | — | `form-panel` |
+| Properties (was Form) | — | `form-panel` |
 | (typing) save now | ⌘S | `source-save` |
 | (typing) run the cell at the caret | ⇧Enter | `run-cell` |
 
@@ -56,7 +56,7 @@ reason is given.
 |---|---|---|
 | Run cell | — | `run-cell` |
 | Edit text | Enter | `edit` |
-| Edit source | ⌥Enter | `source` |
+| Edit markdown (was Edit source) | ⌥Enter | `source` |
 | Cut | ⌘X | `cut` |
 | Copy | ⌘C | `copy` |
 | Paste after | ⌘V | `paste` |
@@ -132,3 +132,6 @@ These keys operate a control from inside it. They are not actions in their own r
 | editor.js form | ⌘Enter | submitting the focused form |
 | editor.js `sessionKey` | Enter/⌘Enter/Tab save, Esc ends, ⌥Enter to source, Tab/⇧Tab indent in a list | committing or leaving the edit in progress; moves into the list with US4 (T020), which changes Esc |
 | source.js | Esc, ⌘Enter in the source popup | the same, for the source popup; moves with T020 |
+
+
+Labels renamed in plain words by spec 008 US6 (T025); the ids are unchanged.

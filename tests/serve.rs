@@ -199,10 +199,15 @@ fn serve_renders_and_live_reloads() {
         "present/ should redirect"
     );
 
-    // API mirrors the CLI
+    // API mirrors the CLI, plus the deck's title and file for the editor's top bar
     let (_, api) = get(server.port, "/api/deck");
     let (_, cli) = qd_json(&dir, &["slides"]);
-    assert_eq!(serde_json::from_str::<Value>(&api).unwrap(), cli);
+    let mut api: Value = serde_json::from_str(&api).unwrap();
+    assert_eq!(api["file"], "deck.qmd");
+    for k in ["file", "title"] {
+        api.as_object_mut().unwrap().remove(k);
+    }
+    assert_eq!(api, cli);
     let (status, slide) = get(server.port, "/api/slide/results");
     assert_eq!(status, 200);
     assert_eq!(

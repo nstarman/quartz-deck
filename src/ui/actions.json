@@ -1,9 +1,9 @@
 [
   {"id": "settings", "label": "Settings…", "menu": ["File"], "key": "Mod+,", "vscode_key": null, "where": ["anywhere"]},
   {"separator": true, "menu": ["File"]},
-  {"id": "render", "label": "Render", "menu": ["File"], "where": ["anywhere"], "qd": "qd render"},
-  {"id": "export", "label": "Export offline HTML", "menu": ["File"], "where": ["anywhere"], "qd": "qd export"},
-  {"id": "export-pdf", "label": "Export with PDF", "menu": ["File"], "where": ["anywhere"], "qd": "qd export --pdf"},
+  {"id": "render", "label": "Render with Quarto", "menu": ["File"], "where": ["anywhere"], "qd": "qd render"},
+  {"id": "export", "label": "Export web page (works offline)", "menu": ["File"], "where": ["anywhere"], "qd": "qd export"},
+  {"id": "export-pdf", "label": "Export web page and PDF", "menu": ["File"], "where": ["anywhere"], "qd": "qd export --pdf"},
   {"separator": true, "menu": ["File"]},
   {"id": "preview", "label": "Open in browser tab ↗", "menu": ["File"], "where": ["anywhere"], "qd": "qd url"},
   {"id": "source-save", "label": "Save source now", "menu": ["File"], "key": "Mod+S", "vscode_key": null, "where": ["source"]},
@@ -18,7 +18,7 @@
   {"id": "delete", "label": "Delete", "menu": ["Edit"], "key": ["Backspace", "Delete"], "where": ["element"], "qd": "qd block rm <ref>"},
   {"separator": true, "menu": ["Edit"]},
   {"id": "edit", "label": "Edit text", "menu": ["Edit"], "key": "Enter", "where": ["element"]},
-  {"id": "source", "label": "Edit source", "menu": ["Edit"], "key": "Alt+Enter", "where": ["element"], "qd": "qd edit <ref>"},
+  {"id": "source", "label": "Edit markdown", "menu": ["Edit"], "key": "Alt+Enter", "where": ["element"], "qd": "qd edit <ref>"},
   {"id": "up", "label": "Move up", "menu": ["Edit"], "key": "Alt+ArrowUp", "where": ["element"], "qd": "qd block move <ref> --before <prev>"},
   {"id": "down", "label": "Move down", "menu": ["Edit"], "key": "Alt+ArrowDown", "where": ["element"], "qd": "qd block move <ref> --after <next>"},
   {"id": "next-element", "label": "Select next element", "menu": ["Edit"], "key": "Tab", "where": ["slide", "element"]},
@@ -84,7 +84,7 @@
 
   {"id": "toggle-source", "label": "Source pane", "menu": ["View"], "toggle": true, "where": ["anywhere"]},
   {"id": "source-full", "label": "Source full width", "menu": ["View"], "toggle": true, "where": ["anywhere"]},
-  {"id": "form-panel", "label": "Form panel", "menu": ["View"], "toggle": true, "where": ["anywhere"]},
+  {"id": "form-panel", "label": "Properties panel", "menu": ["View"], "toggle": true, "where": ["anywhere"]},
   {"id": "present", "label": "Present from this slide", "menu": ["View"], "key": "Alt+Mod+P", "where": ["anywhere"]},
   {"id": "present-start", "label": "Present from the beginning", "menu": ["View"], "key": "Alt+Mod+Shift+P", "where": ["anywhere"]},
   {"id": "focus-text", "label": "Back to the text", "vscode_key": "Escape", "where": ["slide"]},
@@ -96,8 +96,8 @@
   {"id": "run-restart", "label": "Restart", "menu": ["Run"], "where": ["anywhere"]},
   {"id": "run-fresh-all", "label": "Restart & run all", "menu": ["Run"], "where": ["anywhere"], "runs_code": true, "qd": "qd run --all --fresh"},
   {"separator": true, "menu": ["Run"]},
-  {"id": "run-add-package", "label": "Add package…", "menu": ["Run"], "where": ["anywhere"], "qd": "qd env add <package>"},
-  {"id": "run-env", "label": "Create environment", "menu": ["Run"], "where": ["anywhere"], "qd": "qd env init"},
+  {"id": "run-add-package", "label": "Add Python package…", "menu": ["Run"], "where": ["anywhere"], "qd": "qd env add <package>"},
+  {"id": "run-env", "label": "Set up Python…", "menu": ["Run"], "where": ["anywhere"], "qd": "qd env init"},
 
   {"id": "shortcuts", "label": "Keyboard shortcuts", "menu": ["Help"], "key": "?", "where": ["slides", "slide", "element"]},
   {"id": "about", "label": "About quartz-deck", "menu": ["Help"], "where": ["anywhere"]}

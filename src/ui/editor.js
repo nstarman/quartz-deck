@@ -19,6 +19,7 @@ const frame = $('#preview');
 const statusEl = $('#status');
 const notice = $('#notice');
 const banner = $('#banner');
+$('.close', banner).addEventListener('click', () => { banner.hidden = true; });
 const panel = $('#panel');
 
 const state = {
@@ -81,6 +82,10 @@ async function fetchDeck() {
   if (!res.ok) return;
   state.deck = await res.json();
   state.version = state.deck.version;
+  // the deck's name in the top row and the tab (spec 008 US6)
+  $('#deck-name .title').textContent = state.deck.title || '';
+  $('#deck-name .file').textContent = state.deck.file || '';
+  document.title = state.deck.title || state.deck.file || 'quartz-deck';
   focus.setVersion(state.version);
   slideList.render();
   renderSlidebar();
@@ -119,6 +124,7 @@ async function fetchMeta() {
  * just their element with `expect-text`, so edits elsewhere don't block them).
  */
 async function op(name, args = {}, { fileExpect = true } = {}) {
+  status('Saving…', true);
   const res = await fetch('/api/op', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -128,6 +134,7 @@ async function op(name, args = {}, { fileExpect = true } = {}) {
   if (!res.ok) {
     const e = body.error || { code: res.status, message: res.statusText };
     op.lastError = e;
+    status('Not saved');
     if (e.code === 'E_CONFLICT' && !fileExpect) {
       say(`${name}: changed elsewhere while you were editing — choose a version`, true);
     } else if (e.code === 'E_CONFLICT') {
@@ -140,6 +147,7 @@ async function op(name, args = {}, { fileExpect = true } = {}) {
     return null;
   }
   if (body.version) state.version = body.version;
+  status('Saved', true);
   say(`${name} ✓`);
   return body;
 }
@@ -697,12 +705,12 @@ document.addEventListener('keydown', onKey);
 const es = new EventSource(`/events?tab=${focus.tabId}`);
 run.listen(es);
 settings.listen(es);
-es.addEventListener('open', () => status('connected', true));
-es.addEventListener('error', () => status('disconnected — is qd serve running?'));
+es.addEventListener('open', () => status('Connected', true));
+es.addEventListener('error', () => status('Disconnected — is qd serve running?'));
 es.addEventListener('changed', async (e) => {
-  status('changed…');
   const { version } = JSON.parse(e.data);
   if (version !== state.version) {
+    status('Changed on disk', true);
     slides = { version: null, map: new Map() };
     await fetchDeck();
     if (!editing()) await renderPanel();
@@ -738,10 +746,11 @@ offer.addEventListener('click', (e) => {
   if (act === 'go' && offered) showPoint(offered);
   if (act) offer.hidden = true;
 });
-es.addEventListener('rendering', () => status('rendering…'));
+es.addEventListener('rendering', () => status('Rendering…'));
 es.addEventListener('rendered', (e) => {
   const d = JSON.parse(e.data);
-  status('rendered ' + d.version.slice(0, 7), true);
+  status('Up to date', true);
+  statusEl.title = `Version ${d.version.slice(0, 7)}`;
   banner.hidden = true;
   if (state.session) {
     // reloading now would throw away the open edit (research R4)
@@ -753,8 +762,8 @@ es.addEventListener('rendered', (e) => {
 });
 es.addEventListener('render_error', (e) => {
   const d = JSON.parse(e.data);
-  status('render failed (showing last good render)');
-  banner.textContent = d.message;
+  status('Render failed — showing the last good one');
+  $('.msg', banner).textContent = d.message;
   banner.hidden = false;
 });
 
@@ -1166,8 +1175,8 @@ elbar.id = 'elbar';
 elbar.setAttribute('role', 'toolbar');
 elbar.setAttribute('aria-label', 'Element');
 elbar.hidden = true;
-for (const [id, label, title] of [['run', '▶ Run', 'Run this code cell'], ['edit', 'Edit', 'Edit text (Enter)'], ['source', 'Source', 'Edit source (⌥Enter)'],
-  ['fragment', 'On click', 'Appears on click'], ['delete', 'Delete', 'Delete (⌫)'], ['more', '⋯', 'More (right-click, ⇧F10)']]) {
+for (const [id, label, title] of [['run', '▶ Run', 'Run this code cell'], ['edit', 'Edit', 'Edit text (Enter)'], ['source', 'Markdown', 'Edit markdown (⌥Enter)'],
+  ['fragment', 'Appears on click', 'Appears on click (a fragment)'], ['delete', 'Delete', 'Delete (⌫)'], ['more', '⋯', 'More (right-click, ⇧F10)']]) {
   const b = Object.assign(document.createElement('button'), { type: 'button', textContent: label, title });
   b.dataset.act = id;
   b.setAttribute('aria-label', title);

@@ -204,8 +204,9 @@ export function place(frame) {
 
 /**
  * Put a bar for element `el` (in the preview `frame`) where it covers nothing else
- * on the slide (spec 008 US2): above the element, else below it, else just inside
- * its own top edge (over part of itself, never another element). Not shown while
+ * on the slide (spec 008 US2): above the element, else below it (each lined up with
+ * its left edge, else its right), else just inside its own top edge at its right end
+ * (over the end of itself, never another element). Not shown while
  * the canvas is (full-width source pane).
  */
 export function placeNear(b, el, frame) {
@@ -213,13 +214,20 @@ export function placeNear(b, el, frame) {
   b.style.visibility = f.width && f.height ? '' : 'hidden';
   const r = el.getBoundingClientRect();
   const [w, h] = [b.offsetWidth, b.offsetHeight];
-  const left = Math.max(4, Math.min(f.left + r.left, innerWidth - w - 4));
+  const clamp = (x) => Math.max(4, Math.min(x, innerWidth - w - 4));
+  const [atLeft, atRight] = [clamp(f.left + r.left), clamp(f.left + r.right - w)];
   const others = [...el.ownerDocument.querySelectorAll('section.present [data-qd], section.present > :is(h1, h2, h3)')]
     .filter((o) => !o.contains(el) && !el.contains(o))
-    .map((o) => o.getBoundingClientRect());
-  const free = (top) => top >= f.top + 2 && top + h <= f.bottom - 2
+    .map((o) => { // what it shows, not its block: a one-word heading leaves its row free
+      const range = o.ownerDocument.createRange();
+      range.selectNodeContents(o);
+      const c = range.getBoundingClientRect();
+      return c.width && c.height ? c : o.getBoundingClientRect();
+    });
+  const free = ([left, top]) => top >= f.top + 2 && top + h <= f.bottom - 2
     && !others.some((o) => f.left + o.left < left + w && f.left + o.right > left && f.top + o.top < top + h && f.top + o.bottom > top);
-  const top = [f.top + r.top - h - 8, f.top + r.bottom + 8].find(free) ?? Math.max(f.top + 2, f.top + r.top + 4);
+  const [left, top] = [f.top + r.top - h - 8, f.top + r.bottom + 8].flatMap((t) => [[atLeft, t], [atRight, t]]).find(free)
+    ?? [clamp(f.left + r.right - w - 4), Math.max(f.top + 2, f.top + r.top + 4)];
   b.style.top = `${top}px`;
   b.style.left = `${left}px`;
 }

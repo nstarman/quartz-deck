@@ -205,7 +205,13 @@ async fn api_source(State(app): State<Shared>) -> Response {
 
 async fn api_deck(State(app): State<Shared>) -> Response {
     match app.store.read() {
-        Ok(d) => Json(slides_json(&d)).into_response(),
+        Ok(d) => {
+            // the editor's top bar and tab title (spec 008 US6)
+            let mut v = slides_json(&d);
+            v["title"] = json!(d.meta.get("title").and_then(|t| t.as_str()));
+            v["file"] = json!(app.store.path.file_name().map(|f| f.to_string_lossy()));
+            Json(v).into_response()
+        }
         Err(e) => err_response(e),
     }
 }
