@@ -1782,9 +1782,10 @@ async fn menu_bar_runs_every_action() {
     );
     // clicking an open menu's name again closes it
     let shown = "!document.querySelector('#ctxmenu').hidden";
-    ed.click_editor("#menubar [data-menu=Insert]").await;
+    let insert = "#menubar [data-menu=Insert]";
+    ed.click_editor(insert).await;
     ed.wait(shown).await;
-    ed.click_editor("#menubar [data-menu=Insert]").await;
+    ed.click_editor(insert).await;
     ed.wait(&format!("!({shown})")).await;
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(
@@ -1792,7 +1793,7 @@ async fn menu_bar_runs_every_action() {
         false,
         "a second click closes the menu"
     );
-    ed.click_editor("#menubar [data-menu=Insert]").await;
+    ed.click_editor(insert).await;
     ed.wait(shown).await;
     // moving onto another name while a menu is open switches to it (as on macOS)
     let (x, y) = ed.editor_point("#menubar [data-menu=View]", None).await;
@@ -2207,16 +2208,19 @@ async fn paste_key_uses_the_paste_event() {
     ed.click_editor("#slides li[data-id=b] button").await;
     // ⌘V, then the paste event a real browser fires for it (devtools key
     // presses don't run the browser's paste command)
-    let paste = |text: &str| {
+    let paste = |target: &str, text: &str| {
         format!(
             "(() => {{ window.__asked = false; navigator.clipboard.readText = () => {{ __asked = true; return Promise.reject(new Error('no permission')); }};
-              const t = document.activeElement; t.dispatchEvent(new KeyboardEvent('keydown', {{ key: 'v', code: 'KeyV', ctrlKey: true, bubbles: true, cancelable: true }}));
+              const t = {target}; t.dispatchEvent(new KeyboardEvent('keydown', {{ key: 'v', code: 'KeyV', ctrlKey: true, bubbles: true, cancelable: true }}));
               const dt = new DataTransfer(); dt.setData('text/plain', {text:?});
               t.dispatchEvent(new ClipboardEvent('paste', {{ clipboardData: dt, bubbles: true, cancelable: true }})); }})()"
         )
     };
-    ed.eval(&paste("## Pasted {#b}\n\nFrom another deck.\n"))
-        .await;
+    ed.eval(&paste(
+        "document.activeElement",
+        "## Pasted {#b}\n\nFrom another deck.\n",
+    ))
+    .await;
     ed.wait_file(|f| f.contains("From another deck."), "slide pasted")
         .await;
     let s = &ed.cli(&["slides"])["slides"];
@@ -2234,9 +2238,9 @@ async fn paste_key_uses_the_paste_event() {
     ed.select("[data-qd=\"a/0\"]").await;
     ed.eval("document.querySelector('#preview').contentWindow.focus()")
         .await;
-    ed.eval(&paste("1 < 2").replace(
-        "const t = document.activeElement",
-        "const t = document.querySelector('#preview').contentDocument.body",
+    ed.eval(&paste(
+        "document.querySelector('#preview').contentDocument.body",
+        "1 < 2",
     ))
     .await;
     ed.wait_file(

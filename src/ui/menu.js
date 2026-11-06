@@ -115,5 +115,5 @@ export function menuOpen() {
 }
 
 // a click elsewhere closes it; the menu bar handles its own clicks (its name again closes, another switches)
-document.addEventListener('mousedown', (e) => { if (!root.contains(e.target) && !e.target.closest?.('#menubar')) closeMenu(); }, true);
+document.addEventListener('mousedown', (e) => { if (!e.target.closest?.('#ctxmenu, #menubar')) closeMenu(); }, true);
 addEventListener('blur', () => setTimeout(() => { if (!document.hasFocus()) closeMenu(); }, 0));

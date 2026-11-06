@@ -1588,9 +1588,9 @@ async function clipboardText() {
 // Then the clipboard API, as from the menu.
 let pasted = null;
 let pasteKey = null; // {id, e}: the paste action the last ⌘V reached
-const runPaste = async ({ id, e }) => keys.run(id, { ...(await keys.currentContext(e)), e });
+const runPaste = async ({ id, e }) => keys.run(id, await keys.currentContext(e));
 function onPaste(e) {
-  if (!pasteKey || state.session || editing()) return;
+  if (!pasteKey) return; // set only by a ⌘V that onKey let through (not while typing)
   const k = pasteKey;
   pasteKey = null;
   e.preventDefault();
