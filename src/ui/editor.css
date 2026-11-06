@@ -62,7 +62,8 @@ main.source-right aside { order: 4; }
 #shortcuts button { margin-top: 12px; float: right; }
 
 /* ---------- menu bar (spec 007) ---------- */
-#menubar { display: flex; gap: 2px; padding: 2px 8px; background: var(--panel); border-bottom: 1px solid var(--line); font-size: 13px; }
+#menubar { display: flex; gap: 2px; padding: 2px 8px; background: var(--panel); border-bottom: 1px solid var(--line); font-size: 13px; overflow: hidden; }
+#menubar:not(.folded) [data-menu=Menu], #menubar.folded [role=menuitem]:not([data-menu=Menu]) { display: none; }
 #menubar [role=menuitem] { padding: 3px 9px; border-radius: 4px; cursor: default; user-select: none; }
 #menubar [role=menuitem]:hover, #menubar [role=menuitem]:focus, #menubar [aria-expanded=true] { background: var(--accent); color: var(--accent-text); outline: none; }
 #menubar [role=menuitem]:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
