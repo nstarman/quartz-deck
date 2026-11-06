@@ -302,6 +302,13 @@ enum Cmd {
         #[arg(long, conflicts_with = "new")]
         new_file: Option<PathBuf>,
     },
+    /// Images beside the deck (3 folders deep), newest first
+    Images,
+    /// Copy an image beside the deck (into images/, under a free name)
+    Image {
+        #[command(subcommand)]
+        action: ImageCmd,
+    },
     /// Single elements of a slide: add, move, remove, duplicate (ref: <slide>/<index> or #id)
     Block {
         #[command(subcommand)]
@@ -390,6 +397,26 @@ enum BoxCmd {
     Rm {
         #[arg(id = "box", value_name = "BOX")]
         bx: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum ImageCmd {
+    /// Copy <file> into images/; with --slide also insert it there (end of the slide by default)
+    Add {
+        file: PathBuf,
+        /// Also insert the image on this slide
+        #[arg(long)]
+        slide: Option<String>,
+        /// Insert after this element
+        #[arg(long, requires = "slide", conflicts_with_all = ["before", "end"])]
+        after: Option<String>,
+        /// Insert before this element
+        #[arg(long, requires = "slide", conflicts_with = "end")]
+        before: Option<String>,
+        /// Insert after the slide's last element (the default)
+        #[arg(long, requires = "slide")]
+        end: bool,
     },
 }
 
@@ -512,6 +539,8 @@ fn output_of(cmd: &str) -> &'static str {
             r#"{"tool","root","manifest","lockfile","lock_current"} (+ "ok","log" for init/add/sync)"#
         }
         "schema" => r#"{"commands":[...],"errors":[...]}"#,
+        "images" => r#"{"images":[{"path","kind","size","modified"}]}"#,
+        "image" => r#"{"path"} (with --slide: the edit, as block add, plus "path")"#,
         "skill" => r#"{"skill":"<markdown>"} or {"ok","path"} with --install"#,
         "undo" | "redo" => r#"{"ok","op","undone|redone","version"}"#,
         "box" => {
@@ -1440,6 +1469,32 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             })?
             .unwrap_or_default();
             ctx.edit(|d| ops::replace(d, &old, &new))
+        }
+        Cmd::Images => crate::images::list(ctx.store()?.path.parent().unwrap_or(Path::new("."))),
+        Cmd::Image {
+            action:
+                ImageCmd::Add {
+                    file,
+                    slide,
+                    after,
+                    before,
+                    ..
+                },
+        } => {
+            let store = ctx.store()?;
+            let name = file.file_name().unwrap_or_default().to_string_lossy();
+            let path = crate::images::add(
+                store.path.parent().unwrap_or(Path::new(".")),
+                &name,
+                &std::fs::read(file)?,
+            )?;
+            let Some(slide) = slide else {
+                return Ok(json!({ "path": path }));
+            };
+            let mut v =
+                ctx.edit(|d| ops::block_add(d, slide, at(after, before), &format!("![]({path})")))?;
+            v["path"] = json!(path);
+            Ok(v)
         }
         Cmd::Block { action } => match action {
             BlockCmd::Add { slide, at, input } => {

@@ -7,6 +7,7 @@
 // page: kept for this tab (reloads) and taken out of the address bar.
 
 import * as keys from '/ui/keys.js';
+import { ask } from '/ui/sheet.js';
 
 const store = (f) => { try { return f(sessionStorage); } catch { return null; } };
 const given = location.hash.match(/(?:^#|&)t=([0-9a-f]+)/);
@@ -155,8 +156,8 @@ export function initRun(a) {
     },
   });
   keys.on('run-add-package', async () => {
-    const p = prompt('Python packages to add (from PyPI), space-separated');
-    if (p?.trim() && (await post('/api/env/add', { packages: p.trim().split(/\s+/) }))) api.say(`Added ${p.trim()}`);
+    const v = await ask({ title: 'Add Python packages', ok: 'Add', fields: [{ name: 'p', kind: 'text', label: 'Packages from PyPI, space-separated', placeholder: 'e.g. numpy matplotlib', validate: (x) => (x ? '' : 'Name at least one package') }] });
+    if (v && (await post('/api/env/add', { packages: v.p.split(/\s+/) }))) api.say(`Added ${v.p}`);
   });
   const ACT = { 'run-all': 'run-all', 'fresh-all': 'run-fresh-all', stop: 'run-stop', restart: 'run-restart', env: 'run-env', 'add-pkg': 'run-add-package' };
   pane.querySelector('.srcbar').addEventListener('click', (e) => {
