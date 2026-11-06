@@ -32,8 +32,7 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 button, input, select, textarea { font: inherit; color: inherit; }
 button { padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); cursor: pointer; }
 button:hover { border-color: var(--muted); }
-button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
-  outline: 2px solid var(--accent); outline-offset: 1px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; } /* focus always shows (spec 007) */
 button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 button.danger { color: var(--danger); }
 button.wide { display: block; width: calc(100% - 16px); margin: 0 8px 8px; }

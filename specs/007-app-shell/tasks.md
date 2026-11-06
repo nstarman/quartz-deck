@@ -129,17 +129,17 @@ Paths relative to repo root.
 
 **Independent Test**: spec US4; quickstart §4.
 
-- [ ] T017 [P] [US4] Write failing tests for `paste`.
+- [X] T017 [P] [US4] Write failing tests for `paste`.
   - **`src/ops.rs` units:** one or more slides of markdown are inserted after/before a slide, or at the end. Clashing slide and block ids are renewed, reusing `renew_id`. It is one patch. Text with no slide gives `E_PARSE`.
   - **`tests/cli.rs`:** `qd paste --after S --md -`.
-- [ ] T018 [US4] Implement `ops::paste`, `qd paste` in `src/cli.rs` (+ schema, skill) and the `paste` op in `/api/op`. T017 passes.
-- [ ] T019 [US4] Write failing browser tests `same_rules_everywhere`:
+- [X] T018 [US4] Implement `ops::paste`, `qd paste` in `src/cli.rs` (+ schema, skill) and the `paste` op in `/api/op`. T017 passes.
+- [X] T019 [US4] Write failing browser tests `same_rules_everywhere`:
   - **Escape:** from a menu open over a text edit on a selected element, each Escape backs out one level, and the edit is kept, not discarded. Enter on a selected element starts editing.
   - **Slides on the clipboard:** select a slide in the slide list, copy it, then paste it into a second server's deck. It arrives with fresh ids, and one undo removes it.
   - **Text from elsewhere:** system-clipboard text that is not from qd pastes as a paragraph with `<` escaped.
   - **Undo:** one edit each from a menu, a shortcut, the toolbar, a drag, on-slide typing and the source pane; each is one undo step (research R9).
   - **Focus:** tabbing to a control, a slide or an element shows a focus outline in light, dark and hc.
-- [ ] T020 [US4] Implement it in `src/ui/editor.js`/`editor.css`:
+- [X] T020 [US4] Implement it in `src/ui/editor.js`/`editor.css`:
   - Escape saves in `sessionKey`; the status text reads "Esc or click elsewhere saves"; the source popup's Cancel button still discards.
   - Slide selection and cut/copy/paste in the slide list, using the `paste` op for slides.
   - Outside text escaped on paste.
