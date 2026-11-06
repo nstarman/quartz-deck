@@ -54,12 +54,13 @@ stderr with a stable `code` and a `hint`. Decks inside a Quarto project
 ### Editing on the slide (spec [003](specs/003-on-slide-editing/spec.md))
 
 - **Type:** click a title, paragraph, list, quote or text box and type; the
-  toolbar (⌘B/⌘I/⌘U/⌘K…) formats. Enter (titles) or ⌘Enter / clicking
-  elsewhere saves, Esc cancels. Only the bytes you changed are written: line
+  toolbar (⌘B/⌘I/⌘U/⌘K…) formats. Enter (titles), ⌘Enter, Esc or clicking
+  elsewhere saves; Undo takes it back. Only the bytes you changed are written: line
   wrapping, quotes, indentation and untouched markup stay as they were.
 - **Source in place:** math, code, callouts and anything else that can't be
   typed into open their markdown over the element (or Alt+click any element;
   Alt+click the slide background for the whole slide; ⌥Enter while typing).
+  ⌘Enter or Esc saves it; its **Cancel** button discards.
 - **Actions:** right-click an element, a slide in the list or an empty slide
   area for the full menu (Shift+F10 from the keyboard); the slide bar above
   the preview sets background, transition and hidden; the element bar on a
@@ -72,6 +73,30 @@ stderr with a stable `code` and a `hint`. Decks inside a Quarto project
   Re-renders wait while you type.
 - CLI equivalents: `qd block add|move|rm|dup|class`, `qd edit`, `qd title`,
   `qd set` — see `qd schema`.
+
+### Menus, settings and shortcuts (spec [007](specs/007-app-shell/spec.md))
+
+- **Menu bar:** File, Edit, Insert, Slide, View, Run and Help hold every
+  action the editor has, each with its shortcut, so nothing needs a
+  right-click or a hidden key. F10 moves the keyboard to it; arrows, Enter
+  and Esc work as in any app. When the window is too narrow it folds into
+  one **☰**.
+- **Shortcuts:** **?** (or Help ▸ Keyboard shortcuts) lists every key, by
+  menu, with a search box. It comes from the same list as the menus and the
+  keys themselves, so it can't be out of date.
+- **Settings** (File ▸ Settings…, ⌘,): source pane side and whether it starts
+  open, when the source pane saves, theme, confirm before deleting a slide,
+  shortcuts in tooltips. They are yours, not the deck's: kept in qd's config
+  folder, the same in every deck, after a restart and in VS Code's panel, and
+  applied at once in every open editor.
+- **The same rules everywhere:** Esc backs out one level (an edit is saved,
+  then the selection cleared); Enter goes in. ⌘X/⌘C/⌘V cut, copy and paste
+  elements, and in the slide list whole slides (pasted slides get fresh ids,
+  so they paste into another deck too). Text from another app pastes as a
+  plain paragraph. Every edit is one undo step, and focus always shows.
+- CLI: `qd actions` (every action, its menu and keys), `qd settings`, `qd
+  settings set source.side right`, `qd settings reset`, `qd paste --after
+  intro --md -`.
 
 ### Shared focus (spec [005](specs/005-shared-focus/spec.md))
 
@@ -147,6 +172,9 @@ cd vscode && npx @vscode/vsce package && code --install-extension quartz-deck-*.
 - The cursor and the slide follow each other, both ways; `qd focus` sees the
   VS Code cursor.
 - Render and export from the command palette ("quartz-deck: …").
+- In the panel the menus are one **☰**, and keys VS Code uses (⌘, ⌘S ⌘B ⌘K
+  ⇧⌘X ⇧⌘N ⇧⌘D) stay VS Code's; those actions are in the ☰ menu, and **?**
+  lists the keys that work in the panel.
 - Remote-SSH is designed in (`qd` runs on the remote host and the panel
   reaches it through VS Code's port forwarding), but not tried yet.
 

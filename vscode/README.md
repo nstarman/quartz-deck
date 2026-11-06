@@ -17,6 +17,12 @@ as quartz-deck.
   unsaved buffer; Render always renders the saved file, so it asks first.
 - With the Quarto extension installed, run cells with its Run Cell; the panel
   hides its own Run.
+- The panel's menus are one **☰** button. Keys VS Code uses while the panel
+  has focus stay VS Code's: ⌘, (settings), ⌘S, ⌘B (sidebar), ⌘K (chords),
+  ⇧⌘X, ⇧⌘N and ⇧⌘D. Those editor actions (Settings, Bold, Link,
+  Strikethrough, Slide after, Duplicate slide) are in the ☰ menu instead; **?**
+  lists the keys that work in the panel. The list of VS Code's keys is
+  `default-keys.json`, checked by `test/keys.test.js`.
 - Needs `qd` and Quarto where the deck lives (local, or the SSH host).
 
 ## Build and install

@@ -163,12 +163,12 @@ Paths relative to repo root.
 
 ## Phase 8: Polish & cross-cutting
 
-- [ ] T023 [P] Security: add `POST /api/settings` to `another_origin_cannot_run_code_or_edit`; the settings are unchanged after the attack. Record it in `specs/007-app-shell/checklists/security.md`, along with the file's mode 0600.
-- [ ] T024 [P] Docs: a README section on menus, settings and shortcuts; the skill (`qd actions`, `qd settings`, `qd paste`); `vscode/README.md` (the ☰ menu and keys in the panel); the `specs/ROADMAP.md` status.
-- [ ] T025 Performance (SC-008): a browser test opens each menu and the reference on a 30-slide deck in under 100 ms.
-- [ ] T026 Run the quickstart §1–§4 in the browser and record it in `checklists/quickstart-run.md`. §5 (VS Code) is done by the person, or left as a follow-up like 006's T022.
-- [ ] T027 Final constitution re-check in `plan.md`; fmt, clippy, `cargo test` and `node --test vscode/test/*.test.js` all green.
-- [ ] T028 Concision audit (`/pr-audit`), the last task before the PR is marked ready.
+- [X] T023 [P] Security: add `POST /api/settings` to `another_origin_cannot_run_code_or_edit`; the settings are unchanged after the attack. Record it in `specs/007-app-shell/checklists/security.md`, along with the file's mode 0600.
+- [X] T024 [P] Docs: a README section on menus, settings and shortcuts; the skill (`qd actions`, `qd settings`, `qd paste`); `vscode/README.md` (the ☰ menu and keys in the panel); the `specs/ROADMAP.md` status.
+- [X] T025 Performance (SC-008): a browser test opens each menu and the reference on a 30-slide deck in under 100 ms.
+- [X] T026 Run the quickstart §1–§4 in the browser and record it in `checklists/quickstart-run.md`. §5 (VS Code) is done by the person, or left as a follow-up like 006's T022.
+- [X] T027 Final constitution re-check in `plan.md`; fmt, clippy, `cargo test` and `node --test vscode/test/*.test.js` all green.
+- [X] T028 Concision audit (`/pr-audit`), the last task before the PR is marked ready.
 
 ---
 

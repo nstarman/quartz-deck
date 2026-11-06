@@ -91,7 +91,7 @@ when the current directory has exactly one `.qmd`.
 | stored outputs | `qd outputs` (or `qd outputs results/1`): last outputs per cell, `stale: true` once the cell changed |
 | works without network? | `qd check --offline` (headless Chrome, network blocked; problems per slide with hints) |
 | live preview | `qd serve --detach`, then `qd url results`; `qd stop` when done |
-| what the editor can do, and its keys (to tell the person) | `qd actions` → `[{id, label, menu, key, qd}]`; `qd settings` for their preferences |
+| what the editor can do, and its keys (to tell the person) | `qd actions` → `[{id, label, menu, key, qd}]`; `qd settings` for their preferences; change one only when they ask (`qd settings set theme dark`, `qd settings reset`) |
 | what the person is looking at / has selected | `qd focus` → `slide`, `elements`, `selection.text`, `age` (`{"open": false}` without an editor) |
 | show the person something | `qd focus --set results/1` → their editor goes there and flashes it; `deferred` means they were typing at the editor's last report, so it is offered to them instead; `no_editor` without one |
 | undo / redo | `qd undo` / `qd redo` |
