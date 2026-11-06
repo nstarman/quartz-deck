@@ -32,6 +32,12 @@ fn run(d: &Deck, p: Patch, touched_before: &[&str]) -> Deck {
     after
 }
 
+fn unique_ids(d: &Deck) {
+    let ids = d.explicit_ids();
+    let set: std::collections::HashSet<_> = ids.iter().collect();
+    assert_eq!(ids.len(), set.len(), "duplicate ids: {ids:?}");
+}
+
 fn snap(name: &str, d: &Deck, p: &Patch) {
     let after = ops::apply(&d.text, p).unwrap();
     insta::assert_snapshot!(name, ops::diff(&d.text, &after));
@@ -114,11 +120,7 @@ fn dup_gets_fresh_ids() {
     snap("dup_results", &d, &p);
     let a = run(&d, p.clone(), &[]);
     assert_eq!(a.slides[2].id, p.target);
-    let ids = a.explicit_ids();
-    let mut uniq = ids.clone();
-    uniq.sort();
-    uniq.dedup();
-    assert_eq!(ids.len(), uniq.len(), "duplicate ids after dup: {ids:?}");
+    unique_ids(&a);
     assert!(
         a.slides[2]
             .blocks
@@ -631,4 +633,38 @@ fn geom_parsing() {
         })
     );
     assert_eq!(g.right, None);
+}
+
+#[test]
+fn paste_slides_with_fresh_ids_where_they_clash() {
+    let d = deck();
+    // a copy of Results (clashing ids) and a new slide, pasted after Intro
+    let md = format!(
+        "{}\n## Extra {{#extra}}\n\nNew.\n",
+        d.slice(d.slide("results").unwrap().span)
+    );
+    let p = ops::paste(&d, &md, Pos::After("intro")).unwrap();
+    assert_eq!(p.replacements.len(), 1, "one patch, one undo step");
+    let a = run(&d, p.clone(), &["extra"]); // new, kept id
+    let ids: Vec<&str> = a.slides.iter().map(|s| s.id.as_str()).collect();
+    assert_eq!(ids[0], "intro");
+    assert_eq!(ids[1], p.target);
+    assert_ne!(ids[1], "results", "a clashing slide id is renewed");
+    assert_eq!(ids[2], "extra", "an id that does not clash is kept");
+    unique_ids(&a);
+    assert!(p.assigned_ids.iter().any(|i| i.starts_with("b-")), "{p:?}");
+    assert!(!p.assigned_ids.contains(&"extra".to_string()));
+
+    // before a slide, and at the end
+    let a = run(
+        &d,
+        ops::paste(&d, "## X {#x}\n", Pos::Before("intro")).unwrap(),
+        &[],
+    );
+    assert_eq!(a.slides[0].id, "x");
+    let a = run(&d, ops::paste(&d, "## X {#x}\n", Pos::End).unwrap(), &[]);
+    assert_eq!(a.slides.last().unwrap().id, "x");
+
+    let e = ops::paste(&d, "just a line, no slide", Pos::End).unwrap_err();
+    assert_eq!(e.code(), "E_PARSE");
 }

@@ -60,6 +60,9 @@
   {"id": "slide-before", "label": "Slide before", "menu": ["Insert"], "where": ["slides", "slide", "element"], "qd": "qd add --before <slide>"},
 
   {"id": "slide-dup", "label": "Duplicate slide", "menu": ["Slide"], "key": "Mod+Shift+D", "where": ["slides", "slide", "element"], "qd": "qd dup <slide>"},
+  {"id": "slide-cut", "label": "Cut slide", "menu": ["Slide"], "key": "Mod+X", "where": ["slides"], "qd": "qd rm <slide>"},
+  {"id": "slide-copy", "label": "Copy slide", "menu": ["Slide"], "key": "Mod+C", "where": ["slides"]},
+  {"id": "slide-paste", "label": "Paste slides after", "menu": ["Slide"], "key": "Mod+V", "where": ["slides", "slide"], "qd": "qd paste --after <slide> --md -"},
   {"id": "slide-move-up", "label": "Move slide up", "menu": ["Slide"], "where": ["slides", "slide", "element"], "qd": "qd move <slide> --before <prev>"},
   {"id": "slide-move-down", "label": "Move slide down", "menu": ["Slide"], "where": ["slides", "slide", "element"], "qd": "qd move <slide> --after <next>"},
   {"id": "slide-hide", "label": "Hidden in the presentation", "menu": ["Slide"], "toggle": true, "where": ["slides", "slide", "element"], "qd": "qd set <slide> --attr visibility=hidden"},

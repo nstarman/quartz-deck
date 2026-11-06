@@ -6,10 +6,11 @@ const box = document.createElement('div');
 box.id = 'srcedit';
 box.hidden = true;
 box.innerHTML = '<textarea spellcheck="false" aria-label="Markdown source"></textarea>'
-  + '<div class="bar"><span class="err" role="alert"></span><span class="hint">⌘Enter saves · Esc cancels</span></div>';
+  + '<div class="bar"><span class="err" role="alert"></span><span class="hint">⌘Enter or Esc saves</span><button type="button">Cancel</button></div>';
 document.body.append(box);
 const ta = box.querySelector('textarea');
 const err = box.querySelector('.err');
+const cancel = box.querySelector('button');
 
 let current = null;
 
@@ -20,7 +21,8 @@ function fit() {
 
 /**
  * Open the editor over `rect` (page coordinates) with `text`.
- * `on.save(text)` and `on.cancel()` are called on ⌘/Ctrl+Enter or blur, and Escape.
+ * `on.save(text)` is called on ⌘/Ctrl+Enter, Escape or blur; `on.cancel()` on Cancel
+ * (or Escape after a refused save).
  */
 export function openSource(rect, text, on) {
   current = on;
@@ -55,10 +57,12 @@ ta.addEventListener('input', () => { err.textContent = ''; fit(); });
 ta.addEventListener('keydown', (e) => {
   if (!current) return;
   e.stopPropagation();
-  if (e.key === 'Escape') { e.preventDefault(); current.cancel(); return; }
+  if (e.key === 'Escape') { e.preventDefault(); if (err.textContent) current.cancel(); else current.save(ta.value); return; }
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); current.save(ta.value); }
 });
 ta.addEventListener('blur', () => {
   // clicking elsewhere saves, unless the last save was refused (fix it or Esc)
   setTimeout(() => { if (current && !err.textContent && document.activeElement !== ta) current.save(ta.value); }, 0);
 });
+cancel.addEventListener('mousedown', (e) => e.preventDefault()); // keep the text focused: no blur save
+cancel.addEventListener('click', () => current?.cancel());

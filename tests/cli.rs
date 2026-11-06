@@ -1062,3 +1062,30 @@ fn actions_lists_the_editors_actions() {
         "the editor's own list"
     );
 }
+
+#[test]
+fn paste_slides_from_stdin() {
+    let e = Env::new();
+    let copy = "## Results {#results}\n\n- pasted\n";
+    let out = e
+        .cmd()
+        .args(["paste", "--after", "intro", "--md", "-"])
+        .write_stdin(copy)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_edit(&v, "paste");
+    assert_ne!(v["target"], "results", "the clashing id is renewed");
+    let t = e.text();
+    assert!(
+        t.contains(&format!(
+            "{{#{}}}\n\n- pasted",
+            v["target"].as_str().unwrap()
+        )),
+        "{t}"
+    );
+    e.err(&["paste", "--md", "no heading here"], "E_PARSE", 1);
+    assert_eq!(e.ok(&["undo"])["undone"], "paste", "one undo step");
+    assert!(!e.text().contains("- pasted"));
+}

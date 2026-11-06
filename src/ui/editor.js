@@ -433,6 +433,7 @@ function clearDrop() {
 function renderList() {
   const slides = state.deck?.slides || [];
   const cur = slideByAnchor(state.anchor);
+  const focused = list.contains(document.activeElement); // redrawing must not drop the keyboard's place
   list.replaceChildren(...slides.map((s) => {
     const li = document.createElement('li');
     li.draggable = true;
@@ -495,6 +496,7 @@ function renderList() {
     return li;
   }));
   list.querySelector('li.current')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  if (focused) list.querySelector('li.current button')?.focus();
 }
 
 $('#add-slide').addEventListener('click', async () => {
@@ -926,12 +928,13 @@ function beginSession(s, point) {
   });
   on('input', () => { s.failed = false; placeToolbar(frame); });
   showToolbar(s, frame);
-  say(s.reg.mode === 'inline' ? 'Editing — Enter or click elsewhere saves, Esc cancels' : 'Editing — ⌘Enter, Tab or click elsewhere saves, Esc cancels');
+  say(s.reg.mode === 'inline' ? 'Editing — Enter, Esc or click elsewhere saves' : 'Editing — ⌘Enter, Tab, Esc or click elsewhere saves');
 }
 
 function sessionKey(e, s) {
   e.stopPropagation(); // keep Reveal and the editor's own keys out of the edit
-  if (e.key === 'Escape') { e.preventDefault(); endSession(s, false); if (s.ref) select(s.ref); return; }
+  // Escape saves, like clicking elsewhere (spec 007); after a refused save it discards
+  if (e.key === 'Escape') { e.preventDefault(); if (s.failed) { endSession(s, false); if (s.ref) select(s.ref); } else saveSession().then(() => { if (!state.session && s.ref) select(s.ref); }); return; }
   if (e.key === 'Enter' && e.altKey && s.kind === 'block') {
     // switch to the source, carrying over what was typed so far
     e.preventDefault();
@@ -986,7 +989,7 @@ async function saveSession() {
   const md = draftSource(s);
   if (md === null) {
     s.failed = true;
-    say('This formatting can’t be written as markdown here — undo it (⌘Z) or press Esc to cancel', true);
+    say('This formatting can’t be written as markdown here — undo it (⌘Z) or press Esc again to discard the edit', true);
     return;
   }
   if (md === s.source) { endSession(s, false); return; }
@@ -1040,7 +1043,7 @@ function pageRect(el) {
 function startSourceSession(s, text) {
   openSession(s);
   openSource(pageRect(s.root), text, { save: () => saveSession(), cancel: () => endSession(s, false) });
-  say('Editing source — ⌘Enter or click elsewhere saves, Esc cancels');
+  say('Editing source — ⌘Enter, Esc or click elsewhere saves; Cancel discards');
 }
 
 /** Edit one element's markdown over it; `draft` and `base` carry over a typing session. */
@@ -1196,6 +1199,8 @@ const actions = makeActions({
   insert: insertBlock,
   copy: copyElement,
   paste: pasteAfter,
+  copySlide,
+  pasteSlides,
   say,
   slideUrl: (anchor) => `${location.origin}/#/${anchor}`,
 });
@@ -1568,15 +1573,44 @@ function copyElement(t) {
   say('Copied');
 }
 
-async function pasteAfter(t) {
-  let text = null;
-  // the system clipboard if it answers within a second, else our own copy
+/** The system clipboard if it answers within a second, else our own copy. */
+async function clipboardText() {
   const timeout = new Promise((resolve) => { setTimeout(() => resolve(null), 1000); });
+  let text = null;
   try { text = await Promise.race([navigator.clipboard.readText(), timeout]); } catch { /* not allowed */ }
-  text = text?.trim() ? text : state.clip;
+  return text?.trim() ? text : state.clip;
+}
+/** Text that isn't qd's own copy is never taken as raw HTML (spec 007 edge case). */
+const outside = (text) => (text === state.clip ? text : text.replace(/&/g, '&amp;').replace(/</g, '&lt;'));
+
+async function pasteAfter(t) {
+  const text = await clipboardText();
   if (!text) { say('Nothing to paste', true); return; }
-  const r = await op('block add', { slide: t.slideId, after: t.ref, md: text });
+  const r = await op('block add', { slide: t.slideId, after: t.ref, md: outside(text) });
   if (r) { state.sel = r.target; await fetchDeck(); }
+}
+
+/** Copy a whole slide's markdown (it pastes into this or another deck with fresh ids). */
+function copySlide(t) {
+  const text = t.full?.source;
+  if (!text) return;
+  state.clip = text;
+  navigator.clipboard.writeText(text).catch(() => {});
+  say('Slide copied');
+}
+
+/** Slides (markdown starting with a slide heading or ---) go in after `t`; other text becomes a paragraph on it. */
+async function pasteSlides(t) {
+  const text = await clipboardText();
+  if (!text) { say('Nothing to paste', true); return; }
+  const slides = /^(#{1,6}\s|---[ \t]*(\n|$))/.test(text.trimStart());
+  const r = slides
+    ? await op('paste', { after: t.slideId, md: text })
+    : await op('block add', { slide: t.slideId, end: true, md: outside(text) });
+  if (!r) return;
+  if (slides) state.goAfterRender = r.target;
+  else state.sel = r.target;
+  await fetchDeck();
 }
 
 /** Speaker notes (`::: notes`): edit them in the source box over the slide, creating them if missing. */
@@ -1598,7 +1632,9 @@ async function editNotes(t) {
 // ---------- what each action in the list does (spec 007) ----------
 
 keys.setContext(async (e) => {
-  const cur = slideByAnchor(state.anchor);
+  // a key in the slide list acts on its focused slide, which may not be shown yet
+  const li = e?.target?.closest?.('#slides li');
+  const cur = li ? slideById(li.dataset.id) : slideByAnchor(state.anchor);
   return { e, el: state.sel ? await elementTarget(state.sel) : null, slide: cur ? await slideTarget(cur.id) : null };
 });
 keys.on('render', { enabled: () => !busy.render, run: renderDeck });
@@ -1609,12 +1645,12 @@ keys.on('undo', () => undoRedo('undo'));
 keys.on('redo', () => undoRedo('redo'));
 // element and slide actions: the right-click menus' own (actions.js), on what is selected / shown
 const ELEMENT = ['edit', 'source', 'cut', 'copy', 'paste', 'dup', 'delete', 'up', 'down', 'fragment', 'class-smaller', 'class-incremental', 'class-custom'];
-const SLIDE = ['slide-before', 'slide-after', 'slide-dup', 'slide-hide', 'slide-rm', 'slide-bg', 'slide-bgimg', 'slide-notes', 'slide-source', 'slide-link'];
+const SLIDE = ['slide-before', 'slide-after', 'slide-dup', 'slide-cut', 'slide-copy', 'slide-paste', 'slide-hide', 'slide-rm', 'slide-bg', 'slide-bgimg', 'slide-notes', 'slide-source', 'slide-link'];
 for (const [ids, on, table] of [[ELEMENT, 'el', 'element'], [SLIDE, 'slide', 'slide']]) {
   for (const id of ids) {
     keys.on(id, {
       // Paste reads the system clipboard on a key press; from a menu it needs our own copy
-      enabled: (ctx) => !!ctx[on] && actions.can(id, ctx[on], table) && (id !== 'paste' || !!ctx.e || !!state.clip),
+      enabled: (ctx) => !!ctx[on] && actions.can(id, ctx[on], table) && (!id.endsWith('paste') || !!ctx.e || !!state.clip),
       checked: (ctx) => ctx[on] && actions.checked(id, ctx[on], table),
       run: (ctx) => actions.run(id, ctx[on], table),
     });

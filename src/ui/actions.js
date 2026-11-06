@@ -18,7 +18,7 @@ export const INSERTS = [
 
 /**
  * `api` is the editor: op, runCells(refs), refresh, beginEditRef, beginSourceEl, beginSlideSource,
- * insert(slide, where, kind), copy(t), paste(t), say, slideUrl(anchor).
+ * insert(slide, where, kind), copy(t), paste(t), copySlide(t), pasteSlides(t), say, slideUrl(anchor).
  */
 export function makeActions(api) {
   const classesOf = (t) => t.block.attrs?.classes || [];
@@ -57,6 +57,9 @@ export function makeActions(api) {
     { id: 'slide-before', label: 'Add slide before', run: (t) => api.op('add', { title: 'New slide', before: t.slideId }) },
     { id: 'slide-after', label: 'Add slide after', run: (t) => api.op('add', { title: 'New slide', after: t.slideId }) },
     { id: 'slide-dup', label: 'Duplicate slide', run: (t) => api.op('dup', { slide: t.slideId }) },
+    { id: 'slide-cut', label: 'Cut slide', run: (t) => (api.copySlide(t), api.op('rm', { slide: t.slideId })) },
+    { id: 'slide-copy', label: 'Copy slide', run: (t) => api.copySlide(t) },
+    { id: 'slide-paste', label: 'Paste slides after', run: (t) => api.pasteSlides(t) },
     { id: 'slide-hide', label: 'Hidden in the presentation', checked: (t) => kv(t).visibility === 'hidden', run: (t) => setAttr(t, 'visibility', kv(t).visibility === 'hidden' ? null : 'hidden') },
     { id: 'slide-rm', label: 'Delete slide…', run: (t) => (!settings.get('confirm.slide_delete') || confirm(`Delete slide "${t.title || t.slideId}"? (Undo can restore it.)`)) && api.op('rm', { slide: t.slideId }) },
     '-',
