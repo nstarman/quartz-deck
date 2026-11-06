@@ -54,19 +54,23 @@ bar.id = 'menubar';
 bar.setAttribute('role', 'menubar');
 bar.setAttribute('aria-label', 'Menu');
 document.body.prepend(bar);
-const buttons = MENUS.map((m, i) => {
+const item = (label, text = label) => {
   const b = document.createElement('div');
   b.setAttribute('role', 'menuitem');
   b.setAttribute('aria-haspopup', 'menu');
   b.setAttribute('aria-expanded', 'false');
-  b.dataset.menu = m.label;
-  b.tabIndex = i === 0 ? 0 : -1;
-  b.textContent = m.label;
+  b.dataset.menu = label;
+  b.tabIndex = -1;
+  b.textContent = text;
   bar.append(b);
   return b;
-});
+};
+// folded (in VS Code's panel, or when the bar doesn't fit): one ☰ holding the same menus
+const fold = item('Menu', '☰');
+fold.setAttribute('aria-label', 'Menu');
+const buttons = MENUS.map((m) => item(m.label));
 
-let open = -1; // index of the open menu
+let open = null; // the button whose menu is open
 let before = null; // where focus was before F10
 /** Focus back to where it was before F10 (after Escape, or once an item runs). */
 function back() {
@@ -76,44 +80,55 @@ function back() {
 }
 
 // the run bar belongs to the Quarto extension in VS Code (spec 006): no Run menu then
-const visible = () => buttons.filter((b) => !(b.dataset.menu === 'Run' && document.documentElement.classList.contains('run-external')));
+const menus = () => buttons.filter((b) => !(b.dataset.menu === 'Run' && document.documentElement.classList.contains('run-external')));
+const folded = () => bar.classList.contains('folded');
+const visible = () => (folded() ? [fold] : menus());
+const itemsOf = (b, ctx) => (b === fold
+  ? menus().map((m) => ({ label: m.dataset.menu, items: resolve(MENUS[buttons.indexOf(m)].items, ctx) }))
+  : resolve(MENUS[buttons.indexOf(b)].items, ctx));
 
-async function show(i, { focus = true } = {}) {
-  const b = buttons[i];
+/** Fold when framed or when the menus don't fit (re-checked as the window changes). */
+function refold() {
+  bar.classList.remove('folded');
+  bar.classList.toggle('folded', keys.framed || bar.scrollWidth > bar.clientWidth);
+  visible().forEach((b, i) => { b.tabIndex = i === 0 ? 0 : -1; });
+}
+new ResizeObserver(refold).observe(bar);
+
+async function show(b, { focus = true } = {}) {
   const ctx = await keys.currentContext();
-  buttons.forEach((x) => x.setAttribute('aria-expanded', String(x === b)));
-  open = i;
+  [fold, ...buttons].forEach((x) => x.setAttribute('aria-expanded', String(x === b)));
+  open = b;
   const r = b.getBoundingClientRect();
-  openMenu(resolve(MENUS[i].items, ctx), r.left, r.bottom + 2, { focus, onSide: (d) => step(d, true) });
+  openMenu(itemsOf(b, ctx), r.left, r.bottom + 2, { focus, onSide: (d) => step(d, true) });
 }
 
 function step(d, opened) {
   const vis = visible();
-  const at = vis.indexOf(buttons[open >= 0 ? open : buttons.indexOf(document.activeElement)]);
+  const at = vis.indexOf(open ?? document.activeElement);
   const next = vis[(at + d + vis.length) % vis.length];
   next.focus();
-  if (opened) show(buttons.indexOf(next));
+  if (opened) show(next);
 }
 
-onClose(() => { open = -1; buttons.forEach((x) => x.setAttribute('aria-expanded', 'false')); });
+onClose(() => { open = null; [fold, ...buttons].forEach((x) => x.setAttribute('aria-expanded', 'false')); });
 
 bar.addEventListener('mousedown', (e) => {
   const b = e.target.closest('[role=menuitem]');
   if (!b) return;
   e.preventDefault(); // focus stays where it is: an edit on the slide stays open
-  const i = buttons.indexOf(b);
-  if (open === i) closeMenu(); else show(i, { focus: false });
+  if (open === b) closeMenu(); else show(b, { focus: false });
 });
 bar.addEventListener('mouseover', (e) => {
   const b = e.target.closest('[role=menuitem]');
-  if (b && open >= 0 && buttons.indexOf(b) !== open) show(buttons.indexOf(b), { focus: false });
+  if (b && open && b !== open) show(b, { focus: false });
 });
 // widget keys: moving along the bar itself (inside an open menu, menu.js has the keys)
 bar.addEventListener('keydown', (e) => {
   const b = e.target.closest('[role=menuitem]');
   if (!b) return;
   if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); step(e.key === 'ArrowLeft' ? -1 : 1, false); }
-  else if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') { e.preventDefault(); show(buttons.indexOf(b)); }
+  else if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') { e.preventDefault(); show(b); }
   else if (e.key === 'Escape') { e.preventDefault(); back(); }
   else return;
   e.stopPropagation();
@@ -131,7 +146,7 @@ keys.on('menubar', () => {
 window.qdMenus = async () => {
   const ctx = await keys.currentContext();
   const flat = (items) => items.map((x) => (x === '-' ? '-' : { label: x.label, shortcut: x.shortcut, checked: x.checked, disabled: x.disabled, items: x.items && flat(x.items) }));
-  return Object.fromEntries(visible().map((b) => [b.dataset.menu, flat(resolve(MENUS[buttons.indexOf(b)].items, ctx))]));
+  return Object.fromEntries(menus().map((b) => [b.dataset.menu, flat(itemsOf(b, ctx))]));
 };
 
 // ---------- the shortcut reference (spec 007 US3): Help ▸ Keyboard shortcuts, or ? ----------

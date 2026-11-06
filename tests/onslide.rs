@@ -1627,6 +1627,42 @@ async fn framed_editor_takes_theme_and_messages() {
     );
     assert_eq!(ed.eval(bg).await, "#000000");
 
+    // US5: no menu bar, one ☰ holding the same menus; F10 reaches it
+    let shown =
+        |sel: &str| format!("getComputedStyle(document.querySelector({sel:?})).display !== 'none'");
+    assert_eq!(ed.eval(&shown("#menubar [data-menu=File]")).await, false);
+    assert_eq!(ed.eval(&shown("#menubar [data-menu=Menu]")).await, true);
+    ed.go("a").await;
+    ed.click_editor("#menubar [data-menu=Menu]").await;
+    assert_eq!(
+        ed.menu_labels().await,
+        ["File", "Edit", "Insert", "Slide", "View", "Run", "Help"]
+    );
+    ed.click_menu("Slide").await;
+    ed.click_menu("Duplicate slide").await;
+    ed.wait_file(|f| f.matches("First para.").count() == 2, "ran from ☰")
+        .await;
+    ed.cli(&["undo"]);
+    ed.settle().await;
+    ed.key("F10", "F10", 121, 0).await;
+    ed.wait("document.activeElement?.dataset.menu === 'Menu'")
+        .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    // VS Code's keys stay VS Code's: ⌘B is not Bold here, and the menus and the
+    // reference show only the panel's keys
+    let resolve = |k: &str, place: &str| format!("window.qdActions().resolve({k:?}, [{place:?}])");
+    assert_eq!(ed.eval(&resolve("Mod+B", "text")).await, Value::Null);
+    assert_eq!(ed.eval(&resolve("Mod+Shift+D", "slide")).await, Value::Null);
+    assert_eq!(ed.eval(&resolve("Mod+I", "text")).await, "italic");
+    let menus = ed.eval("window.qdMenus()").await;
+    let dup = menus["Slide"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["label"] == "Duplicate slide")
+        .unwrap();
+    assert_eq!(dup["shortcut"], Value::Null, "{dup}");
+
     // VS Code's cursor in slide B's text shows B, and qd focus has it (US3)
     ed.go("a").await;
     ed.eval("window.postMessage({type: 'follow', line: 17, first: 17, last: 17, text: ''}, '*')")
@@ -1701,9 +1737,17 @@ async fn menu_bar_runs_every_action() {
         json!(["File", "Edit", "Insert", "Slide", "View", "Run", "Help"])
     );
     assert_eq!(
-        ed.eval("document.querySelectorAll('#menubar[role=menubar] > [role=menuitem][aria-haspopup=menu]').length").await,
+        ed.eval("[...document.querySelectorAll('#menubar[role=menubar] > [role=menuitem][aria-haspopup=menu]')].filter((b) => b.offsetParent).length").await,
         7
     );
+    // too narrow for the menus: they fold into ☰ (and come back when there is room)
+    let folded = "document.querySelector('#menubar').classList.contains('folded')";
+    ed.eval("document.querySelector('#menubar').style.width = '200px'")
+        .await;
+    ed.wait(folded).await;
+    ed.eval("document.querySelector('#menubar').style.width = ''")
+        .await;
+    ed.wait(&format!("!{folded}")).await;
 
     // Slide → Duplicate slide, then Edit → Undo
     ed.go("a").await;
@@ -2007,7 +2051,7 @@ async fn same_rules_everywhere() {
             "document.documentElement.dataset.theme = '{theme}'"
         ))
         .await;
-        for target in ["#menubar [role=menuitem]", "#slides li button"] {
+        for target in ["#menubar [data-menu=File]", "#slides li button"] {
             ed.eval(&format!("document.querySelector({target:?}).focus()"))
                 .await;
             ed.key("Shift", "ShiftLeft", 16, 8).await; // a key press: focus-visible
