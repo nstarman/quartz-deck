@@ -16,6 +16,7 @@ open questions each spec must settle.
 | 007 | app-shell | planned | Desktop-app conventions: menu bar (File, Edit, Insert, Slide, View, Run, Help) with every action and shortcut; Settings window; shortcut reference; consistent selection, clipboard, undo, Escape/Enter |
 | 008 | export-formats | planned | An **Export ▾** drop-down (and `qd export --to <format>`) for every format Quarto/Pandoc can write: PowerPoint, PDF (Beamer/LaTeX or Typst), Word, HTML, Markdown, Jupyter notebook, and more |
 | 009 | history | planned | Optional **save = git commit** (a setting), a **History** side panel to scroll back through versions with a side-by-side preview of the deck as it was, diff any version against now (source and rendered slides), and restore a whole version or just one slide/element |
+| 010 | free-placement | planned | Drag **any** element (paragraph, list, image, equation, code output) off the slide's flow and drop it anywhere, resize it, and put it back in the flow; stored as Quarto's own absolute positioning |
 
 Every PR — spec or small — passes a concision audit (`/pr-audit`,
 constitution 1.1.0) before it is marked ready.
@@ -147,3 +148,34 @@ the editor.
   do outside a git repository (offer `git init`, or keep a private history
   in qd's cache); rendering old versions (render on demand into the cache,
   with the code-execution rules of 004).
+
+### 010 free-placement
+
+Goal: place anything anywhere on a slide, as in a slide app, while the
+`.qmd` stays plain Quarto.
+
+- Today (001 US4) only positioned boxes (Insert ▸ Text box, image boxes) can
+  be dragged anywhere and resized; other elements (003) only move up or down
+  within the slide's flow.
+- **Take an element out of the flow:** ⌥-drag a paragraph, list, image,
+  equation or cell output (a plain drag still reorders, as in 003), or choose
+  "Place freely" (menu, right-click, `qd block place <ref> --at X,Y
+  [--size W,H]`). The element is wrapped in Quarto's `::: {.absolute top=…
+  left=… width=…}` div, the same syntax as today's boxes, so stock `quarto
+  render` puts it in the same spot. Its own bytes are unchanged.
+- **Move and resize** it like any box: mouse drag, resize handles, arrow keys
+  to nudge (⇧ for bigger steps, matching 007's keyboard rules), and the
+  existing `qd box move`/`resize`.
+- **Back into the flow:** "Put back in the flow" (`qd block unplace <ref>`)
+  removes the wrapper and leaves the element where its source is.
+- Optional help while dragging: alignment guides to the slide's edges,
+  centre and other elements; snapping that can be turned off (a 007
+  setting).
+- Open questions: units (pixels of the slide's width × height vs. percent,
+  and what happens when the deck's size changes); elements that can't be
+  wrapped safely (headings, columns, a code cell's input vs. its output, an
+  element already inside a div); stacking order when boxes overlap (a "Bring
+  to front / Send to back" that reorders the source); how a placed element
+  shows in the source pane and in VS Code's text (005/006 follow); and
+  whether an element placed freely still appears on click (fragments).
+
