@@ -168,7 +168,7 @@ Paths relative to repo root.
 - [X] T025 Performance (SC-008): a browser test opens each menu and the reference on a 30-slide deck in under 100 ms.
 - [X] T026 Run the quickstart §1–§4 in the browser and record it in `checklists/quickstart-run.md`. §5 (VS Code) is done by the person, or left as a follow-up like 006's T022.
 - [X] T027 Final constitution re-check in `plan.md`; fmt, clippy, `cargo test` and `node --test vscode/test/*.test.js` all green.
-- [ ] T028 Concision audit (`/pr-audit`), the last task before the PR is marked ready.
+- [X] T028 Concision audit (`/pr-audit`), the last task before the PR is marked ready.
 
 ---
 

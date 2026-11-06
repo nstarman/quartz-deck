@@ -66,6 +66,40 @@ struct Ed {
     _browser: Browser,
     _profile: tempfile::TempDir,
     _slot: tokio::sync::OwnedSemaphorePermit,
+    _watchdog: Watchdog,
+}
+
+/// A browser test that runs over 5 minutes is stuck, not slow: under heavy load
+/// Chrome can go away, and a CDP call then waits forever. Name the test and
+/// stop the run rather than hang it.
+struct Watchdog(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl Watchdog {
+    fn start() -> Watchdog {
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (flag, name) = (
+            done.clone(),
+            std::thread::current().name().unwrap_or("?").to_string(),
+        );
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(300));
+            if !flag.load(std::sync::atomic::Ordering::Relaxed) {
+                // straight to stderr: the harness captures eprintln!, and exit() drops that
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "{name}: still running after 5 minutes (is Chrome gone?); stopping the run"
+                );
+                std::process::exit(101);
+            }
+        });
+        Watchdog(done)
+    }
+}
+
+impl Drop for Watchdog {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 /// At most half the CPUs' worth of editors (Chrome + Quarto each) at once:
@@ -88,6 +122,7 @@ impl Ed {
     async fn open(deck: &str) -> Option<Ed> {
         let chrome = chrome()?;
         let slot = slot().await;
+        let watchdog = Watchdog::start();
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("deck.qmd"), deck).unwrap();
         let out = qd(dir.path()).args(["serve", "--detach"]).output().unwrap();
@@ -111,6 +146,7 @@ impl Ed {
             _browser: browser,
             _profile: profile,
             _slot: slot,
+            _watchdog: watchdog,
         };
         ed.wait_secs(READY, 60).await;
         Some(ed)
@@ -1980,8 +2016,7 @@ async fn same_rules_everywhere() {
     ed.type_into("a", "[data-qd=\"a/0\"]", " More.").await;
     ed.click_editor("#menubar [data-menu=Edit]").await;
     ed.wait("!document.querySelector('#ctxmenu').hidden").await;
-    ed.key("Escape", "Escape", 27, 0).await;
-    ed.wait("document.querySelector('#ctxmenu').hidden").await;
+    ed.close_menu().await;
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert!(
         ed.session().await["draft"]
@@ -2098,8 +2133,7 @@ async fn menus_open_fast() {
     let times = ed
         .eval(
             r#"(async () => {
-  const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
-  const until = async (f, what) => { const t = performance.now(); while (!f()) { if (performance.now() - t > 5000) throw new Error('stuck: ' + what); await frame(); } };
+  const until = async (f, what) => { const t = performance.now(); while (!f()) { if (performance.now() - t > 5000) throw new Error('stuck: ' + what); await new Promise(requestAnimationFrame); } };
   const median = (xs) => xs.sort((a, b) => a - b)[Math.floor(xs.length / 2)];
   const menu = document.querySelector('#ctxmenu');
   const out = {};
