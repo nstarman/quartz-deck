@@ -44,6 +44,7 @@ const UI_MODULES: &[(&str, &str)] = &[
     ("focus.js", include_str!("ui/focus.js")),
     ("keys.js", include_str!("ui/keys.js")),
     ("menubar.js", include_str!("ui/menubar.js")),
+    ("list.js", include_str!("ui/list.js")),
     ("settings.js", include_str!("ui/settings.js")),
     ("action-list.js", ACTION_LIST_JS),
 ];

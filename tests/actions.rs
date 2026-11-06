@@ -187,6 +187,11 @@ const WIDGET_KEYS: &[(&str, usize, &str)] = &[
     // form ⌘Enter submit; Esc closing a menu while focus is in the preview; the edit
     // session's commit/leave/indent keys (move with US4, T020); the splitter's arrows
     (
+        "list.js",
+        5,
+        "moving along the slide list (↑ ↓), Enter adding a slide there, Esc cancelling a drag",
+    ),
+    (
         "editor.js",
         8,
         "form submit, menu close, edit-session mechanics, splitter",
