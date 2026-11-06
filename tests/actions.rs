@@ -198,17 +198,27 @@ const WIDGET_KEYS: &[(&str, usize, &str)] = &[
     ),
 ];
 
+/// The editor's modules: (file name, text).
+fn ui_js() -> Vec<(String, String)> {
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/src/ui");
+    std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension() == Some("js".as_ref()))
+        .map(|p| {
+            let name = p.file_name().unwrap().to_str().unwrap().to_string();
+            (name, std::fs::read_to_string(&p).unwrap())
+        })
+        .collect()
+}
+
 #[test]
 fn keys_are_handled_only_through_the_list() {
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/src/ui");
     let mut found = vec![];
-    for entry in std::fs::read_dir(dir).unwrap() {
-        let path = entry.unwrap().path();
-        if path.extension() != Some("js".as_ref()) || path.ends_with("keys.js") {
+    for (name, text) in ui_js() {
+        if name == "keys.js" {
             continue;
         }
-        let name = path.file_name().unwrap().to_str().unwrap();
-        let text = std::fs::read_to_string(&path).unwrap();
         let n = text.matches("e.key").count();
         let allowed = WIDGET_KEYS
             .iter()
@@ -224,4 +234,24 @@ fn keys_are_handled_only_through_the_list() {
          src/ui/actions.json and let keys.dispatch handle it, or, if it operates a \
          widget from inside, update WIDGET_KEYS with the reason"
     );
+}
+
+/// Spec 008 US5: the editor asks with its own sheets (sheet.js), never the
+/// browser's `prompt`, `confirm` or `alert` boxes.
+#[test]
+fn no_native_boxes() {
+    let mut found = vec![];
+    for (name, text) in ui_js() {
+        for (i, line) in text.lines().enumerate() {
+            for f in ["prompt(", "confirm(", "alert("] {
+                let hit = line.match_indices(f).any(|(at, _)| {
+                    !line[..at].ends_with(|c: char| c.is_alphanumeric() || c == '_' || c == '.')
+                });
+                if hit {
+                    found.push(format!("{name}:{}: {f}", i + 1));
+                }
+            }
+        }
+    }
+    assert!(found.is_empty(), "native boxes: {found:?}; use sheet.js");
 }

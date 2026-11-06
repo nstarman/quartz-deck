@@ -1504,6 +1504,7 @@ const bodies = {{
   '/api/buffer': JSON.stringify({{base: '', text: '## Pwned\\n'}}),
   '/api/buffer/close': '{{}}',
   '/api/settings': JSON.stringify({{theme: 'dark', 'source.side': 'right', 'confirm.slide_delete': false}}),
+  '/api/images?name=evil.svg': '<svg xmlns="http://www.w3.org/2000/svg"><script>parent.pwned = 1</script></svg>',
 }};
 for (const [path, body] of Object.entries(bodies)) {{
   await fetch(qd + path, {{method: 'POST', headers: {{'Content-Type': 'application/json', 'X-QD-Token': 'guess'}}, body}}).catch(() => {{}});
@@ -1527,6 +1528,8 @@ return (await unreadable('/')) && (await unreadable('/api/focus'));
     tokio::time::sleep(Duration::from_secs(3)).await; // anything that got through would show by now
 
     assert_eq!(ed.file(), RUN_DECK, "no edit landed");
+    // spec 008: no file was written beside the deck
+    assert!(!ed.dir.path().join("images").exists(), "no image added");
     // spec 007: the person's settings are unchanged
     let v = &ed.cli(&["settings"])["values"];
     assert_eq!(
@@ -2018,22 +2021,16 @@ async fn settings_apply_live_and_stick() {
     .await;
 
     // Reset to defaults asks first, then everything is back (theme follows the system)
-    ed.eval("window.confirm = (m) => ((window.__asked = m), true)")
-        .await;
     ed.key(",", "Comma", 188, 2).await;
     ed.wait("document.querySelector('#settings').open").await;
     ed.click_js("(r => [r.left + r.width / 2, r.top + r.height / 2])([...document.querySelectorAll('#settings button')].find((b) => b.textContent.startsWith('Reset')).getBoundingClientRect())").await;
+    ed.wait("document.querySelector('dialog.sheet[open]')?.textContent.includes('default')")
+        .await;
+    ed.click_editor("dialog.sheet button[value=ok]").await;
     ed.wait(&format!(
         "{theme} === undefined && !{main}.contains('source-right')"
     ))
     .await;
-    assert!(
-        ed.eval("window.__asked")
-            .await
-            .as_str()
-            .unwrap()
-            .contains("default")
-    );
     ed.cli(&["--deck", deck.to_str().unwrap(), "stop"]);
 }
 
@@ -2675,4 +2672,106 @@ async fn present_from_here_and_from_start() {
     );
     ed.eval(leave).await;
     ed.wait(&editing).await;
+}
+
+/// T020 (spec 008 US5): the editor asks with its own sheets, never the browser's
+/// boxes; an image file dropped on the slide is copied beside the deck and lands
+/// where it was dropped.
+#[tokio::test(flavor = "multi_thread")]
+async fn own_sheets_and_image_drop() {
+    let Some(ed) = Ed::open(P2).await else {
+        return;
+    };
+    std::fs::write(
+        ed.dir.path().join("chart.svg"),
+        "<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'/>",
+    )
+    .unwrap();
+    ed.eval(
+        "window.__native = []; for (const f of ['prompt', 'confirm', 'alert']) window[f] = (...a) => { __native.push(f); return null; }",
+    )
+    .await;
+    let sheet = "document.querySelector('dialog.sheet[open]')";
+
+    // Insert ▸ Image…: the images beside the deck, with previews
+    ed.go("b").await;
+    ed.click_editor("#menubar [data-menu=Insert]").await;
+    ed.click_menu("Image…").await;
+    ed.wait(&format!(
+        "{sheet}?.querySelector('[data-path=\"chart.svg\"] img')?.complete === true"
+    ))
+    .await;
+    ed.click_editor("dialog.sheet [data-path=\"chart.svg\"]")
+        .await;
+    ed.click_editor("dialog.sheet button[value=ok]").await;
+    ed.wait_file(
+        |f| f.contains("Other slide.\n\n![](chart.svg)"),
+        "image inserted",
+    )
+    .await;
+    ed.settle().await;
+
+    // a PNG dropped on the lower half of the first paragraph lands after it
+    ed.go("a").await;
+    ed.eval(
+        r#"(() => {
+  const doc = document.querySelector('#preview').contentDocument;
+  const p = doc.querySelector('[data-qd="a/0"]');
+  const r = p.getBoundingClientRect();
+  const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+  const dt = new DataTransfer();
+  dt.items.add(new File([bytes], 'drop.png', { type: 'image/png' }));
+  const at = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.left + 5, clientY: r.bottom - 2 };
+  p.dispatchEvent(new DragEvent('dragover', at));
+  p.dispatchEvent(new DragEvent('drop', at));
+})()"#,
+    )
+    .await;
+    ed.wait_file(
+        |f| f.contains("First para.\n\n![](images/drop.png)\n\nSecond para."),
+        "dropped image after the first paragraph",
+    )
+    .await;
+    assert!(ed.dir.path().join("images/drop.png").exists());
+    ed.settle().await;
+
+    // the link sheet says what's wrong with an address, and OK waits for a good one
+    ed.go("b").await;
+    ed.click_in_slide("[data-qd=\"b/0\"]").await;
+    ed.wait("window.qdSession() !== null").await;
+    ed.click_editor("#fmtbar [data-fmt=link]").await;
+    ed.wait(&format!(
+        "{sheet}?.querySelector('input[name=href]') != null"
+    ))
+    .await;
+    ed.eval(&format!(
+        "(() => {{ const i = {sheet}.querySelector('input[name=href]'); i.value = 'not a url'; i.dispatchEvent(new Event('input', {{ bubbles: true }})); }})()"
+    ))
+    .await;
+    ed.wait(&format!(
+        "{sheet}.querySelector('.error').textContent !== '' && {sheet}.querySelector('button[value=ok]').disabled"
+    ))
+    .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    // Cancel puts the keyboard back in the text; Esc there ends the edit
+    ed.wait(&format!("!{sheet} && document.activeElement?.id === 'preview' && document.querySelector('#preview').contentDocument.activeElement.isContentEditable"))
+        .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.idle().await;
+
+    // the background colour sheet offers None, which removes the colour
+    ed.cli(&["set", "b", "--attr", "background-color=#ffeeaa"]);
+    ed.settle().await;
+    ed.go("b").await;
+    ed.menu("Slide", "Background colour…").await;
+    ed.wait(&format!(
+        "{sheet}?.querySelector('[data-value=\"\"]') != null"
+    ))
+    .await;
+    ed.click_editor("dialog.sheet [data-value=\"\"]").await;
+    ed.click_editor("dialog.sheet button[value=ok]").await;
+    ed.wait_file(|f| !f.contains("background-color"), "colour removed")
+        .await;
+
+    assert_eq!(ed.eval("__native.length").await, 0, "a native box was used");
 }

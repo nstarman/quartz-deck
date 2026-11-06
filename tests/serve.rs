@@ -71,13 +71,24 @@ fn start(dir: &Path) -> Server {
 }
 
 fn post(port: u16, path: &str, host: &str, ctype: &str, body: &str) -> (u16, String) {
+    post_bytes(
+        port,
+        path,
+        &format!("Host: {host}\r\nContent-Type: {ctype}\r\n"),
+        body.as_bytes(),
+    )
+}
+
+/// Raw bytes to `path` with header lines (each ending in `\r\n`).
+fn post_bytes(port: u16, path: &str, headers: &str, body: &[u8]) -> (u16, String) {
     let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
     write!(
         s,
-        "POST {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        "POST {path} HTTP/1.1\r\n{headers}Content-Length: {}\r\nConnection: close\r\n\r\n",
         body.len()
     )
     .unwrap();
+    s.write_all(body).unwrap();
     response(s)
 }
 
@@ -967,4 +978,56 @@ fn settings_over_http() {
     let (status, _) = post(p, "/api/settings", "127.0.0.1", &auth, r#"{"reset": true}"#);
     assert_eq!(status, 200);
     assert_eq!(read()["values"]["source.side"], "left");
+}
+
+/// Spec 008 US5: the images beside the deck, and adding one (token and same
+/// origin; checked type and bytes; a free name, never overwriting).
+#[test]
+fn images_over_http() {
+    if !have("quarto") {
+        return;
+    }
+    let (_tmp, dir) = setup();
+    let server = start(&dir);
+    let p = server.port;
+    let png: &[u8] = b"\x89PNG\r\n\x1a\nbody";
+    let anon = format!("Host: 127.0.0.1:{p}\r\nContent-Type: application/octet-stream\r\n");
+    let tok = format!("{anon}X-QD-Token: {}\r\n", server.token);
+    let up = "/api/images?name=chart.png";
+
+    assert_eq!(post_bytes(p, up, &anon, png).0, 403, "no token");
+    assert_eq!(
+        post_bytes(p, up, &format!("{tok}Origin: http://evil.example\r\n"), png).0,
+        403,
+        "another origin"
+    );
+    assert!(!dir.join("images").exists());
+    let (s, b) = post_bytes(p, "/api/images?name=x.exe", &tok, png);
+    assert_eq!(s, 400, "{b}");
+    assert!(b.contains("E_INVALID_ARG"), "{b}");
+    assert_eq!(post_bytes(p, up, &tok, b"GIF89a").0, 400, "bytes not a PNG");
+
+    let (s, b) = post_bytes(p, up, &tok, png);
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(
+        serde_json::from_str::<Value>(&b).unwrap()["path"],
+        "images/chart.png"
+    );
+    let (_, b) = post_bytes(p, up, &tok, b"\x89PNG\r\n\x1a\nother");
+    assert_eq!(
+        serde_json::from_str::<Value>(&b).unwrap()["path"],
+        "images/chart-1.png"
+    );
+    assert_eq!(
+        std::fs::read(dir.join("images/chart.png")).unwrap(),
+        png,
+        "not overwritten"
+    );
+
+    let v: Value = serde_json::from_str(&get(p, "/api/images").1).unwrap();
+    let listed = v["images"].as_array().unwrap();
+    assert!(
+        listed.iter().any(|i| i["path"] == "images/chart-1.png"),
+        "{v}"
+    );
 }

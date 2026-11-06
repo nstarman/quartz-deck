@@ -133,20 +133,20 @@ Paths are relative to the repo root.
 
 **Independent Test**: spec US5; quickstart §5.
 
-- [ ] T017 [P] [US5] Write failing Rust tests:
+- [X] T017 [P] [US5] Write failing Rust tests:
   - **`src/images.rs` units:** name reduced to `[A-Za-z0-9._-]` (no path parts); a taken name gets `-1`, `-2`; a type outside png/jpg/jpeg/gif/svg/webp, or magic bytes that don't match it, is `E_INVALID_ARG`; more than 20 MB is refused; listing walks ≤3 levels, skips hidden folders, qd's cache and `export/`, and sorts newest first.
   - **`tests/actions.rs`:** the static scan fails on any `prompt(`, `confirm(` or `alert(` in `src/ui/*.js`.
-- [ ] T018 [P] [US5] Write failing tests:
+- [X] T018 [P] [US5] Write failing tests:
   - **`tests/cli.rs` `images_list_and_add`:** `qd images`; `qd image add chart.png` (path only); `qd image add chart.png --slide growth --end` (the block inserted, one undo step); adding the same file twice gives `images/chart-1.png`.
   - **`tests/serve.rs` `images_over_http`:** `GET /api/images`; `POST /api/images?name=…` gives 403 without the token or with another Origin, 400 for a bad type or bad magic bytes, and 200 with a free name; nothing is overwritten.
-- [ ] T019 [US5] Implement `src/images.rs` (list, add), `qd images` and `qd image add` in `src/cli.rs` (plus `qd schema` entries), and `GET`/`POST /api/images` in `src/server.rs` (raw body, `application/octet-stream`, `authorized()`, 20 MB limit) per contracts/http.md and contracts/cli.md. T017 and T018 pass.
-- [ ] T020 [P] [US5] Write failing browser test `own_sheets_and_image_drop` in `tests/onslide.rs`:
+- [X] T019 [US5] Implement `src/images.rs` (list, add), `qd images` and `qd image add` in `src/cli.rs` (plus `qd schema` entries), and `GET`/`POST /api/images` in `src/server.rs` (raw body, `application/octet-stream`, `authorized()`, 20 MB limit) per contracts/http.md and contracts/cli.md. T017 and T018 pass.
+- [X] T020 [P] [US5] Write failing browser test `own_sheets_and_image_drop` in `tests/onslide.rs`:
   - with `window.prompt`/`confirm`/`alert` replaced by functions that record a call, Insert ▸ Image… opens a sheet listing `chart.svg` with a preview, and choosing it inserts the image;
   - a PNG dropped on the canvas (a synthetic `DataTransfer` holding a `File`) lands where dropped, and `images/` holds it;
   - the link sheet refuses `not a url` with a message;
   - the background colour sheet offers None and it removes the colour;
   - none of the native functions was called.
-- [ ] T021 [US5] `src/ui/sheet.js` (research R8, data-model "Sheet"): an anchored `<dialog>` with fields (text, swatches with None and Custom…, file list with previews, check), inline validation, OK/Cancel, Escape and Enter.
+- [X] T021 [US5] `src/ui/sheet.js` (research R8, data-model "Sheet"): an anchored `<dialog>` with fields (text, swatches with None and Custom…, file list with previews, check), inline validation, OK/Cancel, Escape and Enter.
 
   Replace all nine native boxes:
   - `src/ui/actions.js`: custom class, background colour, background image, delete slide;
@@ -156,7 +156,7 @@ Paths are relative to the repo root.
   - `src/ui/settings.js`: reset.
 
   Image drop on the canvas in `src/ui/editor.js` (upload, then `block add` at the drop point). T017's scan and T020 pass.
-- [ ] T022 [US5] Security: add `POST /api/images` to `another_origin_cannot_run_code_or_edit` (no file appears in `images/`). Write `specs/008-usability/checklists/security.md`: the upload's defences, the mutation check (with the token check removed, which test catches it), and the SVG note from research R9.
+- [X] T022 [US5] Security: add `POST /api/images` to `another_origin_cannot_run_code_or_edit` (no file appears in `images/`). Write `specs/008-usability/checklists/security.md`: the upload's defences, the mutation check (with the token check removed, which test catches it), and the SVG note from research R9.
 
 ---
 

@@ -3,6 +3,7 @@
 // iframe; buttons never take focus, so the edit stays open while formatting.
 
 import * as keys from '/ui/keys.js';
+import { ask } from '/ui/sheet.js';
 
 const bar = document.createElement('div');
 bar.id = 'fmtbar';
@@ -96,18 +97,29 @@ function toggle(cmd) {
   if (on) unwrap(on); else exec(cmd);
 }
 
-function link() {
+/** A web or mail address, a slide (#id) or a path; '' removes the link. */
+function badLink(x) {
+  if (!x || /^(#|\.{0,2}\/)/.test(x)) return '';
+  try { if (['http:', 'https:', 'mailto:'].includes(new URL(x).protocol)) return ''; } catch {}
+  return 'An address such as https://example.org, a slide such as #results, or a path';
+}
+
+async function link() {
   const s = sel();
   const range = s?.rangeCount ? s.getRangeAt(0).cloneRange() : null;
   const existing = enclosing((n) => n.tagName === 'A');
-  session.hold = true; // the prompt takes focus; don't save on that blur
-  const url = prompt('Link address (empty removes the link)', existing?.getAttribute('href') || 'https://');
+  session.hold = true; // the sheet takes focus; don't save on that blur
+  const v = await ask({
+    title: 'Link',
+    anchor: bar.querySelector('[data-fmt=link]'),
+    fields: [{ name: 'href', kind: 'text', label: 'Address (empty removes the link)', value: existing?.getAttribute('href') || '', placeholder: 'https://', validate: badLink }],
+  });
   session.hold = false;
   session.root.focus();
   if (range) { s.removeAllRanges(); s.addRange(range); }
-  if (url === null) return;
-  if (!url.trim() || url.trim() === 'https://') { if (existing) unwrap(existing); return; }
-  if (existing) existing.setAttribute('href', url.trim()); else exec('createLink', url.trim());
+  if (!v) return;
+  if (!v.href) { if (existing) unwrap(existing); return; }
+  if (existing) existing.setAttribute('href', v.href); else exec('createLink', v.href);
 }
 
 const BLOCK_ONLY = new Set(['ul', 'ol', 'indent', 'outdent', 'left', 'center', 'right']);
@@ -159,7 +171,7 @@ function button(id, label, title, run) {
   b.title = title;
   b.setAttribute('aria-label', title);
   b.addEventListener('mousedown', (e) => e.preventDefault()); // keep focus in the slide
-  b.addEventListener('click', () => { if (session) { run(); session.root.focus(); } });
+  b.addEventListener('click', () => { if (session) after(run()); });
   return b;
 }
 
@@ -212,6 +224,9 @@ export function placeNear(b, el, frame) {
   b.style.left = `${left}px`;
 }
 
+/** Back to the text after an action; one that opens a sheet (link) does that itself. */
+const after = (r) => { if (!r?.then) session.root.focus(); };
+
 export function hideToolbar() {
   session = null;
   bar.hidden = true;
@@ -221,6 +236,6 @@ export function hideToolbar() {
 for (const [id, , , run] of [...BUTTONS.filter(Array.isArray), ['nocolor', '', '', noColor]]) {
   keys.on(ACTION[id] || id, {
     enabled: () => !!session && !(session.reg.mode === 'inline' && BLOCK_ONLY.has(id)),
-    run: () => { run(); session.root.focus(); },
+    run: () => after(run()),
   });
 }

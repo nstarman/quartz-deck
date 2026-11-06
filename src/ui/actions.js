@@ -4,6 +4,7 @@
 
 import * as keys from '/ui/keys.js';
 import * as settings from '/ui/settings.js';
+import { ask, confirmSheet } from '/ui/sheet.js';
 
 export const TRANSITIONS = ['none', 'fade', 'slide', 'convex', 'concave', 'zoom'];
 
@@ -29,7 +30,10 @@ export function makeActions(api) {
   const classes = [
     { id: 'class-smaller', label: 'Smaller text', checked: (t) => classesOf(t).includes('smaller'), run: (t) => toggleClass(t, 'smaller') },
     { id: 'class-incremental', label: 'Incremental list', checked: (t) => classesOf(t).includes('incremental'), run: (t) => toggleClass(t, 'incremental') },
-    { id: 'class-custom', label: 'Custom class…', run: (t) => { const c = prompt('Class to add or remove (without the dot)'); if (c?.trim()) toggleClass(t, c.trim().replace(/^\./, '')); } },
+    { id: 'class-custom', label: 'Custom class…', run: async (t) => {
+      const v = await ask({ title: 'Custom class', fields: [{ name: 'c', kind: 'text', label: 'Class to add or remove', placeholder: 'e.g. smaller', validate: (x) => (/^\.?[A-Za-z_][\w-]*$/.test(x) ? '' : 'Letters, digits, - and _ (no spaces)') }] });
+      if (v) toggleClass(t, v.c.replace(/^\./, ''));
+    } },
   ];
   const element = [
     { id: 'run', label: 'Run cell', visible: (t) => t.block.kind === 'cell', run: (t) => api.runCells([t.ref]) },
@@ -61,10 +65,16 @@ export function makeActions(api) {
     { id: 'slide-copy', label: 'Copy slide', run: (t) => api.copySlide(t) },
     { id: 'slide-paste', label: 'Paste slides after', run: (t) => api.pasteSlides(t) },
     { id: 'slide-hide', label: 'Hidden in the presentation', checked: (t) => kv(t).visibility === 'hidden', run: (t) => setAttr(t, 'visibility', kv(t).visibility === 'hidden' ? null : 'hidden') },
-    { id: 'slide-rm', label: 'Delete slide…', run: (t) => (!settings.get('confirm.slide_delete') || confirm(`Delete slide "${t.title || t.slideId}"? (Undo can restore it.)`)) && api.op('rm', { slide: t.slideId }) },
+    { id: 'slide-rm', label: 'Delete slide…', run: async (t) => (!settings.get('confirm.slide_delete') || await confirmSheet('Delete slide?', `"${t.title || t.slideId}" will be deleted. Undo brings it back.`, 'Delete')) && api.op('rm', { slide: t.slideId }) },
     '-',
-    { id: 'slide-bg', label: 'Background colour…', run: (t) => { const v = prompt('Background colour (e.g. #fdf6e3; empty removes it)', kv(t)['background-color'] || ''); if (v !== null) setAttr(t, 'background-color', v.trim()); } },
-    { id: 'slide-bgimg', label: 'Background image…', run: (t) => { const v = prompt('Background image path or URL (empty removes it)', kv(t)['background-image'] || ''); if (v !== null) setAttr(t, 'background-image', v.trim()); } },
+    { id: 'slide-bg', label: 'Background colour…', run: async (t) => {
+      const v = await ask({ title: 'Background colour', fields: [{ name: 'c', kind: 'swatches', label: 'Colour', value: kv(t)['background-color'] || '' }] });
+      if (v) setAttr(t, 'background-color', v.c);
+    } },
+    { id: 'slide-bgimg', label: 'Background image…', run: async (t) => {
+      const v = await ask({ title: 'Background image', fields: [{ name: 'src', kind: 'files', label: 'Path or URL (empty removes it)', value: kv(t)['background-image'] || '' }] });
+      if (v) setAttr(t, 'background-image', v.src);
+    } },
     {
       id: 'slide-transition', label: 'Transition', items: (t) => [
         { label: 'Default', checked: !kv(t).transition, run: () => setAttr(t, 'transition', null) },

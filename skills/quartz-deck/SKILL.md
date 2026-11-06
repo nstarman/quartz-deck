@@ -84,6 +84,7 @@ when the current directory has exactly one `.qmd`.
 | move / resize / delete box | `qd box move #b-1a2b --by 0,40`, `qd box resize #b-1a2b --size 400,300`, `qd box rm #b-1a2b` |
 | speaker notes | `qd block add results --end --md $'::: notes\nSay this.\n:::'` (once per slide; then `qd edit` that block) |
 | add / move / delete / duplicate one element | `qd block add results --after results/0 --md "- point"` (or `--before`, `--start`, `--end`), `qd block move results/2 --before results/0`, `qd block rm results/1`, `qd block dup results/1`, `qd block class results/1 --add fragment` (appears on click) — only that element's bytes move; the heading is untouched |
+| images beside the deck | `qd images` lists them (newest first); `qd image add chart.png --slide results --end` copies the file into `images/` under a free name and inserts it (`--after`/`--before` an element; without `--slide` it only copies) |
 | validate | `qd check` (add `--render` to run Quarto) |
 | final output | `qd render` (→ `output` path; `--to pdf` etc. for other formats) |
 | Python code cells | each deck has its own locked environment: `qd env init` (uv; `--tool pixi` for pixi with PyPI packages), `qd env add numpy matplotlib`, `qd env` (where, `lock_current`), `qd env sync` (install the lock on a new machine / relock after a hand edit). The manifest and lockfile are part of the deck: commit them. Never `pip install`; `qd render` runs the cells inside the environment |

@@ -1089,3 +1089,32 @@ fn paste_slides_from_stdin() {
     assert_eq!(e.ok(&["undo"])["undone"], "paste", "one undo step");
     assert!(!e.text().contains("- pasted"));
 }
+
+/// Spec 008 US5: images beside the deck, listed and added (copied under a free
+/// name; with --slide also inserted, as one undo step).
+#[test]
+fn images_list_and_add() {
+    let e = Env::new();
+    let png = e.dir.path().join("chart.png");
+    fs::write(&png, b"\x89PNG\r\n\x1a\nbody").unwrap();
+    let v = e.ok(&["images"]);
+    assert_eq!(v["images"][0]["path"], "chart.png");
+
+    let before = e.text();
+    let v = e.ok(&["image", "add", "chart.png"]);
+    assert_eq!(v["path"], "images/chart.png");
+    assert_eq!(e.text(), before, "path only: the deck is untouched");
+
+    let v = e.ok(&["image", "add", "chart.png", "--slide", "results", "--end"]);
+    assert_eq!(v["path"], "images/chart-1.png");
+    assert!(e.text().contains("![](images/chart-1.png)"), "{}", e.text());
+    e.ok(&["undo"]);
+    assert_eq!(e.text(), before);
+    assert!(
+        e.dir.path().join("images/chart-1.png").exists(),
+        "the file stays"
+    );
+
+    fs::write(e.dir.path().join("fake.png"), b"GIF89a").unwrap();
+    e.err(&["image", "add", "fake.png"], "E_INVALID_ARG", 1);
+}
