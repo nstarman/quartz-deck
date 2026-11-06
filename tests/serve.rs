@@ -839,11 +839,17 @@ fn buffer_overlay_over_http() {
         post(p, "/api/op", "127.0.0.1", "application/json", op).0,
         200
     );
-    let e: Value = serde_json::from_str(
-        &ev.wait("buffer_edit", Duration::from_secs(5))
-            .expect("buffer_edit"),
-    )
-    .unwrap();
+    // the open's own buffer_edit (from an empty base) can arrive late: skip it
+    let e: Value = loop {
+        let e: Value = serde_json::from_str(
+            &ev.wait("buffer_edit", Duration::from_secs(5))
+                .expect("buffer_edit"),
+        )
+        .unwrap();
+        if e["base"] != json!("e3b0c44298fc1c14") {
+            break e; // not the open's (whose base is the empty text)
+        }
+    };
     let now = source();
     assert_eq!(
         apply_line_edits(&buffer, &e["edits"]),
