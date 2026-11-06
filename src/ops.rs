@@ -401,6 +401,58 @@ pub fn dup(d: &Deck, slide: &str, after: Option<&str>) -> Result<Patch> {
     Ok(patch("dup", new_id, reps, assigned))
 }
 
+/// Insert slides given as markdown (a copy from this or another deck). An
+/// explicit id already in the deck, or repeated in the paste, gets a fresh one.
+pub fn paste(d: &Deck, md: &str, pos: Pos) -> Result<Patch> {
+    let src = Deck::parse(md.replace("\r\n", "\n"));
+    if src.slides.is_empty() || src.slides[0].kind == SlideKind::Implicit {
+        return Err(QdError::Parse(
+            "the pasted text does not start with a slide heading or ---".into(),
+        ));
+    }
+    if let Some(s) = src.slides.iter().find(|s| s.opaque) {
+        return Err(QdError::UnsafeEdit(format!(
+            "pasted slide '{}' has an unterminated construct",
+            s.id
+        )));
+    }
+    let mut ctx = Ctx::new(d);
+    let at = ctx.insertion(pos)?;
+    let mut assigned = Vec::new();
+    let mut text = String::new();
+    let mut first = None;
+    for s in &src.slides {
+        let mut head = src.text[s.span.start..s.content_start()].to_string();
+        let mut id = s.id.clone();
+        if s.id_explicit && !ctx.taken.insert(id.clone()) {
+            id = ctx.slide_id(s.title.as_deref());
+            head = head.replacen(&format!("#{}", s.id), &format!("#{id}"), 1);
+            assigned.push(id.clone());
+        }
+        first.get_or_insert(id);
+        text.push_str(&head);
+        let mut pos = s.content_start();
+        for b in &s.blocks {
+            text.push_str(&src.text[pos..b.span.start]);
+            let t = src.slice(b.span);
+            if b.id_explicit && ctx.taken.insert(b.id.clone()) {
+                text.push_str(t);
+            } else {
+                text.push_str(&renew_id(&mut ctx, b, t, &mut assigned));
+            }
+            pos = b.span.end;
+        }
+        text.push_str(&src.text[pos..s.span.end]);
+    }
+    let text = with_nl(&text, d.nl);
+    Ok(patch(
+        "paste",
+        first.unwrap(),
+        vec![(Span { start: at, end: at }, ctx.place(at, &text))],
+        assigned,
+    ))
+}
+
 pub fn mv(d: &Deck, slide: &str, pos: Pos) -> Result<Patch> {
     let mut ctx = Ctx::new(d);
     let s = ctx.slide(slide)?;

@@ -229,6 +229,15 @@ enum Cmd {
         #[arg(long)]
         after: Option<String>,
     },
+    /// Paste slides given as markdown (fresh ids where they clash; default: at the end)
+    Paste {
+        #[arg(long, conflicts_with = "before")]
+        after: Option<String>,
+        #[arg(long)]
+        before: Option<String>,
+        #[command(flatten)]
+        input: Input,
+    },
     /// Move a slide
     Move {
         slide: String,
@@ -691,6 +700,15 @@ fn find_deck(arg: &Option<PathBuf>) -> Result<PathBuf> {
     }
 }
 
+/// `--after`/`--before`, else the end.
+fn at<'a>(after: &'a Option<String>, before: &'a Option<String>) -> Pos<'a> {
+    match (after, before) {
+        (Some(a), _) => Pos::After(a),
+        (_, Some(b)) => Pos::Before(b),
+        _ => Pos::End,
+    }
+}
+
 fn read_input(input: &Input) -> Result<Option<String>> {
     Ok(match (&input.md, &input.file) {
         (Some(m), _) if m == "-" => {
@@ -932,6 +950,7 @@ const API_OPS: &[&str] = &[
     "check",
     "add",
     "dup",
+    "paste",
     "move",
     "rm",
     "title",
@@ -1343,14 +1362,17 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                 attrs: attrs.clone(),
                 classes: classes.clone(),
             };
-            let pos = match (after, before) {
-                (Some(a), _) => Pos::After(a),
-                (_, Some(b)) => Pos::Before(b),
-                _ => Pos::End,
-            };
-            ctx.edit(|d| ops::add(d, &spec, pos))
+            ctx.edit(|d| ops::add(d, &spec, at(after, before)))
         }
         Cmd::Dup { slide, after } => ctx.edit(|d| ops::dup(d, slide, after.as_deref())),
+        Cmd::Paste {
+            after,
+            before,
+            input,
+        } => {
+            let md = required_input(input)?;
+            ctx.edit(|d| ops::paste(d, &md, at(after, before)))
+        }
         Cmd::Move { slide, to } => ctx.edit(|d| ops::mv(d, slide, to.pos())),
         Cmd::Rm { slide } => ctx.edit(|d| ops::rm(d, slide)),
         Cmd::Title {

@@ -69,6 +69,7 @@ when the current directory has exactly one `.qmd`.
 | add slide | `qd add --after intro --title "Results" --md "- one"` |
 | add untitled slide at end | `qd add --md "Just text."` |
 | duplicate | `qd dup results` |
+| paste slides (markdown, e.g. copied from another deck) | `qd paste --after intro --md -` (ids that clash are renewed) |
 | reorder | `qd move results --before intro` / `--after last` |
 | delete | `qd rm @4` |
 | retitle | `qd title results "Findings"` (`""` = untitled) |

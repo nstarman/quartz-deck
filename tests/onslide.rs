@@ -166,6 +166,13 @@ impl Ed {
         }
     }
 
+    /// Edit ▸ Undo once; the file must be back to `before` (one edit, one undo step).
+    async fn undo_to(&self, before: &str) {
+        self.idle().await;
+        self.menu("Edit", "Undo").await;
+        self.wait_file(|f| f == before, "one undo step").await;
+    }
+
     /// Poll `qd <args>` until `pred` holds on its JSON (10 s).
     async fn until_cli(&self, args: &[&str], pred: impl Fn(&Value) -> bool, what: &str) {
         let start = Instant::now();
@@ -568,16 +575,18 @@ async fn typing_writes_only_the_element() {
         DECK.replace("lines -- here.", "lines -- here. Truly \"new\".")
     );
 
-    // Escape abandons an edit
+    // Escape keeps an edit, like clicking elsewhere (spec 007); undo takes it back
     let before = ed.file();
     ed.idle().await;
     ed.click_in_slide("[data-qd=\"methods/1\"] li").await;
     ed.caret("[data-qd=\"methods/1\"]", None).await;
-    ed.type_text(" nope").await;
+    ed.type_text(" kept").await;
     ed.key("Escape", "Escape", 27, 0).await;
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    assert_eq!(ed.session().await, Value::Null);
-    assert_eq!(ed.file(), before);
+    ed.wait_file(|f| f.contains("two kept"), "kept by Escape")
+        .await;
+    ed.idle().await;
+    ed.menu("Edit", "Undo").await;
+    ed.wait_file(|f| f == before, "one undo step").await;
 
     // undo restores the file byte-for-byte (shared history with the CLI)
     ed.menu("Edit", "Undo").await;
@@ -1639,8 +1648,14 @@ async fn framed_editor_takes_theme_and_messages() {
     let focus_text = "__msgs.filter((m) => m.type === 'focusText').length";
     // Esc clears the selection first; Esc with nothing left hands the keyboard to the text
     let esc = || ed.key("Escape", "Escape", 27, 0);
+    let sel =
+        "document.querySelector('#preview').contentDocument.querySelector('.qd-sel')?.dataset.qd";
+    ed.wait("window.qdSession() !== null").await;
     esc().await; // ends the edit the click started (the element stays selected)
+    ed.wait(&format!("window.qdSession() === null && {sel} === 'a/0'"))
+        .await;
     esc().await; // clears the selection
+    ed.wait(&format!("!{sel}")).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert_eq!(
         ed.eval(focus_text).await,
@@ -1907,4 +1922,115 @@ async fn shortcut_reference() {
     ed.wait("window.qdSession()?.draft?.includes('para.?')")
         .await;
     assert_eq!(ed.eval(open).await, false);
+}
+
+/// T019 (spec 007 US4): Escape backs out one level and keeps the edit; slides
+/// copy and paste with fresh ids; text from elsewhere is escaped; each edit is
+/// one undo step; focus always shows.
+#[tokio::test(flavor = "multi_thread")]
+async fn same_rules_everywhere() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    let sel = "(document.querySelector('#preview').contentDocument.querySelector('.qd-sel')?.dataset.qd ?? null)";
+
+    // Escape: edit → selected element (the edit saved) → nothing selected
+    let before = ed.file();
+    ed.type_into("a", "[data-qd=\"a/0\"]", " More.").await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait_file(|f| f.contains("First para. More."), "kept by Escape")
+        .await;
+    ed.wait(&format!("window.qdSession() === null && {sel} === 'a/0'"))
+        .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait(&format!("{sel} === null")).await;
+    ed.undo_to(&before).await; // on-slide typing
+
+    // a menu and a shortcut are one undo step each
+    ed.settle().await;
+    ed.go("b").await;
+    let before = ed.file();
+    ed.menu("Slide", "Duplicate slide").await;
+    ed.wait_file(
+        |f| f.matches("Other slide.").count() == 2,
+        "duplicated by the menu",
+    )
+    .await;
+    ed.undo_to(&before).await;
+    ed.settle().await;
+    ed.go("b").await;
+    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.key("d", "KeyD", 68, 2 | 8).await; // Ctrl+Shift+D
+    ed.wait_file(
+        |f| f.matches("Other slide.").count() == 2,
+        "duplicated by the key",
+    )
+    .await;
+    ed.undo_to(&before).await;
+
+    // the source pane
+    ed.open_source().await;
+    ed.pane_caret("Other slide.", true).await;
+    ed.type_text("Changed.").await;
+    ed.wait_file(|f| f.contains("Changed."), "saved from the pane")
+        .await;
+    ed.undo_to(&before).await;
+    ed.click_editor("#toggle-source").await;
+
+    // slides on the clipboard: copy in the slide list, paste with fresh ids.
+    // The system clipboard is stubbed (headless Chrome won't share one).
+    ed.settle().await;
+    ed.eval("window.__clip = null; navigator.clipboard.writeText = (t) => { __clip = t; return Promise.resolve(); }; navigator.clipboard.readText = () => Promise.resolve(__clip)").await;
+    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.key("c", "KeyC", 67, 2).await;
+    ed.wait("window.__clip?.startsWith('## B {#b}')").await;
+    ed.key("v", "KeyV", 86, 2).await;
+    ed.wait_file(|f| f.matches("Other slide.").count() == 2, "pasted")
+        .await;
+    let ids = ed.cli(&["slides"])["slides"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["id"].as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(ids.len(), 4, "{ids:?}");
+    assert!(
+        ids[2] != "b" && ids[1] == "b",
+        "the copy has a fresh id: {ids:?}"
+    );
+    ed.undo_to(&before).await;
+
+    // text from another application: a paragraph, never raw HTML
+    ed.settle().await;
+    ed.eval("window.__clip = '1 < 2 & <b>x</b>'").await;
+    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.key("v", "KeyV", 86, 2).await;
+    ed.wait_file(
+        |f| f.contains("Other slide.\n\n1 &lt; 2 &amp; &lt;b>x&lt;/b>"),
+        "escaped",
+    )
+    .await;
+    ed.undo_to(&before).await;
+
+    // focus shows in every theme: a control, a slide in the list, an element
+    ed.settle().await;
+    ed.go("a").await;
+    ed.select("[data-qd=\"a/0\"]").await;
+    for theme in ["light", "dark", "hc"] {
+        ed.eval(&format!(
+            "document.documentElement.dataset.theme = '{theme}'"
+        ))
+        .await;
+        for target in ["#menubar [role=menuitem]", "#slides li button"] {
+            ed.eval(&format!("document.querySelector({target:?}).focus()"))
+                .await;
+            ed.key("Shift", "ShiftLeft", 16, 8).await; // a key press: focus-visible
+            let ring = ed.eval("(s => s.outlineStyle !== 'none' || s.boxShadow !== 'none')(getComputedStyle(document.activeElement))").await;
+            assert_eq!(
+                ring,
+                Value::Bool(true),
+                "{theme}: no focus ring on {target}"
+            );
+        }
+        let ring = ed.eval("getComputedStyle(document.querySelector('#preview').contentDocument.querySelector('.qd-sel')).outlineStyle").await;
+        assert_eq!(ring, "solid", "{theme}: selected element");
+    }
 }

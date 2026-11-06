@@ -78,6 +78,9 @@ reason is given.
 | Add slide before | — | `slide-before` |
 | Add slide after | ⇧⌘N | `slide-after` |
 | Duplicate slide | ⇧⌘D | `slide-dup` |
+| Cut slide (slide list) | ⌘X | `slide-cut` |
+| Copy slide (slide list) | ⌘C | `slide-copy` |
+| Paste slides after | ⌘V | `slide-paste` |
 | Hidden in the presentation | — | `slide-hide` |
 | Delete slide… | — | `slide-rm` |
 | Background colour… | — | `slide-bg` |
