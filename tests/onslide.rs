@@ -1891,14 +1891,16 @@ async fn shortcut_reference() {
         json!(["dup", "slide-dup"]),
         "search filters"
     );
-    ed.key("Escape", "Escape", 27, 0).await;
-    ed.wait(&format!("!{open}")).await;
+    let close = || async {
+        ed.key("Escape", "Escape", 27, 0).await;
+        ed.wait(&format!("!{open}")).await;
+    };
+    close().await;
 
     // Help → Keyboard shortcuts opens it too; ? while typing on a slide just types
     ed.menu("Help", "Keyboard shortcuts").await;
     ed.wait(open).await;
-    ed.key("Escape", "Escape", 27, 0).await;
-    ed.wait(&format!("!{open}")).await;
+    close().await;
     ed.click_in_slide("[data-qd=\"a/0\"]").await;
     ed.caret("[data-qd=\"a/0\"]", None).await;
     ed.type_text("?").await;

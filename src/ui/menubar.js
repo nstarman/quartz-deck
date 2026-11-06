@@ -4,6 +4,7 @@
 
 import LIST from '/ui/action-list.js';
 import * as keys from '/ui/keys.js';
+import { el } from '/ui/run.js';
 import { openMenu, closeMenu, menuOpen, onClose } from '/ui/menu.js';
 
 /** The list as a tree: [{label, items: [...]}], separators as '-'. */
@@ -144,36 +145,35 @@ document.body.append(ref);
 
 /** Every action with a key here, grouped like the menus (keys only: "Other"). */
 function reference() {
-  const el = (tag, text) => Object.assign(document.createElement(tag), { textContent: text ?? '' });
-  const search = Object.assign(document.createElement('input'), { type: 'text', placeholder: 'Search', ariaLabel: 'Search shortcuts' }); // not type=search: there Escape clears it instead of closing
+  // not type=search: there Escape clears the field instead of closing
+  const search = el('input', { type: 'text', placeholder: 'Search', ariaLabel: 'Search shortcuts' });
+  const td = (textContent) => el('td', { textContent });
   const sections = [...MENUS.map((m) => m.label), 'Other'].map((name) => {
     const rows = keys.ACTIONS.filter((a) => keys.keysOf(a).length && (a.menu?.[0] ?? 'Other') === name).map((a) => {
-      const tr = document.createElement('tr');
+      const tr = el('tr');
       tr.dataset.id = a.id;
-      tr.append(el('td', a.menu?.length > 1 ? `${a.menu.slice(1).join(' ▸ ')} ▸ ${a.label}` : a.label),
-        el('td', keys.keysOf(a).map(keys.show).join(' or ')), el('td', a.where.some((w) => w === 'anywhere' || w === 'slide') ? '' : a.where.map((w) => PLACES[w]).join(', ')));
+      tr.append(td(a.menu?.length > 1 ? `${a.menu.slice(1).join(' ▸ ')} ▸ ${a.label}` : a.label),
+        td(keys.keysOf(a).map(keys.show).join(' or ')), td(a.where.some((w) => w === 'anywhere' || w === 'slide') ? '' : a.where.map((w) => PLACES[w]).join(', ')));
       return tr;
     });
-    const sec = document.createElement('section');
-    const table = document.createElement('table');
+    if (!rows.length) return null;
+    const table = el('table');
     table.append(...rows);
-    sec.append(el('h3', name), table);
-    return rows.length ? sec : null;
+    const sec = el('section');
+    sec.append(el('h3', { textContent: name }), table);
+    return sec;
   }).filter(Boolean);
   search.addEventListener('input', () => {
     const q = search.value.trim().toLowerCase();
     for (const sec of sections) {
-      let any = false;
-      for (const tr of sec.querySelectorAll('tr')) {
-        tr.hidden = !!q && !(tr.dataset.id + ' ' + tr.textContent).toLowerCase().includes(q);
-        any ||= !tr.hidden;
-      }
-      sec.hidden = !any;
+      const rows = [...sec.querySelectorAll('tr')];
+      for (const tr of rows) tr.hidden = !!q && !(tr.dataset.id + ' ' + tr.textContent).toLowerCase().includes(q);
+      sec.hidden = rows.every((tr) => tr.hidden);
     }
   });
-  const close = Object.assign(el('button', 'Close'), { type: 'button' });
+  const close = el('button', { type: 'button', textContent: 'Close' });
   close.addEventListener('click', () => ref.close());
-  ref.replaceChildren(Object.assign(el('h2', 'Keyboard shortcuts'), { id: 'shortcuts-title' }), search, ...sections, close);
+  ref.replaceChildren(el('h2', { id: 'shortcuts-title', textContent: 'Keyboard shortcuts' }), search, ...sections, close);
   ref.showModal(); // Escape closes it; focus returns where it was
   search.focus();
 }

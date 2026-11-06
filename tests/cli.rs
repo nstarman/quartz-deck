@@ -1050,8 +1050,7 @@ fn actions_lists_the_editors_actions() {
         )
     );
     assert!(list.iter().all(|a| a["id"].is_string()), "no separators");
-    let listed: serde_json::Value =
-        serde_json::from_str(include_str!("../src/ui/actions.json")).unwrap();
+    let listed: Value = serde_json::from_str(include_str!("../src/ui/actions.json")).unwrap();
     let ids = |l: &[Value]| {
         l.iter()
             .filter_map(|a| a["id"].as_str().map(String::from))
