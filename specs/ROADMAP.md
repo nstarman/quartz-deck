@@ -14,9 +14,10 @@ open questions each spec must settle.
 | 005 | shared-focus | done (PRs #15, #16; polish) | The editor reports what the person is looking at and has selected (`qd focus`), so "make this slide…" in chat refers to the right slide/element; agents can point the editor at a slide or element; also the cursor↔slide link that 004 and 006 need |
 | 006 | vscode | done (PRs #18 and the US4 + polish PR) | Run the interactive editor inside VS Code next to the `.qmd`, alongside the Quarto extension, so text editing, on-slide editing, running code and reveal.js preview all work together there |
 | 007 | app-shell | done (PRs #20–#24 and the polish PR) | Desktop-app conventions: menu bar (File, Edit, Insert, Slide, View, Run, Help) with every action and shortcut; Settings window; shortcut reference; consistent selection, clipboard, undo, Escape/Enter |
-| 008 | layouts-and-placement | planned | **Slide layouts** (title, title + content, two columns, image + text, section, big number, blank, and the person's own saved ones) to start a slide from, then drag **any** element anywhere on it, resize it, or put it back in the flow; all stored as plain Quarto (columns, absolute positioning) |
-| 009 | export-formats | planned | An **Export ▾** drop-down (and `qd export --to <format>`) for every format Quarto/Pandoc can write: PowerPoint, PDF (Beamer/LaTeX or Typst), Word, HTML, Markdown, Jupyter notebook, and more |
-| 010 | history | planned | Optional **save = git commit** (a setting), a **History** side panel to scroll back through versions with a side-by-side preview of the deck as it was, diff any version against now (source and rendered slides), and restore a whole version or just one slide/element |
+| 008 | usability | planned | A full, detailed **design and usability audit** of every surface, against Apple's Human Interface Guidelines as the reference, then the fixes: adding slides anywhere, slide-list drag handles and a clear drop marker, and the rest of the fine-tuning the audit finds |
+| 009 | layouts-and-placement | planned | **Slide layouts** (title, title + content, two columns, image + text, section, big number, blank, and the person's own saved ones) to start a slide from, then drag **any** element anywhere on it, resize it, or put it back in the flow; all stored as plain Quarto (columns, absolute positioning) |
+| 010 | export-formats | planned | An **Export ▾** drop-down (and `qd export --to <format>`) for every format Quarto/Pandoc can write: PowerPoint, PDF (Beamer/LaTeX or Typst), Word, HTML, Markdown, Jupyter notebook, and more |
+| 011 | history | planned | Optional **save = git commit** (a setting), a **History** side panel to scroll back through versions with a side-by-side preview of the deck as it was, diff any version against now (source and rendered slides), and restore a whole version or just one slide/element |
 
 Every PR — spec or small — passes a concision audit (`/pr-audit`,
 constitution 1.1.0) before it is marked ready.
@@ -100,9 +101,47 @@ rather than replacing it.
 ### 007 app-shell
 
 As before: menu bar, Settings window, shortcut reference, consistent
-paradigms. The Run menu (004) and the Export ▾ menu (009) live here.
+paradigms. The Run menu (004) and the Export ▾ menu (010) live here.
 
-### 008 layouts-and-placement
+### 008 usability
+
+Goal: the editor has the features; now make them easy and pleasant to use.
+A full, detailed audit of the design language first, then the fixes.
+
+**The audit** (a written report with screenshots, before any code):
+
+- **Reference:** Apple's Human Interface Guidelines, read for their principles
+  (clarity, consistency, direct manipulation, feedback, hierarchy, spacing,
+  hit targets, typography, colour and contrast, motion), with Keynote as a
+  point of comparison for how a slide app behaves. Our own design throughout
+  (constitution I): principles, not copied visuals.
+- **Every surface:** menu bar and ☰, header and status, slide list, preview,
+  slide bar, element bar, hover bar (+ and ⠿), formatting toolbar, context
+  menus, source pane and its bar, the source popup, Settings, the shortcut
+  reference, notices and errors, empty states, light/dark/high contrast, a
+  narrow window, and VS Code's panel.
+- **Every common task**, timed and counted in clicks: start a deck, add and
+  reorder slides, add and arrange content, format text, run code, export.
+- **Each finding:** where, what is wrong, which principle, a screenshot, a
+  proposed change, and a priority. The report becomes the spec's stories.
+
+**Already known (from the person):**
+
+- **Add slides anywhere**, not only from the "+ Add slide" button at the end
+  of the list: a + between slides in the list (on hover and from the
+  keyboard), after the current slide, and from an empty spot in the list.
+- **Slide-list drag:** a visible drag handle instead of dragging by the
+  number, and a clear marker of where the slide will land while dragging (an
+  insertion line with a gap opening up, the dragged slide shown under the
+  pointer).
+- From the 007 quickstart run: undoing a duplicate that was on screen moves
+  the preview to the first slide instead of a neighbour.
+
+**Out of scope:** new features (008's job is usability; layouts and free
+placement are 009). Changes keep every action in the action list (007) and
+every edit a `qd` command.
+
+### 009 layouts-and-placement
 
 Goal: work like a slide app. Start a slide from a layout, then place
 anything anywhere on it, while the `.qmd` stays plain Quarto.
@@ -159,7 +198,7 @@ anything anywhere on it, while the `.qmd` stays plain Quarto.
   shows in the source pane and in VS Code's text (005/006 follow); and
   whether an element placed freely still appears on click (fragments).
 
-### 009 export-formats
+### 010 export-formats
 
 - **Export ▾** drop-down in the editor (and File → Export in 007) listing the
   formats below; `qd export --to <format> [--out]` for agents, JSON result.
@@ -177,7 +216,7 @@ anything anywhere on it, while the `.qmd` stays plain Quarto.
   formats need a TeX or Typst install, checked and reported like the browser
   in 002.
 
-### 010 history
+### 011 history
 
 Goal: never lose work, and be able to look back — built on git, visible in
 the editor.
