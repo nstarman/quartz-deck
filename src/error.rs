@@ -25,6 +25,8 @@ pub enum QdError {
     },
     #[error("invalid argument: {0}")]
     InvalidArg(String),
+    #[error("invalid setting: {0}")]
+    InvalidSetting(String),
     #[error("nothing to undo/redo: {0}")]
     NoUndo(String),
     #[error("quarto not found on PATH")]
@@ -73,6 +75,7 @@ impl QdError {
             Self::UnsafeEdit(_) => "E_UNSAFE_EDIT",
             Self::Conflict(_) | Self::StaleElement { .. } => "E_CONFLICT",
             Self::InvalidArg(_) => "E_INVALID_ARG",
+            Self::InvalidSetting(_) => "E_INVALID_SETTING",
             Self::NoUndo(_) => "E_NO_UNDO",
             Self::NoQuarto => "E_NO_QUARTO",
             Self::Render(_) => "E_RENDER",
@@ -113,6 +116,9 @@ impl QdError {
                 "details hold the current source and hash; re-apply your change to it and retry"
             }
             Self::InvalidArg(_) => "see `qd schema` for argument formats",
+            Self::InvalidSetting(_) => {
+                "run `qd settings` to see every setting and its allowed values"
+            }
             Self::NoUndo(_) => {
                 "undo/redo only works right after a qd edit, before the file is changed elsewhere"
             }

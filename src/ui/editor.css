@@ -38,6 +38,19 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 button.danger { color: var(--danger); }
 button.wide { display: block; width: calc(100% - 16px); margin: 0 8px 8px; }
 
+/* ---------- settings (spec 007): the source pane on the right, the window ---------- */
+main.source-right #splitter { order: 2; }
+main.source-right #srcpane { order: 3; }
+main.source-right aside { order: 4; }
+#settings { width: min(520px, calc(100vw - 32px)); border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel); color: var(--text); padding: 16px 20px; }
+#settings::backdrop { background: rgba(0, 0, 0, 0.35); }
+#settings h2 { margin: 0 0 12px; font-size: 17px; }
+#settings .setting { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: center; padding: 8px 0;
+  border-top: 1px solid var(--line); }
+#settings .setting small { grid-column: 1 / -1; color: var(--muted); }
+#settings .buttons { display: flex; justify-content: space-between; margin-top: 12px; }
+
 /* ---------- menu bar (spec 007) ---------- */
 #menubar { display: flex; gap: 2px; padding: 2px 8px; background: var(--panel); border-bottom: 1px solid var(--line); font-size: 13px; }
 #menubar [role=menuitem] { padding: 3px 9px; border-radius: 4px; cursor: default; user-select: none; }

@@ -44,6 +44,7 @@ const UI_MODULES: &[(&str, &str)] = &[
     ("focus.js", include_str!("ui/focus.js")),
     ("keys.js", include_str!("ui/keys.js")),
     ("menubar.js", include_str!("ui/menubar.js")),
+    ("settings.js", include_str!("ui/settings.js")),
     ("action-list.js", ACTION_LIST_JS),
 ];
 
@@ -101,6 +102,8 @@ struct App {
     /// Shutdown waits for a render in progress: Quarto left running would
     /// clean up the deck folder under the next server's render.
     rendering: Mutex<bool>,
+    /// The person's settings file (spec 007), shared by every qd.
+    settings: PathBuf,
 }
 
 impl App {
@@ -126,9 +129,10 @@ type Shared = Arc<App>;
 fn err_response(e: QdError) -> Response {
     let status = match e {
         QdError::NotFound(_) => StatusCode::NOT_FOUND,
-        QdError::Ambiguous(_) | QdError::InvalidArg(_) | QdError::Usage(_) => {
-            StatusCode::BAD_REQUEST
-        }
+        QdError::Ambiguous(_)
+        | QdError::InvalidArg(_)
+        | QdError::InvalidSetting(_)
+        | QdError::Usage(_) => StatusCode::BAD_REQUEST,
         QdError::Conflict(_) | QdError::StaleElement { .. } | QdError::NoUndo(_) => {
             StatusCode::CONFLICT
         }
@@ -712,6 +716,32 @@ async fn api_buffer_close(State(app): State<Shared>, headers: HeaderMap) -> Resp
     StatusCode::NO_CONTENT.into_response()
 }
 
+/// `GET /api/settings` (spec 007): values, the window's definitions, notices.
+async fn api_settings(State(app): State<Shared>) -> Response {
+    Json(crate::settings::report(&app.settings)).into_response()
+}
+
+/// `POST /api/settings` (token): `{key: value, …}` or `{"reset": true}`. Open
+/// editors hear of it from the file watch (as of a change by `qd settings`).
+async fn api_settings_set(
+    State(app): State<Shared>,
+    headers: HeaderMap,
+    Json(body): Json<serde_json::Map<String, Value>>,
+) -> Response {
+    if !authorized(&app, &headers) {
+        return forbidden();
+    }
+    let r = if body.get("reset") == Some(&Value::Bool(true)) {
+        crate::settings::reset(&app.settings)
+    } else {
+        crate::settings::set(&app.settings, &body)
+    };
+    match r {
+        Ok(values) => Json(json!({ "values": values })).into_response(),
+        Err(e) => err_response(e),
+    }
+}
+
 #[derive(serde::Deserialize)]
 struct PointBody {
     #[serde(rename = "ref")]
@@ -840,6 +870,14 @@ fn watch(app: Shared) -> Result<notify::RecommendedWatcher> {
     let a = app.clone();
     let mut w = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         let Ok(ev) = res else { return };
+        // the person's settings changed (here, in another qd, or by `qd settings`)
+        if ev.paths.iter().any(|p| p == &a.settings) {
+            a.emit(
+                "settings",
+                json!({ "values": crate::settings::load(&a.settings).0 }),
+            );
+            return;
+        }
         if !ev
             .paths
             .iter()
@@ -883,6 +921,11 @@ fn watch(app: Shared) -> Result<notify::RecommendedWatcher> {
         .map_err(|e| QdError::Io(std::io::Error::other(e)))?;
     w.watch(app.store.cache_dir(), notify::RecursiveMode::NonRecursive)
         .map_err(|e| QdError::Io(std::io::Error::other(e)))?;
+    w.watch(
+        app.settings.parent().unwrap(),
+        notify::RecursiveMode::NonRecursive,
+    )
+    .map_err(|e| QdError::Io(std::io::Error::other(e)))?;
     Ok(w)
 }
 
@@ -927,6 +970,13 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             focus: Mutex::default(),
             buffer: Mutex::default(),
             rendering: Mutex::new(false),
+            settings: {
+                // canonical, as file events report it (macOS: /var → /private/var)
+                let p = crate::settings::path();
+                let dir = p.parent().unwrap();
+                std::fs::create_dir_all(dir)?;
+                dir.canonicalize()?.join("settings.json")
+            },
             store,
         });
         let router = Router::new()
@@ -953,6 +1003,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             .route("/api/buffer/open", post(api_buffer_open))
             .route("/api/buffer", post(api_buffer))
             .route("/api/buffer/close", post(api_buffer_close))
+            .route("/api/settings", get(api_settings).post(api_settings_set))
             .nest_service(
                 "/preview",
                 ServeDir::new(&out).fallback(ServeDir::new(&deck_dir)),

@@ -9,6 +9,7 @@ pub fn qd(dir: &Path) -> Command {
     let mut c = Command::new(env!("CARGO_BIN_EXE_qd"));
     c.current_dir(dir)
         .env("QD_CACHE_DIR", dir.join(".cache"))
+        .env("QD_CONFIG_DIR", dir.join(".config"))
         .env_remove("QD_DECK");
     c
 }
