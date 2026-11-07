@@ -731,10 +731,6 @@ fn find_deck(arg: &Option<PathBuf>) -> Result<PathBuf> {
 }
 
 /// `--after`/`--before`, else the end.
-fn strs(v: &[String]) -> Vec<&str> {
-    v.iter().map(String::as_str).collect()
-}
-
 fn at<'a>(after: &'a Option<String>, before: &'a Option<String>) -> Pos<'a> {
     match (after, before) {
         (Some(a), _) => Pos::After(a),
@@ -1414,8 +1410,8 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             let md = required_input(input)?;
             ctx.edit(|d| ops::paste(d, &md, at(after, before)))
         }
-        Cmd::Move { slide, to } => ctx.edit(|d| ops::mv(d, &strs(slide), to.pos())),
-        Cmd::Rm { slide } => ctx.edit(|d| ops::rm(d, &strs(slide))),
+        Cmd::Move { slide, to } => ctx.edit(|d| ops::mv(d, slide, to.pos())),
+        Cmd::Rm { slide } => ctx.edit(|d| ops::rm(d, slide)),
         Cmd::Title {
             slide,
             text,

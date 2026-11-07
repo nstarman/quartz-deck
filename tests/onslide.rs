@@ -3024,14 +3024,7 @@ async fn finishing_touches() {
     let Some(ed) = Ed::open(&deck).await else {
         return;
     };
-    let order = || {
-        ed.cli(&["slides"])["slides"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|s| s["id"].as_str().unwrap().to_string())
-            .collect::<Vec<_>>()
-    };
+    let order = || slide_ids(&ed.cli(&["slides"]));
     let click = |id: &str, mods: &str| {
         format!(
             "document.querySelector('#slides li[data-id={id}] > button').dispatchEvent(new MouseEvent('click', {{ bubbles: true, {mods}: true }}))"
