@@ -179,17 +179,17 @@ Paths are relative to the repo root.
 
 **Independent Test**: spec US7; quickstart §7.
 
-- [ ] T026 [P] [US7] Write failing browser test `tidier_bars_and_fuller_insert` in `tests/onslide.rs`:
+- [X] T026 [P] [US7] Write failing browser test `tidier_bars_and_fuller_insert` in `tests/onslide.rs`:
   - the slide bar's controls share one height and each has a label or title, and its colour menu offers None;
   - the formatting bar shows bold, italic, underline, strikethrough, link, list, colour and "Aa", and "Aa" opens the rest;
   - the source bar shows ▶ Run all, ■ Stop, "Python · stopped" and ···, and ··· holds Restart, Restart & run all, Add Python package…, Set up Python…;
   - Insert's Code cell, Callout, Columns, Speaker notes, Table and Quote each add their markdown (checked in the file);
   - a positioned box's handles have targets ≥20 px.
-- [ ] T027 [US7] The slide bar in `src/ui/editor.js`/`src/ui/index.html`: the colour as a swatch menu through `sheet.js` (None, Custom…), one control height, a label or title on every control (research R12).
-- [ ] T028 [US7] The formatting bar in `src/ui/toolbar.js`: the common formats plus "Aa" (code, numbered list, indent, outdent, size, alignment as a segmented control); colour names in titles.
-- [ ] T029 [US7] The source bar in `src/ui/run.js`: ▶ Run all, ■ Stop, the session state in words, a ··· menu for the rest; Full width and Properties as small toggles at the pane's top right; the gutter ▶ ≥20 px.
-- [ ] T030 [US7] Insert's new blocks: `insert-code`, `insert-callout`, `insert-columns`, `insert-notes`, `insert-table`, `insert-quote` in `src/ui/actions.json` and the editor's insert list, each a markdown snippet through `block add`. Add them to the action inventory.
-- [ ] T031 [US7] Box handles: visible 10 px squares with 20 px hit areas in `src/ui/editor.js` (`PREVIEW_CSS` and overlay). T026 passes.
+- [X] T027 [US7] The slide bar in `src/ui/editor.js`/`src/ui/index.html`: the colour as a swatch menu through `sheet.js` (None, Custom…), one control height, a label or title on every control (research R12).
+- [X] T028 [US7] The formatting bar in `src/ui/toolbar.js`: the common formats plus "Aa" (code, numbered list, indent, outdent, size, alignment as a segmented control); colour names in titles.
+- [X] T029 [US7] The source bar in `src/ui/run.js`: ▶ Run all, ■ Stop, the session state in words, a ··· menu for the rest; Full width and Properties as small toggles at the pane's top right; the gutter ▶ ≥20 px.
+- [X] T030 [US7] Insert's new blocks: `insert-code`, `insert-callout`, `insert-columns`, `insert-notes`, `insert-table`, `insert-quote` in `src/ui/actions.json` and the editor's insert list, each a markdown snippet through `block add`. Add them to the action inventory.
+- [X] T031 [US7] Box handles: visible 10 px squares with 20 px hit areas in `src/ui/editor.js` (`PREVIEW_CSS` and overlay). T026 passes.
 
 ---
 

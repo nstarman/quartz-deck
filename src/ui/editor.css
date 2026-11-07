@@ -230,6 +230,15 @@ aside .status.fail { color: var(--danger); }
 #fmtbar button[data-fmt=strike] { text-decoration: line-through; }
 #fmtbar .swatch { min-width: 18px; width: 18px; height: 18px; padding: 0; border-radius: 50%; }
 #fmtbar .sep { width: 1px; height: 20px; margin: 0 3px; background: var(--line); }
+/* the colour and "Aa" pop-overs (spec 008 US7): under the bar, not in its row */
+#fmtbar .pop { position: absolute; top: calc(100% + 4px); right: 0; display: flex; flex-wrap: wrap; gap: 2px; align-items: center;
+  padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2); }
+#fmtbar .pop[hidden] { display: none; }
+#fmtbar .seg { display: inline-flex; }
+#fmtbar .seg button { border-radius: 0; }
+#fmtbar .seg button:first-child { border-radius: 6px 0 0 6px; }
+#fmtbar .seg button:last-child { border-radius: 0 6px 6px 0; }
+#fmtbar button[data-fmt=color]:not(.swatch) { font-weight: 700; text-decoration: underline 3px #c0392b; text-underline-offset: 3px; }
 #pending { margin-left: 8px; color: var(--muted); font-size: 12px; }
 #srcedit { position: fixed; z-index: 20; padding: 6px; border: 2px solid var(--accent); border-radius: 8px;
   background: var(--panel); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25); }
@@ -252,7 +261,10 @@ aside .status.fail { color: var(--danger); }
 #stage { display: flex; flex-direction: column; gap: 6px; }
 #preview { flex: 1; min-height: 0; }
 #slidebar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; }
-#slidebar input[type=color] { width: 28px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 4px; vertical-align: middle; }
+/* one height for every control (spec 008 US7) */
+#slidebar button, #slidebar select { height: 28px; }
+#slidebar .chip { display: inline-block; width: 14px; height: 14px; border: 1px solid var(--line); border-radius: 3px;
+  vertical-align: -2px; background: repeating-linear-gradient(45deg, transparent 0 3px, var(--line) 3px 4px); }
 main:not(.panel-open) > aside { display: none; }
 
 #ctxmenu { position: fixed; z-index: 30; }

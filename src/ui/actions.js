@@ -15,6 +15,13 @@ export const INSERTS = [
   { id: 'equation', label: 'Equation', md: '$$\nx = 1\n$$', edit: 'source' },
   { id: 'image', label: 'Image…', image: true },
   { id: 'textbox', label: 'Text box', box: true },
+  // spec 008 US7: the rest a talk needs, each its markdown
+  { id: 'code', label: 'Code cell', md: '```{python}\n1 + 1\n```' },
+  { id: 'callout', label: 'Callout', md: '::: {.callout-note}\nA note.\n:::' },
+  { id: 'columns', label: 'Columns', md: ':::: {.columns}\n::: {.column width="50%"}\nLeft\n:::\n\n::: {.column width="50%"}\nRight\n:::\n::::' },
+  { id: 'notes', label: 'Speaker notes', md: '::: notes\nSay this.\n:::' },
+  { id: 'table', label: 'Table', md: '| A | B |\n|---|---|\n| 1 | 2 |' },
+  { id: 'quote', label: 'Quote', md: '> A quote.' },
 ];
 
 /**

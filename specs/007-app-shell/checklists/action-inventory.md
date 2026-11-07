@@ -135,3 +135,5 @@ These keys operate a control from inside it. They are not actions in their own r
 
 
 Labels renamed in plain words by spec 008 US6 (T025); the ids are unchanged.
+
+Added by spec 008 US7 (T030), Insert menu: Code cell `insert-code`, Callout `insert-callout`, Columns `insert-columns`, Speaker notes `insert-notes`, Table `insert-table`, Quote `insert-quote`.
