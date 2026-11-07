@@ -88,6 +88,7 @@ dialog.sheet .buttons .default:disabled { opacity: .5; }
 #settings .setting { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: center; padding: 8px 0;
   border-top: 1px solid var(--line); }
 #settings .setting small { grid-column: 1 / -1; color: var(--muted); }
+#settings .setting select { width: 14em; } /* one width for every choice (spec 008 US9) */
 #settings .buttons { display: flex; justify-content: space-between; margin-top: 12px; }
 
 #shortcuts { width: min(640px, calc(100vw - 32px)); box-sizing: border-box; max-height: 80vh; overflow-x: hidden; }
@@ -148,6 +149,9 @@ nav li > button:first-child:focus-visible { box-shadow: 0 0 0 2px var(--accent);
 .thumb { display: block; position: relative; width: 100%; aspect-ratio: 3 / 2; overflow: hidden; border-radius: 4px; }
 nav .thumb { border: 1px solid var(--line); background: #fff; }
 nav li.current .thumb { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+/* several picked (spec 008 US9) */
+nav li.picked > button:first-child { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+nav li.picked .thumb { border-color: var(--accent); }
 nav .meta { display: flex; gap: 6px; align-items: baseline; padding: 4px 2px 0; font-size: 12px; line-height: 1.3;
   white-space: nowrap; overflow: hidden; }
 nav .meta .name { overflow: hidden; text-overflow: ellipsis; }
@@ -346,3 +350,10 @@ main.source-full > #srcpane { flex: 1; width: auto; }
   #srcpane { width: auto; height: 40vh; border-right: 0; border-bottom: 1px solid var(--line); }
   main.source-open > #splitter { display: none; }
 }
+
+/* "Saved" beside an element after its edit (spec 008 US9) */
+.saved-note { position: fixed; z-index: 16; padding: 2px 8px; border-radius: 10px; font-size: 12px;
+  background: var(--panel); color: var(--muted); border: 1px solid var(--line); pointer-events: none;
+  animation: saved-out 1.5s ease-in forwards; }
+@keyframes saved-out { 70% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .saved-note { animation: none; } }

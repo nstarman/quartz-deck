@@ -435,41 +435,69 @@ pub fn paste(d: &Deck, md: &str, pos: Pos) -> Result<Patch> {
     ))
 }
 
-pub fn mv(d: &Deck, slide: &str, pos: Pos) -> Result<Patch> {
+/// Move one or more slides, kept in deck order, next to another (spec 008 US9:
+/// several at once, one patch).
+pub fn mv(d: &Deck, slides: &[&str], pos: Pos) -> Result<Patch> {
     let mut ctx = Ctx::new(d);
-    let s = ctx.slide(slide)?;
+    let moved = several(&ctx, slides)?;
     let target = match pos {
         Pos::After(r) | Pos::Before(r) => ctx.slide(r)?,
         Pos::End => return Err(QdError::InvalidArg("move needs --after or --before".into())),
     };
-    if target.index == s.index {
+    if moved.iter().any(|s| s.index == target.index) {
         return Err(QdError::InvalidArg(
             "cannot move a slide relative to itself".into(),
         ));
     }
     let at = ctx.insertion(pos)?;
     let mut assigned = Vec::new();
-    let (text, id) = ctx.rewrite(s, None, None, None, &mut assigned);
-    let reps = if at == s.span.start || at == s.span.end {
-        vec![(s.span, text)] // already there: only the id assignment
-    } else {
-        vec![
-            (s.span, String::new()),
-            (Span { start: at, end: at }, ctx.place(at, &text)),
-        ]
-    };
+    let texts: Vec<_> = moved
+        .iter()
+        .map(|s| ctx.rewrite(s, None, None, None, &mut assigned))
+        .collect();
+    let id = texts[0].1.clone();
+    if let [s] = moved[..]
+        && (at == s.span.start || at == s.span.end)
+    {
+        // already there: only the id assignment
+        return Ok(patch(
+            "move",
+            id,
+            vec![(s.span, texts[0].0.clone())],
+            assigned,
+        ));
+    }
+    let gap = format!("{0}{0}", ctx.nl());
+    let joined = texts
+        .iter()
+        .map(|(t, _)| t.trim_end_matches(['\n', '\r']))
+        .collect::<Vec<_>>()
+        .join(&gap);
+    let mut reps: Vec<_> = moved.iter().map(|s| (s.span, String::new())).collect();
+    reps.push((Span { start: at, end: at }, ctx.place(at, &joined)));
     Ok(patch("move", id, reps, assigned))
 }
 
-pub fn rm(d: &Deck, slide: &str) -> Result<Patch> {
+/// Remove one or more slides, as one patch.
+pub fn rm(d: &Deck, slides: &[&str]) -> Result<Patch> {
     let ctx = Ctx::new(d);
-    let s = ctx.slide(slide)?;
-    Ok(patch(
-        "rm",
-        s.id.clone(),
-        vec![(s.span, String::new())],
-        vec![],
-    ))
+    let gone = several(&ctx, slides)?;
+    let reps = gone.iter().map(|s| (s.span, String::new())).collect();
+    Ok(patch("rm", gone[0].id.clone(), reps, vec![]))
+}
+
+/// The slides `refs` name, each once, in deck order.
+fn several<'d>(ctx: &Ctx<'d>, refs: &[&str]) -> Result<Vec<&'d Slide>> {
+    let mut v = refs
+        .iter()
+        .map(|r| ctx.slide(r))
+        .collect::<Result<Vec<_>>>()?;
+    v.sort_by_key(|s| s.index);
+    v.dedup_by_key(|s| s.index);
+    if v.is_empty() {
+        return Err(QdError::InvalidArg("name at least one slide".into()));
+    }
+    Ok(v)
 }
 
 /// Source edits (`edit`, `body`) may not change the slide structure: refuse a

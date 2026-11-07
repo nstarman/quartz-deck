@@ -132,19 +132,19 @@ fn dup_gets_fresh_ids() {
 #[test]
 fn move_slides() {
     let d = deck();
-    let p = ops::mv(&d, "conclusion", Pos::Before("intro")).unwrap();
+    let p = ops::mv(&d, &["conclusion"], Pos::Before("intro")).unwrap();
     snap("move_conclusion_first", &d, &p);
     let a = run(&d, p, &["conclusion"]);
     assert_eq!(a.slides[0].id, "conclusion");
     assert_eq!(a.slides.len(), d.slides.len());
 
-    let p = ops::mv(&d, "intro", Pos::After("last")).unwrap();
+    let p = ops::mv(&d, &["intro"], Pos::After("last")).unwrap();
     let a = run(&d, p, &["intro"]);
     assert_eq!(a.slides.last().unwrap().id, "intro");
     assert!(a.text.ends_with("Hello world.\n"), "{:?}", a.text);
 
     // moving next to itself is a no-op; onto itself is an error
-    let p = ops::mv(&d, "intro", Pos::Before("results")).unwrap();
+    let p = ops::mv(&d, &["intro"], Pos::Before("results")).unwrap();
     assert_eq!(
         ops::apply(&d.text, &p)
             .unwrap()
@@ -152,13 +152,13 @@ fn move_slides() {
         d.text
     );
     assert_eq!(
-        ops::mv(&d, "intro", Pos::After("intro"))
+        ops::mv(&d, &["intro"], Pos::After("intro"))
             .unwrap_err()
             .code(),
         "E_INVALID_ARG"
     );
     assert_eq!(
-        ops::mv(&d, "intro", Pos::End).unwrap_err().code(),
+        ops::mv(&d, &["intro"], Pos::End).unwrap_err().code(),
         "E_INVALID_ARG"
     );
 }
@@ -166,7 +166,7 @@ fn move_slides() {
 #[test]
 fn remove_slide() {
     let d = deck();
-    let p = ops::rm(&d, "@3").unwrap();
+    let p = ops::rm(&d, &["@3"]).unwrap();
     snap("rm_rule_slide", &d, &p);
     let a = run(&d, p, &["@3"]);
     assert_eq!(a.slides.len(), 3);
@@ -371,9 +371,9 @@ fn refusals_leave_deck_untouched() {
     for err in [
         ops::title(&broken, "broken-slide", "x", None).unwrap_err(),
         ops::body(&broken, "broken-slide", "x").unwrap_err(),
-        ops::rm(&broken, "broken-slide").unwrap_err(),
+        ops::rm(&broken, &["broken-slide"]).unwrap_err(),
         ops::add(&broken, &spec(Some("x"), None), Pos::End).unwrap_err(),
-        ops::mv(&broken, "good-slide", Pos::After("broken-slide")).unwrap_err(),
+        ops::mv(&broken, &["good-slide"], Pos::After("broken-slide")).unwrap_err(),
     ] {
         assert_eq!(err.code(), "E_UNSAFE_EDIT");
     }
@@ -667,4 +667,36 @@ fn paste_slides_with_fresh_ids_where_they_clash() {
 
     let e = ops::paste(&d, "just a line, no slide", Pos::End).unwrap_err();
     assert_eq!(e.code(), "E_PARSE");
+}
+
+/// Spec 008 US9: several slides at once, in deck order, as one patch.
+#[test]
+fn move_and_rm_several_slides() {
+    let d = deck();
+    let ids = |d: &Deck| {
+        d.slides
+            .iter()
+            .map(|s| s.title.clone().unwrap_or_default())
+            .collect::<Vec<_>>()
+    };
+    // picked in any order, they land in deck order after the target
+    let p = ops::mv(&d, &["conclusion", "intro", "results"], Pos::After("@3")).unwrap();
+    let a = Deck::parse(ops::apply(&d.text, &p).unwrap());
+    assert_eq!(ids(&a), ["", "Intro", "Results", "Conclusion"]);
+    assert_eq!(a.slides.len(), d.slides.len());
+    unique_ids(&a);
+    // before the first slide, and the target may not be one of them
+    let p = ops::mv(&d, &["conclusion", "results"], Pos::Before("intro")).unwrap();
+    let a = Deck::parse(ops::apply(&d.text, &p).unwrap());
+    assert_eq!(ids(&a), ["Results", "Conclusion", "Intro", ""]);
+    assert_eq!(
+        ops::mv(&d, &["intro", "results"], Pos::After("results"))
+            .unwrap_err()
+            .code(),
+        "E_INVALID_ARG"
+    );
+
+    let p = ops::rm(&d, &["results", "intro"]).unwrap();
+    let a = Deck::parse(ops::apply(&d.text, &p).unwrap());
+    assert_eq!(ids(&a), ["", "Conclusion"]);
 }

@@ -70,8 +70,8 @@ when the current directory has exactly one `.qmd`.
 | add untitled slide at end | `qd add --md "Just text."` |
 | duplicate | `qd dup results` |
 | paste slides (markdown, e.g. copied from another deck) | `qd paste --after intro --md -` (ids that clash are renewed) |
-| reorder | `qd move results --before intro` / `--after last` |
-| delete | `qd rm @4` |
+| reorder | `qd move results --before intro` / `--after last`; several at once keep their order: `qd move a b c --after last` |
+| delete | `qd rm @4` (several: `qd rm a b`, one undo step) |
 | retitle | `qd title results "Findings"` (`""` = untitled) |
 | replace content | `qd body results --md "New text"` (keeps positioned boxes) |
 | change a few characters anywhere (code, YAML, text) | `qd replace --old 'np.mean(xs' --new 'np.median(xs' --expect <version>` — `--old` must match exactly once (`E_AMBIGUOUS`: add surrounding text); only those bytes change |

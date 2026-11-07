@@ -164,7 +164,11 @@ export function makeList(api) {
     if (s.hidden) meta.append(el('span', 'tag', 'hidden'));
     b.append(hostFor(s.anchor), meta);
     if (cur) b.setAttribute('aria-current', 'true');
-    b.addEventListener('click', () => { if (justDragged) return; api.state.sel = null; api.go(s.anchor); });
+    b.addEventListener('click', (e) => {
+      if (justDragged || (!isTitle && pick(e, s.id))) return;
+      api.state.sel = null;
+      api.go(s.anchor);
+    });
     if (!isTitle) {
       li.addEventListener('contextmenu', async (e) => {
         e.preventDefault();
@@ -208,6 +212,11 @@ export function makeList(api) {
     // (looked up again then: a second redraw in between replaces the items)
     if (shown !== at) requestAnimationFrame(() => list.querySelector('li.current')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
     shown = at;
+    // the set lasts while the same slide is shown (and only for slides still there)
+    if (api.state.anchor !== pickedOn) picked.clear();
+    pickedOn = api.state.anchor;
+    for (const id of picked) if (!items.some((li) => li.dataset.id === id)) picked.delete(id);
+    mark();
     const ps = pickable();
     const here = ps.find((p) => p.anchor === api.state.anchor) ?? ps[0];
     picker.textContent = here ? `${here.label} ▾` : '';
@@ -328,9 +337,15 @@ export function makeList(api) {
     const up = async () => {
       const done = end();
       if (!done || done.to === done.from) return;
-      const others = done.items.filter((x, i) => i !== done.from).map((x) => x.dataset.id);
-      const where = done.to === 0 ? { before: others[0] } : { after: others[done.to - 1] };
-      const r = await api.op('move', { slide: s.id, ...where });
+      // the slides that go (the picked ones, if this is one of them) land between the
+      // nearest others either side of the gap
+      const group = selected(s.id);
+      const rest = done.items.filter((x, i) => i !== done.from).map((x) => x.dataset.id);
+      const after = rest.slice(0, done.to).filter((id) => !group.includes(id)).at(-1);
+      const before = rest.slice(done.to).find((id) => !group.includes(id));
+      const where = after ? { after } : before ? { before } : null;
+      if (!where) return;
+      const r = await api.op('move', { slide: group.length > 1 ? group : s.id, ...where });
       if (r) await api.fetchDeck();
     };
     const key = (e) => {
@@ -344,7 +359,41 @@ export function makeList(api) {
     addEventListener('keydown', key, true);
   }
 
-  return { render, refresh };
+  // several slides (spec 008 US9): ⇧-click picks a range, ⌘/Ctrl-click one more;
+  // dragging, Delete, copy and cut then act on all of them
+  const picked = new Set();
+  let pickedOn = null; // the slide shown when the set was made
+  const mark = () => {
+    for (const li of list.children) {
+      const on = picked.has(li.dataset.id);
+      li.classList.toggle('picked', on);
+      li.querySelector(':scope > button')?.setAttribute('aria-selected', String(on));
+    }
+  };
+  /** A click with ⇧ or ⌘/Ctrl changes the set (true); a plain click empties it. */
+  function pick(e, id) {
+    const ids = (api.state.deck?.slides || []).map((x) => x.id);
+    const here = ids.find((x) => api.state.deck.slides.find((s) => s.id === x).anchor === api.state.anchor);
+    if (e.shiftKey && here) {
+      const [a, b] = [ids.indexOf(here), ids.indexOf(id)].sort((x, y) => x - y);
+      picked.clear();
+      ids.slice(a, b + 1).forEach((x) => picked.add(x));
+    } else if (e.metaKey || e.ctrlKey) {
+      if (!picked.size && here) picked.add(here);
+      if (picked.has(id)) picked.delete(id); else picked.add(id);
+    } else {
+      picked.clear();
+    }
+    mark();
+    return e.shiftKey || e.metaKey || e.ctrlKey;
+  }
+  /** The slides an action on `id` applies to: the picked ones in deck order, if `id` is one. */
+  function selected(id) {
+    if (picked.size < 2 || !picked.has(id)) return [id];
+    return (api.state.deck?.slides || []).map((s) => s.id).filter((x) => picked.has(x));
+  }
+
+  return { render, refresh, selected };
 }
 
 // A thumbnail is a still copy of the slide: no reveal.js runs in it. ponytail:
