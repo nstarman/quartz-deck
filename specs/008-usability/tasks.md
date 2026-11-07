@@ -197,12 +197,12 @@ Paths are relative to the repo root.
 
 **Independent Test**: spec US8; quickstart §8.
 
-- [ ] T032 [P] [US8] Write failing browser test `narrow_window` in `tests/onslide.rs` at 420×760:
+- [X] T032 [P] [US8] Write failing browser test `narrow_window` in `tests/onslide.rs` at 420×760:
   - a slide picker in the top bar reaches every slide;
   - the slide's properties are in ···;
   - no element overflows the window (`scrollWidth <= clientWidth` for the body and each bar);
   - editing text works.
-- [ ] T033 [US8] Under 600 px (research R13): a media query in `src/ui/editor.css` hides the list; the slide picker (current slide's number and title, a menu of thumbnails) goes in `src/ui/list.js`; the slide bar's controls move into ···. T032 passes.
+- [X] T033 [US8] Under 600 px (research R13): a media query in `src/ui/editor.css` hides the list; the slide picker (current slide's number and title, a menu of thumbnails) goes in `src/ui/list.js`; the slide bar's controls move into ···. T032 passes.
 
 ---
 
