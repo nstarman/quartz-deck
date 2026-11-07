@@ -2973,7 +2973,7 @@ async fn narrow_window() {
         .execute(SetDeviceMetricsOverrideParams::new(420, 760, 1.0, false))
         .await
         .unwrap();
-    ed.wait("innerWidth === 420 && getComputedStyle(document.querySelector('nav')).display === 'none' && !!document.querySelector('#slide-picker').offsetParent")
+    ed.wait("innerWidth === 420 && getComputedStyle(document.querySelector('nav')).display === 'none' && !!document.querySelector('#slide-picker').offsetParent && document.querySelector('#slide-picker').getBoundingClientRect().right <= innerWidth")
         .await;
 
     // the picker reaches every slide
