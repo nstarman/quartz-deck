@@ -603,9 +603,21 @@ async function renderElementPanel() {
 
 // ---------- undo / redo / keys ----------
 
+/** Slide anchor → the anchor of the slide it was duplicated from. */
+const copiedFrom = new Map();
 async function undoRedo(kind) {
+  const was = state.deck?.slides || [];
   const r = await op(kind);
-  if (r) { await fetchDeck(); await renderPanel(); }
+  if (!r) return;
+  await fetchDeck();
+  // the slide on screen went away (an add or a duplicate undone): show the one it was
+  // copied from, else its neighbour, not the first slide (spec 008 US9)
+  if (state.anchor && state.anchor !== 'title-slide' && !slideByAnchor(state.anchor)) {
+    const i = was.findIndex((s) => s.anchor === state.anchor);
+    const near = [copiedFrom.get(state.anchor), was[i - 1]?.anchor, was[i + 1]?.anchor].find((a) => a && slideByAnchor(a));
+    if (near) { state.goAfterRender = near; go(near); }
+  }
+  await renderPanel();
 }
 /** File ▸ Render / Export…: one at a time each (the menu greys them out meanwhile). */
 const busy = { render: false, export: false };
@@ -947,6 +959,7 @@ async function saveSession() {
     s.root.focus();
     return;
   }
+  savedNote(s.root);
   endSession(s, true);
   await fetchDeck();
 }
@@ -975,6 +988,15 @@ function endSession(s, saved, { keepPending = false } = {}) {
 }
 
 // ---------- source editing in place (spec 003 US2) ----------
+
+/** "Saved" beside an element for a moment after its edit lands (spec 008 US9). */
+function savedNote(el) {
+  const p = pageRect(el);
+  const n = document.body.appendChild(Object.assign(document.createElement('div'), { className: 'saved-note', textContent: 'Saved', role: 'status' }));
+  n.style.left = Math.max(4, Math.min(p.right + 6, innerWidth - n.offsetWidth - 4)) + 'px';
+  n.style.top = p.top + 'px';
+  setTimeout(() => n.remove(), 1500);
+}
 
 function pageRect(el) {
   const f = frame.getBoundingClientRect();
@@ -1083,6 +1105,7 @@ async function saveSource(s) {
     sourceError(op.lastError?.message || 'not saved');
     return;
   }
+  savedNote(s.root);
   endSession(s, true);
   await fetchDeck();
 }
@@ -1119,14 +1142,17 @@ const actions = makeActions({
   runCells: run.runCells,
   op: async (name, args) => {
     if (name === 'rm') {
+      const many = slideList.selected(args.slide); // the picked slides, if this is one (spec 008 US9)
+      if (many.length > 1) args = { ...args, slide: many };
       const slides = state.deck?.slides || [];
-      const i = slides.findIndex((x) => x.id === args.slide);
-      const near = slides[i - 1] || slides[i + 1];
+      const i = slides.findIndex((x) => x.id === many[0]);
+      const near = [...slides.slice(0, i).reverse(), ...slides.slice(i + 1)].find((x) => !many.includes(x.id));
       if (near) state.goAfterRender = near.anchor;
     }
     const r = await op(name, args);
     if (!r) return null;
     if (name === 'add' || name === 'dup') state.goAfterRender = r.target;
+    if (name === 'dup') copiedFrom.set(r.target, slideById(args.slide)?.anchor);
     if (name.startsWith('block') && name !== 'block rm' && r.target?.includes('/')) state.sel = r.target;
     if (name === 'block rm' || name === 'rm') state.sel = null;
     await fetchDeck();
@@ -1576,12 +1602,13 @@ async function pasteAfter(t) {
 }
 
 /** Copy a whole slide's markdown (it pastes into this or another deck with fresh ids). */
-function copySlide(t) {
-  const text = t.full?.source;
+async function copySlide(t) {
+  const ids = slideList.selected(t.slideId); // the picked slides, if this is one
+  const text = ids.length > 1 ? (await Promise.all(ids.map(fetchSlide))).map((s) => s?.source?.trimEnd()).join('\n\n') + '\n' : t.full?.source;
   if (!text) return;
   state.clip = text;
   navigator.clipboard.writeText(text).catch(() => {});
-  say('Slide copied');
+  say(ids.length > 1 ? `${ids.length} slides copied` : 'Slide copied');
 }
 
 /** Slides (markdown starting with a slide heading or ---) go in after `t`; other text becomes a paragraph on it. */

@@ -3011,3 +3011,100 @@ async fn narrow_window() {
     ed.wait_file(|f| f.contains("Other slide. Narrow"), "typed text saved")
         .await;
 }
+
+/// T036 (spec 008 US9): several slides picked in the list move and go together,
+/// Settings leads with Theme, a saved edit says so, and undoing a duplicate
+/// leaves the canvas on the slide it was copied from.
+#[tokio::test(flavor = "multi_thread")]
+async fn finishing_touches() {
+    let mut deck = String::from("---\ntitle: T\nformat: revealjs\n---\n");
+    for i in 1..=6 {
+        deck += &format!("\n## S{i} {{#s{i}}}\n\nText {i}.\n");
+    }
+    let Some(ed) = Ed::open(&deck).await else {
+        return;
+    };
+    let order = || slide_ids(&ed.cli(&["slides"]));
+    let click = |id: &str, mods: &str| {
+        format!(
+            "document.querySelector('#slides li[data-id={id}] > button').dispatchEvent(new MouseEvent('click', {{ bubbles: true, {mods}: true }}))"
+        )
+    };
+    let before = ed.file();
+
+    // ⇧-click picks s2..s4; dragging one of them moves all three, one undo puts them back
+    ed.go("s2").await;
+    ed.eval(&click("s4", "shiftKey")).await;
+    assert_eq!(
+        ed.eval("[...document.querySelectorAll('#slides li.picked')].map((li) => li.dataset.id)")
+            .await,
+        json!(["s2", "s3", "s4"])
+    );
+    let from = ed
+        .editor_point("#slides li[data-id=s3] .handle", None)
+        .await;
+    let to = ed.editor_point("#slides li[data-id=s1]", Some(20.0)).await;
+    let to = (to.0, to.1 - 30.0);
+    ed.press_and_move(from, to).await;
+    ed.mouse(DispatchMouseEventType::MouseReleased, to, false)
+        .await;
+    ed.until_cli(
+        &["slides"],
+        |v| v["slides"][0]["id"] == "s2",
+        "moved together",
+    )
+    .await;
+    assert_eq!(order(), ["s2", "s3", "s4", "s1", "s5", "s6"]);
+    ed.undo_to(&before).await;
+
+    // ⌘-click adds one more; Delete removes both (after the confirmation sheet)
+    ed.settle().await;
+    ed.go("s1").await;
+    ed.eval(&click("s5", "metaKey")).await;
+    ed.eval("document.querySelector('#slides li[data-id=s5] > button').focus()")
+        .await;
+    ed.key("Delete", "Delete", 46, 0).await;
+    ed.wait("document.querySelector('dialog.sheet[open]') != null")
+        .await;
+    ed.click_editor("dialog.sheet button[value=ok]").await;
+    ed.until_cli(
+        &["slides"],
+        |v| v["slides"].as_array().unwrap().len() == 4,
+        "two removed",
+    )
+    .await;
+    assert_eq!(order(), ["s2", "s3", "s4", "s6"]);
+
+    // Settings: Theme first, every choice the same width
+    ed.key(",", "Comma", 188, 2).await;
+    ed.wait("document.querySelector('#settings').open").await;
+    assert!(
+        ed.eval("document.querySelector('#settings .setting').textContent")
+            .await
+            .as_str()
+            .unwrap()
+            .starts_with("Theme")
+    );
+    assert_eq!(ed.eval("new Set([...document.querySelectorAll('#settings select')].map((s) => s.offsetWidth)).size").await, 1);
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("!document.querySelector('#settings').open").await;
+
+    // a saved edit says so beside the element
+    ed.type_into("s2", "[data-qd=\"s2/0\"]", "!").await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("document.querySelector('.saved-note')?.textContent === 'Saved'")
+        .await;
+
+    // undoing a duplicate goes back to the slide it was copied from
+    ed.settle().await;
+    ed.go("s3").await;
+    ed.menu("Slide", "Duplicate slide").await;
+    let shown = "document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide()?.id";
+    ed.wait(&format!("{shown} !== 's3' && {shown} !== undefined && document.querySelectorAll('#slides li').length === 6")).await;
+    ed.settle().await;
+    ed.menu("Edit", "Undo").await;
+    ed.wait(&format!(
+        "{shown} === 's3' && document.querySelectorAll('#slides li').length === 5"
+    ))
+    .await;
+}

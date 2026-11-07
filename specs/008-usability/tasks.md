@@ -210,17 +210,17 @@ Paths are relative to the repo root.
 
 **Independent Test**: spec US9; quickstart §9.
 
-- [ ] T034 [P] [US9] Write failing tests:
+- [X] T034 [P] [US9] Write failing tests:
   - **`tests/ops.rs`:** `move` with three slides `--after x` keeps their order and is one patch; `rm` with two slides is one patch.
   - **`tests/cli.rs`:** `qd move a b --after c` and `qd rm a b`, each undone in one step.
-- [ ] T035 [US9] Several slides for `ops::mv` and `ops::rm` in `src/ops.rs`, and `qd move`/`qd rm` in `src/cli.rs` (positional slides, one or more); skill table updated. T034 passes.
-- [ ] T036 [P] [US9] Write failing browser test `finishing_touches` in `tests/onslide.rs`:
+- [X] T035 [US9] Several slides for `ops::mv` and `ops::rm` in `src/ops.rs`, and `qd move`/`qd rm` in `src/cli.rs` (positional slides, one or more); skill table updated. T034 passes.
+- [X] T036 [P] [US9] Write failing browser test `finishing_touches` in `tests/onslide.rs`:
   - ⇧-click selects three slides, dragging them moves all three, and one undo restores them;
   - ⌘-click, then Delete, removes two;
   - Settings has Theme first and its controls share one width;
   - an on-slide edit shows "Saved" near the element;
   - undoing an on-screen duplicate leaves the canvas on the slide it was copied from.
-- [ ] T037 [US9] Multi-select in `src/ui/list.js` (move, copy, cut, delete apply to the set; one op each). Theme first in `src/settings.rs` `DEFS` and one control width in `src/ui/editor.css`. "Saved" label in `src/ui/editor.js`. Undo-after-duplicate goes to the source slide (`goAfterRender`). T036 passes.
+- [X] T037 [US9] Multi-select in `src/ui/list.js` (move, copy, cut, delete apply to the set; one op each). Theme first in `src/settings.rs` `DEFS` and one control width in `src/ui/editor.css`. "Saved" label in `src/ui/editor.js`. Undo-after-duplicate goes to the source slide (`goAfterRender`). T036 passes.
 
 ---
 
