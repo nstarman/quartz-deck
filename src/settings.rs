@@ -43,7 +43,15 @@ const fn ui(key: &'static str, kind: Kind, default: fn() -> Value) -> Def {
     def(key, "", "", kind, default)
 }
 
+// Theme first: the one most people look for (spec 008 US9)
 const DEFS: &[Def] = &[
+    def(
+        "theme",
+        "Theme",
+        "Follow the system's light or dark mode, or choose one. In VS Code the panel follows VS Code.",
+        Kind::Choice(&["system", "light", "dark", "hc"]),
+        || json!("system"),
+    ),
     def(
         "source.side",
         "Source pane side",
@@ -64,13 +72,6 @@ const DEFS: &[Def] = &[
         "As you pause typing (the slides follow), or only on ⌘S and when you leave the pane.",
         Kind::Choice(&["pause", "explicit"]),
         || json!("pause"),
-    ),
-    def(
-        "theme",
-        "Theme",
-        "Follow the system's light or dark mode, or choose one. In VS Code the panel follows VS Code.",
-        Kind::Choice(&["system", "light", "dark", "hc"]),
-        || json!("system"),
     ),
     def(
         "confirm.slide_delete",

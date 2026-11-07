@@ -236,12 +236,17 @@ enum Cmd {
     },
     /// Move a slide
     Move {
-        slide: String,
+        /// One or more slides; they keep their deck order
+        #[arg(required = true)]
+        slide: Vec<String>,
         #[command(flatten)]
         to: Where,
     },
-    /// Remove a slide
-    Rm { slide: String },
+    /// Remove one or more slides (one undo step)
+    Rm {
+        #[arg(required = true)]
+        slide: Vec<String>,
+    },
     /// Set a slide's title ("" makes it untitled)
     Title {
         slide: String,
@@ -726,6 +731,10 @@ fn find_deck(arg: &Option<PathBuf>) -> Result<PathBuf> {
 }
 
 /// `--after`/`--before`, else the end.
+fn strs(v: &[String]) -> Vec<&str> {
+    v.iter().map(String::as_str).collect()
+}
+
 fn at<'a>(after: &'a Option<String>, before: &'a Option<String>) -> Pos<'a> {
     match (after, before) {
         (Some(a), _) => Pos::After(a),
@@ -1030,8 +1039,15 @@ pub fn run_op(store: &Store, op: &str, args: &Value, expect: Option<&str>) -> Re
     for a in positionals {
         let id = a.get_id().as_str();
         known.push(id.into());
-        if let Some(v) = obj.get(id) {
-            argv.push(scalar(id, v)?);
+        match obj.get(id) {
+            // several values (`qd move a b …` as `{"slide": ["a", "b"]}`)
+            Some(Value::Array(vs)) => {
+                for v in vs {
+                    argv.push(scalar(id, v)?);
+                }
+            }
+            Some(v) => argv.push(scalar(id, v)?),
+            None => {}
         }
     }
     for a in cmd
@@ -1398,8 +1414,8 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             let md = required_input(input)?;
             ctx.edit(|d| ops::paste(d, &md, at(after, before)))
         }
-        Cmd::Move { slide, to } => ctx.edit(|d| ops::mv(d, slide, to.pos())),
-        Cmd::Rm { slide } => ctx.edit(|d| ops::rm(d, slide)),
+        Cmd::Move { slide, to } => ctx.edit(|d| ops::mv(d, &strs(slide), to.pos())),
+        Cmd::Rm { slide } => ctx.edit(|d| ops::rm(d, &strs(slide))),
         Cmd::Title {
             slide,
             text,
