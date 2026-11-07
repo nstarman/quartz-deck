@@ -1,5 +1,12 @@
 # quartz-deck
 
+> [!WARNING]
+> **Alpha software. Please don't use it.** quartz-deck is an unfinished
+> personal project, published so that it can be read. It changes and breaks
+> without notice, it may damage the decks it edits, and it is not licensed
+> for use by anyone else (see [LICENSE](LICENSE)). No support, no issues or
+> pull requests, please.
+
 A local GUI + CLI editor for [Quarto](https://quarto.org) reveal.js
 presentations, written in Rust.
 
@@ -194,5 +201,6 @@ concision audit (`/pr-audit`). Verification notes are in each spec's
 
 ## License
 
-Proprietary, personal use only. See [LICENSE](LICENSE) and
+Source-available, all rights reserved: you may read the code here, but it is
+not licensed for use, copying or redistribution. See [LICENSE](LICENSE) and
 [CLEANROOM.md](CLEANROOM.md).

@@ -1,8 +1,8 @@
 # quartz-deck for VS Code
 
 Shows the quartz-deck slide editor in a panel beside the `.qmd` you are
-editing (spec [006](../specs/006-vscode/spec.md)). Personal use, same licence
-as quartz-deck.
+editing (spec [006](../specs/006-vscode/spec.md)). Alpha software, not for
+use; same licence as quartz-deck.
 
 - **Open in quartz-deck** (editor title button, or the palette) on a `.qmd`.
 - Edits on the slides land in the VS Code buffer as ordinary unsaved edits
