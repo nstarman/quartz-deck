@@ -29,13 +29,10 @@
       <strong>Source</strong>
       <span class="hint">saves as you pause · ⌘S saves now</span>
       <span class="runbar">
-        <button type="button" data-act="run-all" title="Run every cell from the top">Run all</button>
-        <button type="button" data-act="stop" title="Stop the running cell">Stop</button>
-        <button type="button" data-act="restart" title="Restart Python (clears its state)">Restart</button>
-        <button type="button" data-act="fresh-all" title="Restart Python, then run every cell from the top">Restart &amp; run all</button>
-        <button type="button" data-act="add-pkg" title="Add Python packages to this deck's environment">Add Python package…</button>
-        <button type="button" data-act="env" hidden title="Create this deck's Python environment (uv, with a lockfile)">Set up Python…</button>
-        <span class="kernel" role="status" aria-label="Python state" title="Python kernel">stopped</span>
+        <button type="button" data-act="run-all" title="Run every cell from the top">▶ Run all</button>
+        <button type="button" data-act="stop" title="Stop the running cell">■ Stop</button>
+        <span class="kernel" role="status" aria-label="Python state" title="Python kernel">Python · stopped</span>
+        <button type="button" data-act="more" aria-haspopup="menu" title="Restart Python, add packages, set up Python">···</button>
       </span>
       <button type="button" data-act="full" aria-pressed="false" title="Use the full width">Full width</button>
       <button type="button" data-act="form" title="Show the properties of the slide or element">Properties</button>
@@ -51,9 +48,8 @@
   <div id="splitter" role="separator" aria-orientation="vertical" aria-label="Resize the source pane" tabindex="0"></div>
   <section id="stage" aria-label="Preview">
     <div id="slidebar" role="toolbar" aria-label="Slide properties">
-      <label class="inline">Background <input type="color" name="bg" aria-label="Background colour"></label>
-      <button type="button" data-act="bg-clear" title="Remove the background colour">⌀</button>
-      <button type="button" data-act="bg-image">Image…</button>
+      <button type="button" data-act="bg" title="Background colour"><span class="chip"></span> Background</button>
+      <button type="button" data-act="bg-image" title="Background image">Image…</button>
       <label class="inline">Transition <select name="transition" aria-label="Transition">
         <option value="">default</option><option>none</option><option>fade</option><option>slide</option>
         <option>convex</option><option>concave</option><option>zoom</option>

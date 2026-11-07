@@ -12,7 +12,6 @@ bar.setAttribute('aria-label', 'Formatting');
 bar.hidden = true;
 document.body.append(bar);
 
-const SWATCHES = ['#c0392b', '#d35400', '#b7950b', '#1e8449', '#2a5bd7', '#7d3c98', '#555555'];
 const SIZES = [0.6, 0.8, 1, 1.2, 1.5, 2]; // em; 1 = no size span
 
 let session = null;
@@ -132,22 +131,18 @@ const BUTTONS = [
   ['strike', 'S', 'Strikethrough', () => toggle('strikeThrough')],
   ['code', '</>', 'Inline code', code],
   ['link', '🔗', 'Link', link],
-  '|',
   ['ul', '•', 'Bulleted list', () => exec('insertUnorderedList')],
   ['ol', '1.', 'Numbered list', () => exec('insertOrderedList')],
   ['outdent', '⇤', 'Outdent (⇧Tab)', () => exec('outdent')],
   ['indent', '⇥', 'Indent (Tab in a list)', () => exec('indent')],
-  '|',
   ['mark', '▇', 'Highlight', () => wrap((n) => n.tagName === 'MARK', (d) => d.createElement('mark'))],
-  'swatches',
-  '|',
   ['smaller', 'A−', 'Smaller text', () => stepSize(-1)],
   ['larger', 'A+', 'Larger text', () => stepSize(1)],
-  '|',
   ['left', '⯇', 'Align left', () => setAlign(null)],
   ['center', '≡', 'Centre', () => setAlign('center')],
   ['right', '⯈', 'Align right', () => setAlign('right')],
 ];
+const COLOURS = [['#c0392b', 'Red'], ['#d35400', 'Orange'], ['#b7950b', 'Gold'], ['#1e8449', 'Green'], ['#2a5bd7', 'Blue'], ['#7d3c98', 'Purple'], ['#555555', 'Grey']];
 
 function setAlign(value) {
   session.align = value || 'left';
@@ -175,20 +170,31 @@ function button(id, label, title, run) {
   return b;
 }
 
-for (const item of BUTTONS) {
-  if (item === '|') { bar.append(Object.assign(document.createElement('span'), { className: 'sep' })); continue; }
-  if (item === 'swatches') {
-    for (const c of SWATCHES) {
-      const b = button('color', '', `Text colour ${c}`, () => setStyle('color', c));
-      b.className = 'swatch';
-      b.style.background = c;
-      bar.append(b);
-    }
-    bar.append(button('nocolor', '⌀', 'Remove text colour', noColor));
-    continue;
-  }
-  bar.append(button(...item));
+// the common few up front, the rest in two pop-overs (spec 008 US7, research R12)
+const sep = () => Object.assign(document.createElement('span'), { className: 'sep' });
+const make = (id) => button(...BUTTONS.find((b) => b[0] === id));
+const closePops = () => { for (const p of bar.querySelectorAll('.pop')) p.hidden = true; };
+function pop(id, label, title, children) {
+  const p = Object.assign(document.createElement('div'), { className: 'pop', hidden: true });
+  p.append(...children);
+  p.addEventListener('click', (e) => { if (e.target.closest('button')) closePops(); });
+  const b = button(id, label, title, () => { const open = p.hidden; closePops(); p.hidden = !open; });
+  b.setAttribute('aria-haspopup', 'true');
+  return [b, p];
 }
+const swatches = COLOURS.map(([c, name]) => {
+  const b = button('color', '', `Text colour: ${name}`, () => setStyle('color', c));
+  b.className = 'swatch';
+  b.style.background = c;
+  return b;
+});
+const segment = Object.assign(document.createElement('span'), { className: 'seg' });
+segment.append(...['left', 'center', 'right'].map(make));
+bar.append(
+  ...['bold', 'italic', 'underline', 'strike', 'link', 'ul'].map(make), sep(),
+  ...pop('color', 'A', 'Text colour', [...swatches, button('nocolor', '⌀', 'Remove text colour', noColor)]),
+  ...pop('more', 'Aa', 'More formatting', [...['code', 'ol', 'outdent', 'indent', 'mark'].map(make), sep(), make('smaller'), make('larger'), sep(), segment]),
+);
 
 /** Show the toolbar for an edit session; `frame` is the preview iframe. */
 export function showToolbar(s, frame) {
@@ -236,6 +242,7 @@ export function placeNear(b, el, frame) {
 const after = (r) => { if (!r?.then) session.root.focus(); };
 
 export function hideToolbar() {
+  closePops();
   session = null;
   bar.hidden = true;
 }

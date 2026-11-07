@@ -8,6 +8,7 @@
 
 import * as keys from '/ui/keys.js';
 import { ask } from '/ui/sheet.js';
+import { openMenu } from '/ui/menu.js';
 
 const store = (f) => { try { return f(sessionStorage); } catch { return null; } };
 const given = location.hash.match(/(?:^#|&)t=([0-9a-f]+)/);
@@ -21,7 +22,7 @@ const ta = pane.querySelector('textarea');
 const gutter = pane.querySelector('.gutter');
 const dock = pane.querySelector('.outdock');
 const badge = pane.querySelector('.kernel');
-const envBtn = pane.querySelector('[data-act=env]');
+let needsEnv = false; // code cells and no environment yet: Set up Python… is offered
 
 let api = null; // { say, flush }
 let order = []; // [{cell, lines, runnable}]
@@ -105,14 +106,13 @@ function caretMoved() {
 
 async function envStatus() {
   const r = await fetch('/api/env');
-  envBtn.hidden = r.ok || !order.length;
-  envBtn.textContent = 'Set up Python…';
+  needsEnv = !r.ok && !!order.length;
 }
 
 /** SSE events from the server (contracts/http.md). */
 export function listen(es) {
   const on = (name, f) => es.addEventListener(name, (e) => f(JSON.parse(e.data)));
-  on('kernel', ({ state }) => { badge.textContent = state === 'starting' ? 'starting…' : state; badge.dataset.state = state; });
+  on('kernel', ({ state }) => { badge.textContent = `Python · ${state === 'starting' ? 'starting…' : state}`; badge.dataset.state = state; });
   on('run_started', ({ cells }) => { cells.forEach((c) => running.add(c)); drawGutter(); });
   on('cell_output', (o) => { running.delete(o.cell); outs[o.cell] = { ...o, stale: false }; focus = o.cell; drawGutter(); drawDock(); });
   on('run_done', ({ status, error }) => {
@@ -146,12 +146,11 @@ export function initRun(a) {
   keys.on('run-stop', () => post('/api/run/interrupt'));
   keys.on('run-restart', () => post('/api/run/restart'));
   keys.on('run-env', {
-    enabled: () => !envBtn.hidden && !envBtn.disabled,
+    enabled: () => needsEnv,
     run: async () => {
-      envBtn.disabled = true;
-      envBtn.textContent = 'Setting up…';
+      needsEnv = false;
+      api.say('Setting up Python…');
       if (await post('/api/env/init')) api.say('Environment created (uv): add packages with “qd env add”');
-      envBtn.disabled = false;
       envStatus();
     },
   });
@@ -159,10 +158,13 @@ export function initRun(a) {
     const v = await ask({ title: 'Add Python packages', ok: 'Add', fields: [{ name: 'p', kind: 'text', label: 'Packages from PyPI, space-separated', placeholder: 'e.g. numpy matplotlib', validate: (x) => (x ? '' : 'Name at least one package') }] });
     if (v && (await post('/api/env/add', { packages: v.p.split(/\s+/) }))) api.say(`Added ${v.p}`);
   });
-  const ACT = { 'run-all': 'run-all', 'fresh-all': 'run-fresh-all', stop: 'run-stop', restart: 'run-restart', env: 'run-env', 'add-pkg': 'run-add-package' };
-  pane.querySelector('.srcbar').addEventListener('click', (e) => {
-    const act = ACT[e.target.closest('button')?.dataset.act];
-    if (act) keys.run(act);
+  // the bar: Run all and Stop; the rest under ··· (spec 008 US7)
+  const MORE = ['run-restart', 'run-fresh-all', 'run-add-package', 'run-env'];
+  pane.querySelector('.runbar').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b?.dataset.act !== 'more') return keys.run({ 'run-all': 'run-all', stop: 'run-stop' }[b?.dataset.act]);
+    const r = b.getBoundingClientRect();
+    openMenu(MORE.map((id) => ({ label: keys.action(id).label, disabled: id === 'run-env' && !needsEnv, run: () => keys.run(id) })), r.left, r.bottom + 2);
   });
   refresh().then(envStatus);
 }

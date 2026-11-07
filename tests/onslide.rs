@@ -738,12 +738,14 @@ async fn toolbar_formats_and_unformats() {
     ed.caret(list, Some("one")).await;
     ed.key("i", "KeyI", 73, 2).await; // Ctrl+I
     ed.caret(list, Some("two")).await;
+    ed.click_editor("#fmtbar [data-fmt=color]").await; // the colour menu
     ed.click_editor("#fmtbar .swatch").await;
     assert_eq!(
         ed.session().await["draft"],
         "- *one*\n- **[two]{style=\"color:#c0392b\"}**"
     );
     // remove all three again: the draft is byte-identical to the source
+    ed.click_editor("#fmtbar [data-fmt=color]").await;
     ed.click_editor("#fmtbar [data-fmt=nocolor]").await;
     ed.caret(list, Some("two")).await;
     ed.click_editor("#fmtbar [data-fmt=bold]").await;
@@ -754,6 +756,7 @@ async fn toolbar_formats_and_unformats() {
     ed.caret(list, Some("two")).await;
     ed.key("e", "KeyE", 69, 2).await; // Ctrl+E
     ed.caret(list, Some("one")).await;
+    ed.click_editor("#fmtbar [data-fmt=more]").await; // "Aa"
     ed.click_editor("#fmtbar [data-fmt=mark]").await;
     ed.click_blank().await;
     ed.wait_file(|f| f.contains("`two`"), "saved").await;
@@ -2835,4 +2838,124 @@ async fn one_top_bar_in_plain_words() {
     ed.wait("document.querySelector('#menubar').classList.contains('folded')")
         .await;
     assert_eq!(ed.eval(&row("#menubar")).await, true);
+}
+
+/// T026 (spec 008 US7): bars with one height and a name on every control, the
+/// common formats up front and the rest under "Aa", a source bar with the run
+/// controls and the rest under ···, a fuller Insert, and box handles easy to hit.
+#[tokio::test(flavor = "multi_thread")]
+async fn tidier_bars_and_fuller_insert() {
+    let Some(ed) = Ed::open(P2).await else {
+        return;
+    };
+    let sheet = "document.querySelector('dialog.sheet[open]')";
+    let shown = |bar: &str| {
+        format!(
+            "[...document.querySelectorAll('{bar} button, {bar} select')].filter((b) => b.offsetParent && !b.closest('.pop'))"
+        )
+    };
+
+    // the slide bar: one height, a name on each control, a colour menu with None
+    ed.go("b").await;
+    ed.wait("document.querySelector('#slidebar').style.visibility !== 'hidden'")
+        .await;
+    let bar = shown("#slidebar");
+    assert_eq!(
+        ed.eval(&format!("new Set({bar}.map((b) => b.offsetHeight)).size"))
+            .await,
+        1,
+        "one height"
+    );
+    assert_eq!(
+        ed.eval(&format!("{bar}.filter((b) => !(b.title || b.getAttribute('aria-label') || b.textContent.trim())).length")).await,
+        0,
+        "every control named"
+    );
+    ed.click_editor("#slidebar [data-act=bg]").await;
+    ed.wait(&format!(
+        "{sheet}?.querySelector('[data-value=\"\"]') != null"
+    ))
+    .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait(&format!("!{sheet}")).await;
+
+    // the formatting bar: the common few, then "Aa" for the rest
+    ed.go("a").await;
+    ed.click_in_slide("[data-qd=\"a/0\"]").await;
+    ed.wait("window.qdSession() !== null && !document.querySelector('#fmtbar').hidden")
+        .await;
+    assert_eq!(
+        ed.eval(&format!("{}.map((b) => b.dataset.fmt)", shown("#fmtbar")))
+            .await,
+        json!([
+            "bold",
+            "italic",
+            "underline",
+            "strike",
+            "link",
+            "ul",
+            "color",
+            "more"
+        ])
+    );
+    ed.click_editor("#fmtbar [data-fmt=more]").await;
+    ed.wait("['code', 'ol', 'outdent', 'indent', 'mark', 'smaller', 'larger', 'left', 'center', 'right'].every((f) => document.querySelector(`#fmtbar .pop [data-fmt=${f}]`)?.offsetParent)")
+        .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.idle().await;
+
+    // the source bar: Run all, Stop, Python's state in words, ··· for the rest
+    ed.toggle_source().await;
+    ed.wait("document.querySelector('#srcpane .kernel').textContent === 'Python · stopped'")
+        .await;
+    assert_eq!(
+        ed.eval("[...document.querySelectorAll('#srcpane .runbar button')].filter((b) => b.offsetParent).map((b) => b.textContent.trim())").await,
+        json!(["▶ Run all", "■ Stop", "···"])
+    );
+    ed.click_editor("#srcpane .runbar [data-act=more]").await;
+    let labels = ed.menu_labels().await;
+    for l in [
+        "Restart",
+        "Restart & run all",
+        "Add Python package…",
+        "Set up Python…",
+    ] {
+        // (Set up Python… is offered only when the deck has code cells)
+        assert!(
+            labels.iter().any(|x| x.starts_with(l)),
+            "{l} missing from {labels:?}"
+        );
+    }
+    ed.close_menu().await;
+    ed.toggle_source().await;
+
+    // Insert: each new kind of block is its markdown in the file
+    for (label, md) in [
+        ("Code cell", "```{python}\n1 + 1\n```"),
+        ("Callout", "::: {.callout-note}\nA note.\n:::"),
+        ("Columns", ":::: {.columns}\n"),
+        ("Speaker notes", "::: notes\nSay this.\n:::"),
+        ("Table", "| A | B |\n|---|---|\n| 1 | 2 |"),
+        ("Quote", "> A quote."),
+    ] {
+        ed.settle().await;
+        ed.go("b").await;
+        ed.menu("Insert", label).await;
+        ed.wait_file(|f| f.contains(md), label).await;
+    }
+
+    // a positioned box: handles drawn small, hit areas at least 20 px
+    ed.settle().await;
+    ed.cli(&["box", "add", "b", "--text", "Box"]);
+    ed.settle().await;
+    ed.go("b").await;
+    ed.click_in_slide("#b .absolute").await;
+    ed.wait(
+        "document.querySelector('#preview').contentDocument.querySelector('.qd-handle') != null",
+    )
+    .await;
+    assert_eq!(
+        ed.eval("[...document.querySelector('#preview').contentDocument.querySelectorAll('.qd-handle')].every((h) => { const r = h.getBoundingClientRect(); return r.width >= 20 && r.height >= 20; })").await,
+        true
+    );
 }
