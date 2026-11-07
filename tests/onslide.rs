@@ -204,11 +204,11 @@ impl Ed {
     async fn wait_file(&self, pred: impl Fn(&str) -> bool, what: &str) {
         let start = Instant::now();
         while !pred(&self.file()) {
-            assert!(
-                start.elapsed() < Duration::from_secs(30),
-                "file never {what}:\n{}",
-                self.file()
-            );
+            if start.elapsed() > Duration::from_secs(30) {
+                // what the editor said (an op's error shows in the notice)
+                let page = self.eval(PAGE_STATE).await;
+                panic!("file never {what}:\n{}\npage: {page}", self.file());
+            }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }
