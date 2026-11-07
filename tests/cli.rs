@@ -1118,3 +1118,26 @@ fn images_list_and_add() {
     fs::write(e.dir.path().join("fake.png"), b"GIF89a").unwrap();
     e.err(&["image", "add", "fake.png"], "E_INVALID_ARG", 1);
 }
+
+/// Spec 008 US9: `qd move` and `qd rm` with several slides, each one undo step.
+#[test]
+fn move_and_rm_several_slides() {
+    let e = Env::new();
+    let before = e.text();
+    let titles = |e: &Env| {
+        e.ok(&["slides"])["slides"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["title"].as_str().unwrap_or("").to_string())
+            .collect::<Vec<_>>()
+    };
+    e.ok(&["move", "intro", "results", "--after", "conclusion"]);
+    assert_eq!(titles(&e), ["", "Conclusion", "Intro", "Results"]);
+    e.ok(&["undo"]);
+    assert_eq!(e.text(), before);
+    e.ok(&["rm", "intro", "conclusion"]);
+    assert_eq!(titles(&e), ["Results", ""]);
+    e.ok(&["undo"]);
+    assert_eq!(e.text(), before);
+}

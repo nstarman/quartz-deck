@@ -236,12 +236,17 @@ enum Cmd {
     },
     /// Move a slide
     Move {
-        slide: String,
+        /// One or more slides; they keep their deck order
+        #[arg(required = true)]
+        slide: Vec<String>,
         #[command(flatten)]
         to: Where,
     },
-    /// Remove a slide
-    Rm { slide: String },
+    /// Remove one or more slides (one undo step)
+    Rm {
+        #[arg(required = true)]
+        slide: Vec<String>,
+    },
     /// Set a slide's title ("" makes it untitled)
     Title {
         slide: String,
@@ -1030,8 +1035,15 @@ pub fn run_op(store: &Store, op: &str, args: &Value, expect: Option<&str>) -> Re
     for a in positionals {
         let id = a.get_id().as_str();
         known.push(id.into());
-        if let Some(v) = obj.get(id) {
-            argv.push(scalar(id, v)?);
+        match obj.get(id) {
+            // several values (`qd move a b …` as `{"slide": ["a", "b"]}`)
+            Some(Value::Array(vs)) => {
+                for v in vs {
+                    argv.push(scalar(id, v)?);
+                }
+            }
+            Some(v) => argv.push(scalar(id, v)?),
+            None => {}
         }
     }
     for a in cmd
