@@ -187,8 +187,11 @@ const PREVIEW_CSS = `html:not(.qd-present) {
     outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; cursor: text; }
   .qd-overlay { position: absolute; box-sizing: border-box; border: 2px solid #2a5bd7; cursor: move;
     touch-action: none; z-index: 1000; }
-  .qd-handle { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; background: #fff;
-    border: 2px solid #2a5bd7; border-radius: 3px; box-sizing: border-box; }
+  /* a 10 px square to see, a 24 px target to hit (spec 008 US7: at least 20) */
+  .qd-handle { position: absolute; --h: calc(24px * var(--px, 1)); width: var(--h); height: var(--h);
+    margin: calc(var(--h) / -2) 0 0 calc(var(--h) / -2); }
+  .qd-handle::after { content: ''; position: absolute; inset: calc(7px * var(--px, 1)); background: #fff;
+    border: calc(2px * var(--px, 1)) solid #2a5bd7; border-radius: 2px; box-sizing: border-box; }
   section[data-qd-hidden]::after { content: "hidden slide (visibility=hidden): not in the rendered deck";
     position: absolute; top: 0; right: 0; font: 14px system-ui, sans-serif; padding: 2px 8px;
     background: #fff3c4; color: #5c4400; border-radius: 4px; }
@@ -227,6 +230,8 @@ function attachOverlay(box) {
   const ov = doc.createElement('div');
   ov.className = 'qd-overlay';
   ov.title = 'Drag to move';
+  // the slide is drawn scaled: size the handles in screen pixels
+  ov.style.setProperty('--px', String(1 / (frameWin().Reveal?.getScale?.() || 1)));
   for (const [name, [x, y]] of Object.entries(HANDLES)) {
     const h = doc.createElement('div');
     h.className = 'qd-handle';
@@ -1215,17 +1220,15 @@ async function renderSlidebar() {
   if (!cur) return;
   const full = await fetchSlide(cur.id);
   const kv = full?.attrs?.kv || {};
-  slidebar.bg.value = /^#[0-9a-f]{6}$/i.test(kv['background-color'] || '') ? kv['background-color'] : '#ffffff';
+  $('[data-act=bg] .chip', slidebar).style.background = kv['background-color'] || '';
   slidebar.querySelector('[name=transition]').value = kv.transition || '';
   slidebar.querySelector('[name=hidden]').checked = kv.visibility === 'hidden';
   placeEmptyadd();
 }
-slidebar.bg = slidebar.querySelector('[name=bg]');
 const setSlideAttr = (key, value) => {
   const cur = slideByAnchor(state.anchor);
   if (cur) actions.setAttr({ slideId: cur.id }, key, value);
 };
-slidebar.bg.addEventListener('change', () => setSlideAttr('background-color', slidebar.bg.value));
 slidebar.querySelector('[name=transition]').addEventListener('change', (e) => setSlideAttr('transition', e.target.value));
 slidebar.querySelector('[name=hidden]').addEventListener('change', (e) => setSlideAttr('visibility', e.target.checked ? 'hidden' : null));
 slidebar.addEventListener('click', async (e) => {
@@ -1233,7 +1236,7 @@ slidebar.addEventListener('click', async (e) => {
   const cur = slideByAnchor(state.anchor);
   if (!act || !cur) return;
   const t = await slideTarget(cur.id);
-  if (act === 'bg-clear') setSlideAttr('background-color', null);
+  if (act === 'bg') actions.run('slide-bg', t, 'slide');
   else if (act === 'bg-image') actions.run('slide-bgimg', t, 'slide');
   else if (act === 'more') { const r = e.target.getBoundingClientRect(); openMenu(actions.slide(t), r.left, r.bottom + 4); }
 });
