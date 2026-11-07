@@ -224,7 +224,7 @@ aside .status.fail { color: var(--danger); }
 #slide-picker { display: none; }
 @media (max-width: 599px) {
   nav, #deck-name { display: none; }
-  #slide-picker { display: block; flex: 0 1 auto; min-width: 0; height: 28px; overflow: hidden; text-overflow: ellipsis; }
+  #slide-picker { display: block; min-width: 0; height: 28px; overflow: hidden; text-overflow: ellipsis; }
   #slidebar > :not([data-act=more]) { display: none; }
 }
 

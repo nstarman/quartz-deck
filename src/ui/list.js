@@ -208,7 +208,8 @@ export function makeList(api) {
     // (looked up again then: a second redraw in between replaces the items)
     if (shown !== at) requestAnimationFrame(() => list.querySelector('li.current')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
     shown = at;
-    const here = pickable().find((p) => p.anchor === api.state.anchor) ?? pickable()[0];
+    const ps = pickable();
+    const here = ps.find((p) => p.anchor === api.state.anchor) ?? ps[0];
     picker.textContent = here ? `${here.label} ▾` : '';
     if (focused) (list.querySelector(`li[data-id="${CSS.escape(focused)}"]`) || current)?.querySelector(':scope > button')?.focus({ preventScroll: true });
   }

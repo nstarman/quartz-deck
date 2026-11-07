@@ -3001,7 +3001,7 @@ async fn narrow_window() {
     ed.close_menu().await;
 
     // nothing runs off the window
-    let fits = "[document.documentElement, document.body, ...document.querySelectorAll('header, #slidebar, #fmtbar, #elbar')].filter((e) => e.offsetParent || e === document.body || e === document.documentElement).every((e) => e.scrollWidth <= e.clientWidth + 1)";
+    let fits = "[document.documentElement, document.body, ...document.querySelectorAll('header, #slidebar, #fmtbar, #elbar')].filter((e) => e.checkVisibility()).every((e) => e.scrollWidth <= e.clientWidth + 1)";
     assert_eq!(ed.eval(fits).await, true, "something overflows");
 
     // typing still works, with the formatting bar inside the window too
