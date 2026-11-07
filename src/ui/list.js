@@ -373,7 +373,7 @@ export function makeList(api) {
   /** A click with ⇧ or ⌘/Ctrl changes the set (true); a plain click empties it. */
   function pick(e, id) {
     const ids = (api.state.deck?.slides || []).map((x) => x.id);
-    const here = ids.find((x) => api.state.deck.slides.find((s) => s.id === x).anchor === api.state.anchor);
+    const here = api.state.deck?.slides.find((s) => s.anchor === api.state.anchor)?.id;
     if (e.shiftKey && here) {
       const [a, b] = [ids.indexOf(here), ids.indexOf(id)].sort((x, y) => x - y);
       picked.clear();

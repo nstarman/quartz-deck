@@ -437,7 +437,7 @@ pub fn paste(d: &Deck, md: &str, pos: Pos) -> Result<Patch> {
 
 /// Move one or more slides, kept in deck order, next to another (spec 008 US9:
 /// several at once, one patch).
-pub fn mv(d: &Deck, slides: &[&str], pos: Pos) -> Result<Patch> {
+pub fn mv(d: &Deck, slides: &[impl AsRef<str>], pos: Pos) -> Result<Patch> {
     let mut ctx = Ctx::new(d);
     let moved = several(&ctx, slides)?;
     let target = match pos {
@@ -479,7 +479,7 @@ pub fn mv(d: &Deck, slides: &[&str], pos: Pos) -> Result<Patch> {
 }
 
 /// Remove one or more slides, as one patch.
-pub fn rm(d: &Deck, slides: &[&str]) -> Result<Patch> {
+pub fn rm(d: &Deck, slides: &[impl AsRef<str>]) -> Result<Patch> {
     let ctx = Ctx::new(d);
     let gone = several(&ctx, slides)?;
     let reps = gone.iter().map(|s| (s.span, String::new())).collect();
@@ -487,10 +487,10 @@ pub fn rm(d: &Deck, slides: &[&str]) -> Result<Patch> {
 }
 
 /// The slides `refs` name, each once, in deck order.
-fn several<'d>(ctx: &Ctx<'d>, refs: &[&str]) -> Result<Vec<&'d Slide>> {
+fn several<'d>(ctx: &Ctx<'d>, refs: &[impl AsRef<str>]) -> Result<Vec<&'d Slide>> {
     let mut v = refs
         .iter()
-        .map(|r| ctx.slide(r))
+        .map(|r| ctx.slide(r.as_ref()))
         .collect::<Result<Vec<_>>>()?;
     v.sort_by_key(|s| s.index);
     v.dedup_by_key(|s| s.index);
