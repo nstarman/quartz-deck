@@ -162,9 +162,9 @@ export function initRun(a) {
   const MORE = ['run-restart', 'run-fresh-all', 'run-add-package', 'run-env'];
   pane.querySelector('.runbar').addEventListener('click', (e) => {
     const b = e.target.closest('button');
-    if (b?.dataset.act !== 'more') return keys.run({ 'run-all': 'run-all', stop: 'run-stop' }[b?.dataset.act]);
+    if (b?.dataset.act !== 'more') return keys.run(b?.dataset.act);
     const r = b.getBoundingClientRect();
-    openMenu(MORE.map((id) => ({ label: keys.action(id).label, disabled: id === 'run-env' && !needsEnv, run: () => keys.run(id) })), r.left, r.bottom + 2);
+    openMenu(MORE.map((id) => ({ label: keys.action(id).label, disabled: keys.handler(id)?.enabled?.() === false, run: () => keys.run(id) })), r.left, r.bottom + 2);
   });
   refresh().then(envStatus);
 }

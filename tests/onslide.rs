@@ -1396,7 +1396,7 @@ async fn run_cells_in_the_editor() {
     ed.key("Enter", "Enter", 13, 8).await;
     ed.wait("document.querySelector('#srcpane .kernel').dataset.state === 'busy'")
         .await;
-    ed.click_editor("#srcpane [data-act=stop]").await;
+    ed.click_editor("#srcpane [data-act=run-stop]").await;
     ed.wait_secs(
         &format!("{dock}.textContent.includes('KeyboardInterrupt')"),
         30,

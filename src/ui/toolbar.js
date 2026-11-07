@@ -4,6 +4,7 @@
 
 import * as keys from '/ui/keys.js';
 import { ask } from '/ui/sheet.js';
+import { el } from '/ui/run.js';
 
 const bar = document.createElement('div');
 bar.id = 'fmtbar';
@@ -171,11 +172,11 @@ function button(id, label, title, run) {
 }
 
 // the common few up front, the rest in two pop-overs (spec 008 US7, research R12)
-const sep = () => Object.assign(document.createElement('span'), { className: 'sep' });
+const sep = () => el('span', { className: 'sep' });
 const make = (id) => button(...BUTTONS.find((b) => b[0] === id));
 const closePops = () => { for (const p of bar.querySelectorAll('.pop')) p.hidden = true; };
 function pop(id, label, title, children) {
-  const p = Object.assign(document.createElement('div'), { className: 'pop', hidden: true });
+  const p = el('div', { className: 'pop', hidden: true });
   p.append(...children);
   p.addEventListener('click', (e) => { if (e.target.closest('button')) closePops(); });
   const b = button(id, label, title, () => { const open = p.hidden; closePops(); p.hidden = !open; });
@@ -188,7 +189,7 @@ const swatches = COLOURS.map(([c, name]) => {
   b.style.background = c;
   return b;
 });
-const segment = Object.assign(document.createElement('span'), { className: 'seg' });
+const segment = el('span', { className: 'seg' });
 segment.append(...['left', 'center', 'right'].map(make));
 bar.append(
   ...['bold', 'italic', 'underline', 'strike', 'link', 'ul'].map(make), sep(),
