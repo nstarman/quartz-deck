@@ -219,6 +219,15 @@ aside .status.fail { color: var(--danger); }
     position: relative; top: -10px; margin: 0 12px 0 16px; } /* -10px: level with the thumbnails, not their titles */
 }
 
+/* a narrow window (spec 008 US8): a slide picker in the top row instead of the
+   list, and the slide's properties under ··· */
+#slide-picker { display: none; }
+@media (max-width: 599px) {
+  nav, #deck-name { display: none; }
+  #slide-picker { display: block; flex: 0 1 auto; min-width: 0; height: 28px; overflow: hidden; text-overflow: ellipsis; }
+  #slidebar > :not([data-act=more]) { display: none; }
+}
+
 /* ---------- on-slide editing (spec 003) ---------- */
 #fmtbar { position: fixed; z-index: 20; display: flex; flex-wrap: wrap; gap: 2px; align-items: center;
   max-width: calc(100vw - 8px); padding: 4px; border: 1px solid var(--line); border-radius: 8px;
