@@ -1398,7 +1398,10 @@ function hoverAt(node) {
   hovered = el;
   const p = pageRect(el);
   hoverbar.hidden = false;
-  hoverbar.style.left = Math.max(2, p.left - hoverbar.offsetWidth - 6) + 'px';
+  const left = p.left - hoverbar.offsetWidth - 6;
+  // no room beside it (a narrow window): no bar over the text; the right-click menu has both
+  if (left < 2) { hoverbar.hidden = true; return; }
+  hoverbar.style.left = left + 'px';
   hoverbar.style.top = p.top + 'px';
 }
 frame.addEventListener('mouseleave', (e) => { if (!hoverbar.contains(e.relatedTarget)) hoverbar.hidden = true; });

@@ -204,11 +204,11 @@ impl Ed {
     async fn wait_file(&self, pred: impl Fn(&str) -> bool, what: &str) {
         let start = Instant::now();
         while !pred(&self.file()) {
-            assert!(
-                start.elapsed() < Duration::from_secs(30),
-                "file never {what}:\n{}",
-                self.file()
-            );
+            if start.elapsed() > Duration::from_secs(30) {
+                // what the editor said (an op's error shows in the notice)
+                let page = self.eval(PAGE_STATE).await;
+                panic!("file never {what}:\n{}\npage: {page}", self.file());
+            }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }
@@ -2958,4 +2958,56 @@ async fn tidier_bars_and_fuller_insert() {
         ed.eval("[...document.querySelector('#preview').contentDocument.querySelectorAll('.qd-handle')].every((h) => { const r = h.getBoundingClientRect(); return r.width >= 20 && r.height >= 20; })").await,
         true
     );
+}
+
+/// T032 (spec 008 US8): at 420×760 the list gives way to a slide picker in the
+/// top row, the slide's properties are under ···, nothing runs off the window,
+/// and typing on a slide still works.
+#[tokio::test(flavor = "multi_thread")]
+async fn narrow_window() {
+    use chromiumoxide::cdp::browser_protocol::emulation::SetDeviceMetricsOverrideParams;
+    let Some(ed) = Ed::open(P2).await else {
+        return;
+    };
+    ed.page
+        .execute(SetDeviceMetricsOverrideParams::new(420, 760, 1.0, false))
+        .await
+        .unwrap();
+    ed.wait("innerWidth === 420 && getComputedStyle(document.querySelector('nav')).display === 'none' && !!document.querySelector('#slide-picker').offsetParent && document.querySelector('#slide-picker').getBoundingClientRect().right <= innerWidth")
+        .await;
+
+    // the picker reaches every slide
+    ed.click_editor("#slide-picker").await;
+    assert_eq!(ed.menu_labels().await, ["T", "1 A", "2 B", "3 Empty"]);
+    ed.click_menu("2 B").await;
+    ed.wait("document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide()?.id === 'b' && document.querySelector('#slide-picker').textContent.includes('B')")
+        .await;
+
+    // the slide's properties are under ···
+    assert_eq!(
+        ed.eval("[...document.querySelectorAll('#slidebar > *')].filter((c) => c.offsetParent).map((c) => c.dataset.act)").await,
+        json!(["more"])
+    );
+    ed.click_editor("#slidebar [data-act=more]").await;
+    let labels = ed.menu_labels().await;
+    for l in [
+        "Background colour…",
+        "Background image…",
+        "Transition",
+        "Hidden in the presentation",
+    ] {
+        assert!(labels.iter().any(|x| x == l), "{l} missing from {labels:?}");
+    }
+    ed.close_menu().await;
+
+    // nothing runs off the window
+    let fits = "[document.documentElement, document.body, ...document.querySelectorAll('header, #slidebar, #fmtbar, #elbar')].filter((e) => e.checkVisibility()).every((e) => e.scrollWidth <= e.clientWidth + 1)";
+    assert_eq!(ed.eval(fits).await, true, "something overflows");
+
+    // typing still works, with the formatting bar inside the window too
+    ed.type_into("b", "[data-qd=\"b/0\"]", " Narrow").await;
+    assert_eq!(ed.eval(fits).await, true, "the formatting bar overflows");
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait_file(|f| f.contains("Other slide. Narrow"), "typed text saved")
+        .await;
 }

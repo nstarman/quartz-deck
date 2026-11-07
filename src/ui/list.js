@@ -18,6 +18,19 @@ export function makeList(api) {
   const el = (tag, cls, text) => Object.assign(document.createElement(tag), cls ? { className: cls } : {}, text ? { textContent: text } : {});
   const frameDoc = () => { try { return api.frame.contentDocument?.querySelector('.reveal .slides') ? api.frame.contentDocument : null; } catch { return null; } };
   const titleText = () => frameDoc()?.querySelector('#title-slide .title')?.textContent.trim() || 'Title slide';
+  const nameOf = (s) => s.title || s.summary || 'Untitled';
+
+  // a narrow window's slide picker (spec 008 US8): the list as a menu in the top row.
+  // ponytail: names only, no thumbnails; add them if the menu proves hard to scan
+  const picker = document.querySelector('#slide-picker');
+  const pickable = () => [
+    ...(api.state.deck?.title_slide ? [{ label: titleText(), anchor: 'title-slide' }] : []),
+    ...(api.state.deck?.slides || []).map((s) => ({ label: `${s.index} ${nameOf(s)}`, anchor: s.anchor })),
+  ];
+  picker.addEventListener('click', () => {
+    const r = picker.getBoundingClientRect();
+    api.openMenu(pickable().map(({ label, anchor }) => ({ label, checked: anchor === api.state.anchor, run: () => api.go(anchor) })), r.left, r.bottom + 2);
+  });
 
   // ---------- thumbnails ----------
 
@@ -147,7 +160,7 @@ export function makeList(api) {
       li.append(add, handle);
     }
     const meta = el('span', 'meta');
-    meta.append(el('span', 'idx', isTitle ? '' : String(s.index)), el('span', 'name', isTitle ? titleText() : s.title || s.summary || 'Untitled'));
+    meta.append(el('span', 'idx', isTitle ? '' : String(s.index)), el('span', 'name', isTitle ? titleText() : nameOf(s)));
     if (s.hidden) meta.append(el('span', 'tag', 'hidden'));
     b.append(hostFor(s.anchor), meta);
     if (cur) b.setAttribute('aria-current', 'true');
@@ -195,6 +208,9 @@ export function makeList(api) {
     // (looked up again then: a second redraw in between replaces the items)
     if (shown !== at) requestAnimationFrame(() => list.querySelector('li.current')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
     shown = at;
+    const ps = pickable();
+    const here = ps.find((p) => p.anchor === api.state.anchor) ?? ps[0];
+    picker.textContent = here ? `${here.label} ▾` : '';
     if (focused) (list.querySelector(`li[data-id="${CSS.escape(focused)}"]`) || current)?.querySelector(':scope > button')?.focus({ preventScroll: true });
   }
 
