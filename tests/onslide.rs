@@ -2495,6 +2495,16 @@ async fn slide_list_like_a_slide_app() {
             .as_str().unwrap().contains("Click to add title"),
         "the placeholder shows on the canvas"
     );
+    // clicking the placeholder types the title (the file gets it, not the placeholder)
+    ed.click_in_slide(&format!("#{new} > h2")).await;
+    ed.wait("window.qdSession()?.kind === 'title'").await;
+    ed.type_text("Added").await;
+    ed.key("Enter", "Enter", 13, 0).await;
+    ed.wait_file(
+        |f| f.contains(&format!("## Added {{#{new}}}")),
+        "title typed",
+    )
+    .await;
 
     // Enter on a focused slide adds one after it
     ed.eval("document.querySelector('#slides li[data-id=model] button').focus()")
@@ -2678,6 +2688,19 @@ async fn present_from_here_and_from_start() {
     );
     ed.eval(leave).await;
     ed.wait(&editing).await;
+
+    // a host that never answers (an app's embedded browser): the same, after a moment
+    ed.eval("document.querySelector('#notice').textContent = ''; Element.prototype.requestFullscreen = () => new Promise(() => {})")
+        .await;
+    ed.click_editor("#present").await;
+    ed.wait("document.querySelector('#notice').textContent.includes('Open in browser tab')")
+        .await;
+    // a host that refuses full screen: the editor says what to do instead
+    ed.eval("document.querySelector('#notice').textContent = ''; Element.prototype.requestFullscreen = () => Promise.reject(new TypeError('denied'))")
+        .await;
+    ed.click_editor("#present").await;
+    ed.wait("document.querySelector('#notice').textContent.includes('Open in browser tab')")
+        .await;
 }
 
 /// T020 (spec 008 US5): the editor asks with its own sheets, never the browser's

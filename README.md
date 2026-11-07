@@ -23,8 +23,11 @@ presentations, written in Rust.
 Status: specs [001](specs/001-core-editor/spec.md) (editor),
 [002](specs/002-offline-export/spec.md) (offline export + PDF),
 [003](specs/003-on-slide-editing/spec.md) (on-slide editing),
-[004](specs/004-source-and-run/spec.md) (source pane, running code) and
-[005](specs/005-shared-focus/spec.md) (shared focus) implemented; what
+[004](specs/004-source-and-run/spec.md) (source pane, running code),
+[005](specs/005-shared-focus/spec.md) (shared focus),
+[006](specs/006-vscode/spec.md) (VS Code),
+[007](specs/007-app-shell/spec.md) (menus, settings, shortcuts) and
+[008](specs/008-usability/spec.md) (usability) implemented; what
 comes next is in [`specs/ROADMAP.md`](specs/ROADMAP.md). See also the
 [constitution](.specify/memory/constitution.md).
 
@@ -73,7 +76,7 @@ stderr with a stable `code` and a `hint`. Decks inside a Quarto project
   the preview sets background, transition and hidden; the element bar on a
   selection toggles "appears on click". Hover an element for **+** (insert)
   and **⠿** (drag). Tab / Shift+Tab in the slide move the selection; ⌘C/⌘X/
-  ⌘V/⌘D, ⌫, ⌥↑/⌥↓ act on it. The old form panel is the **Source** button.
+  ⌘V/⌘D, ⌫, ⌥↑/⌥↓ act on it. The old form panel is View ▸ Properties panel.
 - **With an agent:** you and Claude can edit at the same time. Saves are
   checked per element (`qd edit … --expect-text <hash>`, hashes in `qd
   show`); if both change the same element you see both versions and choose.
@@ -104,6 +107,37 @@ stderr with a stable `code` and a `hint`. Decks inside a Quarto project
 - CLI: `qd actions` (every action, its menu and keys), `qd settings`, `qd
   settings set source.side right`, `qd settings reset`, `qd paste --after
   intro --md -`.
+
+### Made easy to use (spec [008](specs/008-usability/spec.md))
+
+A design audit against Apple's Human Interface Guidelines
+([audit](specs/008-usability/audit/README.md), [status](specs/008-usability/audit/status.md))
+and its fixes:
+
+- **The slide list** shows thumbnails of every slide, the title slide first.
+  A **+** sits between every two slides and after the last (Enter on a slide
+  adds one after it); new slides start untitled, with "Click to add title" on
+  the canvas only. Drag a slide by its **⠿** to move it: the others open a gap
+  where it will land, and Esc cancels. ⇧-click picks a range and ⌘-click one
+  more; dragging, Delete, copy and cut then act on all of them.
+- **▶ Present** (top right) shows the deck full screen from the slide you're
+  on; its **▾** starts from the beginning or opens it in a browser tab.
+- **Images:** Insert ▸ Image… lists the images beside the deck with
+  previews; dropping an image file on a slide copies it into `images/` and
+  places it where it fell. CLI: `qd images`, `qd image add chart.png --slide
+  results --end`.
+- **The editor's own small sheets** ask for a link, a colour (with None), a
+  class or packages, and confirm a delete, instead of the browser's pop-ups.
+- **One top row:** the menus, the deck's title and file, and Present. The
+  status speaks in words and only shows when it needs you. Menu names are
+  plain ("Render with Quarto", "Edit markdown", "Properties").
+- **Tidier bars:** the formatting bar shows the common formats with the rest
+  under **Aa**; the source pane's bar is ▶ Run all, ■ Stop, Python's state and
+  ···. Insert adds code cells, callouts, columns, speaker notes, tables and
+  quotes. Bars never cover the slide's content, and every control meets the
+  contrast and size minimums in light, dark and high contrast.
+- **A narrow window** (under 600 px) swaps the list for a slide picker in the
+  top row, and the slide's properties go under ···.
 
 ### Shared focus (spec [005](specs/005-shared-focus/spec.md))
 

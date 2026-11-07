@@ -298,7 +298,7 @@ main:not(.panel-open) > aside { display: none; }
 
 #elbar, #hoverbar { position: fixed; z-index: 15; display: flex; gap: 2px; padding: 3px; background: var(--panel); width: max-content;
   border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18); }
-#elbar button, #hoverbar button { height: 26px; min-width: 26px; padding: 0 6px; font-size: 13px; }
+#elbar button, #hoverbar button { height: 28px; min-width: 28px; padding: 0 6px; font-size: 13px; }
 #elbar button[aria-pressed=true] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 #hoverbar { padding: 2px; box-shadow: none; }
 #hoverbar [data-act=drag] { cursor: grab; }

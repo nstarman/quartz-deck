@@ -9,6 +9,7 @@ editor with headless Playwright (the installed Chrome, no download), and saves
 numbered PNGs in audit/shots/. A shot that fails is logged and skipped.
 
     uv run specs/008-usability/audit/shoot.py [path/to/qd]
+    QD_SHOTS=shots-after uv run …   # the rerun after the fixes (T039)
 """
 
 import contextlib
@@ -23,7 +24,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 HERE = Path(__file__).parent
-SHOTS = HERE / "shots"
+SHOTS = HERE / os.environ.get("QD_SHOTS", "shots")  # the rerun after the fixes: QD_SHOTS=shots-after
 QD = sys.argv[1] if len(sys.argv) > 1 else str(HERE.parents[2] / "target/release/qd")
 READY = "() => { const f = document.querySelector('#preview'); return !!(f && f.contentWindow?.Reveal?.isReady?.() && document.querySelector('#slides li') && window.qdSession); }"
 

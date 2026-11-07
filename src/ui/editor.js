@@ -305,7 +305,11 @@ async function present(fromStart) {
   if (state.session) await saveSession();
   select(null);
   if (fromStart) frameWin()?.Reveal.slide(0, 0);
-  await frame.requestFullscreen();
+  // some hosts refuse full screen, and an app's embedded browser may never answer:
+  // after a moment without it, say what to do instead
+  const refused = () => { if (!presenting()) say('Full screen isn’t allowed here: ▾ ▸ Open in browser tab presents in a tab instead', true); };
+  const late = setTimeout(refused, 1500);
+  await frame.requestFullscreen().catch(refused).finally(() => clearTimeout(late));
 }
 document.addEventListener('fullscreenchange', () => {
   const R = frameWin()?.Reveal;
@@ -829,9 +833,11 @@ async function beginEdit(target, point) {
   } else if (target.kind === 'title') {
     const slide = slideByAnchor(target.anchor);
     const full = slide && (await fetchSlide(slide.id));
-    if (!full?.title) return false;
-    s = { ...target, slide: full.id, source: full.title, hash: full.title_hash,
-      reg: { mode: 'inline', prefix: '', inner: full.title, suffix: '' }, hints: {} };
+    if (!full) return false;
+    // an untitled slide starts from an empty title (its placeholder is the canvas's only)
+    const title = full.title ?? '';
+    s = { ...target, slide: full.id, source: title, hash: full.title_hash ?? undefined,
+      reg: { mode: 'inline', prefix: '', inner: title, suffix: '' }, hints: {} };
   } else {
     const value = (await fetchMeta())[target.key];
     if (typeof value !== 'string') return false;
