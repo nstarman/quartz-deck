@@ -1,8 +1,8 @@
 # quartz-deck for VS Code
 
 Shows the quartz-deck slide editor in a panel beside the `.qmd` you are
-editing (spec [006](../specs/006-vscode/spec.md)). Personal use, same licence
-as quartz-deck.
+editing (spec [006](../specs/006-vscode/spec.md)). Alpha software, not for
+use; same licence as quartz-deck.
 
 - **Open in quartz-deck** (editor title button, or the palette) on a `.qmd`.
 - Edits on the slides land in the VS Code buffer as ordinary unsaved edits
@@ -17,7 +17,8 @@ as quartz-deck.
   unsaved buffer; Render always renders the saved file, so it asks first.
 - With the Quarto extension installed, run cells with its Run Cell; the panel
   hides its own Run.
-- The panel's menus are one **☰** button. Keys VS Code uses while the panel
+- The panel's menus are one **☰** button, in the top row beside the deck's
+  title. Keys VS Code uses while the panel
   has focus stay VS Code's: ⌘, (settings), ⌘S, ⌘B (sidebar), ⌘K (chords),
   ⇧⌘X, ⇧⌘N and ⇧⌘D. Those editor actions (Settings, Bold, Link,
   Strikethrough, Slide after, Duplicate slide) are in the ☰ menu instead; **?**

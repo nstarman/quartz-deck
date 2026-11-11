@@ -53,7 +53,9 @@ const bar = document.createElement('div');
 bar.id = 'menubar';
 bar.setAttribute('role', 'menubar');
 bar.setAttribute('aria-label', 'Menu');
-document.body.prepend(bar);
+// in the top row, after the app's name (spec 008); a page without one gets it on top
+const top = document.querySelector('header .app');
+if (top) top.after(bar); else document.body.prepend(bar);
 const item = (label, items, text = label) => {
   const b = document.createElement('div');
   b.setAttribute('role', 'menuitem');
@@ -90,12 +92,15 @@ const itemsOf = (b, ctx) => (b === fold
   : resolve(b.items, ctx));
 
 /** Fold when framed or when the menus don't fit (re-checked as the window changes). */
+// The row the bar sits in (the top row, with the app's name); the menus fold when
+// they and the name don't fit in it. Notices give way first (they shrink to "…").
+const row = bar.parentElement;
 function refold() {
   bar.classList.remove('folded');
-  bar.classList.toggle('folded', keys.framed || bar.scrollWidth > bar.clientWidth);
+  bar.classList.toggle('folded', keys.framed || row.scrollWidth > row.clientWidth || bar.scrollWidth > bar.clientWidth);
   visible().forEach((b, i) => { b.tabIndex = i === 0 ? 0 : -1; });
 }
-new ResizeObserver(refold).observe(bar);
+new ResizeObserver(refold).observe(row);
 
 async function show(b, { focus = true } = {}) {
   const ctx = await keys.currentContext();

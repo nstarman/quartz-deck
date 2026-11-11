@@ -1,26 +1,29 @@
-quartz-deck — Proprietary License (Personal Use Only)
+quartz-deck — Source-Available License (All Rights Reserved)
 
 Copyright (c) 2026 Nathaniel Starkman. All rights reserved.
 
 This software and its source code, documentation, specifications and
-associated files (the "Software") are proprietary and confidential.
+associated files (the "Software") are published so that they can be read.
+Publishing them grants no license to use them.
 
-1. Permitted use. The copyright holder may use, copy and modify the Software
-   for personal, non-commercial purposes. No other person is granted any
-   right to use, copy, modify, merge, publish, distribute, sublicense, sell
-   or create derivative works of the Software, in whole or in part, without
-   prior written permission from the copyright holder.
+1. Viewing. You may view the Software on the website where it is published,
+   and that website may make the copies it needs to show it (for example
+   GitHub's viewing and forking features, under its terms of service).
 
-2. No distribution. The Software may not be redistributed, published,
-   hosted for others, or made available to any third party in source or
-   binary form.
+2. No other rights. No one other than the copyright holder may use, run,
+   copy, modify, merge, publish, distribute, sublicense, sell or create
+   derivative works of the Software, in whole or in part, in source or
+   binary form, without prior written permission from the copyright holder.
 
-3. Third-party components. Third-party software used by or distributed with
+3. Alpha software. The Software is an unfinished alpha. It is not intended
+   for use by anyone, and it may change or break at any time.
+
+4. Third-party components. Third-party software used by or distributed with
    the Software (for example reveal.js and Quarto) remains under its own
    license. Nothing in this license restricts rights granted by those
    licenses.
 
-4. No warranty. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+5. No warranty. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
    KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
    NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR

@@ -7,36 +7,36 @@
 <link rel="stylesheet" href="/editor.css">
 </head>
 <body>
+<!-- one top row: the name, the menus (menubar.js puts them after it), and on the right
+     only what needs the person's attention: notices, problems, the last render's link -->
 <header>
-  <strong>quartz-deck</strong>
-  <!-- undo/redo, preview, render and export live in the menu bar (spec 007) -->
+  <strong class="app">quartz-deck</strong>
+  <span id="deck-name"><span class="title"></span> <small class="file"></small></span>
+  <button type="button" id="slide-picker" aria-haspopup="menu" title="Go to a slide"></button>
   <span id="notice" role="status" aria-live="polite"></span>
-  <span id="status">connecting…</span>
+  <span id="status" class="quiet">connecting…</span>
+  <span class="split"><button type="button" id="present" title="Present from this slide">▶ Present</button><button type="button" id="present-more" aria-label="More ways to present" aria-haspopup="menu">▾</button></span>
   <a id="rendered" target="_blank" rel="noopener" hidden>Open ↗</a>
-  <button type="button" id="toggle-source" aria-pressed="false" aria-controls="panel" title="Show the deck source (.qmd) beside the slides">Source</button>
 </header>
-<div id="banner" role="alert" hidden></div>
+<div id="banner" role="alert" hidden><span class="msg"></span><button type="button" class="close" aria-label="Dismiss" title="Dismiss">×</button></div>
 <div id="gooffer" role="status" hidden><span class="msg"></span> <button type="button" data-act="go">Go there</button> <button type="button" data-act="dismiss" aria-label="Dismiss">×</button></div>
 <main>
   <nav aria-label="Slides">
     <ol id="slides"></ol>
-    <button type="button" id="add-slide" class="wide">+ Add slide</button>
+    <button type="button" id="add-slide" class="wide" title="Add a slide at the end" aria-label="Add a slide at the end">+</button>
   </nav>
   <section id="srcpane" aria-label="Source" hidden>
     <div class="srcbar">
       <strong>Source</strong>
       <span class="hint">saves as you pause · ⌘S saves now</span>
       <span class="runbar">
-        <button type="button" data-act="run-all" title="Run every cell from the top">Run all</button>
-        <button type="button" data-act="stop" title="Stop the running cell">Stop</button>
-        <button type="button" data-act="restart" title="Restart Python (clears its state)">Restart</button>
-        <button type="button" data-act="fresh-all" title="Restart Python, then run every cell from the top">Restart &amp; run all</button>
-        <button type="button" data-act="add-pkg" title="Add Python packages to this deck's environment">+ Package</button>
-        <button type="button" data-act="env" hidden title="Create this deck's Python environment (uv, with a lockfile)">Create environment</button>
-        <span class="kernel" role="status" aria-label="Python state" title="Python kernel">stopped</span>
+        <button type="button" data-act="run-all" title="Run every cell from the top">▶ Run all</button>
+        <button type="button" data-act="run-stop" title="Stop the running cell">■ Stop</button>
+        <span class="kernel" role="status" aria-label="Python state" title="Python kernel">Python · stopped</span>
+        <button type="button" data-act="more" aria-haspopup="menu" title="Restart Python, add packages, set up Python">···</button>
       </span>
       <button type="button" data-act="full" aria-pressed="false" title="Use the full width">Full width</button>
-      <button type="button" data-act="form" title="Slide/element properties form">Form</button>
+      <button type="button" data-act="form" title="Show the properties of the slide or element">Properties</button>
     </div>
     <div class="srcwrap">
       <pre aria-hidden="true"></pre>
@@ -48,10 +48,9 @@
   </section>
   <div id="splitter" role="separator" aria-orientation="vertical" aria-label="Resize the source pane" tabindex="0"></div>
   <section id="stage" aria-label="Preview">
-    <div id="slidebar" role="toolbar" aria-label="Slide properties" hidden>
-      <label class="inline">Background <input type="color" name="bg" aria-label="Background colour"></label>
-      <button type="button" data-act="bg-clear" title="Remove the background colour">⌀</button>
-      <button type="button" data-act="bg-image">Image…</button>
+    <div id="slidebar" role="toolbar" aria-label="Slide properties">
+      <button type="button" data-act="bg" title="Background colour"><span class="chip"></span> Background</button>
+      <button type="button" data-act="bg-image" title="Background image">Image…</button>
       <label class="inline">Transition <select name="transition" aria-label="Transition">
         <option value="">default</option><option>none</option><option>fade</option><option>slide</option>
         <option>convex</option><option>concave</option><option>zoom</option>

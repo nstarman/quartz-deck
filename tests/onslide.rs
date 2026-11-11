@@ -42,6 +42,13 @@ fn chrome() -> Option<PathBuf> {
     path
 }
 
+/// Records the last pointer presses and focus changes (target and point), for a
+/// failed wait's report: where a click really landed.
+const EVENT_LOG: &str = "(() => { window.__ev = []; const name = (t) => t?.nodeType === 1 ? t.tagName.toLowerCase() + (t.id ? '#' + t.id : '') + (t.dataset?.menu ? `[${t.dataset.menu}]` : '') + (t.className && typeof t.className === 'string' ? '.' + t.className.trim().split(/ +/)[0] : '') : String(t); const log = (e) => { __ev.push(`${e.type} ${name(e.target)}${e.clientX !== undefined ? ` @${Math.round(e.clientX)},${Math.round(e.clientY)}` : ''}${e.defaultPrevented ? ' (prevented)' : ''}`); if (__ev.length > 10) __ev.shift(); }; for (const t of ['mousedown', 'pointerdown', 'focusin', 'focusout']) addEventListener(t, log, true); addEventListener('mousedown', (e) => setTimeout(() => __ev.push(`  after: prevented=${e.defaultPrevented}`)), true); addEventListener('blur', () => __ev.push('window blur')); })()";
+
+/// A failed wait's report: the window, the top row and what has the keyboard.
+const PAGE_STATE: &str = "(() => { try { const q = (s) => document.querySelector(s); const r = (s) => { const b = q(s)?.getBoundingClientRect(); return b && [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)]; }; return { window: [innerWidth, innerHeight], menus: q('#menubar')?.className, menubar: r('#menubar'), header: r('header'), notice: q('#notice')?.textContent, status: q('#status')?.textContent, list: getComputedStyle(q('#slides')).display, focus: document.activeElement?.outerHTML.slice(0, 80), menuOpen: !q('#ctxmenu')?.hidden, current: q('#slides li.current')?.dataset.id, currentBox: r('#slides li.current'), nav: [q('nav')?.scrollTop, q('nav')?.clientHeight, q('nav')?.scrollHeight], shown: q('#preview')?.contentWindow?.Reveal?.getCurrentSlide()?.id, events: window.__ev }; } catch (e) { return String(e); } })()";
+
 /// The editor has loaded: preview ready, slide list drawn, session API up.
 const READY: &str = "(() => { const f = document.querySelector('#preview'); return !!(f && f.contentWindow?.Reveal?.isReady?.() && document.querySelector('#slides li') && window.qdSession); })()";
 
@@ -149,6 +156,7 @@ impl Ed {
             _watchdog: watchdog,
         };
         ed.wait_secs(READY, 60).await;
+        ed.eval(EVENT_LOG).await;
         Some(ed)
     }
 
@@ -184,10 +192,11 @@ impl Ed {
         );
         let start = Instant::now();
         while self.eval(&cond_safe).await != Value::Bool(true) {
-            assert!(
-                start.elapsed() < Duration::from_secs(secs),
-                "timed out waiting for: {cond}"
-            );
+            if start.elapsed() > Duration::from_secs(secs) {
+                // what the page looked like, so a failure elsewhere (CI) can be read
+                let state = self.eval(PAGE_STATE).await;
+                panic!("timed out waiting for: {cond}\npage: {state}");
+            }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }
@@ -195,12 +204,23 @@ impl Ed {
     async fn wait_file(&self, pred: impl Fn(&str) -> bool, what: &str) {
         let start = Instant::now();
         while !pred(&self.file()) {
-            assert!(
-                start.elapsed() < Duration::from_secs(30),
-                "file never {what}:\n{}",
-                self.file()
-            );
+            if start.elapsed() > Duration::from_secs(30) {
+                // what the editor said (an op's error shows in the notice)
+                let page = self.eval(PAGE_STATE).await;
+                panic!("file never {what}:\n{}\npage: {page}", self.file());
+            }
             tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
+    /// Press at `from` and move to `to` in steps, the button still down.
+    async fn press_and_move(&self, from: (f64, f64), to: (f64, f64)) {
+        use DispatchMouseEventType::*;
+        self.mouse(MousePressed, from, false).await;
+        for i in 1..=8 {
+            let t = i as f64 / 8.0;
+            let at = (from.0 + (to.0 - from.0) * t, from.1 + (to.1 - from.1) * t);
+            self.mouse(MouseMoved, at, false).await;
         }
     }
 
@@ -215,6 +235,24 @@ impl Ed {
               t.dispatchEvent(new ClipboardEvent('paste', {{ clipboardData: dt, bubbles: true, cancelable: true }})); }})()"
         ))
         .await;
+    }
+
+    /// Click slide `id` in the list and wait until it is on the canvas and has the
+    /// keyboard: keys pressed straight after the click must reach that slide.
+    async fn pick_slide(&self, id: &str) {
+        // an edit still landing renumbers the items (a new item under the press loses the click)
+        self.settle().await;
+        self.click_editor(&format!("#slides li[data-id={id}] > button"))
+            .await;
+        self.wait(&format!("document.activeElement?.closest('#slides li')?.dataset.id === '{id}' && document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide()?.id === '{id}'")).await;
+    }
+
+    /// Show slide `id` on the canvas and wait until the list has scrolled it into view
+    /// (the list scrolls to the shown slide; a slide change still landing would undo
+    /// a scroll done by hand).
+    async fn show_in_list(&self, id: &str) {
+        self.go(id).await;
+        self.wait(&format!("(() => {{ const n = document.querySelector('nav').getBoundingClientRect(); const r = document.querySelector('#slides li.current[data-id={id}]')?.getBoundingClientRect(); return !!r && r.top >= n.top - 1 && r.bottom <= n.bottom + 1; }})()")).await;
     }
 
     /// Edit ▸ Undo once; the file must be back to `before` (one edit, one undo step).
@@ -364,7 +402,7 @@ impl Ed {
     /// Wait until the preview shows the file as it is now (render caught up, no edit open).
     async fn settle(&self) {
         self.wait_secs(
-            "(async () => { const v = (await fetch('/api/deck').then((r) => r.json())).version; const st = document.querySelector('#status').textContent; const f = document.querySelector('#preview').contentWindow; return window.qdSession() === null && st === 'rendered ' + v.slice(0, 7) && !!f.Reveal?.isReady?.(); })()",
+            "(async () => { const v = (await fetch('/api/deck').then((r) => r.json())).version; const st = document.querySelector('#status'); const f = document.querySelector('#preview').contentWindow; return window.qdSession() === null && st.textContent === 'Up to date' && st.title.endsWith(v.slice(0, 7)) && !!f.Reveal?.isReady?.(); })()",
             60,
         )
         .await;
@@ -454,8 +492,15 @@ impl Ed {
         self.click_js(&format!("(() => {{ const li = [...document.querySelectorAll('#ctxmenu li')].find((li) => li.firstChild?.textContent === {label:?} && li.offsetParent); li.dispatchEvent(new MouseEvent('mouseenter')); const r = li.getBoundingClientRect(); return [r.left + 20, r.top + r.height / 2]; }})()")).await;
     }
 
+    /// View ▸ Source pane, run directly (the same action in every layout,
+    /// including VS Code's panel, where the menus are one ☰).
+    async fn toggle_source(&self) {
+        self.eval("import('/ui/keys.js').then((k) => k.run('toggle-source'))")
+            .await;
+    }
+
     async fn open_source(&self) {
-        self.click_editor("#toggle-source").await;
+        self.toggle_source().await;
         self.wait(&format!(
             "{PANE}.value.length > 0 && !document.querySelector('#srcpane').hidden"
         ))
@@ -693,12 +738,14 @@ async fn toolbar_formats_and_unformats() {
     ed.caret(list, Some("one")).await;
     ed.key("i", "KeyI", 73, 2).await; // Ctrl+I
     ed.caret(list, Some("two")).await;
+    ed.click_editor("#fmtbar [data-fmt=color]").await; // the colour menu
     ed.click_editor("#fmtbar .swatch").await;
     assert_eq!(
         ed.session().await["draft"],
         "- *one*\n- **[two]{style=\"color:#c0392b\"}**"
     );
     // remove all three again: the draft is byte-identical to the source
+    ed.click_editor("#fmtbar [data-fmt=color]").await;
     ed.click_editor("#fmtbar [data-fmt=nocolor]").await;
     ed.caret(list, Some("two")).await;
     ed.click_editor("#fmtbar [data-fmt=bold]").await;
@@ -709,6 +756,7 @@ async fn toolbar_formats_and_unformats() {
     ed.caret(list, Some("two")).await;
     ed.key("e", "KeyE", 69, 2).await; // Ctrl+E
     ed.caret(list, Some("one")).await;
+    ed.click_editor("#fmtbar [data-fmt=more]").await; // "Aa"
     ed.click_editor("#fmtbar [data-fmt=mark]").await;
     ed.click_blank().await;
     ed.wait_file(|f| f.contains("`two`"), "saved").await;
@@ -947,7 +995,7 @@ async fn context_menus_list_and_run_actions() {
     let labels = ed.menu_labels().await;
     for l in [
         "Edit text",
-        "Edit source",
+        "Edit markdown",
         "Cut",
         "Copy",
         "Paste after",
@@ -967,7 +1015,7 @@ async fn context_menus_list_and_run_actions() {
     assert_eq!(
         ed.eval("document.activeElement.firstChild.textContent")
             .await,
-        "Edit source"
+        "Edit markdown"
     );
     ed.close_menu().await;
     // each action is the qd command: Duplicate = `qd block dup`
@@ -1026,7 +1074,8 @@ async fn bars_set_properties_and_source_panel_is_hidden() {
         "none"
     );
     // slide bar: hidden toggle = visibility attribute
-    ed.wait("!document.querySelector('#slidebar').hidden").await;
+    ed.wait("document.querySelector('#slidebar').style.visibility !== 'hidden'")
+        .await;
     ed.click_editor("#slidebar [name=hidden]").await;
     ed.wait_file(|f| f.contains("## A {#a visibility=hidden}"), "hidden")
         .await;
@@ -1048,7 +1097,7 @@ async fn bars_set_properties_and_source_panel_is_hidden() {
     }
     assert_eq!(ed.file(), P2, "fragment removed, bytes as before");
     // the Source button shows the source pane; its Form button the old properties panel
-    ed.click_editor("#toggle-source").await;
+    ed.toggle_source().await;
     ed.wait("!document.querySelector('#srcpane').hidden").await;
     // the element bar follows the element when the layout moves; it never sits over other controls
     ed.wait("(() => { const b = document.querySelector('#elbar'); if (b.hidden) return true; const r = b.getBoundingClientRect(), f = document.querySelector('#srcpane [data-act=form]').getBoundingClientRect(); return r.right < f.left || f.right < r.left || r.bottom < f.top || f.bottom < r.top; })()").await;
@@ -1347,7 +1396,7 @@ async fn run_cells_in_the_editor() {
     ed.key("Enter", "Enter", 13, 8).await;
     ed.wait("document.querySelector('#srcpane .kernel').dataset.state === 'busy'")
         .await;
-    ed.click_editor("#srcpane [data-act=stop]").await;
+    ed.click_editor("#srcpane [data-act=run-stop]").await;
     ed.wait_secs(
         &format!("{dock}.textContent.includes('KeyboardInterrupt')"),
         30,
@@ -1460,6 +1509,7 @@ const bodies = {{
   '/api/buffer': JSON.stringify({{base: '', text: '## Pwned\\n'}}),
   '/api/buffer/close': '{{}}',
   '/api/settings': JSON.stringify({{theme: 'dark', 'source.side': 'right', 'confirm.slide_delete': false}}),
+  '/api/images?name=evil.svg': '<svg xmlns="http://www.w3.org/2000/svg"><script>parent.pwned = 1</script></svg>',
 }};
 for (const [path, body] of Object.entries(bodies)) {{
   await fetch(qd + path, {{method: 'POST', headers: {{'Content-Type': 'application/json', 'X-QD-Token': 'guess'}}, body}}).catch(() => {{}});
@@ -1483,6 +1533,8 @@ return (await unreadable('/')) && (await unreadable('/api/focus'));
     tokio::time::sleep(Duration::from_secs(3)).await; // anything that got through would show by now
 
     assert_eq!(ed.file(), RUN_DECK, "no edit landed");
+    // spec 008: no file was written beside the deck
+    assert!(!ed.dir.path().join("images").exists(), "no image added");
     // spec 007: the person's settings are unchanged
     let v = &ed.cli(&["settings"])["values"];
     assert_eq!(
@@ -1735,6 +1787,8 @@ async fn framed_editor_takes_theme_and_messages() {
     let focus_text = "__msgs.filter((m) => m.type === 'focusText').length";
     // Esc clears the selection first; Esc with nothing left hands the keyboard to the text
     let esc = || ed.key("Escape", "Escape", 27, 0);
+    ed.eval(EVENT_LOG).await;
+    ed.eval("(() => { const f = document.querySelector('#preview').contentWindow; const log = (w) => (e) => __ev.push(`${w} key ${e.key} -> ${e.target.tagName} sel=${document.querySelector('#preview').contentDocument.querySelector('.qd-sel')?.dataset.qd} src=${!document.querySelector('#srcpane').hidden}`); f.addEventListener('keydown', log('frame'), true); addEventListener('keydown', log('page'), true); f.addEventListener('unload', () => __ev.push('frame unload')); })()").await;
     ed.wait("window.qdSession() !== null").await;
     esc().await; // ends the edit the click started (the element stays selected)
     ed.wait(&format!("window.qdSession() === null && {SEL} === 'a/0'"))
@@ -1815,12 +1869,12 @@ async fn menu_bar_runs_every_action() {
         .await;
     assert_eq!(ed.eval(shown).await, true, "View's menu is open");
     ed.close_menu().await;
-    // too narrow for the menus: they fold into ☰ (and come back when there is room)
+    // a top row too narrow for the menus: they fold into ☰ (and come back when there is room)
     let folded = "document.querySelector('#menubar').classList.contains('folded')";
-    ed.eval("document.querySelector('#menubar').style.width = '200px'")
+    ed.eval("document.querySelector('header').style.width = '260px'")
         .await;
     ed.wait(folded).await;
-    ed.eval("document.querySelector('#menubar').style.width = ''")
+    ed.eval("document.querySelector('header').style.width = ''")
         .await;
     ed.wait(&format!("!{folded}")).await;
 
@@ -1972,22 +2026,16 @@ async fn settings_apply_live_and_stick() {
     .await;
 
     // Reset to defaults asks first, then everything is back (theme follows the system)
-    ed.eval("window.confirm = (m) => ((window.__asked = m), true)")
-        .await;
     ed.key(",", "Comma", 188, 2).await;
     ed.wait("document.querySelector('#settings').open").await;
     ed.click_js("(r => [r.left + r.width / 2, r.top + r.height / 2])([...document.querySelectorAll('#settings button')].find((b) => b.textContent.startsWith('Reset')).getBoundingClientRect())").await;
+    ed.wait("document.querySelector('dialog.sheet[open]')?.textContent.includes('default')")
+        .await;
+    ed.click_editor("dialog.sheet button[value=ok]").await;
     ed.wait(&format!(
         "{theme} === undefined && !{main}.contains('source-right')"
     ))
     .await;
-    assert!(
-        ed.eval("window.__asked")
-            .await
-            .as_str()
-            .unwrap()
-            .contains("default")
-    );
     ed.cli(&["--deck", deck.to_str().unwrap(), "stop"]);
 }
 
@@ -2081,7 +2129,7 @@ async fn same_rules_everywhere() {
     ed.undo_to(&before).await;
     ed.settle().await;
     ed.go("b").await;
-    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.pick_slide("b").await;
     ed.key("d", "KeyD", 68, 2 | 8).await; // Ctrl+Shift+D
     ed.wait_file(
         |f| f.matches("Other slide.").count() == 2,
@@ -2097,14 +2145,14 @@ async fn same_rules_everywhere() {
     ed.wait_file(|f| f.contains("Changed."), "saved from the pane")
         .await;
     ed.undo_to(&before).await;
-    ed.click_editor("#toggle-source").await;
+    ed.toggle_source().await;
 
     // slides on the clipboard: copy in the slide list, paste with fresh ids.
     // Copying writes the system clipboard (caught here); pasting reads it from
     // the paste event.
     ed.settle().await;
     ed.eval("window.__clip = null; navigator.clipboard.writeText = (t) => { __clip = t; return Promise.resolve(); }").await;
-    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.pick_slide("b").await;
     ed.key("c", "KeyC", 67, 2).await;
     ed.wait("window.__clip?.startsWith('## B {#b}')").await;
     ed.paste("document.activeElement", "__clip").await;
@@ -2118,7 +2166,7 @@ async fn same_rules_everywhere() {
 
     // text from another application: a paragraph, never raw HTML
     ed.settle().await;
-    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.pick_slide("b").await;
     ed.paste("document.activeElement", "'1 < 2 & <b>x</b>'")
         .await;
     ed.wait_file(
@@ -2219,7 +2267,7 @@ async fn menus_open_fast() {
 async fn paste_key_uses_the_paste_event() {
     let Some(ed) = Ed::open(P2).await else { return };
     ed.go("b").await;
-    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.pick_slide("b").await;
     // the clipboard API refuses, as without permission, and records being asked
     let refuse = "window.__asked = false; navigator.clipboard.readText = () => { __asked = true; return Promise.reject(new Error('no permission')); }";
     ed.eval(refuse).await;
@@ -2260,10 +2308,909 @@ async fn paste_key_uses_the_paste_event() {
     // an empty paste event (Chrome on Linux fires one for a devtools ⌘V, with
     // its own empty clipboard) falls back to the clipboard API, not to nothing
     ed.settle().await;
-    ed.click_editor("#slides li[data-id=b] button").await;
+    ed.pick_slide("b").await;
     ed.eval("navigator.clipboard.readText = () => Promise.resolve('## Again {#again}\\n\\nFrom the API.\\n')")
         .await;
     ed.paste("document.activeElement", "''").await;
     ed.wait_file(|f| f.contains("From the API."), "pasted from the API")
+        .await;
+}
+
+// ---------- spec 008: usability ----------
+
+/// The audit deck, the same file the audit's screenshots use.
+const AUDIT: &str = include_str!("../specs/008-usability/audit/deck/talk.qmd");
+
+/// The slide ids in `qd slides` output, in order.
+fn slide_ids(v: &Value) -> Vec<String> {
+    v["slides"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["id"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// In-page checks for 008's measurement test: contrast of every visible text
+/// and form value, and the size of every interactive target, in the editor's
+/// own document (the deck's slides are the deck's). Returns failures.
+const MEASURE: &str = r#"(() => {
+  const lum = (c) => { const [r, g, b] = c.match(/[\d.]+/g).slice(0, 3).map(Number).map((v) => v / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const opaque = (c) => !/rgba\([^)]*,\s*0\)|transparent/.test(c);
+  const bgOf = (el) => { for (let e = el; e; e = e.parentElement) { const c = getComputedStyle(e).backgroundColor; if (opaque(c)) return c; } return 'rgb(255, 255, 255)'; };
+  const shown = (el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.opacity !== '0' && !el.closest('[hidden], dialog:not([open])'); };
+  const name = (el) => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).join('.') : '') + ` "${(el.textContent || el.value || '').trim().slice(0, 20)}"`;
+  const out = [];
+  for (const el of document.querySelectorAll('body *')) {
+    if (!shown(el) || el.closest('#preview, #slides .thumb') || el.matches('#srcpane textarea') || el.disabled || el.getAttribute('aria-disabled') === 'true') continue;
+    const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.data.trim()) || ['SELECT', 'TEXTAREA'].includes(el.tagName) || (el.tagName === 'INPUT' && !['checkbox', 'color', 'radio', 'range'].includes(el.type)); // swatches and boxes show no text
+    if (own) {
+      const s = getComputedStyle(el);
+      const a = lum(s.color); const b = lum(bgOf(el));
+      const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+      const px = parseFloat(s.fontSize); const large = px >= 24 || (px >= 18.66 && +s.fontWeight >= 700);
+      if (ratio < (large ? 3 : 4.5)) out.push(`contrast ${ratio.toFixed(2)}: ${name(el)}`);
+    }
+    if (el.matches('button, select, input:not([type=hidden]), [role=menuitem], [role=menuitemcheckbox], a[href]')) {
+      const r = el.getBoundingClientRect();
+      if (r.width < 20 || r.height < 20) out.push(`size ${Math.round(r.width)}x${Math.round(r.height)}: ${name(el)}`);
+    }
+  }
+  return out;
+})()"#;
+
+/// The element under the open element bar or formatting bar, if any (null when
+/// none is shown or it covers nothing): a bar must never cover what the slide shows
+/// (an element's contents, not the empty end of a block such as a short heading).
+const OVERLAP: &str = "(() => { const f = document.querySelector('#preview'); const a = f.getBoundingClientRect(); const bar = [...document.querySelectorAll('#elbar, #fmtbar')].find((b) => !b.hidden && b.getClientRects().length); if (!bar) return null; const r = bar.getBoundingClientRect(); const hit = [...f.contentDocument.querySelectorAll('section.present [data-qd], section.present > h2')].filter((el) => !el.classList.contains('qd-sel') && !el.classList.contains('qd-editing')).find((el) => { const g = el.ownerDocument.createRange(); g.selectNodeContents(el); const c = g.getBoundingClientRect(); const e = c.width && c.height ? c : el.getBoundingClientRect(); const x = a.left + e.left, y = a.top + e.top; return x < r.right && x + e.width > r.left && y < r.bottom && y + e.height > r.top; }); return hit ? (hit.dataset.qd || hit.tagName) : null; })()";
+
+/// T004 (spec 008 SC-004, SC-005, SC-003): in light, dark and high contrast,
+/// every text and control in the editor meets the contrast and size minimums,
+/// with the source pane open too, and the bars cover no element (the audit's
+/// failures, fixed by 008 US2 and US3).
+#[tokio::test(flavor = "multi_thread")]
+async fn audit_measures() {
+    let Some(ed) = Ed::open(AUDIT).await else {
+        return;
+    };
+    let link = ed.cli(&["url"])["url"].as_str().unwrap().to_string();
+    let mut failures = vec![];
+    for theme in ["light", "dark", "hc"] {
+        // through the link: settings (which opening the source pane writes) don't override it
+        ed.page
+            .goto(
+                link.replace("/#t=", &format!("/?theme={theme}#t="))
+                    .as_str(),
+            )
+            .await
+            .unwrap();
+        ed.wait_secs(READY, 60).await;
+        ed.go("highlights").await;
+        for source in [false, true] {
+            if source {
+                ed.open_source().await;
+            }
+            let found = ed.eval(MEASURE).await;
+            for f in found.as_array().unwrap() {
+                failures.push(format!(
+                    "{theme}{}: {}",
+                    if source { "+source" } else { "" },
+                    f.as_str().unwrap()
+                ));
+            }
+            if source {
+                ed.toggle_source().await;
+            }
+        }
+    }
+    // the bars cover no element: select, then edit, the element under each title
+    for (anchor, el) in [("highlights", "highlights/0"), ("model", "model/0")] {
+        ed.go(anchor).await;
+        ed.select(&format!("[data-qd=\"{el}\"]")).await;
+        let hit = ed.eval(OVERLAP).await;
+        if !hit.is_null() {
+            failures.push(format!("element bar over {hit} when {el} is selected"));
+        }
+        ed.key("Escape", "Escape", 27, 0).await;
+    }
+    assert!(
+        failures.is_empty(),
+        "{} failures:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+/// T005 (spec 008 US1): the slide list works like a slide app's: thumbnails,
+/// the title slide first, a + in every gap, untitled new slides with an
+/// editor-only placeholder, and a drag you can see (handle, drag image, gap,
+/// Escape, one undo step), plus the keyboard.
+#[tokio::test(flavor = "multi_thread")]
+async fn slide_list_like_a_slide_app() {
+    let Some(ed) = Ed::open(AUDIT).await else {
+        return;
+    };
+    let ids = "[...document.querySelectorAll('#slides li[data-id]')].map((li) => li.dataset.id)";
+    let order = || slide_ids(&ed.cli(&["slides"]));
+    let built = |id: &str| {
+        format!("+(document.querySelector('#slides li[data-id={id}] .thumb')?.dataset.built ?? 0)")
+    };
+
+    // the title slide first (unnumbered, not draggable), then every slide
+    ed.wait(&format!("{ids}.length === 8")).await;
+    assert_eq!(
+        ed.eval(&format!("{ids}[0]")).await,
+        "title-slide",
+        "the title slide is listed first"
+    );
+    assert_eq!(
+        ed.eval("(li => !li.querySelector('.idx')?.textContent.trim() && !li.querySelector('.handle'))(document.querySelector('#slides li[data-id=title-slide]'))").await,
+        true,
+        "unnumbered, no drag handle"
+    );
+    // thumbnails: a copy of the slide's section, for items in view; scrolled, all
+    ed.wait(&format!("{} > 0 && document.querySelector('#slides li[data-id=highlights] .thumb').shadowRoot.querySelector('section')?.textContent.includes('Revenue grew')", built("highlights"))).await;
+    assert_eq!(
+        ed.eval("!!document.querySelector('#peek')").await,
+        false,
+        "no hover pop-up"
+    );
+    ed.eval("document.querySelector('nav').scrollTop = 1e6")
+        .await;
+    ed.wait(&format!("{} > 0", built("next"))).await;
+    ed.eval("document.querySelector('nav').scrollTop = 0").await;
+    // an edit rebuilds that slide's thumbnail only
+    let (h, g) = (
+        ed.eval(&built("highlights")).await,
+        ed.eval(&built("growth")).await,
+    );
+    ed.cli(&["edit", "highlights/0", "--md", "- Changed bullet"]);
+    ed.wait(&format!("document.querySelector('#slides li[data-id=highlights] .thumb').shadowRoot.textContent.includes('Changed bullet') && {} > {h}", built("highlights"))).await;
+    assert_eq!(
+        ed.eval(&built("growth")).await,
+        g,
+        "other thumbnails untouched"
+    );
+
+    // + in the gap before "columns": an untitled slide there, a placeholder on the canvas only
+    ed.settle().await;
+    ed.click_editor("#slides li[data-id=columns] .add-here")
+        .await;
+    ed.wait_file(|f| f.contains("## {#s-"), "untitled slide added")
+        .await;
+    let new = order()[2].clone();
+    assert!(
+        new.starts_with("s-"),
+        "added between growth and columns: {:?}",
+        order()
+    );
+    assert!(!ed.file().contains("Click to add title"));
+    ed.settle().await;
+    ed.wait(&format!(
+        "document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide()?.id === '{new}'"
+    ))
+    .await;
+    assert!(
+        ed.eval(&format!("getComputedStyle(document.querySelector('#preview').contentDocument.querySelector('#{new} > h2'), '::before').content")).await
+            .as_str().unwrap().contains("Click to add title"),
+        "the placeholder shows on the canvas"
+    );
+    // clicking the placeholder types the title (the file gets it, not the placeholder)
+    ed.click_in_slide(&format!("#{new} > h2")).await;
+    ed.wait("window.qdSession()?.kind === 'title'").await;
+    ed.type_text("Added").await;
+    ed.key("Enter", "Enter", 13, 0).await;
+    ed.wait_file(
+        |f| f.contains(&format!("## Added {{#{new}}}")),
+        "title typed",
+    )
+    .await;
+
+    // Enter on a focused slide adds one after it (once the title's save has landed)
+    ed.settle().await;
+    ed.eval("document.querySelector('#slides li[data-id=model] button').focus()")
+        .await;
+    ed.key("Enter", "Enter", 13, 0).await;
+    ed.until_cli(
+        &["slides"],
+        |v| v["slides"].as_array().unwrap().len() == 9,
+        "Enter added a slide",
+    )
+    .await;
+    let o = order();
+    assert!(
+        o[o.iter().position(|x| x == "model").unwrap() + 1].starts_with("s-"),
+        "{o:?}"
+    );
+
+    // drag "code" by its handle above "model": a drag image and a gap; Escape cancels
+    ed.settle().await;
+    ed.show_in_list("code").await;
+    let before = order();
+    let from = ed
+        .editor_point("#slides li[data-id=code] .handle", None)
+        .await;
+    let to = ed
+        .editor_point("#slides li[data-id=model]", Some(20.0))
+        .await;
+    let to = (to.0, to.1 - 30.0);
+    use DispatchMouseEventType::*;
+    ed.press_and_move(from, to).await;
+    ed.wait("!!document.querySelector('.drag-ghost') && [...document.querySelectorAll('#slides li')].some((li) => li.style.transform && li.style.transform !== 'none')").await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.mouse(MouseReleased, to, false).await;
+    ed.wait("!document.querySelector('.drag-ghost')").await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(order(), before, "Escape cancelled the drag");
+    // again, dropped: one move, one undo
+    let file = ed.file();
+    ed.press_and_move(from, to).await;
+    ed.mouse(MouseReleased, to, false).await;
+    ed.until_cli(
+        &["slides"],
+        |v| {
+            let o = slide_ids(v);
+            o.iter().position(|x| x == "code") < o.iter().position(|x| x == "model")
+        },
+        "code moved above model",
+    )
+    .await;
+    ed.undo_to(&file).await;
+    // held near the list's top edge, the list scrolls
+    ed.settle().await;
+    ed.show_in_list("code").await;
+    let top = ed
+        .point("(() => { const r = document.querySelector('nav').getBoundingClientRect(); return [r.left + 60, r.top + 10]; })()")
+        .await;
+    let scrolled = ed.eval("document.querySelector('nav').scrollTop").await;
+    ed.press_and_move(from, top).await;
+    ed.wait(&format!(
+        "document.querySelector('nav').scrollTop < {scrolled}"
+    ))
+    .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.mouse(MouseReleased, top, false).await;
+
+    // ⌥↑ on a focused slide moves it up
+    ed.settle().await;
+    ed.eval("document.querySelector('#slides li[data-id=columns] button').focus()")
+        .await;
+    ed.key("ArrowUp", "ArrowUp", 38, 1).await; // 1 = Alt
+    ed.until_cli(
+        &["slides"],
+        |v| {
+            let o = slide_ids(v);
+            o.iter().position(|x| x == "columns") < o.iter().position(|x| x.starts_with("s-"))
+        },
+        "⌥↑ moved columns up",
+    )
+    .await;
+}
+
+/// T011 (spec 008 US2): nothing covers the slide. The bars for a selected or
+/// edited element never sit on another element or the title; reveal.js's own
+/// menu button, arrows and progress bar are hidden while editing; and the
+/// canvas doesn't move between the title slide and a content slide.
+#[tokio::test(flavor = "multi_thread")]
+async fn nothing_covers_the_slide() {
+    let Some(ed) = Ed::open(AUDIT).await else {
+        return;
+    };
+    let canvas_top = "Math.round(document.querySelector('#preview').getBoundingClientRect().top)";
+    ed.go("title-slide").await;
+    let top = ed.eval(canvas_top).await;
+    ed.go("highlights").await;
+    assert_eq!(ed.eval(canvas_top).await, top, "the canvas stays put");
+    assert_eq!(
+        ed.eval("(d => [...d.querySelectorAll('.slide-menu-button, .reveal .controls, .reveal .progress')].filter((e) => e.checkVisibility({ visibilityProperty: true })).length)(document.querySelector('#preview').contentDocument)").await,
+        0,
+        "no reveal.js chrome while editing"
+    );
+    for (anchor, el) in [
+        ("highlights", "highlights/0"),
+        ("model", "model/0"),
+        ("annotated", "annotated/0"),
+    ] {
+        ed.go(anchor).await;
+        ed.select(&format!("[data-qd=\"{el}\"]")).await;
+        assert_eq!(
+            ed.eval(OVERLAP).await,
+            Value::Null,
+            "element bar over another element when {el} is selected"
+        );
+        ed.key("Enter", "Enter", 13, 0).await; // edit it
+        // typed on the slide (the formatting bar) or in the markdown pop-up over it
+        ed.wait("window.qdSession() !== null").await;
+        assert_eq!(
+            ed.eval(OVERLAP).await,
+            Value::Null,
+            "formatting bar over another element while editing {el}"
+        );
+        ed.key("Escape", "Escape", 27, 0).await;
+        ed.key("Escape", "Escape", 27, 0).await;
+        ed.idle().await;
+    }
+    // typing on the slide: the formatting bar shows and covers nothing
+    ed.go("model").await;
+    ed.click_in_slide("[data-qd=\"model/0\"]").await;
+    ed.wait("window.qdSession() !== null && !document.querySelector('#fmtbar').hidden")
+        .await;
+    assert_eq!(
+        ed.eval(OVERLAP).await,
+        Value::Null,
+        "formatting bar over another element while typing"
+    );
+}
+
+/// T015 (spec 008 US4): Present puts the canvas's own frame full screen at the
+/// slide on screen, with reveal.js's keys and the deck's own controls; leaving full screen
+/// gives the editor its settings back. "From the beginning" starts at the title.
+#[tokio::test(flavor = "multi_thread")]
+async fn present_from_here_and_from_start() {
+    let mut deck = String::from("---\ntitle: Talk\nformat: revealjs\n---\n");
+    for i in 1..=5 {
+        deck += &format!("\n## Slide {i} {{#s{i}}}\n\nSome text.\n");
+    }
+    let Some(ed) = Ed::open(&deck).await else {
+        return;
+    };
+    // full screen needs a real screen: record what asked for it, and say it happened
+    ed.eval(
+        "window.__fs = []; Element.prototype.requestFullscreen = function () { __fs.push(this.id); \
+         window.__full = this; document.dispatchEvent(new Event('fullscreenchange')); return Promise.resolve(); }; \
+         Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => window.__full ?? null })",
+    )
+    .await;
+    let reveal = "document.querySelector('#preview').contentWindow.Reveal";
+    let leave = "window.__full = null; document.dispatchEvent(new Event('fullscreenchange'))";
+    let presenting =
+        format!("{reveal}.getConfig().progress === true && {reveal}.getConfig().keyboard === true");
+    let editing = format!(
+        "{reveal}.getConfig().progress === false && {reveal}.getConfig().keyboard?.[27] === null"
+    );
+
+    ed.go("s4").await;
+    ed.click_editor("#present").await;
+    ed.wait(&format!("__fs.join() === 'preview' && {presenting}"))
+        .await;
+    assert_eq!(
+        ed.eval(&format!("{reveal}.getCurrentSlide().id")).await,
+        "s4"
+    );
+    ed.eval(leave).await;
+    ed.wait(&editing).await;
+
+    ed.click_editor("#present-more").await;
+    ed.click_menu("Present from the beginning").await;
+    ed.wait(&format!("__fs.length === 2 && {presenting}")).await;
+    assert_eq!(
+        ed.eval(&format!("{reveal}.getCurrentSlide().id")).await,
+        "title-slide"
+    );
+    ed.eval(leave).await;
+    ed.wait(&editing).await;
+
+    // a host that never answers (an app's embedded browser), or refuses: the editor
+    // says what to do instead
+    for stub in [
+        "() => new Promise(() => {})",
+        "() => Promise.reject(new TypeError('denied'))",
+    ] {
+        ed.eval(&format!("document.querySelector('#notice').textContent = ''; Element.prototype.requestFullscreen = {stub}"))
+            .await;
+        ed.click_editor("#present").await;
+        ed.wait("document.querySelector('#notice').textContent.includes('Open in browser tab')")
+            .await;
+    }
+}
+
+/// T020 (spec 008 US5): the editor asks with its own sheets, never the browser's
+/// boxes; an image file dropped on the slide is copied beside the deck and lands
+/// where it was dropped.
+#[tokio::test(flavor = "multi_thread")]
+async fn own_sheets_and_image_drop() {
+    let Some(ed) = Ed::open(P2).await else {
+        return;
+    };
+    std::fs::write(
+        ed.dir.path().join("chart.svg"),
+        "<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'/>",
+    )
+    .unwrap();
+    ed.eval(
+        "window.__native = []; for (const f of ['prompt', 'confirm', 'alert']) window[f] = (...a) => { __native.push(f); return null; }",
+    )
+    .await;
+    let sheet = "document.querySelector('dialog.sheet[open]')";
+
+    // Insert ▸ Image…: the images beside the deck, with previews
+    ed.go("b").await;
+    ed.click_editor("#menubar [data-menu=Insert]").await;
+    ed.click_menu("Image…").await;
+    ed.wait(&format!(
+        "{sheet}?.querySelector('[data-path=\"chart.svg\"] img')?.complete === true"
+    ))
+    .await;
+    ed.click_editor("dialog.sheet [data-path=\"chart.svg\"]")
+        .await;
+    ed.click_editor("dialog.sheet button[value=ok]").await;
+    ed.wait_file(
+        |f| f.contains("Other slide.\n\n![](chart.svg)"),
+        "image inserted",
+    )
+    .await;
+    ed.settle().await;
+
+    // a PNG dropped on the lower half of the first paragraph lands after it
+    ed.go("a").await;
+    ed.eval(
+        r#"(() => {
+  const doc = document.querySelector('#preview').contentDocument;
+  const p = doc.querySelector('[data-qd="a/0"]');
+  const r = p.getBoundingClientRect();
+  const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+  const dt = new DataTransfer();
+  dt.items.add(new File([bytes], 'drop.png', { type: 'image/png' }));
+  const at = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.left + 5, clientY: r.bottom - 2 };
+  p.dispatchEvent(new DragEvent('dragover', at));
+  p.dispatchEvent(new DragEvent('drop', at));
+})()"#,
+    )
+    .await;
+    ed.wait_file(
+        |f| f.contains("First para.\n\n![](images/drop.png)\n\nSecond para."),
+        "dropped image after the first paragraph",
+    )
+    .await;
+    assert!(ed.dir.path().join("images/drop.png").exists());
+    ed.settle().await;
+
+    // the link sheet says what's wrong with an address, and OK waits for a good one
+    ed.go("b").await;
+    ed.click_in_slide("[data-qd=\"b/0\"]").await;
+    ed.wait("window.qdSession() !== null").await;
+    ed.click_editor("#fmtbar [data-fmt=link]").await;
+    ed.wait(&format!(
+        "{sheet}?.querySelector('input[name=href]') != null"
+    ))
+    .await;
+    ed.eval(&format!(
+        "(() => {{ const i = {sheet}.querySelector('input[name=href]'); i.value = 'not a url'; i.dispatchEvent(new Event('input', {{ bubbles: true }})); }})()"
+    ))
+    .await;
+    ed.wait(&format!(
+        "{sheet}.querySelector('.error').textContent !== '' && {sheet}.querySelector('button[value=ok]').disabled"
+    ))
+    .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    // Cancel puts the keyboard back in the text; Esc there ends the edit
+    ed.wait(&format!("!{sheet} && document.activeElement?.id === 'preview' && document.querySelector('#preview').contentDocument.activeElement.isContentEditable"))
+        .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.idle().await;
+
+    // the background colour sheet offers None, which removes the colour
+    ed.cli(&["set", "b", "--attr", "background-color=#ffeeaa"]);
+    ed.settle().await;
+    ed.go("b").await;
+    ed.menu("Slide", "Background colour…").await;
+    ed.wait(&format!(
+        "{sheet}?.querySelector('[data-value=\"\"]') != null"
+    ))
+    .await;
+    ed.click_editor("dialog.sheet [data-value=\"\"]").await;
+    ed.click_editor("dialog.sheet button[value=ok]").await;
+    ed.wait_file(|f| !f.contains("background-color"), "colour removed")
+        .await;
+
+    assert_eq!(ed.eval("__native.length").await, 0, "a native box was used");
+}
+
+/// T023 (spec 008 US6): one top row — menus, the deck's title and file, the
+/// status, Present — the tab named after the deck, the status in words, and no
+/// jargon left in the menus or bars.
+#[tokio::test(flavor = "multi_thread")]
+async fn one_top_bar_in_plain_words() {
+    let Some(ed) = Ed::open(P2).await else {
+        return;
+    };
+    let row = |sel: &str| format!("document.querySelector('{sel}').closest('header') !== null");
+    for sel in ["#menubar", "#deck-name", "#status", "#present"] {
+        assert_eq!(ed.eval(&row(sel)).await, true, "{sel} in the top row");
+    }
+    ed.wait("document.querySelector('#deck-name').textContent.includes('T') && document.querySelector('#deck-name .file').textContent === 'deck.qmd'")
+        .await;
+    assert_eq!(ed.eval("document.title").await, "T");
+
+    // the status in words, the version as its tooltip (settle waits for both)
+    ed.settle().await;
+    ed.eval("window.__st = []; new MutationObserver(() => __st.push(document.querySelector('#status').textContent)).observe(document.querySelector('#status'), { childList: true, characterData: true, subtree: true })")
+        .await;
+    ed.type_into("a", "[data-qd=\"a/0\"]", "!").await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait_file(|f| f.contains("First para.!"), "saved").await;
+    ed.wait("__st.includes('Saving…') && __st.includes('Saved') && __st.at(-1) === 'Up to date'")
+        .await;
+
+    // no jargon in any menu or bar
+    let jargon = r#"(async () => {
+  const old = ['Render', 'Open preview', 'Export offline HTML', 'Export with PDF', 'Form', 'Form panel', 'On click', 'Edit source', '+ Package', 'Create environment'];
+  const menus = Object.values(await qdMenus()).flat().map((i) => i.label);
+  const bars = [...document.querySelectorAll('button')].map((b) => b.textContent.trim());
+  return [...menus, ...bars].filter((l) => old.includes(l));
+})()"#;
+    assert_eq!(ed.eval(jargon).await, json!([]));
+
+    // a render that fails says so in a banner the person can close
+    std::fs::write(
+        ed.dir.path().join("deck.qmd"),
+        format!("{P2}\n{{{{< include missing.qmd >}}}}\n"),
+    )
+    .unwrap();
+    ed.wait("!document.querySelector('#banner').hidden && document.querySelector('#banner .msg').textContent !== ''")
+        .await;
+    ed.click_editor("#banner .close").await;
+    ed.wait("document.querySelector('#banner').hidden").await;
+
+    // VS Code's panel: ☰ in that same row
+    let link = ed.cli(&["url"])["url"].as_str().unwrap().to_string();
+    ed.page
+        .goto(link.replace("/#t=", "/?host=vscode#t=").as_str())
+        .await
+        .unwrap();
+    ed.wait_secs(READY, 60).await;
+    ed.wait("document.querySelector('#menubar').classList.contains('folded')")
+        .await;
+    assert_eq!(ed.eval(&row("#menubar")).await, true);
+}
+
+/// T026 (spec 008 US7): bars with one height and a name on every control, the
+/// common formats up front and the rest under "Aa", a source bar with the run
+/// controls and the rest under ···, a fuller Insert, and box handles easy to hit.
+#[tokio::test(flavor = "multi_thread")]
+async fn tidier_bars_and_fuller_insert() {
+    let Some(ed) = Ed::open(P2).await else {
+        return;
+    };
+    let sheet = "document.querySelector('dialog.sheet[open]')";
+    let shown = |bar: &str| {
+        format!(
+            "[...document.querySelectorAll('{bar} button, {bar} select')].filter((b) => b.offsetParent && !b.closest('.pop'))"
+        )
+    };
+
+    // the slide bar: one height, a name on each control, a colour menu with None
+    ed.go("b").await;
+    ed.wait("document.querySelector('#slidebar').style.visibility !== 'hidden'")
+        .await;
+    let bar = shown("#slidebar");
+    assert_eq!(
+        ed.eval(&format!("new Set({bar}.map((b) => b.offsetHeight)).size"))
+            .await,
+        1,
+        "one height"
+    );
+    assert_eq!(
+        ed.eval(&format!("{bar}.filter((b) => !(b.title || b.getAttribute('aria-label') || b.textContent.trim())).length")).await,
+        0,
+        "every control named"
+    );
+    ed.click_editor("#slidebar [data-act=bg]").await;
+    ed.wait(&format!(
+        "{sheet}?.querySelector('[data-value=\"\"]') != null"
+    ))
+    .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait(&format!("!{sheet}")).await;
+
+    // the formatting bar: the common few, then "Aa" for the rest
+    ed.go("a").await;
+    ed.click_in_slide("[data-qd=\"a/0\"]").await;
+    ed.wait("window.qdSession() !== null && !document.querySelector('#fmtbar').hidden")
+        .await;
+    assert_eq!(
+        ed.eval(&format!("{}.map((b) => b.dataset.fmt)", shown("#fmtbar")))
+            .await,
+        json!([
+            "bold",
+            "italic",
+            "underline",
+            "strike",
+            "link",
+            "ul",
+            "color",
+            "more"
+        ])
+    );
+    ed.click_editor("#fmtbar [data-fmt=more]").await;
+    ed.wait("['code', 'ol', 'outdent', 'indent', 'mark', 'smaller', 'larger', 'left', 'center', 'right'].every((f) => document.querySelector(`#fmtbar .pop [data-fmt=${f}]`)?.offsetParent)")
+        .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.idle().await;
+
+    // the source bar: Run all, Stop, Python's state in words, ··· for the rest
+    ed.toggle_source().await;
+    ed.wait("document.querySelector('#srcpane .kernel').textContent === 'Python · stopped'")
+        .await;
+    assert_eq!(
+        ed.eval("[...document.querySelectorAll('#srcpane .runbar button')].filter((b) => b.offsetParent).map((b) => b.textContent.trim())").await,
+        json!(["▶ Run all", "■ Stop", "···"])
+    );
+    ed.click_editor("#srcpane .runbar [data-act=more]").await;
+    let labels = ed.menu_labels().await;
+    for l in [
+        "Restart",
+        "Restart & run all",
+        "Add Python package…",
+        "Set up Python…",
+    ] {
+        // (Set up Python… is offered only when the deck has code cells)
+        assert!(
+            labels.iter().any(|x| x.starts_with(l)),
+            "{l} missing from {labels:?}"
+        );
+    }
+    ed.close_menu().await;
+    ed.toggle_source().await;
+
+    // Insert: each new kind of block is its markdown in the file
+    for (label, md) in [
+        ("Code cell", "```{python}\n1 + 1\n```"),
+        ("Callout", "::: {.callout-note}\nA note.\n:::"),
+        ("Columns", ":::: {.columns}\n"),
+        ("Speaker notes", "::: notes\nSay this.\n:::"),
+        ("Table", "| A | B |\n|---|---|\n| 1 | 2 |"),
+        ("Quote", "> A quote."),
+    ] {
+        ed.settle().await;
+        ed.go("b").await;
+        ed.menu("Insert", label).await;
+        ed.wait_file(|f| f.contains(md), label).await;
+    }
+
+    // a positioned box: handles drawn small, hit areas at least 20 px
+    ed.settle().await;
+    ed.cli(&["box", "add", "b", "--text", "Box"]);
+    ed.settle().await;
+    ed.go("b").await;
+    ed.click_in_slide("#b .absolute").await;
+    ed.wait(
+        "document.querySelector('#preview').contentDocument.querySelector('.qd-handle') != null",
+    )
+    .await;
+    assert_eq!(
+        ed.eval("[...document.querySelector('#preview').contentDocument.querySelectorAll('.qd-handle')].every((h) => { const r = h.getBoundingClientRect(); return r.width >= 20 && r.height >= 20; })").await,
+        true
+    );
+}
+
+/// T032 (spec 008 US8): at 420×760 the list gives way to a slide picker in the
+/// top row, the slide's properties are under ···, nothing runs off the window,
+/// and typing on a slide still works.
+#[tokio::test(flavor = "multi_thread")]
+async fn narrow_window() {
+    use chromiumoxide::cdp::browser_protocol::emulation::SetDeviceMetricsOverrideParams;
+    let Some(ed) = Ed::open(P2).await else {
+        return;
+    };
+    ed.page
+        .execute(SetDeviceMetricsOverrideParams::new(420, 760, 1.0, false))
+        .await
+        .unwrap();
+    ed.wait("innerWidth === 420 && getComputedStyle(document.querySelector('nav')).display === 'none' && !!document.querySelector('#slide-picker').offsetParent && document.querySelector('#slide-picker').getBoundingClientRect().right <= innerWidth")
+        .await;
+
+    // the picker reaches every slide
+    ed.click_editor("#slide-picker").await;
+    assert_eq!(ed.menu_labels().await, ["T", "1 A", "2 B", "3 Empty"]);
+    ed.click_menu("2 B").await;
+    ed.wait("document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide()?.id === 'b' && document.querySelector('#slide-picker').textContent.includes('B')")
+        .await;
+
+    // the slide's properties are under ···
+    assert_eq!(
+        ed.eval("[...document.querySelectorAll('#slidebar > *')].filter((c) => c.offsetParent).map((c) => c.dataset.act)").await,
+        json!(["more"])
+    );
+    ed.click_editor("#slidebar [data-act=more]").await;
+    let labels = ed.menu_labels().await;
+    for l in [
+        "Background colour…",
+        "Background image…",
+        "Transition",
+        "Hidden in the presentation",
+    ] {
+        assert!(labels.iter().any(|x| x == l), "{l} missing from {labels:?}");
+    }
+    ed.close_menu().await;
+
+    // nothing runs off the window
+    let fits = "[document.documentElement, document.body, ...document.querySelectorAll('header, #slidebar, #fmtbar, #elbar')].filter((e) => e.checkVisibility()).every((e) => e.scrollWidth <= e.clientWidth + 1)";
+    assert_eq!(ed.eval(fits).await, true, "something overflows");
+
+    // typing still works, with the formatting bar inside the window too
+    ed.type_into("b", "[data-qd=\"b/0\"]", " Narrow").await;
+    assert_eq!(ed.eval(fits).await, true, "the formatting bar overflows");
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait_file(|f| f.contains("Other slide. Narrow"), "typed text saved")
+        .await;
+}
+
+/// T036 (spec 008 US9): several slides picked in the list move and go together,
+/// Settings leads with Theme, a saved edit says so, and undoing a duplicate
+/// leaves the canvas on the slide it was copied from.
+#[tokio::test(flavor = "multi_thread")]
+async fn finishing_touches() {
+    let mut deck = String::from("---\ntitle: T\nformat: revealjs\n---\n");
+    for i in 1..=6 {
+        deck += &format!("\n## S{i} {{#s{i}}}\n\nText {i}.\n");
+    }
+    let Some(ed) = Ed::open(&deck).await else {
+        return;
+    };
+    let order = || slide_ids(&ed.cli(&["slides"]));
+    let click = |id: &str, mods: &str| {
+        format!(
+            "document.querySelector('#slides li[data-id={id}] > button').dispatchEvent(new MouseEvent('click', {{ bubbles: true, {mods}: true }}))"
+        )
+    };
+    let before = ed.file();
+
+    // ⇧-click picks s2..s4; dragging one of them moves all three, one undo puts them back
+    ed.go("s2").await;
+    ed.eval(&click("s4", "shiftKey")).await;
+    assert_eq!(
+        ed.eval("[...document.querySelectorAll('#slides li.picked')].map((li) => li.dataset.id)")
+            .await,
+        json!(["s2", "s3", "s4"])
+    );
+    let from = ed
+        .editor_point("#slides li[data-id=s3] .handle", None)
+        .await;
+    let to = ed.editor_point("#slides li[data-id=s1]", Some(20.0)).await;
+    let to = (to.0, to.1 - 30.0);
+    ed.press_and_move(from, to).await;
+    ed.mouse(DispatchMouseEventType::MouseReleased, to, false)
+        .await;
+    ed.until_cli(
+        &["slides"],
+        |v| v["slides"][0]["id"] == "s2",
+        "moved together",
+    )
+    .await;
+    assert_eq!(order(), ["s2", "s3", "s4", "s1", "s5", "s6"]);
+    ed.undo_to(&before).await;
+
+    // ⌘-click adds one more; Delete removes both (after the confirmation sheet)
+    ed.settle().await;
+    ed.go("s1").await;
+    ed.eval(&click("s5", "metaKey")).await;
+    ed.eval("document.querySelector('#slides li[data-id=s5] > button').focus()")
+        .await;
+    ed.key("Delete", "Delete", 46, 0).await;
+    ed.wait("document.querySelector('dialog.sheet[open]') != null")
+        .await;
+    ed.click_editor("dialog.sheet button[value=ok]").await;
+    ed.until_cli(
+        &["slides"],
+        |v| v["slides"].as_array().unwrap().len() == 4,
+        "two removed",
+    )
+    .await;
+    assert_eq!(order(), ["s2", "s3", "s4", "s6"]);
+
+    // Settings: Theme first, every choice the same width
+    ed.key(",", "Comma", 188, 2).await;
+    ed.wait("document.querySelector('#settings').open").await;
+    assert!(
+        ed.eval("document.querySelector('#settings .setting').textContent")
+            .await
+            .as_str()
+            .unwrap()
+            .starts_with("Theme")
+    );
+    assert_eq!(ed.eval("new Set([...document.querySelectorAll('#settings select')].map((s) => s.offsetWidth)).size").await, 1);
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("!document.querySelector('#settings').open").await;
+
+    // a saved edit says so beside the element
+    ed.type_into("s2", "[data-qd=\"s2/0\"]", "!").await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("document.querySelector('.saved-note')?.textContent === 'Saved'")
+        .await;
+
+    // undoing a duplicate goes back to the slide it was copied from
+    ed.settle().await;
+    ed.go("s3").await;
+    ed.menu("Slide", "Duplicate slide").await;
+    let shown = "document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide()?.id";
+    ed.wait(&format!("{shown} !== 's3' && {shown} !== undefined && document.querySelectorAll('#slides li').length === 6")).await;
+    ed.settle().await;
+    ed.menu("Edit", "Undo").await;
+    ed.wait(&format!(
+        "{shown} === 's3' && document.querySelectorAll('#slides li').length === 5"
+    ))
+    .await;
+}
+
+/// What the browser's own editing adds (a line joined with Backspace leaves
+/// `<span style="font-size: 32px; color: rgb(…)">`, indenting outside a list a
+/// styled blockquote, old commands `<font>`) is tidied before saving, keeping what
+/// markdown can hold; what it truly can't hold is named in the message.
+#[tokio::test(flavor = "multi_thread")]
+async fn browser_markup_still_saves() {
+    let Some(ed) = Ed::open(P2).await else {
+        return;
+    };
+    let out = ed
+        .eval(
+            r##"(async () => {
+  const m = await import('/ui/inline.js');
+  const doc = document.querySelector('#preview').contentDocument;
+  const md = (html) => { const d = doc.createElement('div'); d.innerHTML = html; try { return m.reserialize(d, { mode: 'block' }, {}); } catch (e) { return 'refused: ' + e.message; } };
+  return [
+    md('<p>One <span style="font-size: 32px; color: rgb(192, 57, 43);">two</span> <span style="font-size: 32px; color:#c0392b">red</span></p>'),
+    md('<p>Plain <span style="font-size: 32px; line-height: 1.2">join</span></p>'),
+    md('<blockquote style="margin: 0 0 0 40px; border: none; padding: 0px;"><p>Quote</p></blockquote>'),
+    md('<p><font color="#1e8449">green</font></p>'),
+    md('<p><b style="font-weight: bold">b</b> <span style="font-size:1.2em">big</span></p>'),
+    md('<p>a<img src="x.png"></p>'),
+  ];
+})()"##,
+        )
+        .await;
+    assert_eq!(
+        out,
+        json!([
+            "One two [red]{style=\"color:#c0392b\"}",
+            "Plain join",
+            "> Quote",
+            "[green]{style=\"color:#1e8449\"}",
+            "**b** [big]{style=\"font-size:1.2em\"}",
+            "refused: IMG with attributes",
+        ])
+    );
+
+    // in a real edit: a joined line's styling doesn't stop the save
+    ed.go("a").await;
+    ed.click_in_slide("[data-qd=\"a/0\"] p").await;
+    ed.wait("window.qdSession() !== null").await;
+    ed.eval("document.querySelector('#preview').contentDocument.querySelector('.qd-editing p').insertAdjacentHTML('beforeend', '<span style=\"font-size: 40px; color: rgb(34, 34, 34)\"> joined</span>')").await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait_file(
+        |f| f.contains("First para. joined\n"),
+        "joined line saved, without the copied styling",
+    )
+    .await;
+
+    // text dragged in with its markup arrives as plain text
+    ed.settle().await;
+    ed.go("a").await;
+    ed.click_in_slide("[data-qd=\"a/0\"] p").await;
+    ed.wait("window.qdSession() !== null").await;
+    ed.eval(r#"(() => {
+  const p = document.querySelector('#preview').contentDocument.querySelector('.qd-editing p');
+  const r = p.getBoundingClientRect();
+  const dt = new DataTransfer();
+  dt.setData('text/html', '<b style="color: rgb(1, 2, 3)">dragged</b><img src="x.png">');
+  dt.setData('text/plain', 'dragged');
+  p.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.right - 2, clientY: r.top + r.height / 2 }));
+})()"#)
+        .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait_file(
+        |f| f.contains("dragged") && !f.contains("<img"),
+        "dragged text saved as text",
+    )
+    .await;
+
+    // what has no markdown form is named, with the ways out
+    ed.settle().await;
+    ed.go("a").await;
+    ed.click_in_slide("[data-qd=\"a/0\"] p").await;
+    ed.wait("window.qdSession() !== null").await;
+    ed.eval("document.querySelector('#preview').contentDocument.querySelector('.qd-editing p').insertAdjacentHTML('beforeend', '<img src=\"x.png\">')").await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("/an image/.test(document.querySelector('#notice').textContent) && /⌘Z/.test(document.querySelector('#notice').textContent)")
         .await;
 }

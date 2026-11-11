@@ -1,23 +1,25 @@
 // quartz-deck editor. Every change is a CLI op sent to POST /api/op, so the GUI
 // can do nothing the CLI cannot (FR-010). The .qmd file stays the only state.
 import { region, hintsFor, gate, reserialize, splice } from '/ui/inline.js';
-import { showToolbar, hideToolbar, place as placeToolbar } from '/ui/toolbar.js';
+import { showToolbar, hideToolbar, place as placeToolbar, placeNear } from '/ui/toolbar.js';
 import { openSource, closeSource, sourceError, sourceText } from '/ui/source.js';
 import { makeActions, INSERTS, TRANSITIONS } from '/ui/actions.js';
 import * as keys from '/ui/keys.js';
 import * as settings from '/ui/settings.js';
 import '/ui/menubar.js';
 import { openMenu, closeMenu, menuOpen } from '/ui/menu.js';
+import { makeList } from '/ui/list.js';
 import * as pane from '/ui/pane.js';
 import * as run from '/ui/run.js';
 import * as focus from '/ui/focus.js';
+import { ask } from '/ui/sheet.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const frame = $('#preview');
 const statusEl = $('#status');
 const notice = $('#notice');
 const banner = $('#banner');
-const list = $('#slides');
+$('.close', banner).addEventListener('click', () => { banner.hidden = true; });
 const panel = $('#panel');
 
 const state = {
@@ -36,6 +38,12 @@ const state = {
 };
 
 // ---------- helpers ----------
+
+/** The connection/render state: shown only when it needs attention (`quiet` hides it, still read out). */
+function status(text, quiet = false) {
+  statusEl.textContent = text;
+  statusEl.classList.toggle('quiet', quiet);
+}
 
 function say(msg, isError = false) {
   notice.textContent = msg;
@@ -74,8 +82,12 @@ async function fetchDeck() {
   if (!res.ok) return;
   state.deck = await res.json();
   state.version = state.deck.version;
+  // the deck's name in the top row and the tab (spec 008 US6)
+  $('#deck-name .title').textContent = state.deck.title || '';
+  $('#deck-name .file').textContent = state.deck.file || '';
+  document.title = state.deck.title || state.deck.file || 'quartz-deck';
   focus.setVersion(state.version);
-  renderList();
+  slideList.render();
   renderSlidebar();
 }
 
@@ -112,6 +124,7 @@ async function fetchMeta() {
  * just their element with `expect-text`, so edits elsewhere don't block them).
  */
 async function op(name, args = {}, { fileExpect = true } = {}) {
+  status('Saving…', true);
   const res = await fetch('/api/op', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -121,6 +134,7 @@ async function op(name, args = {}, { fileExpect = true } = {}) {
   if (!res.ok) {
     const e = body.error || { code: res.status, message: res.statusText };
     op.lastError = e;
+    status('Not saved');
     if (e.code === 'E_CONFLICT' && !fileExpect) {
       say(`${name}: changed elsewhere while you were editing — choose a version`, true);
     } else if (e.code === 'E_CONFLICT') {
@@ -133,6 +147,7 @@ async function op(name, args = {}, { fileExpect = true } = {}) {
     return null;
   }
   if (body.version) state.version = body.version;
+  status('Saved', true);
   say(`${name} ✓`);
   return body;
 }
@@ -155,8 +170,12 @@ function go(anchor) {
   if (w) w.location.hash = hash;
 }
 
-const PREVIEW_CSS = `
+// (none of it while presenting: html.qd-present)
+const PREVIEW_CSS = `html:not(.qd-present) {
   [data-qd] { cursor: pointer; }
+  .slide-menu-button { display: none !important; }
+  /* an untitled slide (spec 008 US1): a placeholder on the canvas only, never in the file */
+  .reveal .slides section > h2:empty::before { content: 'Click to add title'; color: #9a9aa0; font-weight: 400; }
   [data-qd]:hover { outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; }
   .qd-sel, .qd-sel:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 2px; }
   .qd-editing, .qd-editing:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 4px; cursor: text; }
@@ -168,12 +187,15 @@ const PREVIEW_CSS = `
     outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; cursor: text; }
   .qd-overlay { position: absolute; box-sizing: border-box; border: 2px solid #2a5bd7; cursor: move;
     touch-action: none; z-index: 1000; }
-  .qd-handle { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; background: #fff;
-    border: 2px solid #2a5bd7; border-radius: 3px; box-sizing: border-box; }
+  /* a 10 px square to see, a 24 px target to hit (spec 008 US7: at least 20) */
+  .qd-handle { position: absolute; --h: calc(24px * var(--px, 1)); width: var(--h); height: var(--h);
+    margin: calc(var(--h) / -2) 0 0 calc(var(--h) / -2); }
+  .qd-handle::after { content: ''; position: absolute; inset: calc(7px * var(--px, 1)); background: #fff;
+    border: calc(2px * var(--px, 1)) solid #2a5bd7; border-radius: 2px; box-sizing: border-box; }
   section[data-qd-hidden]::after { content: "hidden slide (visibility=hidden): not in the rendered deck";
     position: absolute; top: 0; right: 0; font: 14px system-ui, sans-serif; padding: 2px 8px;
     background: #fff3c4; color: #5c4400; border-radius: 4px; }
-`;
+}`;
 
 function highlight() {
   const doc = frame.contentDocument;
@@ -208,6 +230,8 @@ function attachOverlay(box) {
   const ov = doc.createElement('div');
   ov.className = 'qd-overlay';
   ov.title = 'Drag to move';
+  // the slide is drawn scaled: size the handles in screen pixels
+  ov.style.setProperty('--px', String(1 / (frameWin().Reveal?.getScale?.() || 1)));
   for (const [name, [x, y]] of Object.entries(HANDLES)) {
     const h = doc.createElement('div');
     h.className = 'qd-handle';
@@ -269,6 +293,31 @@ function attachOverlay(box) {
   });
 }
 
+// ---------- present (spec 008 US4) ----------
+// The canvas's own frame goes full screen: the render already on screen, from the
+// slide on screen, with reveal.js's keys and controls; leaving gives the editor them back.
+// Escape belongs to the editor (leave an edit / deselect), not Reveal's overview;
+// reveal.js's menu button, arrows and progress bar belong to presenting (US2)
+const EDITING = { keyboard: { 27: null }, controls: false, progress: false, slideNumber: false };
+let deckConfig = null; // the deck's own settings for those, read when the frame loads
+const presenting = () => document.fullscreenElement === frame;
+async function present(fromStart) {
+  if (state.session) await saveSession();
+  select(null);
+  if (fromStart) frameWin()?.Reveal.slide(0, 0);
+  // some hosts refuse full screen, and an app's embedded browser may never answer:
+  // after a moment without it, say what to do instead
+  const refused = () => { if (!presenting()) say('Full screen isn’t allowed here: ▾ ▸ Open in browser tab presents in a tab instead', true); };
+  const late = setTimeout(refused, 1500);
+  await frame.requestFullscreen().catch(refused).finally(() => clearTimeout(late));
+}
+document.addEventListener('fullscreenchange', () => {
+  const R = frameWin()?.Reveal;
+  if (!R || !deckConfig) return;
+  frame.contentDocument.documentElement.classList.toggle('qd-present', presenting());
+  R.configure(presenting() ? deckConfig : EDITING);
+});
+
 function hookFrame() {
   const w = frameWin();
   const doc = frame.contentDocument;
@@ -279,6 +328,7 @@ function hookFrame() {
   doc.head.append(style);
 
   doc.addEventListener('click', (e) => {
+    if (presenting()) return;
     if (state.session) {
       if (state.session.root.contains(e.target)) return; // caret moves inside the edit
       saveSession(); // clicking elsewhere ends the edit
@@ -302,7 +352,7 @@ function hookFrame() {
     });
   }, true);
   doc.addEventListener('dblclick', (e) => {
-    if (state.session) return;
+    if (state.session || presenting()) return;
     const el = e.target.closest('[data-qd]') || doc.querySelector(`[data-qd="${CSS.escape(state.sel || '')}"]`);
     if (!el) return;
     e.preventDefault();
@@ -312,9 +362,25 @@ function hookFrame() {
     });
   }, true);
   doc.addEventListener('keydown', onKey, true);
+  // an element changing size (math typesetting, an image loading) moves its neighbours:
+  // place the bars again, so they still cover nothing (spec 008 US2)
+  const replace = new w.ResizeObserver(() => { placeElbar(); placeToolbar(frame); });
+  for (const el of doc.querySelectorAll('[data-qd]')) replace.observe(el);
   doc.addEventListener('paste', onPaste);
+  // an image file dropped on the slide (spec 008 US5): copied beside the deck, placed where it fell
+  doc.addEventListener('dragover', (e) => {
+    if (presenting() || !e.dataTransfer?.types.includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  });
+  doc.addEventListener('drop', (e) => {
+    const file = [...(e.dataTransfer?.files || [])].find((f) => f.type.startsWith('image/'));
+    if (!file || presenting()) return;
+    e.preventDefault();
+    dropImage(file, e.target.closest?.('[data-qd]'), e.clientY);
+  });
   doc.addEventListener('contextmenu', (e) => {
-    if (state.session) return; // the browser's own menu (spelling) while typing
+    if (state.session || presenting()) return; // the browser's own menu (spelling) while typing
     const sec = e.target.closest('section');
     if (!sec) return;
     e.preventDefault();
@@ -329,8 +395,9 @@ function hookFrame() {
     // always wants the normal slide view.
     // always: the pane may narrow later (panels, window), which would switch
     // Reveal into scroll view, where hash navigation to the last slide fails
-    // Escape belongs to the editor (leave an edit / deselect), not Reveal's overview
-    w.Reveal.configure({ scrollActivationWidth: 1, keyboard: { 27: null } });
+    const { controls, progress, slideNumber } = w.Reveal.getConfig();
+    deckConfig = { controls, progress, slideNumber, keyboard: true };
+    w.Reveal.configure({ scrollActivationWidth: 1, ...EDITING });
     w.dispatchEvent(new Event('resize'));
     // synchronously: a hash change lands a task later, and onSlide() below would
     // meanwhile report the first slide (hiding the slide bar under a click)
@@ -348,6 +415,8 @@ function hookFrame() {
     // only the render that has the inserted element: an older one still loading would
     // show other text at that ref, and the edit would not open
     if (state.editAfterRender?.version === state.loading) openInserted(state.editAfterRender);
+    slideList.refresh();
+    w.MathJax?.startup?.promise?.then(() => slideList.refresh()); // math typesets after ready
     onSlide();
   };
   const onSlide = () => {
@@ -360,7 +429,7 @@ function hookFrame() {
     // a slide change that followed the focus isn't a new one (keeps the source pane's)
     if (state.followed === id) state.followed = null;
     else syncFocus();
-    renderList();
+    slideList.render();
     renderPanel();
     renderSlidebar();
   };
@@ -375,137 +444,11 @@ frame.addEventListener('load', () => {
   fetchDeck().then(renderPanel);
 });
 
-// ---------- hover preview of a slide in the list ----------
+// ---------- slide list (spec 008 US1: list.js) ----------
 
-// One small second copy of the rendered deck, steered by hash. Reloaded only when
-// the main preview re-renders, so hovering is instant after the first time.
-const peek = Object.assign(document.createElement('iframe'), { id: 'peek', tabIndex: -1, hidden: true });
-peek.setAttribute('aria-hidden', 'true');
-document.body.append(peek);
-let peekSrc = null;
-let peekWant = null;
-let peekTimer;
-
-peek.addEventListener('load', () => {
-  const w = peek.contentWindow;
-  const ready = () => {
-    // as in hookFrame: the small frame would otherwise switch Reveal to scroll view
-    w.Reveal.configure({ scrollActivationWidth: 1, controls: false, progress: false, slideNumber: false });
-    const style = w.document.createElement('style');
-    style.textContent = '.slide-menu-button { display: none !important; }';
-    w.document.head.append(style);
-    w.dispatchEvent(new Event('resize'));
-    if (peekWant) w.location.hash = '#/' + peekWant;
-  };
-  if (w.Reveal?.isReady?.()) ready(); else w.Reveal?.on?.('ready', ready);
-});
-
-function showPeek(li, anchor) {
-  clearTimeout(peekTimer);
-  peekTimer = setTimeout(() => {
-    peekWant = anchor;
-    const src = frame.getAttribute('src');
-    if (!src) return;
-    if (peekSrc !== src) { peekSrc = src; peek.src = src + '#/' + anchor; }
-    else peek.contentWindow.location.hash = '#/' + anchor;
-    const r = li.getBoundingClientRect();
-    const W = 300; const H = 200; const m = 8;
-    const across = getComputedStyle(list).display === 'flex';
-    const clamp = (v, max) => Math.max(m, Math.min(v, max - m));
-    peek.style.left = (across ? clamp(r.left, innerWidth - W) : r.right + m) + 'px';
-    peek.style.top = (across ? r.bottom + 6 : clamp(r.top, innerHeight - H)) + 'px';
-    peek.hidden = false;
-  }, 200);
-}
-
-function hidePeek() {
-  clearTimeout(peekTimer);
-  peek.hidden = true;
-}
-
-// ---------- slide list (drag to reorder) ----------
-
-let dragId = null;
-
-function clearDrop() {
-  list.querySelectorAll('.drop-before, .drop-after, .dragging').forEach((li) => li.classList.remove('drop-before', 'drop-after', 'dragging'));
-}
-
-function renderList() {
-  const slides = state.deck?.slides || [];
-  const cur = slideByAnchor(state.anchor);
-  const focused = list.contains(document.activeElement); // redrawing must not drop the keyboard's place
-  list.replaceChildren(...slides.map((s) => {
-    const li = document.createElement('li');
-    li.draggable = true;
-    li.dataset.id = s.id;
-    if (cur && s.id === cur.id) li.classList.add('current');
-    const b = document.createElement('button');
-    b.type = 'button';
-    const idx = document.createElement('span');
-    idx.className = 'idx';
-    idx.textContent = s.index;
-    b.append(idx, s.title || s.summary || '(untitled)');
-    if (s.hidden) {
-      const tag = document.createElement('span');
-      tag.className = 'tag';
-      tag.textContent = 'hidden';
-      b.append(' ', tag);
-    }
-    if (cur && s.id === cur.id) b.setAttribute('aria-current', 'true');
-    b.addEventListener('click', () => { hidePeek(); state.sel = null; go(s.anchor); });
-    li.append(b);
-    li.addEventListener('mouseenter', () => { if (!dragId && !state.session) showPeek(li, s.anchor); });
-    li.addEventListener('contextmenu', async (e) => {
-      e.preventDefault();
-      hidePeek();
-      openMenu(actions.slide(await slideTarget(s.id)), e.clientX, e.clientY);
-    });
-    li.addEventListener('mouseleave', hidePeek);
-
-    li.addEventListener('dragstart', (e) => {
-      hidePeek();
-      dragId = s.id;
-      li.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', s.id);
-    });
-    li.addEventListener('dragend', () => { dragId = null; clearDrop(); });
-    li.addEventListener('dragover', (e) => {
-      if (!dragId || dragId === s.id) return;
-      e.preventDefault();
-      const r = li.getBoundingClientRect();
-      const across = getComputedStyle(list).display === 'flex'; // narrow layout: horizontal strip
-      const before = across ? e.clientX < r.left + r.width / 2 : e.clientY < r.top + r.height / 2;
-      li.classList.toggle('drop-before', before);
-      li.classList.toggle('drop-after', !before);
-    });
-    li.addEventListener('dragleave', () => li.classList.remove('drop-before', 'drop-after'));
-    li.addEventListener('drop', async (e) => {
-      e.preventDefault();
-      const before = li.classList.contains('drop-before');
-      const moving = dragId;
-      clearDrop();
-      if (!moving || moving === s.id) return;
-      const ids = (state.deck?.slides || []).map((x) => x.id);
-      const from = ids.indexOf(moving);
-      const to = ids.indexOf(s.id) + (before ? 0 : 1);
-      if (to === from || to === from + 1) return; // already there
-      const res = await op('move', { slide: moving, [before ? 'before' : 'after']: s.id });
-      if (res) await fetchDeck();
-    });
-    return li;
-  }));
-  list.querySelector('li.current')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  if (focused) list.querySelector('li.current button')?.focus();
-}
-
-$('#add-slide').addEventListener('click', async () => {
-  const cur = slideByAnchor(state.anchor);
-  const args = { title: 'New slide' };
-  if (cur) args.after = cur.id;
-  const res = await op('add', args);
-  if (res) { state.goAfterRender = res.target; state.sel = null; await fetchDeck(); }
+const slideList = makeList({
+  state, frame, go, op, fetchDeck, openMenu,
+  slideMenu: async (id) => actions.slide(await slideTarget(id)),
 });
 
 // ---------- properties panel ----------
@@ -664,9 +607,21 @@ async function renderElementPanel() {
 
 // ---------- undo / redo / keys ----------
 
+/** Slide anchor → the anchor of the slide it was duplicated from. */
+const copiedFrom = new Map();
 async function undoRedo(kind) {
+  const was = state.deck?.slides || [];
   const r = await op(kind);
-  if (r) { await fetchDeck(); await renderPanel(); }
+  if (!r) return;
+  await fetchDeck();
+  // the slide on screen went away (an add or a duplicate undone): show the one it was
+  // copied from, else its neighbour, not the first slide (spec 008 US9)
+  if (state.anchor && state.anchor !== 'title-slide' && !slideByAnchor(state.anchor)) {
+    const i = was.findIndex((s) => s.anchor === state.anchor);
+    const near = [copiedFrom.get(state.anchor), was[i - 1]?.anchor, was[i + 1]?.anchor].find((a) => a && slideByAnchor(a));
+    if (near) { state.goAfterRender = near; go(near); }
+  }
+  await renderPanel();
 }
 /** File ▸ Render / Export…: one at a time each (the menu greys them out meanwhile). */
 const busy = { render: false, export: false };
@@ -756,6 +711,7 @@ function stepSelection(back) {
 }
 
 function onKey(e) {
+  if (presenting()) return; // reveal.js's keys while presenting
   // widget key: Esc closes an open menu even when focus stayed elsewhere (the preview)
   // (and only that: an edit under a menu opened with the mouse stays open, one level per Esc)
   if (menuOpen()) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeMenu(); } return; }
@@ -770,12 +726,12 @@ document.addEventListener('keydown', onKey);
 const es = new EventSource(`/events?tab=${focus.tabId}`);
 run.listen(es);
 settings.listen(es);
-es.addEventListener('open', () => { statusEl.textContent = 'connected'; });
-es.addEventListener('error', () => { statusEl.textContent = 'disconnected — is qd serve running?'; });
+es.addEventListener('open', () => status('Connected', true));
+es.addEventListener('error', () => status('Disconnected — is qd serve running?'));
 es.addEventListener('changed', async (e) => {
-  statusEl.textContent = 'changed…';
   const { version } = JSON.parse(e.data);
   if (version !== state.version) {
+    status('Changed on disk', true);
     slides = { version: null, map: new Map() };
     await fetchDeck();
     if (!editing()) await renderPanel();
@@ -811,10 +767,11 @@ offer.addEventListener('click', (e) => {
   if (act === 'go' && offered) showPoint(offered);
   if (act) offer.hidden = true;
 });
-es.addEventListener('rendering', () => { statusEl.textContent = 'rendering…'; });
+es.addEventListener('rendering', () => status('Rendering…'));
 es.addEventListener('rendered', (e) => {
   const d = JSON.parse(e.data);
-  statusEl.textContent = 'rendered ' + d.version.slice(0, 7);
+  status('Up to date', true);
+  statusEl.title = `Version ${d.version.slice(0, 7)}`;
   banner.hidden = true;
   if (state.session) {
     // reloading now would throw away the open edit (research R4)
@@ -826,8 +783,8 @@ es.addEventListener('rendered', (e) => {
 });
 es.addEventListener('render_error', (e) => {
   const d = JSON.parse(e.data);
-  statusEl.textContent = 'render failed (showing last good render)';
-  banner.textContent = d.message;
+  status('Render failed — showing the last good one');
+  $('.msg', banner).textContent = d.message;
   banner.hidden = false;
 });
 
@@ -876,9 +833,11 @@ async function beginEdit(target, point) {
   } else if (target.kind === 'title') {
     const slide = slideByAnchor(target.anchor);
     const full = slide && (await fetchSlide(slide.id));
-    if (!full?.title) return false;
-    s = { ...target, slide: full.id, source: full.title, hash: full.title_hash,
-      reg: { mode: 'inline', prefix: '', inner: full.title, suffix: '' }, hints: {} };
+    if (!full) return false;
+    // an untitled slide starts from an empty title (its placeholder is the canvas's only)
+    const title = full.title ?? '';
+    s = { ...target, slide: full.id, source: title, hash: full.title_hash ?? undefined,
+      reg: { mode: 'inline', prefix: '', inner: title, suffix: '' }, hints: {} };
   } else {
     const value = (await fetchMeta())[target.key];
     if (typeof value !== 'string') return false;
@@ -895,7 +854,6 @@ async function beginEdit(target, point) {
 
 /** Common start of a typing or source session. */
 function openSession(s) {
-  hidePeek();
   hoverbar.hidden = true;
   emptyadd.hidden = true;
   state.session = s;
@@ -927,6 +885,19 @@ function beginSession(s, point) {
   on('paste', (e) => {
     e.preventDefault(); // plain text only (formatting from other apps is dropped)
     doc.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+  });
+  // text dragged in from elsewhere comes in as plain text where it was dropped, like a
+  // paste (the browser would insert its markup, which markdown here can't hold)
+  on('drop', (e) => {
+    if (e.dataTransfer?.types.includes('Files')) return; // an image file: the canvas's drop
+    e.preventDefault();
+    e.stopPropagation();
+    const text = e.dataTransfer?.getData('text/plain');
+    const at = doc.caretRangeFromPoint?.(e.clientX, e.clientY);
+    if (!text || !at || !s.root.contains(at.startContainer)) return;
+    doc.getSelection().removeAllRanges();
+    doc.getSelection().addRange(at);
+    doc.execCommand('insertText', false, text);
   });
   on('input', () => { s.failed = false; placeToolbar(frame); });
   showToolbar(s, frame);
@@ -965,10 +936,17 @@ function inList(s) {
   return !!(n && (n.nodeType === 1 ? n : n.parentElement)?.closest('li'));
 }
 
+/** What the serializer refused (`IMG with attributes`, `span`…), in words. */
+function cantWrite(why = '') {
+  const tag = why.split(' ')[0];
+  const names = { IMG: 'an image', TABLE: 'a table', SVG: 'a drawing', IFRAME: 'an embedded page', VIDEO: 'a video', span: 'styling', div: 'a block', FONT: 'a font' };
+  return names[tag] || (/^[A-Z][A-Z0-9]*$/.test(tag) ? `a <${tag.toLowerCase()}> element` : 'formatting');
+}
+
 /** Markdown the session would write, or null if the edit can't be expressed. */
 function draftSource(s) {
   let S1;
-  try { S1 = reserialize(s.root, s.reg, s.hints); } catch { return null; }
+  try { S1 = reserialize(s.root, s.reg, s.hints); } catch (e) { s.why = e.message; return null; }
   let inner = splice(s.reg.inner, s.S0, S1, s.pos);
   let { prefix, suffix } = s.reg;
   if (s.align) {
@@ -991,7 +969,7 @@ async function saveSession() {
   const md = draftSource(s);
   if (md === null) {
     s.failed = true;
-    say('This formatting can’t be written as markdown here — undo it (⌘Z) or press Esc again to discard the edit', true);
+    say(`Part of this edit (${cantWrite(s.why)}) has no markdown form here. ⌘Z undoes it; Esc again discards the whole edit.`, true);
     return;
   }
   if (md === s.source) { endSession(s, false); return; }
@@ -1007,6 +985,7 @@ async function saveSession() {
     s.root.focus();
     return;
   }
+  savedNote(s.root);
   endSession(s, true);
   await fetchDeck();
 }
@@ -1035,6 +1014,15 @@ function endSession(s, saved, { keepPending = false } = {}) {
 }
 
 // ---------- source editing in place (spec 003 US2) ----------
+
+/** "Saved" beside an element for a moment after its edit lands (spec 008 US9). */
+function savedNote(el) {
+  const p = pageRect(el);
+  const n = document.body.appendChild(Object.assign(document.createElement('div'), { className: 'saved-note', textContent: 'Saved', role: 'status' }));
+  n.style.left = Math.max(4, Math.min(p.right + 6, innerWidth - n.offsetWidth - 4)) + 'px';
+  n.style.top = p.top + 'px';
+  setTimeout(() => n.remove(), 1500);
+}
 
 function pageRect(el) {
   const f = frame.getBoundingClientRect();
@@ -1143,6 +1131,7 @@ async function saveSource(s) {
     sourceError(op.lastError?.message || 'not saved');
     return;
   }
+  savedNote(s.root);
   endSession(s, true);
   await fetchDeck();
 }
@@ -1179,14 +1168,17 @@ const actions = makeActions({
   runCells: run.runCells,
   op: async (name, args) => {
     if (name === 'rm') {
+      const many = slideList.selected(args.slide); // the picked slides, if this is one (spec 008 US9)
+      if (many.length > 1) args = { ...args, slide: many };
       const slides = state.deck?.slides || [];
-      const i = slides.findIndex((x) => x.id === args.slide);
-      const near = slides[i - 1] || slides[i + 1];
+      const i = slides.findIndex((x) => x.id === many[0]);
+      const near = [...slides.slice(0, i).reverse(), ...slides.slice(i + 1)].find((x) => !many.includes(x.id));
       if (near) state.goAfterRender = near.anchor;
     }
     const r = await op(name, args);
     if (!r) return null;
     if (name === 'add' || name === 'dup') state.goAfterRender = r.target;
+    if (name === 'dup') copiedFrom.set(r.target, slideById(args.slide)?.anchor);
     if (name.startsWith('block') && name !== 'block rm' && r.target?.includes('/')) state.sel = r.target;
     if (name === 'block rm' || name === 'rm') state.sel = null;
     await fetchDeck();
@@ -1240,8 +1232,8 @@ elbar.id = 'elbar';
 elbar.setAttribute('role', 'toolbar');
 elbar.setAttribute('aria-label', 'Element');
 elbar.hidden = true;
-for (const [id, label, title] of [['run', '▶ Run', 'Run this code cell'], ['edit', 'Edit', 'Edit text (Enter)'], ['source', 'Source', 'Edit source (⌥Enter)'],
-  ['fragment', 'On click', 'Appears on click'], ['delete', 'Delete', 'Delete (⌫)'], ['more', '⋯', 'More (right-click, ⇧F10)']]) {
+for (const [id, label, title] of [['run', '▶ Run', 'Run this code cell'], ['edit', 'Edit', 'Edit text (Enter)'], ['source', 'Markdown', 'Edit markdown (⌥Enter)'],
+  ['fragment', 'Appears on click', 'Appears on click (a fragment)'], ['delete', 'Delete', 'Delete (⌫)'], ['more', '⋯', 'More (right-click, ⇧F10)']]) {
   const b = Object.assign(document.createElement('button'), { type: 'button', textContent: label, title });
   b.dataset.act = id;
   b.setAttribute('aria-label', title);
@@ -1262,10 +1254,8 @@ async function placeElbar() {
   const t = await elementTarget(state.sel);
   $('[data-act=run]', elbar).hidden = t?.block.kind !== 'cell';
   $('[data-act=fragment]', elbar).setAttribute('aria-pressed', String(!!t?.block.attrs?.classes?.includes('fragment')));
-  const p = pageRect(el);
   elbar.hidden = false;
-  elbar.style.left = Math.max(4, Math.min(p.left, innerWidth - elbar.offsetWidth - 4)) + 'px';
-  elbar.style.top = Math.max(frame.getBoundingClientRect().top + 2, p.top - elbar.offsetHeight - 10) + 'px';
+  placeNear(elbar, el, frame);
 }
 
 // the preview resized (source pane, panels, window): follow the element, or the bar
@@ -1276,21 +1266,21 @@ new ResizeObserver(() => requestAnimationFrame(() => requestAnimationFrame(place
 const slidebar = $('#slidebar');
 async function renderSlidebar() {
   const cur = slideByAnchor(state.anchor);
-  slidebar.hidden = !cur;
+  // the title slide has no slide properties: the bar keeps its row (the canvas
+  // doesn't jump, spec 008 US2) but shows nothing and can't be reached (hidden)
+  slidebar.style.visibility = cur ? '' : 'hidden';
   if (!cur) return;
   const full = await fetchSlide(cur.id);
   const kv = full?.attrs?.kv || {};
-  slidebar.bg.value = /^#[0-9a-f]{6}$/i.test(kv['background-color'] || '') ? kv['background-color'] : '#ffffff';
+  $('[data-act=bg] .chip', slidebar).style.background = kv['background-color'] || '';
   slidebar.querySelector('[name=transition]').value = kv.transition || '';
   slidebar.querySelector('[name=hidden]').checked = kv.visibility === 'hidden';
   placeEmptyadd();
 }
-slidebar.bg = slidebar.querySelector('[name=bg]');
 const setSlideAttr = (key, value) => {
   const cur = slideByAnchor(state.anchor);
   if (cur) actions.setAttr({ slideId: cur.id }, key, value);
 };
-slidebar.bg.addEventListener('change', () => setSlideAttr('background-color', slidebar.bg.value));
 slidebar.querySelector('[name=transition]').addEventListener('change', (e) => setSlideAttr('transition', e.target.value));
 slidebar.querySelector('[name=hidden]').addEventListener('change', (e) => setSlideAttr('visibility', e.target.checked ? 'hidden' : null));
 slidebar.addEventListener('click', async (e) => {
@@ -1298,7 +1288,7 @@ slidebar.addEventListener('click', async (e) => {
   const cur = slideByAnchor(state.anchor);
   if (!act || !cur) return;
   const t = await slideTarget(cur.id);
-  if (act === 'bg-clear') setSlideAttr('background-color', null);
+  if (act === 'bg') actions.run('slide-bg', t, 'slide');
   else if (act === 'bg-image') actions.run('slide-bgimg', t, 'slide');
   else if (act === 'more') { const r = e.target.getBoundingClientRect(); openMenu(actions.slide(t), r.left, r.bottom + 4); }
 });
@@ -1306,18 +1296,16 @@ slidebar.addEventListener('click', async (e) => {
 // layout: source pane (which side, open, width, full width) and the old form panel,
 // remembered in the person's settings (spec 007), so the same in every deck and in VS Code
 const mainEl = document.querySelector('main');
-const toggleSource = $('#toggle-source');
 const srcpane = $('#srcpane');
-/** Toggle a layout class on <main> and its button's aria-pressed; remember it unless applying settings. */
-function layout(cls, key, on, btn, remember = true) {
+/** Toggle a layout class on <main>; remember it unless applying settings. */
+function layout(cls, key, on, remember = true) {
   mainEl.classList.toggle(cls, on);
-  btn?.setAttribute('aria-pressed', String(on));
   if (remember && settings.get(key) !== on) settings.set({ [key]: on });
 }
 const setPanel = (on) => layout('panel-open', 'ui.form_panel', on);
-const setFull = (on) => layout('source-full', 'ui.source_full', on, $('[data-act=full]', srcpane));
+const setFull = (on) => { $('[data-act=full]', srcpane).setAttribute('aria-pressed', String(on)); layout('source-full', 'ui.source_full', on); };
 function setSource(open, remember) {
-  layout('source-open', 'ui.source_was_open', open, toggleSource, remember);
+  layout('source-open', 'ui.source_was_open', open, remember);
   srcpane.hidden = !open;
   if (open) pane.load();
 }
@@ -1363,7 +1351,6 @@ await settings.ready((n) => say(n, true)).catch(() => say('settings could not be
   setFull(v('ui.source_full'));
   setSource(v('source.open') === 'open' || (v('source.open') === 'last' && v('ui.source_was_open')), false);
 }
-toggleSource.addEventListener('click', () => setSource(srcpane.hidden));
 $('[data-act=form]', srcpane).addEventListener('click', () => setPanel(!mainEl.classList.contains('panel-open')));
 $('[data-act=full]', srcpane).addEventListener('click', () => setFull(!mainEl.classList.contains('source-full')));
 
@@ -1463,7 +1450,10 @@ function hoverAt(node) {
   hovered = el;
   const p = pageRect(el);
   hoverbar.hidden = false;
-  hoverbar.style.left = Math.max(2, p.left - hoverbar.offsetWidth - 6) + 'px';
+  const left = p.left - hoverbar.offsetWidth - 6;
+  // no room beside it (a narrow window): no bar over the text; the right-click menu has both
+  if (left < 2) { hoverbar.hidden = true; return; }
+  hoverbar.style.left = left + 'px';
   hoverbar.style.top = p.top + 'px';
 }
 frame.addEventListener('mouseleave', (e) => { if (!hoverbar.contains(e.relatedTarget)) hoverbar.hidden = true; });
@@ -1530,14 +1520,30 @@ function placeEmptyadd() {
   emptyadd.style.top = f.top + f.height / 2 + 'px';
 }
 
+/** Copy a dropped image file beside the deck, then insert it before or after `on` (the half it fell on). */
+async function dropImage(file, on, y) {
+  const slide = slideByAnchor(state.anchor);
+  if (!slide) return say('Images go on a content slide, not the title slide', true);
+  const res = await fetch(`/api/images?name=${encodeURIComponent(file.name)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream', 'X-QD-Token': run.token },
+    body: file,
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) return say(`${file.name}: ${body.error?.message || res.statusText}`, true);
+  const r = on?.getBoundingClientRect();
+  const where = on ? { [y > r.top + r.height / 2 ? 'after' : 'before']: on.dataset.qd } : { end: true };
+  await insertBlock(slide.id, where, { md: `![](${body.path})` });
+}
+
 /** Insert a new element of `kind` on a slide; it opens for editing once rendered. */
 async function insertBlock(slideId, where, kind) {
   if (kind.box) return newBox({ id: slideId }, { text: 'Text' });
   let md = kind.md;
   if (kind.image) {
-    const path = prompt('Image path (relative to the deck) or URL');
-    if (!path?.trim()) return;
-    md = `![](${path.trim()})`;
+    const v = await ask({ title: 'Image', fields: [{ name: 'src', kind: 'files', label: 'Path (beside the deck) or URL', validate: (x) => (x ? '' : 'Choose an image or type its path') }] });
+    if (!v) return;
+    md = `![](${v.src})`;
   }
   const r = await op('block add', { slide: slideId, ...where, md });
   if (!r) return;
@@ -1622,12 +1628,13 @@ async function pasteAfter(t) {
 }
 
 /** Copy a whole slide's markdown (it pastes into this or another deck with fresh ids). */
-function copySlide(t) {
-  const text = t.full?.source;
+async function copySlide(t) {
+  const ids = slideList.selected(t.slideId); // the picked slides, if this is one
+  const text = ids.length > 1 ? (await Promise.all(ids.map(fetchSlide))).map((s) => s?.source?.trimEnd()).join('\n\n') + '\n' : t.full?.source;
   if (!text) return;
   state.clip = text;
   navigator.clipboard.writeText(text).catch(() => {});
-  say('Slide copied');
+  say(ids.length > 1 ? `${ids.length} slides copied` : 'Slide copied');
 }
 
 /** Slides (markdown starting with a slide heading or ---) go in after `t`; other text becomes a paragraph on it. */
@@ -1672,6 +1679,13 @@ keys.on('render', { enabled: () => !busy.render, run: renderDeck });
 keys.on('export', { enabled: () => !busy.export, run: () => exportDeck(false) });
 keys.on('export-pdf', { enabled: () => !busy.export, run: () => exportDeck(true) });
 keys.on('preview', () => window.open('/present/', '_blank', 'noopener'));
+keys.on('present', () => present(false));
+keys.on('present-start', () => present(true));
+$('#present').addEventListener('click', () => keys.run('present'));
+$('#present-more').addEventListener('click', (e) => {
+  const r = e.currentTarget.getBoundingClientRect();
+  openMenu(['present', 'present-start', 'preview'].map((id) => ({ label: keys.action(id).label, shortcut: keys.shortcut(id), run: () => keys.run(id) })), r.left, r.bottom + 2);
+});
 keys.on('undo', () => undoRedo('undo'));
 keys.on('redo', () => undoRedo('redo'));
 // element and slide actions: the right-click menus' own (actions.js), on what is selected / shown
@@ -1718,6 +1732,6 @@ const toggle = (cls, set) => ({ checked: () => mainEl.classList.contains(cls), r
 keys.on('toggle-source', { checked: () => !srcpane.hidden, run: () => setSource(srcpane.hidden) });
 keys.on('source-full', toggle('source-full', setFull));
 keys.on('form-panel', toggle('panel-open', setPanel));
-keys.on('about', () => alert('quartz-deck — a slide editor for Quarto reveal.js decks. Personal use only (see LICENSE).'));
+keys.on('about', () => ask({ title: 'About quartz-deck', message: 'A slide editor for Quarto reveal.js decks. Alpha software, not licensed for use by others (see LICENSE).', cancel: null }));
 keys.on('settings', settings.open);
 

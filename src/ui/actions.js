@@ -4,6 +4,7 @@
 
 import * as keys from '/ui/keys.js';
 import * as settings from '/ui/settings.js';
+import { ask, confirmSheet } from '/ui/sheet.js';
 
 export const TRANSITIONS = ['none', 'fade', 'slide', 'convex', 'concave', 'zoom'];
 
@@ -14,6 +15,13 @@ export const INSERTS = [
   { id: 'equation', label: 'Equation', md: '$$\nx = 1\n$$', edit: 'source' },
   { id: 'image', label: 'Image…', image: true },
   { id: 'textbox', label: 'Text box', box: true },
+  // spec 008 US7: the rest a talk needs, each its markdown
+  { id: 'code', label: 'Code cell', md: '```{python}\n1 + 1\n```' },
+  { id: 'callout', label: 'Callout', md: '::: {.callout-note}\nA note.\n:::' },
+  { id: 'columns', label: 'Columns', md: ':::: {.columns}\n::: {.column width="50%"}\nLeft\n:::\n\n::: {.column width="50%"}\nRight\n:::\n::::' },
+  { id: 'notes', label: 'Speaker notes', md: '::: notes\nSay this.\n:::' },
+  { id: 'table', label: 'Table', md: '| A | B |\n|---|---|\n| 1 | 2 |' },
+  { id: 'quote', label: 'Quote', md: '> A quote.' },
 ];
 
 /**
@@ -29,12 +37,15 @@ export function makeActions(api) {
   const classes = [
     { id: 'class-smaller', label: 'Smaller text', checked: (t) => classesOf(t).includes('smaller'), run: (t) => toggleClass(t, 'smaller') },
     { id: 'class-incremental', label: 'Incremental list', checked: (t) => classesOf(t).includes('incremental'), run: (t) => toggleClass(t, 'incremental') },
-    { id: 'class-custom', label: 'Custom class…', run: (t) => { const c = prompt('Class to add or remove (without the dot)'); if (c?.trim()) toggleClass(t, c.trim().replace(/^\./, '')); } },
+    { id: 'class-custom', label: 'Custom class…', run: async (t) => {
+      const v = await ask({ title: 'Custom class', fields: [{ name: 'c', kind: 'text', label: 'Class to add or remove', placeholder: 'e.g. smaller', validate: (x) => (/^\.?[A-Za-z_][\w-]*$/.test(x) ? '' : 'Letters, digits, - and _ (no spaces)') }] });
+      if (v) toggleClass(t, v.c.replace(/^\./, ''));
+    } },
   ];
   const element = [
     { id: 'run', label: 'Run cell', visible: (t) => t.block.kind === 'cell', run: (t) => api.runCells([t.ref]) },
     { id: 'edit', label: 'Edit text', run: (t) => api.beginEditRef(t) },
-    { id: 'source', label: 'Edit source', run: (t) => api.beginSourceEl(t) },
+    { id: 'source', label: 'Edit markdown', run: (t) => api.beginSourceEl(t) },
     '-',
     { id: 'cut', label: 'Cut', run: async (t) => { await api.copy(t); return api.op('block rm', { element: t.ref }); } },
     { id: 'copy', label: 'Copy', run: (t) => api.copy(t) },
@@ -54,17 +65,23 @@ export function makeActions(api) {
   const kv = (t) => t.full?.attrs?.kv || {};
   const setAttr = (t, key, value) => api.op('set', value ? { slide: t.slideId, attr: [`${key}=${value}`] } : { slide: t.slideId, unset: [key] });
   const slide = [
-    { id: 'slide-before', label: 'Add slide before', run: (t) => api.op('add', { title: 'New slide', before: t.slideId }) },
-    { id: 'slide-after', label: 'Add slide after', run: (t) => api.op('add', { title: 'New slide', after: t.slideId }) },
+    { id: 'slide-before', label: 'Add slide before', run: (t) => api.op('add', { before: t.slideId }) },
+    { id: 'slide-after', label: 'Add slide after', run: (t) => api.op('add', { after: t.slideId }) },
     { id: 'slide-dup', label: 'Duplicate slide', run: (t) => api.op('dup', { slide: t.slideId }) },
-    { id: 'slide-cut', label: 'Cut slide', run: (t) => (api.copySlide(t), api.op('rm', { slide: t.slideId })) },
+    { id: 'slide-cut', label: 'Cut slide', run: async (t) => { await api.copySlide(t); return api.op('rm', { slide: t.slideId }); } },
     { id: 'slide-copy', label: 'Copy slide', run: (t) => api.copySlide(t) },
     { id: 'slide-paste', label: 'Paste slides after', run: (t) => api.pasteSlides(t) },
     { id: 'slide-hide', label: 'Hidden in the presentation', checked: (t) => kv(t).visibility === 'hidden', run: (t) => setAttr(t, 'visibility', kv(t).visibility === 'hidden' ? null : 'hidden') },
-    { id: 'slide-rm', label: 'Delete slide…', run: (t) => (!settings.get('confirm.slide_delete') || confirm(`Delete slide "${t.title || t.slideId}"? (Undo can restore it.)`)) && api.op('rm', { slide: t.slideId }) },
+    { id: 'slide-rm', label: 'Delete slide…', run: async (t) => (!settings.get('confirm.slide_delete') || await confirmSheet('Delete slide?', `"${t.title || t.slideId}" will be deleted. Undo brings it back.`, 'Delete')) && api.op('rm', { slide: t.slideId }) },
     '-',
-    { id: 'slide-bg', label: 'Background colour…', run: (t) => { const v = prompt('Background colour (e.g. #fdf6e3; empty removes it)', kv(t)['background-color'] || ''); if (v !== null) setAttr(t, 'background-color', v.trim()); } },
-    { id: 'slide-bgimg', label: 'Background image…', run: (t) => { const v = prompt('Background image path or URL (empty removes it)', kv(t)['background-image'] || ''); if (v !== null) setAttr(t, 'background-image', v.trim()); } },
+    { id: 'slide-bg', label: 'Background colour…', run: async (t) => {
+      const v = await ask({ title: 'Background colour', fields: [{ name: 'c', kind: 'swatches', label: 'Colour', value: kv(t)['background-color'] || '' }] });
+      if (v) setAttr(t, 'background-color', v.c);
+    } },
+    { id: 'slide-bgimg', label: 'Background image…', run: async (t) => {
+      const v = await ask({ title: 'Background image', fields: [{ name: 'src', kind: 'files', label: 'Path or URL (empty removes it)', value: kv(t)['background-image'] || '' }] });
+      if (v) setAttr(t, 'background-image', v.src);
+    } },
     {
       id: 'slide-transition', label: 'Transition', items: (t) => [
         { label: 'Default', checked: !kv(t).transition, run: () => setAttr(t, 'transition', null) },

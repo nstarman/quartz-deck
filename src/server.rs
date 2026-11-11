@@ -9,7 +9,7 @@ use crate::kernel::{Session as Kernel, cell_code};
 use crate::outputs::Outputs;
 use crate::render::{preview_copy, render};
 use crate::store::Store;
-use axum::extract::{Path as UrlPath, Query, State};
+use axum::extract::{DefaultBodyLimit, Path as UrlPath, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Redirect, Response};
@@ -44,7 +44,9 @@ const UI_MODULES: &[(&str, &str)] = &[
     ("focus.js", include_str!("ui/focus.js")),
     ("keys.js", include_str!("ui/keys.js")),
     ("menubar.js", include_str!("ui/menubar.js")),
+    ("list.js", include_str!("ui/list.js")),
     ("settings.js", include_str!("ui/settings.js")),
+    ("sheet.js", include_str!("ui/sheet.js")),
     ("action-list.js", ACTION_LIST_JS),
 ];
 
@@ -203,7 +205,13 @@ async fn api_source(State(app): State<Shared>) -> Response {
 
 async fn api_deck(State(app): State<Shared>) -> Response {
     match app.store.read() {
-        Ok(d) => Json(slides_json(&d)).into_response(),
+        Ok(d) => {
+            // the editor's top bar and tab title (spec 008 US6)
+            let mut v = slides_json(&d);
+            v["title"] = json!(d.meta.get("title").and_then(|t| t.as_str()));
+            v["file"] = json!(app.store.path.file_name().map(|f| f.to_string_lossy()));
+            Json(v).into_response()
+        }
         Err(e) => err_response(e),
     }
 }
@@ -495,6 +503,30 @@ async fn blocking(f: impl FnOnce() -> Result<Value> + Send + 'static) -> Respons
         Ok(Err(e)) => err_response(e),
         Err(e) => err_response(QdError::Io(std::io::Error::other(e))),
     }
+}
+
+/// `GET /api/images`: the images beside the deck (spec 008 US5).
+async fn api_images(State(app): State<Shared>) -> Response {
+    let dir = app.dir();
+    blocking(move || crate::images::list(&dir)).await
+}
+
+/// `POST /api/images?name=<file name>` (token): the body's bytes as a new file
+/// under `images/` (checked type and bytes, a free name). The JSON writes' CORS
+/// defence holds here too: neither octet-stream nor the token header can be sent
+/// cross-origin without a preflight, which qd never grants.
+async fn api_image_add(
+    State(app): State<Shared>,
+    Query(q): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    if !authorized(&app, &headers) {
+        return forbidden();
+    }
+    let dir = app.dir();
+    let name = q.get("name").cloned().unwrap_or_default();
+    blocking(move || crate::images::add(&dir, &name, &body).map(|p| json!({ "path": p }))).await
 }
 
 /// `POST /api/shutdown` (token): stop serving, as Ctrl-C does (`qd stop`).
@@ -979,6 +1011,8 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             },
             store,
         });
+        // an image upload: the images module refuses over 20 MB itself
+        let limit = DefaultBodyLimit::max(crate::images::MAX_BYTES + 1);
         let router = Router::new()
             .route("/", get(index))
             .route("/editor.js", get(editor_js))
@@ -1004,6 +1038,10 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             .route("/api/buffer", post(api_buffer))
             .route("/api/buffer/close", post(api_buffer_close))
             .route("/api/settings", get(api_settings).post(api_settings_set))
+            .route(
+                "/api/images",
+                get(api_images).post(api_image_add).layer(limit),
+            )
             .nest_service(
                 "/preview",
                 ServeDir::new(&out).fallback(ServeDir::new(&deck_dir)),

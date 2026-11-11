@@ -62,6 +62,17 @@ fn quarto_cmd(dir: &Path, text: &str, args: &[&OsStr]) -> Result<(Command, bool)
     Ok((cmd, wrapped))
 }
 
+/// One Quarto run at a time: runs in the same folder share its `.quarto/`
+/// session files, and one deletes what another is writing (the live preview's
+/// render and File ▸ Render or Export at once failed with "writefile …
+/// project-cache"). ponytail: one lock for this process; a `qd render` from
+/// another process can still overlap, add a lock file in `.quarto/` if that bites.
+fn run_quarto(cmd: &mut Command) -> std::io::Result<std::process::Output> {
+    static ONE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
+    cmd.output()
+}
+
 /// A failed Quarto run: `E_LOCK_STALE` if the environment refused a stale lock.
 fn failed(log: &str, wrapped: bool, name: &str) -> QdError {
     if wrapped && crate::env::is_stale(log) {
@@ -292,7 +303,7 @@ pub fn render(
     let (mut quarto, wrapped) = quarto_cmd(dir, if preview { "" } else { text }, &args)?;
     std::fs::create_dir_all(out_dir)?;
     std::fs::write(&copy, text)?;
-    let out = quarto.output();
+    let out = run_quarto(&mut quarto);
     let _ = std::fs::remove_file(&copy);
     let out = out?;
     if !out.status.success() {
@@ -328,7 +339,7 @@ pub fn render_deck(deck_path: &Path, to: Option<&str>) -> Result<(PathBuf, Strin
     }
     let text = std::fs::read_to_string(deck_path)?;
     let (mut cmd, wrapped) = quarto_cmd(dir, &text, &args)?;
-    let out = cmd.output()?;
+    let out = run_quarto(&mut cmd)?;
     let log = log(&out);
     if !out.status.success() {
         return Err(failed(&log, wrapped, "\u{0}"));

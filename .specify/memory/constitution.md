@@ -96,7 +96,8 @@ Tracking table.
   editor, or a `qd run` command. The server's code-running endpoints MUST
   require the per-session token, which is never served to a page that did not
   come from the editor link.
-- License: proprietary, personal use only (`LICENSE`). Third-party
+- License: source-available, all rights reserved; published as alpha
+  software, not licensed for use by others (`LICENSE`). Third-party
   dependencies MUST have licenses compatible with private use and are listed
   in each plan.
 - Target platform: macOS first; nothing should preclude Linux.
@@ -125,4 +126,4 @@ with semantic versioning (MAJOR: principle removed or redefined; MINOR:
 principle or section added; PATCH: wording). Every plan and review verifies
 compliance.
 
-**Version**: 1.2.0 | **Ratified**: 2026-11-03 | **Last Amended**: 2026-11-04
+**Version**: 1.2.1 | **Ratified**: 2026-11-03 | **Last Amended**: 2026-11-06
