@@ -8,7 +8,7 @@ const BACKGROUNDS = ['#ffffff', '#fdf6e3', '#f4f6fb', '#eaf4ec', '#fff4e5', '#fd
 const previewUrl = (path) => '/preview/' + path.split('/').map(encodeURIComponent).join('/');
 
 /**
- * Ask: `fields` are `{name, label, kind: 'text'|'swatches'|'files', value,
+ * Ask: `fields` are `{name, label, kind: 'text'|'swatches'|'files'|'gallery', value,
  * validate?(value) → message, placeholder?}`; `anchor` is the element (or rect) it
  * opens beside. Resolves to `{name: value}` on OK, `null` otherwise.
  */
@@ -41,7 +41,7 @@ export function ask({ title, message = '', fields = [], ok = 'OK', cancel = 'Can
     d.style.left = Math.max(8, Math.min(r.left, innerWidth - d.offsetWidth - 8)) + 'px';
     d.style.top = Math.max(8, r.bottom + 4 + d.offsetHeight > innerHeight ? r.top - d.offsetHeight - 4 : r.bottom + 4) + 'px';
   }
-  (form.querySelector('input:not([type=color])') || okB).focus();
+  (form.querySelector('input[type=radio]:checked') || form.querySelector('input:not([type=color])') || okB).focus();
   // a task later: the dialog puts focus back where it was first, so a caller can then move it
   return new Promise((done) => d.addEventListener('close', () => setTimeout(() => {
     done(d.returnValue === 'ok' ? Object.fromEntries(Object.entries(values).map(([k, get]) => [k, get()])) : null);
@@ -55,6 +55,7 @@ export const confirmSheet = async (title, message, ok, anchor) => !!(await ask({
 function field(f, values, checks, submit) {
   const wrap = el('div', { className: `field is-${f.kind}` });
   const err = el('span', { className: 'error', role: 'alert' });
+  if (f.kind === 'gallery') return gallery(f, wrap, values, submit);
   if (f.kind === 'swatches') {
     let value = f.value ?? '';
     const group = el('div', { className: 'swatches', role: 'radiogroup', ariaLabel: f.label });
@@ -113,5 +114,44 @@ function field(f, values, checks, submit) {
     input.setAttribute('aria-invalid', String(touched && !!msg));
     return !!msg;
   });
+  return wrap;
+}
+
+const FROM = { deck: 'This deck’s', mine: 'Yours', 'built-in': 'Built in' };
+
+/**
+ * Layouts to pick from (spec 009): `f.options` as `qd layouts` lists them, `f.size`
+ * the deck's [width, height]. Each preview is drawn from the layout's own boxes;
+ * arrows move between them (radio buttons), Enter or a double click picks.
+ */
+function gallery(f, wrap, values, submit) {
+  const [w, h] = f.size;
+  const headed = f.options.some((x) => x.from !== 'built-in'); // headings only when there's more than the built-in ones
+  let from = null;
+  let grid = null;
+  for (const o of f.options) {
+    if (o.from !== from) {
+      from = o.from;
+      const name = FROM[from] || from;
+      grid = el('div', { className: 'gallery', role: 'radiogroup', ariaLabel: name });
+      if (headed) wrap.append(el('h3', { textContent: name }));
+      wrap.append(grid);
+    }
+    const label = el('label', { title: o.description });
+    label.dataset.layout = o.name;
+    const radio = el('input', { type: 'radio', name: f.name, value: o.name, checked: o.name === f.value });
+    const preview = el('span', { className: 'preview' });
+    preview.append(el('span', { className: 'bar' }));
+    for (const b of o.boxes) {
+      const box = el('span', { className: `box ${b.kind}` });
+      Object.assign(box.style, { left: `${(100 * b.left) / w}%`, top: `${(100 * b.top) / h}%`, width: `${(100 * b.width) / w}%`, height: `${(100 * b.height) / h}%` });
+      preview.append(box);
+    }
+    label.append(radio, preview, el('span', { className: 'name', textContent: o.name.replace(/-/g, ' ') }));
+    label.addEventListener('dblclick', submit);
+    grid.append(label);
+  }
+  if (!wrap.querySelector('input:checked')) wrap.querySelector('input').checked = true;
+  values[f.name] = () => wrap.querySelector('input:checked')?.value;
   return wrap;
 }
