@@ -24,7 +24,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 HERE = Path(__file__).parent
-SHOTS = HERE / os.environ.get("QD_SHOTS", "shots")  # the rerun after the fixes: QD_SHOTS=shots-after
+SHOTS = HERE / os.environ.get("QD_SHOTS", "shots")
 QD = sys.argv[1] if len(sys.argv) > 1 else str(HERE.parents[2] / "target/release/qd")
 READY = "() => { const f = document.querySelector('#preview'); return !!(f && f.contentWindow?.Reveal?.isReady?.() && document.querySelector('#slides li') && window.qdSession); }"
 
