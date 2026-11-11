@@ -269,5 +269,46 @@ export function gate(root, reg, hints) {
 
 /** Serialize the edited element again (same mode as the gate). */
 export function reserialize(root, reg, hints) {
-  return reg.mode === 'inline' ? serializeInline(root).trim() : serializeBlocks(root, hints);
+  const t = tidy(root);
+  return reg.mode === 'inline' ? serializeInline(t).trim() : serializeBlocks(t, hints);
+}
+
+/**
+ * A copy of `root` without what the browser's own editing adds and nobody chose
+ * (a joined line's computed font-size and rgb() colour, an indent's styled
+ * blockquote, <font>): what markdown can hold and someone chose is kept (a #hex
+ * colour from the colour menu, an em size, the text). The browser writes the
+ * colours it copies from styling as rgb(), never #hex, so those go. Markup that already serializes is left exactly as it is, so the source
+ * around an edit never changes.
+ */
+function tidy(root) {
+  const c = root.cloneNode(true);
+  for (const n of [...c.querySelectorAll('*')].reverse()) { // deepest first
+    if (n.tagName === 'FONT') {
+      const span = n.ownerDocument.createElement('span');
+      const col = n.getAttribute('color');
+      if (/^#[0-9a-f]{3,8}$/i.test(col || '')) span.setAttribute('style', `color:${col}`);
+      span.append(...n.childNodes);
+      n.replaceWith(span);
+      if (!span.attributes.length) span.replaceWith(...span.childNodes);
+      continue;
+    }
+    const style = n.getAttribute('style');
+    if (style !== null) {
+      const decls = style.split(';').map((d) => d.trim()).filter(Boolean);
+      if (n.tagName !== 'SPAN' || !decls.every((d) => SIZE_STYLE.test(d) || COLOR_STYLE.test(d))) {
+        const kept = n.tagName !== 'SPAN' ? [] : decls.flatMap((d) => {
+          const [k, ...v] = d.split(':');
+          const key = k.trim().toLowerCase();
+          const val = v.join(':').trim();
+          if (key === 'color') return /^#[0-9a-f]{3,8}$/i.test(val) ? [`color:${val}`] : [];
+          return key === 'font-size' && /^[\d.]+em$/.test(val) ? [`font-size:${val}`] : [];
+        });
+        if (kept.length) n.setAttribute('style', kept.join(';')); else n.removeAttribute('style');
+      }
+    }
+    if (n.getAttribute('class') === '') n.removeAttribute('class');
+    if (n.tagName === 'SPAN' && !n.attributes.length) n.replaceWith(...n.childNodes);
+  }
+  return c;
 }

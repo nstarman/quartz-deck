@@ -886,6 +886,19 @@ function beginSession(s, point) {
     e.preventDefault(); // plain text only (formatting from other apps is dropped)
     doc.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
   });
+  // text dragged in from elsewhere comes in as plain text where it was dropped, like a
+  // paste (the browser would insert its markup, which markdown here can't hold)
+  on('drop', (e) => {
+    if (e.dataTransfer?.types.includes('Files')) return; // an image file: the canvas's drop
+    e.preventDefault();
+    e.stopPropagation();
+    const text = e.dataTransfer?.getData('text/plain');
+    const at = doc.caretRangeFromPoint?.(e.clientX, e.clientY);
+    if (!text || !at || !s.root.contains(at.startContainer)) return;
+    doc.getSelection().removeAllRanges();
+    doc.getSelection().addRange(at);
+    doc.execCommand('insertText', false, text);
+  });
   on('input', () => { s.failed = false; placeToolbar(frame); });
   showToolbar(s, frame);
   say(s.reg.mode === 'inline' ? 'Editing — Enter, Esc or click elsewhere saves' : 'Editing — ⌘Enter, Tab, Esc or click elsewhere saves');
@@ -923,10 +936,17 @@ function inList(s) {
   return !!(n && (n.nodeType === 1 ? n : n.parentElement)?.closest('li'));
 }
 
+/** What the serializer refused (`IMG with attributes`, `span`…), in words. */
+function cantWrite(why = '') {
+  const tag = why.split(' ')[0];
+  const names = { IMG: 'an image', TABLE: 'a table', SVG: 'a drawing', IFRAME: 'an embedded page', VIDEO: 'a video', span: 'styling', div: 'a block', FONT: 'a font' };
+  return names[tag] || (/^[A-Z][A-Z0-9]*$/.test(tag) ? `a <${tag.toLowerCase()}> element` : 'formatting');
+}
+
 /** Markdown the session would write, or null if the edit can't be expressed. */
 function draftSource(s) {
   let S1;
-  try { S1 = reserialize(s.root, s.reg, s.hints); } catch { return null; }
+  try { S1 = reserialize(s.root, s.reg, s.hints); } catch (e) { s.why = e.message; return null; }
   let inner = splice(s.reg.inner, s.S0, S1, s.pos);
   let { prefix, suffix } = s.reg;
   if (s.align) {
@@ -949,7 +969,7 @@ async function saveSession() {
   const md = draftSource(s);
   if (md === null) {
     s.failed = true;
-    say('This formatting can’t be written as markdown here — undo it (⌘Z) or press Esc again to discard the edit', true);
+    say(`Part of this edit (${cantWrite(s.why)}) has no markdown form here. ⌘Z undoes it; Esc again discards the whole edit.`, true);
     return;
   }
   if (md === s.source) { endSession(s, false); return; }
