@@ -226,11 +226,11 @@ Paths are relative to the repo root.
 
 ## Phase 12: Polish & cross-cutting
 
-- [ ] T038 [P] Docs: the README (the slide list, Present, images and the image sheet, plain menu names); the skill (`qd images`, `qd image add`, several slides for `move`/`rm`); `vscode/README.md` (the one top bar); `specs/ROADMAP.md` 008 status.
-- [ ] T039 Rerun `uv run specs/008-usability/audit/shoot.py` (P1 and P2 states). In `audit/status.md`, mark each finding resolved, with the new screenshot and measurement as evidence, or say why not (SC-010).
-- [ ] T040 Run quickstart §1–§9 in the browser pane and record it in `specs/008-usability/checklists/quickstart-run.md`.
-- [ ] T041 Final constitution re-check in `plan.md`; fmt, clippy, `cargo test` (with `audit_measures` at 0 failures) and `node --test vscode/test/*.test.js` all green.
-- [ ] T042 Concision audit (`/pr-audit`), the last task before the PR is marked ready.
+- [X] T038 [P] Docs: the README (the slide list, Present, images and the image sheet, plain menu names); the skill (`qd images`, `qd image add`, several slides for `move`/`rm`); `vscode/README.md` (the one top bar); `specs/ROADMAP.md` 008 status.
+- [X] T039 Rerun `uv run specs/008-usability/audit/shoot.py` (P1 and P2 states). In `audit/status.md`, mark each finding resolved, with the new screenshot and measurement as evidence, or say why not (SC-010).
+- [X] T040 Run quickstart §1–§9 in the browser pane and record it in `specs/008-usability/checklists/quickstart-run.md`.
+- [X] T041 Final constitution re-check in `plan.md`; fmt, clippy, `cargo test` (with `audit_measures` at 0 failures) and `node --test vscode/test/*.test.js` all green.
+- [X] T042 Concision audit (`/pr-audit`), the last task before the PR is marked ready.
 
 ---
 

@@ -2495,8 +2495,19 @@ async fn slide_list_like_a_slide_app() {
             .as_str().unwrap().contains("Click to add title"),
         "the placeholder shows on the canvas"
     );
+    // clicking the placeholder types the title (the file gets it, not the placeholder)
+    ed.click_in_slide(&format!("#{new} > h2")).await;
+    ed.wait("window.qdSession()?.kind === 'title'").await;
+    ed.type_text("Added").await;
+    ed.key("Enter", "Enter", 13, 0).await;
+    ed.wait_file(
+        |f| f.contains(&format!("## Added {{#{new}}}")),
+        "title typed",
+    )
+    .await;
 
-    // Enter on a focused slide adds one after it
+    // Enter on a focused slide adds one after it (once the title's save has landed)
+    ed.settle().await;
     ed.eval("document.querySelector('#slides li[data-id=model] button').focus()")
         .await;
     ed.key("Enter", "Enter", 13, 0).await;
@@ -2678,6 +2689,19 @@ async fn present_from_here_and_from_start() {
     );
     ed.eval(leave).await;
     ed.wait(&editing).await;
+
+    // a host that never answers (an app's embedded browser), or refuses: the editor
+    // says what to do instead
+    for stub in [
+        "() => new Promise(() => {})",
+        "() => Promise.reject(new TypeError('denied'))",
+    ] {
+        ed.eval(&format!("document.querySelector('#notice').textContent = ''; Element.prototype.requestFullscreen = {stub}"))
+            .await;
+        ed.click_editor("#present").await;
+        ed.wait("document.querySelector('#notice').textContent.includes('Open in browser tab')")
+            .await;
+    }
 }
 
 /// T020 (spec 008 US5): the editor asks with its own sheets, never the browser's
@@ -3107,4 +3131,86 @@ async fn finishing_touches() {
         "{shown} === 's3' && document.querySelectorAll('#slides li').length === 5"
     ))
     .await;
+}
+
+/// What the browser's own editing adds (a line joined with Backspace leaves
+/// `<span style="font-size: 32px; color: rgb(…)">`, indenting outside a list a
+/// styled blockquote, old commands `<font>`) is tidied before saving, keeping what
+/// markdown can hold; what it truly can't hold is named in the message.
+#[tokio::test(flavor = "multi_thread")]
+async fn browser_markup_still_saves() {
+    let Some(ed) = Ed::open(P2).await else {
+        return;
+    };
+    let out = ed
+        .eval(
+            r##"(async () => {
+  const m = await import('/ui/inline.js');
+  const doc = document.querySelector('#preview').contentDocument;
+  const md = (html) => { const d = doc.createElement('div'); d.innerHTML = html; try { return m.reserialize(d, { mode: 'block' }, {}); } catch (e) { return 'refused: ' + e.message; } };
+  return [
+    md('<p>One <span style="font-size: 32px; color: rgb(192, 57, 43);">two</span> <span style="font-size: 32px; color:#c0392b">red</span></p>'),
+    md('<p>Plain <span style="font-size: 32px; line-height: 1.2">join</span></p>'),
+    md('<blockquote style="margin: 0 0 0 40px; border: none; padding: 0px;"><p>Quote</p></blockquote>'),
+    md('<p><font color="#1e8449">green</font></p>'),
+    md('<p><b style="font-weight: bold">b</b> <span style="font-size:1.2em">big</span></p>'),
+    md('<p>a<img src="x.png"></p>'),
+  ];
+})()"##,
+        )
+        .await;
+    assert_eq!(
+        out,
+        json!([
+            "One two [red]{style=\"color:#c0392b\"}",
+            "Plain join",
+            "> Quote",
+            "[green]{style=\"color:#1e8449\"}",
+            "**b** [big]{style=\"font-size:1.2em\"}",
+            "refused: IMG with attributes",
+        ])
+    );
+
+    // in a real edit: a joined line's styling doesn't stop the save
+    ed.go("a").await;
+    ed.click_in_slide("[data-qd=\"a/0\"] p").await;
+    ed.wait("window.qdSession() !== null").await;
+    ed.eval("document.querySelector('#preview').contentDocument.querySelector('.qd-editing p').insertAdjacentHTML('beforeend', '<span style=\"font-size: 40px; color: rgb(34, 34, 34)\"> joined</span>')").await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait_file(
+        |f| f.contains("First para. joined\n"),
+        "joined line saved, without the copied styling",
+    )
+    .await;
+
+    // text dragged in with its markup arrives as plain text
+    ed.settle().await;
+    ed.go("a").await;
+    ed.click_in_slide("[data-qd=\"a/0\"] p").await;
+    ed.wait("window.qdSession() !== null").await;
+    ed.eval(r#"(() => {
+  const p = document.querySelector('#preview').contentDocument.querySelector('.qd-editing p');
+  const r = p.getBoundingClientRect();
+  const dt = new DataTransfer();
+  dt.setData('text/html', '<b style="color: rgb(1, 2, 3)">dragged</b><img src="x.png">');
+  dt.setData('text/plain', 'dragged');
+  p.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.right - 2, clientY: r.top + r.height / 2 }));
+})()"#)
+        .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait_file(
+        |f| f.contains("dragged") && !f.contains("<img"),
+        "dragged text saved as text",
+    )
+    .await;
+
+    // what has no markdown form is named, with the ways out
+    ed.settle().await;
+    ed.go("a").await;
+    ed.click_in_slide("[data-qd=\"a/0\"] p").await;
+    ed.wait("window.qdSession() !== null").await;
+    ed.eval("document.querySelector('#preview').contentDocument.querySelector('.qd-editing p').insertAdjacentHTML('beforeend', '<img src=\"x.png\">')").await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("/an image/.test(document.querySelector('#notice').textContent) && /⌘Z/.test(document.querySelector('#notice').textContent)")
+        .await;
 }

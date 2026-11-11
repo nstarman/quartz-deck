@@ -106,6 +106,17 @@ editor.css, index.html), with small server and CLI additions.
 Post-design re-check: PASS. The one new write path (images) is recorded in
 research R9 with its security note.
 
+Final re-check (T041, 2026-11-07): PASS. Clean-room: our own design, Apple's
+guidelines as principles only. `.qmd` is truth: placeholders, thumbnails, status
+and "Saved" are editor-only. CLI first: `qd images`, `qd image add`, `qd move`/`qd rm`
+with several slides came before the editor used them. Live preview: thumbnails
+and Present use the canvas's own render. Safe edits: every change is one op
+through the version check (a multi-move or multi-delete is one patch). Test-first:
+each story's tests were written and seen failing first. Simplicity: no new
+dependency. Constraints: `POST /api/images` is token-guarded, type- and
+size-checked, writes only under `images/` and never overwrites
+([security checklist](checklists/security.md)).
+
 ## Project Structure
 
 ### Documentation (this feature)
