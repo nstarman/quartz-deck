@@ -998,6 +998,8 @@ const API_OPS: &[&str] = &[
     "block move",
     "block rm",
     "block dup",
+    "block place",
+    "block unplace",
     "block class",
     "slides",
     "show",

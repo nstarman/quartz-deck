@@ -191,6 +191,7 @@ const PREVIEW_CSS = `html:not(.qd-present) {
     box-shadow: inset 3px 0 0 rgba(42, 91, 215, .35); }
   section > h1:hover, section > h2:hover, section > h3:hover, #title-slide :is(.title, .subtitle, .date):hover {
     outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; cursor: text; }
+  .qd-off { outline: 2px dashed #b3261e; outline-offset: 2px; }
   .qd-overlay { position: absolute; box-sizing: border-box; border: 2px solid #2a5bd7; cursor: move;
     touch-action: none; z-index: 1000; }
   /* a 10 px square to see, a 24 px target to hit (spec 008 US7: at least 20) */
@@ -215,6 +216,68 @@ function highlight() {
     if (box) attachOverlay(box);
   }
   placeElbar();
+}
+
+// ---------- placing an element freely (spec 009 US2) ----------
+
+/** `block place` args for target `t`: where its element shows on the slide now, in slide px. */
+function placement(t) {
+  const s = frameWin().Reveal?.getScale?.() || 1;
+  const sec = t.el.closest('section').getBoundingClientRect();
+  const r = t.el.getBoundingClientRect();
+  // a block is as wide as the slide; the box is as wide as its text (a little more, so it doesn't rewrap)
+  let right = 0;
+  const doc = t.el.ownerDocument;
+  const walk = doc.createTreeWalker(t.el, NodeFilter.SHOW_TEXT);
+  const range = doc.createRange();
+  while (walk.nextNode()) {
+    if (!walk.currentNode.data.trim()) continue;
+    range.selectNodeContents(walk.currentNode);
+    right = Math.max(right, range.getBoundingClientRect().right);
+  }
+  const w = right ? Math.min(r.width, right - r.left + 8 * s) : r.width;
+  return { element: t.ref, at: `${Math.round((r.left - sec.left) / s)},${Math.round((r.top - sec.top) / s)}`, width: Math.round(w / s) };
+}
+
+/** ⌥-drag on an element in the flow: it follows the pointer, and the drop places it there. */
+let placeDragged = false; // the click ending the drag is not an ⌥-click (source)
+function placeDrag(e) {
+  const el = e.target.closest('[data-qd]');
+  if (!e.altKey || e.button !== 0 || !el || el.classList.contains('absolute') || state.session || presenting()) return;
+  e.preventDefault(); // no text selection
+  const doc = el.ownerDocument;
+  const s = frameWin().Reveal?.getScale?.() || 1;
+  const [x0, y0] = [e.clientX, e.clientY];
+  let moved = false;
+  const onMove = (ev) => {
+    const [dx, dy] = [ev.clientX - x0, ev.clientY - y0];
+    if (!moved && Math.hypot(dx, dy) < 4) return;
+    moved = true;
+    Object.assign(el.style, { transform: `translate(${dx / s}px, ${dy / s}px)`, opacity: '.6' });
+  };
+  const onUp = async () => {
+    doc.removeEventListener('pointermove', onMove);
+    doc.removeEventListener('pointerup', onUp);
+    if (!moved) return;
+    placeDragged = true;
+    setTimeout(() => { placeDragged = false; }, 300); // in case no click follows
+    const t = await elementTarget(el.dataset.qd);
+    const why = t && actions.why('place', t);
+    if (why) say(why, true);
+    if (!t || why || !(await actions.run('place', t))) Object.assign(el.style, { transform: '', opacity: '' });
+  };
+  doc.addEventListener('pointermove', onMove);
+  doc.addEventListener('pointerup', onUp);
+}
+
+/** A placed element outside the slide doesn't show when presenting: outline it. */
+function markOffSlide(w) {
+  const { width, height } = w.Reveal.getConfig();
+  for (const b of w.document.querySelectorAll('.absolute[data-qd]')) {
+    const off = b.offsetLeft < 0 || b.offsetTop < 0 || b.offsetLeft + b.offsetWidth > width || b.offsetTop + b.offsetHeight > height;
+    b.classList.toggle('qd-off', off);
+    b.title = off ? 'Outside the slide: it won’t show when presenting' : '';
+  }
 }
 
 // ---------- drag / resize positioned boxes (US4) ----------
@@ -335,6 +398,8 @@ function hookFrame() {
 
   doc.addEventListener('click', (e) => {
     if (presenting()) return;
+    if (placeDragged) { placeDragged = false; e.preventDefault(); e.stopPropagation(); return; }
+    if (e.target.closest('.qd-overlay')) return; // the end of a box drag keeps the box selected
     if (state.session) {
       if (state.session.root.contains(e.target)) return; // caret moves inside the edit
       saveSession(); // clicking elsewhere ends the edit
@@ -357,6 +422,7 @@ function hookFrame() {
       if (el.classList.contains('absolute')) select(el.dataset.qd); else beginSource(el);
     });
   }, true);
+  doc.addEventListener('pointerdown', placeDrag, true);
   doc.addEventListener('dblclick', (e) => {
     if (state.session || presenting()) return;
     const el = e.target.closest('[data-qd]') || doc.querySelector(`[data-qd="${CSS.escape(state.sel || '')}"]`);
@@ -422,6 +488,7 @@ function hookFrame() {
     // show other text at that ref, and the edit would not open
     if (state.editAfterRender?.version === state.loading) openInserted(state.editAfterRender);
     slideList.refresh();
+    markOffSlide(w);
     w.MathJax?.startup?.promise?.then(() => slideList.refresh()); // math typesets after ready
     onSlide();
   };
@@ -1208,11 +1275,13 @@ const actions = makeActions({
     if (name === 'dup') { state.goAfterRender = r.target; copiedFrom.set(r.target, slideById(args.slide)?.anchor); }
     if (name.startsWith('block') && name !== 'block rm' && r.target?.includes('/')) state.sel = r.target;
     if (name === 'block rm' || name === 'rm') state.sel = null;
+    if (name === 'block place') state.sel = args.element; // the box is where the element was
     await fetchDeck();
     await renderPanel();
     renderSlidebar();
     return r;
   },
+  placement,
   beginEditRef: (t) => t.el && beginEdit({ kind: 'block', root: t.el }, null).then((ok) => ok || beginSource(t.el)),
   beginSourceEl: (t) => t.el && beginSource(t.el),
   beginSlideSource: (t) => beginSlideSource(frame.contentDocument?.getElementById(t.anchor)),
@@ -1721,7 +1790,7 @@ $('#present-more').addEventListener('click', (e) => {
 keys.on('undo', () => undoRedo('undo'));
 keys.on('redo', () => undoRedo('redo'));
 // element and slide actions: the right-click menus' own (actions.js), on what is selected / shown
-const ELEMENT = ['edit', 'source', 'cut', 'copy', 'paste', 'dup', 'delete', 'up', 'down', 'fragment', 'class-smaller', 'class-incremental', 'class-custom'];
+const ELEMENT = ['edit', 'source', 'cut', 'copy', 'paste', 'dup', 'delete', 'up', 'down', 'fragment', 'class-smaller', 'class-incremental', 'class-custom', 'place', 'unplace'];
 const SLIDE = ['slide-before', 'slide-after', 'slide-dup', 'slide-cut', 'slide-copy', 'slide-paste', 'slide-hide', 'slide-rm', 'slide-bg', 'slide-bgimg', 'slide-notes', 'slide-source', 'slide-link'];
 for (const [ids, on, table] of [[ELEMENT, 'el', 'element'], [SLIDE, 'slide', 'slide']]) {
   for (const id of ids) {
@@ -1730,9 +1799,22 @@ for (const [ids, on, table] of [[ELEMENT, 'el', 'element'], [SLIDE, 'slide', 'sl
       // Paste reads the system clipboard on a key press; from a menu it needs our own copy
       enabled: (ctx) => !!ctx[on] && actions.can(id, ctx[on], table) && (!id.endsWith('paste') || !!ctx.e || !!state.clip),
       checked: (ctx) => ctx[on] && actions.checked(id, ctx[on], table),
+      why: (ctx) => ctx[on] && actions.why(id, ctx[on], table),
       run: (ctx) => actions.run(id, ctx[on], table),
     });
   }
+}
+// arrow keys nudge a placed element (spec 009 US2), ⇧ by 10; otherwise they stay reveal.js's
+const boxSelected = () => !!state.sel && !!elOf(state.sel)?.classList.contains('absolute');
+for (const [dir, dx, dy] of [['left', -1, 0], ['right', 1, 0], ['up', 0, -1], ['down', 0, 1]]) {
+  keys.on(`box-nudge-${dir}`, {
+    key: boxSelected,
+    enabled: (ctx) => ctx.el?.block.kind === 'box',
+    run: async (ctx) => {
+      const n = ctx.e?.shiftKey ? 10 : 1;
+      if (await op('box move', { box: ctx.el.ref, by: `${dx * n},${dy * n}` })) { await fetchDeck(); await renderPanel(); }
+    },
+  });
 }
 const inSlide = (e) => e.target.ownerDocument === frame.contentDocument && !!frameWin()?.Reveal?.getCurrentSlide()?.querySelector('[data-qd]');
 keys.on('next-element', { key: inSlide, enabled: (ctx) => !!ctx.slide, run: () => stepSelection(false) });

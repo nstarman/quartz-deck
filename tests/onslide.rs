@@ -3315,3 +3315,115 @@ async fn slide_from_a_layout() {
     )
     .await;
 }
+
+const PLACE: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## A {#a}\n\nFirst para.\n\n- x\n- y\n\n:::: {.columns}\n::: {.column}\nLeft\n:::\n::::\n";
+
+/// Spec 009 US2: ⌥-drag a list to place it where it falls; the handles resize it,
+/// the arrow keys nudge it (⇧ by 10), and "Put back in the flow" restores the
+/// file. A div can't be placed, and the menu says why.
+#[tokio::test(flavor = "multi_thread")]
+async fn place_freely() {
+    let Some(ed) = Ed::open(PLACE).await else {
+        return;
+    };
+    let before = ed.file();
+    ed.settle().await;
+    ed.go("a").await;
+    let list = "[data-qd=\"a/1\"]";
+    // where the list should land: its slide position now, plus the drag in slide px
+    let want = ed
+        .eval(&format!("(() => {{ const w = document.querySelector('#preview').contentWindow; const s = w.Reveal.getScale(); const el = w.document.querySelector('{list}'); const sec = el.closest('section').getBoundingClientRect(); const r = el.getBoundingClientRect(); return [(r.left - sec.left + 120) / s, (r.top - sec.top + 90) / s]; }})()"))
+        .await;
+    let from = ed.slide_at(list, "10").await;
+    let to = (from.0 + 120.0, from.1 + 90.0);
+    {
+        use DispatchMouseEventType::*;
+        let steps = [
+            (MousePressed, from),
+            (MouseMoved, (from.0 + 30.0, from.1 + 20.0)),
+            (MouseMoved, to),
+            (MouseReleased, to),
+        ];
+        for (t, (x, y)) in steps {
+            let up = matches!(t, MouseReleased);
+            ed.page
+                .execute(
+                    DispatchMouseEventParams::builder()
+                        .r#type(t)
+                        .x(x)
+                        .y(y)
+                        .button(MouseButton::Left)
+                        .buttons(if up { 0 } else { 1 })
+                        .click_count(1)
+                        .modifiers(1) // Alt
+                        .build()
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+        }
+    }
+    ed.wait_file(|f| f.contains("- x\n- y\n:::"), "list placed")
+        .await;
+    let num = |f: &str, k: &str| -> f64 {
+        let i = f.find(&format!(" {k}=")).unwrap() + k.len() + 2;
+        f[i..].split([' ', '}']).next().unwrap().parse().unwrap()
+    };
+    let f = ed.file();
+    assert!(
+        (num(&f, "left") - want[0].as_f64().unwrap()).abs() <= 2.0,
+        "{f} want {want}"
+    );
+    assert!(
+        (num(&f, "top") - want[1].as_f64().unwrap()).abs() <= 2.0,
+        "{f} want {want}"
+    );
+    assert!(!f.contains("height="), "text keeps its height: {f}");
+    assert!(f.contains("First para.\n\n:::"), "nothing else moved: {f}");
+
+    // the placed list is selected: a corner handle resizes it
+    ed.settle().await;
+    let handle = "(() => { const f = document.querySelector('#preview'); const h = f.contentDocument.querySelector('.qd-handle[data-dir=se]'); const a = f.getBoundingClientRect(); const r = h.getBoundingClientRect(); return [a.left + r.left + r.width / 2, a.top + r.top + r.height / 2]; })()";
+    ed.wait("!!document.querySelector('#preview').contentDocument.querySelector('.qd-handle[data-dir=se]')").await;
+    let h = ed.point(handle).await;
+    let w0 = num(&f, "width");
+    ed.press_and_move(h, (h.0 + 40.0, h.1 + 20.0)).await;
+    ed.mouse(
+        DispatchMouseEventType::MouseReleased,
+        (h.0 + 40.0, h.1 + 20.0),
+        false,
+    )
+    .await;
+    ed.wait_file(|f| f.contains("height="), "resized").await;
+    assert!(num(&ed.file(), "width") > w0);
+
+    // arrow keys nudge it by 1, ⇧ by 10
+    ed.settle().await;
+    let l0 = num(&ed.file(), "left");
+    ed.key("ArrowRight", "ArrowRight", 39, 0).await;
+    ed.wait_file(|f| num(f, "left") == l0 + 1.0, "nudged by 1")
+        .await;
+    ed.settle().await;
+    ed.key("ArrowDown", "ArrowDown", 40, 8).await; // ⇧
+    let t0 = num(&ed.file(), "top");
+    ed.wait_file(|f| num(f, "top") == t0 + 10.0, "nudged by 10")
+        .await;
+
+    // Arrange ▸ Put back in the flow: the file as it was
+    ed.settle().await;
+    ed.menu("Arrange", "Put back in the flow").await;
+    ed.wait_file(|f| f == before, "back in the flow").await;
+
+    // the columns can't be placed: greyed out, with the reason as its tooltip
+    ed.settle().await;
+    ed.right_click(ed.slide_point("[data-qd=\"a/2\"]").await)
+        .await;
+    assert!(
+        ed.menu_labels()
+            .await
+            .contains(&"Place freely (disabled)".to_string())
+    );
+    let why = ed.eval("[...document.querySelectorAll('#ctxmenu li')].find((li) => li.firstChild?.textContent === 'Place freely').title").await;
+    assert!(why.as_str().unwrap().contains("div"), "{why}");
+    ed.close_menu().await;
+}
