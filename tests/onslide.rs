@@ -3402,8 +3402,8 @@ async fn place_freely() {
     ed.wait_file(|f| num(f, "left") == l0 + 1.0, "nudged by 1")
         .await;
     ed.settle().await;
-    ed.key("ArrowDown", "ArrowDown", 40, 8).await; // ⇧
     let t0 = num(&ed.file(), "top");
+    ed.key("ArrowDown", "ArrowDown", 40, 8).await; // ⇧
     ed.wait_file(|f| num(f, "top") == t0 + 10.0, "nudged by 10")
         .await;
 
