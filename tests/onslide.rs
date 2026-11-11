@@ -2506,7 +2506,8 @@ async fn slide_list_like_a_slide_app() {
     )
     .await;
 
-    // Enter on a focused slide adds one after it
+    // Enter on a focused slide adds one after it (once the title's save has landed)
+    ed.settle().await;
     ed.eval("document.querySelector('#slides li[data-id=model] button').focus()")
         .await;
     ed.key("Enter", "Enter", 13, 0).await;
