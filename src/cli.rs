@@ -1405,7 +1405,8 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             ..
         } => {
             let store = ctx.store()?;
-            let l = crate::layouts::find(name, &deck_dir(&store), &crate::store::config_root())?;
+            let dir = store.path.parent().unwrap_or(Path::new("."));
+            let l = crate::layouts::find(name, dir, &crate::store::config_root())?;
             let mut found = Vec::new();
             let mut v = ctx.edit(|d| {
                 let (p, f) = ops::add_layout(d, &l, title.as_deref(), at(after, before))?;
@@ -1426,10 +1427,8 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
         Cmd::Layouts => {
             let store = ctx.store()?;
             let d = store.read()?;
-            let list = crate::layouts::list(&deck_dir(&store), &crate::store::config_root());
-            Ok(
-                json!({"layouts": list.iter().map(|l| l.json(d.width, d.height)).collect::<Vec<_>>()}),
-            )
+            let dir = store.path.parent().unwrap_or(Path::new("."));
+            Ok(crate::layouts::json_for(dir, d.width, d.height))
         }
         Cmd::Add {
             after,
@@ -1757,9 +1756,4 @@ pub fn main() -> i32 {
             e.exit_code()
         }
     }
-}
-
-/// The folder the deck is in.
-fn deck_dir(store: &Store) -> PathBuf {
-    store.path.parent().unwrap_or(Path::new(".")).to_path_buf()
 }

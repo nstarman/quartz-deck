@@ -892,9 +892,7 @@ function beginSession(s, point) {
   // an empty box (a layout's placeholder) gets a paragraph to type into: the
   // browser would put the text straight into the box, which isn't markdown
   if (s.kind === 'block' && !s.root.children.length && !s.root.textContent.trim()) {
-    s.root.textContent = '';
-    s.root.append(doc.createElement('p'));
-    s.root.firstChild.append(doc.createElement('br'));
+    s.root.innerHTML = '<p><br></p>';
     point = null;
   }
   doc.execCommand('styleWithCSS', false, false);
@@ -1195,7 +1193,7 @@ async function slideTarget(slideId) {
 
 const actions = makeActions({
   runCells: run.runCells,
-  addSlide: (where) => addSlide(where),
+  addSlide,
   op: async (name, args) => {
     if (name === 'rm') {
       const many = slideList.selected(args.slide); // the picked slides, if this is one (spec 008 US9)
@@ -1207,8 +1205,7 @@ const actions = makeActions({
     }
     const r = await op(name, args);
     if (!r) return null;
-    if (name === 'add' || name === 'dup') state.goAfterRender = r.target;
-    if (name === 'dup') copiedFrom.set(r.target, slideById(args.slide)?.anchor);
+    if (name === 'dup') { state.goAfterRender = r.target; copiedFrom.set(r.target, slideById(args.slide)?.anchor); }
     if (name.startsWith('block') && name !== 'block rm' && r.target?.includes('/')) state.sel = r.target;
     if (name === 'block rm' || name === 'rm') state.sel = null;
     await fetchDeck();

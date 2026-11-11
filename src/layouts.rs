@@ -61,9 +61,10 @@ impl Layout {
                 .and_then(|v| v.as_str())
                 .map(str::to_string)
         };
-        let name = field("name").filter(|n| valid_name(n));
         let bad = |why: &str| QdError::InvalidArg(format!("layout: {why}"));
-        let name = name.ok_or_else(|| bad("needs a name of a-z, 0-9 and -"))?;
+        let name = field("name")
+            .filter(|n| valid_name(n))
+            .ok_or_else(|| bad("needs a name of a-z, 0-9 and -"))?;
         if deck.slides.len() != 1 {
             return Err(bad(&format!("'{name}' must hold exactly one slide")));
         }
@@ -86,7 +87,8 @@ impl Layout {
                 if !a.has_class("qd-ph") {
                     return None;
                 }
-                let n = |k: &str| a.get(k).and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0);
+                let g = crate::ops::geom(a);
+                let n = |l: Option<crate::ops::Length>| l.and_then(|l| l.px()).unwrap_or(0.0);
                 let text = self.deck.slice(b.span);
                 let purpose = text
                     .split_once("<!--")
@@ -95,7 +97,7 @@ impl Layout {
                 Some(Placeholder {
                     kind: a.get("ph").unwrap_or("text").to_string(),
                     purpose: purpose.to_string(),
-                    rect: [n("left"), n("top"), n("width"), n("height")],
+                    rect: [n(g.left), n(g.top), n(g.width), n(g.height)],
                 })
             })
             .collect()
@@ -148,21 +150,23 @@ pub fn list(deck_dir: &Path, config: &Path) -> Vec<Layout> {
             .filter_map(|p| Layout::parse(&std::fs::read_to_string(p).ok()?, from).ok())
             .collect()
     };
-    let mut out: Vec<Layout> = Vec::new();
-    let all = read(deck_folder(deck_dir), "deck")
+    let mut seen = std::collections::HashSet::new();
+    read(deck_folder(deck_dir), "deck")
         .into_iter()
         .chain(read(my_folder(config), "mine"))
         .chain(
             BUILT_IN
                 .iter()
                 .map(|t| Layout::parse(t, "built-in").expect("built-in layout")),
-        );
-    for l in all {
-        if !out.iter().any(|o| o.name == l.name) {
-            out.push(l);
-        }
-    }
-    out
+        )
+        .filter(|l| seen.insert(l.name.clone()))
+        .collect()
+}
+
+/// `{"layouts": […]}` for `qd layouts` and `GET /api/layouts`, boxes scaled to `w`×`h`.
+pub fn json_for(deck_dir: &Path, w: u32, h: u32) -> Value {
+    let list = list(deck_dir, &crate::store::config_root());
+    json!({"layouts": list.iter().map(|l| l.json(w, h)).collect::<Vec<_>>()})
 }
 
 pub fn find(name: &str, deck_dir: &Path, config: &Path) -> Result<Layout> {

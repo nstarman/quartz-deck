@@ -508,10 +508,7 @@ async fn blocking(f: impl FnOnce() -> Result<Value> + Send + 'static) -> Respons
 /// `GET /api/layouts`: what `qd layouts` lists, boxes scaled to this deck (spec 009).
 async fn api_layouts(State(app): State<Shared>) -> Response {
     match app.store.read() {
-        Ok(d) => {
-            let list = crate::layouts::list(&app.dir(), &crate::store::config_root());
-            Json(json!({"layouts": list.iter().map(|l| l.json(d.width, d.height)).collect::<Vec<_>>()})).into_response()
-        }
+        Ok(d) => Json(crate::layouts::json_for(&app.dir(), d.width, d.height)).into_response(),
         Err(e) => err_response(e),
     }
 }

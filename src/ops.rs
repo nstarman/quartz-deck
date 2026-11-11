@@ -348,10 +348,14 @@ fn new_slide_text(ctx: &mut Ctx, spec: &SlideSpec, id: &str) -> Result<String> {
 // ---------- ops ----------
 
 pub fn add(d: &Deck, spec: &SlideSpec, pos: Pos) -> Result<Patch> {
-    let mut ctx = Ctx::new(d);
+    add_in(&mut Ctx::new(d), spec, pos)
+}
+
+/// `add` with `ctx`'s ids already taken (a layout's boxes).
+fn add_in(ctx: &mut Ctx, spec: &SlideSpec, pos: Pos) -> Result<Patch> {
     let at = ctx.insertion(pos)?;
     let id = ctx.slide_id(spec.title.as_deref());
-    let text = new_slide_text(&mut ctx, spec, &id)?;
+    let text = new_slide_text(ctx, spec, &id)?;
     let ins = ctx.place(at, &text);
     Ok(patch(
         "add",
@@ -376,8 +380,7 @@ pub fn add_layout(
     let mut ctx = Ctx::new(d);
     let nl = ctx.nl();
     let ph = l.placeholders();
-    let mut found = Vec::new();
-    let mut parts = Vec::new();
+    let (mut found, mut ids, mut parts) = (Vec::new(), Vec::new(), Vec::new());
     for b in &s.blocks {
         let marked = b
             .attrs
@@ -399,6 +402,7 @@ pub fn add_layout(
         }
         parts.push(format!("::: {}{nl}:::", a.render()));
         found.push(serde_json::json!({"index": parts.len() - 1, "id": id, "kind": p.kind, "purpose": p.purpose}));
+        ids.push(id);
     }
     let head = s.attrs.clone().unwrap_or_default();
     let spec = SlideSpec {
@@ -411,25 +415,9 @@ pub fn add_layout(
             .collect(),
         classes: head.classes().into_iter().map(str::to_string).collect(),
     };
-    let at = ctx.insertion(pos)?;
-    let id = ctx.slide_id(spec.title.as_deref());
-    let text = new_slide_text(&mut ctx, &spec, &id)?;
-    let ins = ctx.place(at, &text);
-    let mut assigned = vec![id.clone()];
-    assigned.extend(
-        found
-            .iter()
-            .map(|f| f["id"].as_str().unwrap_or_default().to_string()),
-    );
-    Ok((
-        patch(
-            "add",
-            id,
-            vec![(Span { start: at, end: at }, ins)],
-            assigned,
-        ),
-        found,
-    ))
+    let mut p = add_in(&mut ctx, &spec, pos)?;
+    p.assigned_ids.extend(ids);
+    Ok((p, found))
 }
 
 /// A placeholder box filled (spec 009): its first line without the markers,
@@ -1109,7 +1097,7 @@ impl Length {
         })
     }
 
-    fn px(&self) -> Option<f64> {
+    pub fn px(&self) -> Option<f64> {
         (self.unit == "px").then_some(self.value)
     }
 }

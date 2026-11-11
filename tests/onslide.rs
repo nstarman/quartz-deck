@@ -3242,17 +3242,15 @@ async fn slide_from_a_layout() {
             "{sheet}?.querySelectorAll('.is-gallery .preview').length === 12"
         ))
         .await;
-    };
-
-    // the +: the gallery, title + content preselected; one undo takes the add back
-    open_gallery().await;
-    assert_eq!(
+        // the layout preselected
         ed.eval(&format!(
             "{sheet}.querySelector('input[name=layout]:checked').value"
         ))
-        .await,
-        "title-content"
-    );
+        .await
+    };
+
+    // the +: the gallery, title + content preselected; one undo takes the add back
+    assert_eq!(open_gallery().await, "title-content");
     ed.click_editor("dialog.sheet label[data-layout=two-columns]")
         .await;
     ed.click_editor("dialog.sheet button[value=ok]").await;
@@ -3265,14 +3263,7 @@ async fn slide_from_a_layout() {
     ed.undo_to(&before).await;
 
     // again: the last layout is preselected; Enter adds it before b
-    open_gallery().await;
-    assert_eq!(
-        ed.eval(&format!(
-            "{sheet}.querySelector('input[name=layout]:checked').value"
-        ))
-        .await,
-        "two-columns"
-    );
+    assert_eq!(open_gallery().await, "two-columns");
     ed.key("Enter", "Enter", 13, 0).await;
     ed.wait_file(
         |f| f.matches("qd-ph ph=text").count() == 2,

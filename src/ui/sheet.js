@@ -126,13 +126,15 @@ const FROM = { deck: 'This deck’s', mine: 'Yours', 'built-in': 'Built in' };
  */
 function gallery(f, wrap, values, submit) {
   const [w, h] = f.size;
+  const headed = f.options.some((x) => x.from !== 'built-in'); // headings only when there's more than the built-in ones
   let from = null;
   let grid = null;
   for (const o of f.options) {
     if (o.from !== from) {
       from = o.from;
-      grid = el('div', { className: 'gallery', role: 'radiogroup', ariaLabel: FROM[from] || from });
-      if (f.options.some((x) => x.from !== 'built-in')) wrap.append(el('h3', { textContent: FROM[from] || from }));
+      const name = FROM[from] || from;
+      grid = el('div', { className: 'gallery', role: 'radiogroup', ariaLabel: name });
+      if (headed) wrap.append(el('h3', { textContent: name }));
       wrap.append(grid);
     }
     const label = el('label', { title: o.description });
