@@ -460,6 +460,21 @@ enum BlockCmd {
         #[arg(long)]
         remove: Vec<String>,
     },
+    /// Take an element out of the flow and place it at LEFT,TOP (px)
+    Place {
+        element: String,
+        /// LEFT,TOP in px
+        #[arg(long, value_parser = parse_pair, allow_hyphen_values = true)]
+        at: (f64, f64),
+        /// W,H in px (default: the element's natural size)
+        #[arg(long, value_parser = parse_pair, conflicts_with = "width")]
+        size: Option<(f64, f64)>,
+        /// Width in px, keeping the natural height
+        #[arg(long)]
+        width: Option<f64>,
+    },
+    /// Put a placed element back in the flow
+    Unplace { element: String },
 }
 
 #[derive(Args)]
@@ -1574,6 +1589,16 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                 add,
                 remove,
             } => ctx.edit(|d| ops::block_class(d, element, add, remove)),
+            BlockCmd::Place {
+                element,
+                at,
+                size,
+                width,
+            } => ctx.edit(|d| {
+                let (w, h) = size.map_or((*width, None), |(w, h)| (Some(w), Some(h)));
+                ops::block_place(d, element, *at, w, h)
+            }),
+            BlockCmd::Unplace { element } => ctx.edit(|d| ops::block_unplace(d, element)),
         },
         Cmd::Undo => {
             let (v, op) = ctx.store()?.undo()?;

@@ -1333,3 +1333,120 @@ pub fn box_rm(d: &Deck, r: &str) -> Result<Patch> {
     let (new, _) = ctx.rewrite(s, None, None, Some(rest), &mut assigned);
     Ok(patch("box rm", b.id.clone(), vec![(s.span, new)], assigned))
 }
+
+const GEOM: [&str; 6] = ["left", "top", "width", "height", "right", "bottom"];
+
+/// Take an element out of the flow (R4): an image gets `.absolute` and its
+/// position in its own attributes; any other block is wrapped, bytes unchanged.
+pub fn block_place(
+    d: &Deck,
+    r: &str,
+    at: (f64, f64),
+    width: Option<f64>,
+    height: Option<f64>,
+) -> Result<Patch> {
+    let (_, b) = d.element(r)?;
+    let refuse = |why: &str| Err(QdError::InvalidArg(format!("'{r}' can't be placed: {why}")));
+    match b.kind {
+        BlockKind::Box => return refuse("it is already placed freely"),
+        BlockKind::Notes => return refuse("speaker notes aren't on the slide"),
+        BlockKind::Div => {
+            return refuse("it is a div (columns, callout…); place the elements inside it instead");
+        }
+        BlockKind::Pause => return refuse("a pause has nothing to show"),
+        _ => {}
+    }
+    if width.is_some() || height.is_some() {
+        check_size(width.unwrap_or(1.0), height.unwrap_or(1.0))?;
+    }
+    let mut ctx = Ctx::new(d);
+    let id = ctx.fresh("b");
+    let text = d.slice(b.span);
+    let set = |a: &mut Attrs| {
+        a.add_class("absolute");
+        a.set("left", &px(at.0));
+        a.set("top", &px(at.1));
+        for (k, v) in [("width", width), ("height", height)] {
+            if let Some(v) = v {
+                a.set(k, &px(v));
+            }
+        }
+    };
+    let img_attrs = b
+        .attrs
+        .clone()
+        .filter(|_| b.kind == BlockKind::Image)
+        .unwrap_or_default();
+    // an image that already has a size keeps it inside a wrapper, so unplace can restore it
+    let new = if b.kind == BlockKind::Image && GEOM.iter().all(|k| img_attrs.get(k).is_none()) {
+        let mut a = img_attrs;
+        if a.id().is_none() {
+            a.set_id(&id);
+        }
+        set(&mut a);
+        let t = text.trim_end();
+        let head = match t.rfind("){") {
+            Some(p) if b.attrs.is_some() => &t[..=p],
+            _ => t,
+        };
+        format!("{head}{}{}", a.render(), &text[t.len()..])
+    } else {
+        let mut a = Attrs::default();
+        a.set_id(&id);
+        set(&mut a);
+        let nl = ctx.nl();
+        format!("::: {}{nl}{text}{nl}:::", a.render())
+    };
+    let target = match b.attrs.as_ref().and_then(|a| a.id()) {
+        Some(own) if b.kind == BlockKind::Image => own.to_string(),
+        _ => id.clone(),
+    };
+    let assigned = if target == id { vec![id] } else { vec![] };
+    Ok(patch("block place", target, vec![(b.span, new)], assigned))
+}
+
+/// Put a placed element back in the flow: exactly undoes `block_place`.
+pub fn block_unplace(d: &Deck, r: &str) -> Result<Patch> {
+    let (s, b) = d.element(r)?;
+    let i = on_slide(d, s, r)?;
+    if b.kind != BlockKind::Box {
+        return Err(QdError::InvalidArg(format!("'{r}' is not placed freely")));
+    }
+    let text = d.slice(b.span);
+    let image = text.trim_start().starts_with("![");
+    let (a0, a1) = box_attrs_range(text, image)
+        .ok_or_else(|| QdError::UnsafeEdit(format!("cannot locate attributes of '{r}'")))?;
+    let mut a = Attrs::parse(&text[a0..a1])
+        .ok_or_else(|| QdError::UnsafeEdit(format!("cannot parse attributes of '{r}'")))?;
+    a.remove_class("absolute");
+    for k in GEOM {
+        a.unset(k);
+    }
+    if a.id().is_some_and(|id| id.starts_with("b-")) {
+        a.items.retain(|i| !matches!(i, crate::attrs::Item::Id(_)));
+    }
+    let new = if image {
+        let rest = if a.is_empty() {
+            String::new()
+        } else {
+            a.render()
+        };
+        format!("{}{rest}{}", &text[..a0], &text[a1..])
+    } else {
+        if !a.is_empty() {
+            return Err(QdError::InvalidArg(format!(
+                "'{r}' has attributes besides its place ({}); edit them in the source",
+                a.render()
+            )));
+        }
+        let body = &text[text.find('\n').map_or(text.len(), |n| n + 1)..];
+        let close = body.trim_end().rfind('\n').unwrap_or(0);
+        body[..close].trim_end_matches('\r').to_string()
+    };
+    Ok(patch(
+        "block unplace",
+        format!("{}/{i}", s.id),
+        vec![(b.span, new)],
+        Vec::new(),
+    ))
+}
