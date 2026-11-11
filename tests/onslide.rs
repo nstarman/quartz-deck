@@ -304,8 +304,20 @@ impl Ed {
 
     /// Page point of a preview element (`sel` in the iframe): `x` is a JS
     /// expression over its rect `r` (e.g. `r.width / 2`), y its middle.
+    /// Waits for the element: a new render may be swapping in.
     async fn slide_at(&self, sel: &str, x: &str) -> (f64, f64) {
-        self.point(&format!("(() => {{ const f = document.querySelector('#preview'); const el = f.contentDocument.querySelector({sel:?}); const a = f.getBoundingClientRect(); const r = el.getBoundingClientRect(); return [a.left + r.left + {x}, a.top + r.top + r.height / 2]; }})()")).await
+        let start = Instant::now();
+        loop {
+            let v = self.eval(&format!("(() => {{ const f = document.querySelector('#preview'); const el = f.contentDocument?.querySelector({sel:?}); if (!el) return null; const a = f.getBoundingClientRect(); const r = el.getBoundingClientRect(); return [a.left + r.left + {x}, a.top + r.top + r.height / 2]; }})()")).await;
+            if let Some(p) = v.as_array() {
+                return (p[0].as_f64().unwrap(), p[1].as_f64().unwrap());
+            }
+            assert!(
+                start.elapsed() < Duration::from_secs(30),
+                "{sel} never on the slide"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
     async fn slide_point(&self, sel: &str) -> (f64, f64) {
@@ -1175,8 +1187,15 @@ async fn insert_drag_delete_and_empty_slides() {
 async fn copy_and_paste_carry_the_markdown() {
     let Some(ed) = Ed::open(P2).await else { return };
     ed.go("a").await;
-    ed.right_click(ed.slide_point("[data-qd=\"a/2\"]").await)
-        .await;
+    let menu_open = "!document.querySelector('#ctxmenu').hidden";
+    for _ in 0..3 {
+        ed.right_click(ed.slide_point("[data-qd=\"a/2\"]").await)
+            .await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        if ed.eval(menu_open).await == true {
+            break;
+        }
+    }
     ed.click_menu("Copy").await;
     ed.go("b").await;
     ed.right_click(ed.slide_point("[data-qd=\"b/0\"] p").await)
@@ -3395,8 +3414,9 @@ async fn place_freely() {
     ed.wait_file(|f| f.contains("height="), "resized").await;
     assert!(num(&ed.file(), "width") > w0);
 
-    // arrow keys nudge it by 1, ⇧ by 10
+    // arrow keys nudge it by 1, ⇧ by 10 (selected again: a slow render may drop the selection)
     ed.settle().await;
+    ed.select(list).await;
     let l0 = num(&ed.file(), "left");
     ed.key("ArrowRight", "ArrowRight", 39, 0).await;
     ed.wait_file(|f| num(f, "left") == l0 + 1.0, "nudged by 1")
