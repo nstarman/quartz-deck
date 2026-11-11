@@ -1141,3 +1141,44 @@ fn move_and_rm_several_slides() {
     e.ok(&["undo"]);
     assert_eq!(e.text(), before);
 }
+
+/// Spec 009 US1: `qd layouts` and `qd add --layout`, filled with `qd edit`.
+#[test]
+fn layouts_list_and_add() {
+    let e = Env::new();
+    let before = e.text();
+    let v = e.ok(&["layouts"]);
+    let names: Vec<&str> = v["layouts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["name"].as_str().unwrap())
+        .collect();
+    assert!(
+        names.contains(&"two-columns") && names.len() >= 12,
+        "{names:?}"
+    );
+    let v = e.ok(&[
+        "add",
+        "--layout",
+        "image-text",
+        "--after",
+        "intro",
+        "--title",
+        "Chart",
+    ]);
+    let ph = v["placeholders"].as_array().unwrap();
+    assert_eq!(
+        ph.iter()
+            .map(|p| p["kind"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["image", "text"]
+    );
+    let text_ref = ph[1]["ref"].as_str().unwrap();
+    e.ok(&["edit", text_ref, "--md", "Users doubled."]);
+    assert!(e.text().contains("Users doubled.\n:::"));
+    e.ok(&["undo"]);
+    e.ok(&["undo"]);
+    assert_eq!(e.text(), before, "the add is one undo step");
+    e.err(&["add", "--layout", "nope"], "E_NOT_FOUND", 1);
+}

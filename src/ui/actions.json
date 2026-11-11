@@ -62,8 +62,8 @@
   {"id": "insert-table", "label": "Table", "menu": ["Insert"], "where": ["slide", "element"], "qd": "qd block add <slide> --md -"},
   {"id": "insert-quote", "label": "Quote", "menu": ["Insert"], "where": ["slide", "element"], "qd": "qd block add <slide> --md -"},
   {"separator": true, "menu": ["Insert"]},
-  {"id": "slide-after", "label": "Slide after", "menu": ["Insert"], "key": "Mod+Shift+N", "vscode_key": null, "where": ["slides", "slide", "element"], "qd": "qd add --after <slide>"},
-  {"id": "slide-before", "label": "Slide before", "menu": ["Insert"], "where": ["slides", "slide", "element"], "qd": "qd add --before <slide>"},
+  {"id": "slide-after", "label": "Slide after…", "menu": ["Insert"], "key": "Mod+Shift+N", "vscode_key": null, "where": ["slides", "slide", "element"], "qd": "qd add --layout <layout> --after <slide>"},
+  {"id": "slide-before", "label": "Slide before…", "menu": ["Insert"], "where": ["slides", "slide", "element"], "qd": "qd add --layout <layout> --before <slide>"},
 
   {"id": "slide-dup", "label": "Duplicate slide", "menu": ["Slide"], "key": "Mod+Shift+D", "vscode_key": null, "where": ["slides", "slide", "element"], "qd": "qd dup <slide>"},
   {"id": "slide-cut", "label": "Cut slide", "menu": ["Slide"], "key": "Mod+X", "where": ["slides"], "qd": "qd rm <slide>"},

@@ -1036,3 +1036,35 @@ fn images_over_http() {
         "{v}"
     );
 }
+
+/// Spec 009 SC-002: every built-in layout, added and left unfilled, renders
+/// with Quarto and shows no placeholder words; `GET /api/layouts` lists them.
+#[test]
+fn layouts_render_unfilled() {
+    if !have("quarto") {
+        return;
+    }
+    let (_tmp, dir) = setup();
+    let (ok, v) = qd_json(&dir, &["layouts"]);
+    assert!(ok, "{v}");
+    for l in v["layouts"].as_array().unwrap() {
+        let (ok, r) = qd_json(&dir, &["add", "--layout", l["name"].as_str().unwrap()]);
+        assert!(ok, "{l}: {r}");
+    }
+    let (ok, r) = qd_json(&dir, &["render"]);
+    assert!(ok, "{r}");
+    let html = std::fs::read_to_string(dir.join("deck.html")).unwrap();
+    for words in [
+        "Click to add",
+        "Drop an image",
+        "left column",
+        "the image",
+        "what to say",
+    ] {
+        assert!(!html.contains(words), "{words:?} in the output");
+    }
+    let server = start(&dir);
+    let (_, body) = get(server.port, "/api/layouts");
+    let v: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(v["layouts"].as_array().unwrap().len(), 12);
+}

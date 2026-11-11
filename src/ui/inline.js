@@ -308,6 +308,8 @@ function tidy(root) {
       }
     }
     if (n.getAttribute('class') === '') n.removeAttribute('class');
+    // the <br> the browser keeps at the end of a paragraph (so it has height) isn't a line break
+    if (n.tagName === 'BR' && !n.nextSibling && /^(P|DIV|LI|H[1-6])$/.test(n.parentElement?.tagName)) { n.remove(); continue; }
     if (n.tagName === 'SPAN' && !n.attributes.length) n.replaceWith(...n.childNodes);
   }
   return c;

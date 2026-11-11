@@ -134,10 +134,6 @@ export function makeList(api) {
 
   // ---------- the list ----------
 
-  async function addAt(where) {
-    const r = await api.op('add', where);
-    if (r) { api.state.goAfterRender = r.target; api.state.sel = null; await api.fetchDeck(); }
-  }
 
   function item(s, isTitle) {
     const li = el('li');
@@ -153,7 +149,7 @@ export function makeList(api) {
       add.type = 'button';
       add.title = 'Add a slide here';
       add.setAttribute('aria-label', `Add a slide before ${s.title || 'this slide'}`);
-      add.addEventListener('click', () => addAt({ before: s.id }));
+      add.addEventListener('click', () => api.addSlide({ before: s.id }, add));
       const handle = el('span', 'handle', '⠿');
       handle.title = 'Drag to move';
       handle.setAttribute('aria-hidden', 'true');
@@ -232,7 +228,7 @@ export function makeList(api) {
 
   document.querySelector('#add-slide').addEventListener('click', () => {
     const last = api.state.deck?.slides.at(-1);
-    addAt(last ? { after: last.id } : {});
+    api.addSlide(last ? { after: last.id } : {}, document.querySelector('#add-slide'));
   });
 
   // widget keys: ↑/↓ move the focus along the list, Enter adds a slide after the
@@ -248,7 +244,7 @@ export function makeList(api) {
       e.preventDefault();
       e.stopPropagation();
       const slides = api.state.deck?.slides || [];
-      addAt(li.dataset.id === 'title-slide' ? (slides[0] ? { before: slides[0].id } : {}) : { after: li.dataset.id });
+      api.addSlide(li.dataset.id === 'title-slide' ? (slides[0] ? { before: slides[0].id } : {}) : { after: li.dataset.id }, li);
     }
   });
 

@@ -70,6 +70,7 @@ when the current directory has exactly one `.qmd`.
 | add untitled slide at end | `qd add --md "Just text."` |
 | duplicate | `qd dup results` |
 | paste slides (markdown, e.g. copied from another deck) | `qd paste --after intro --md -` (ids that clash are renewed) |
+| new slide from a layout | `qd layouts` lists them (title-content, two-columns, image-text, …, with their placeholders); `qd add --layout two-columns --after intro --title "Before and after"` returns `placeholders` with a `ref` each: fill them with `qd edit <ref> --md "…"` (an image: `--md "![](images/x.png)"`); placeholders left empty render as nothing |
 | reorder | `qd move results --before intro` / `--after last`; several at once keep their order: `qd move a b c --after last` |
 | delete | `qd rm @4` (several: `qd rm a b`, one undo step) |
 | retitle | `qd title results "Findings"` (`""` = untitled) |

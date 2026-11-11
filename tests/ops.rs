@@ -700,3 +700,76 @@ fn move_and_rm_several_slides() {
     let a = Deck::parse(ops::apply(&d.text, &p).unwrap());
     assert_eq!(ids(&a), ["", "Conclusion"]);
 }
+
+/// Spec 009 US1: a slide from a layout — its boxes with fresh ids, scaled to
+/// the deck's slide size, placeholders empty; filling one drops its markers.
+#[test]
+fn add_from_a_layout_and_fill_it() {
+    use quartz_deck::layouts;
+    let d = deck();
+    let none = std::path::Path::new("/nonexistent");
+    let l = layouts::find("two-columns", none, none).unwrap();
+    let (p, ph) = ops::add_layout(&d, &l, Some("Before and after"), Pos::After("intro")).unwrap();
+    let a = Deck::parse(ops::apply(&d.text, &p).unwrap());
+    let s = a.slide("before-and-after").unwrap();
+    assert_eq!(a.slides[1].id, "before-and-after", "after intro");
+    assert_eq!(s.blocks.len(), 2);
+    for (i, b) in s.blocks.iter().enumerate() {
+        let text = a.slice(b.span);
+        assert!(
+            text.contains(".qd-ph") && text.contains("ph=text"),
+            "{text}"
+        );
+        assert!(
+            !text.contains("<!--"),
+            "the purpose comment is not written: {text}"
+        );
+        assert!(b.id_explicit && b.id.starts_with("b-"));
+        assert_eq!(ph[i]["id"], b.id);
+        assert_eq!(ph[i]["index"], i);
+    }
+    assert_eq!(ph[1]["purpose"], "right column");
+    assert!(
+        a.slice(s.blocks[1].span)
+            .contains("left=540 top=170 width=450 height=470")
+    );
+    unique_ids(&a);
+
+    // another slide size: scaled
+    let wide = Deck::parse(format!(
+        "---\nformat:\n  revealjs:\n    width: 1280\n    height: 720\n---\n\n{}",
+        d.text
+            .split_once("---\n\n")
+            .map_or(d.text.as_str(), |x| x.1)
+    ));
+    let (p, _) = ops::add_layout(&wide, &l, None, Pos::End).unwrap();
+    assert!(
+        ops::apply(&wide.text, &p)
+            .unwrap()
+            .contains("left=658 top=175 width=549 height=483")
+    );
+
+    // filling: plain markdown keeps the box, without the markers
+    let r = format!("{}/1", s.id);
+    let p = ops::edit(&a, &r, "Users doubled.", None).unwrap();
+    let f = Deck::parse(ops::apply(&a.text, &p).unwrap());
+    let box1 = f.slice(f.element(&r).unwrap().1.span);
+    assert!(
+        box1.starts_with("::: {#b-")
+            && box1.contains(".absolute")
+            && box1.ends_with("Users doubled.\n:::"),
+        "{box1}"
+    );
+    assert!(!box1.contains("qd-ph") && !box1.contains("ph="), "{box1}");
+    // the editor sends the whole block: the markers go too
+    let whole = format!(
+        "{}\nTyped.\n:::",
+        a.slice(s.blocks[0].span).lines().next().unwrap()
+    );
+    let p = ops::edit(&a, &format!("{}/0", s.id), &whole, None).unwrap();
+    assert!(
+        !ops::apply(&a.text, &p)
+            .unwrap()
+            .contains("qd-ph ph=text left=60")
+    );
+}
