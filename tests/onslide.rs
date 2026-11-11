@@ -2476,6 +2476,12 @@ async fn slide_list_like_a_slide_app() {
     ed.settle().await;
     ed.click_editor("#slides li[data-id=columns] .add-here")
         .await;
+    // the gallery (spec 009): "blank" is an untitled slide
+    ed.wait("document.querySelector('dialog.sheet[open] label[data-layout=blank]') != null")
+        .await;
+    ed.click_editor("dialog.sheet label[data-layout=blank]")
+        .await;
+    ed.click_editor("dialog.sheet button[value=ok]").await;
     ed.wait_file(|f| f.contains("## {#s-"), "untitled slide added")
         .await;
     let new = order()[2].clone();
@@ -2509,6 +2515,10 @@ async fn slide_list_like_a_slide_app() {
     // Enter on a focused slide adds one after it (once the title's save has landed)
     ed.settle().await;
     ed.eval("document.querySelector('#slides li[data-id=model] button').focus()")
+        .await;
+    ed.key("Enter", "Enter", 13, 0).await;
+    // the gallery opens, the last layout picked; Enter again adds it
+    ed.wait("document.querySelector('dialog.sheet[open] input[name=layout]:checked')?.value === 'blank'")
         .await;
     ed.key("Enter", "Enter", 13, 0).await;
     ed.until_cli(
@@ -3213,4 +3223,104 @@ async fn browser_markup_still_saves() {
     ed.key("Escape", "Escape", 27, 0).await;
     ed.wait("/an image/.test(document.querySelector('#notice').textContent) && /⌘Z/.test(document.querySelector('#notice').textContent)")
         .await;
+}
+
+/// T007 (spec 009 US1): a new slide from a layout — the gallery from the +,
+/// placeholders shown on the canvas only, typed into, an image dropped on one,
+/// one undo for the add, and the last layout preselected next time.
+#[tokio::test(flavor = "multi_thread")]
+async fn slide_from_a_layout() {
+    let Some(ed) = Ed::open(P2).await else {
+        return;
+    };
+    let sheet = "document.querySelector('dialog.sheet[open]')";
+    let before = ed.file();
+    let open_gallery = async || {
+        ed.settle().await;
+        ed.click_editor("#slides li[data-id=b] .add-here").await;
+        ed.wait(&format!(
+            "{sheet}?.querySelectorAll('.is-gallery .preview').length === 12"
+        ))
+        .await;
+    };
+
+    // the +: the gallery, title + content preselected; one undo takes the add back
+    open_gallery().await;
+    assert_eq!(
+        ed.eval(&format!(
+            "{sheet}.querySelector('input[name=layout]:checked').value"
+        ))
+        .await,
+        "title-content"
+    );
+    ed.click_editor("dialog.sheet label[data-layout=two-columns]")
+        .await;
+    ed.click_editor("dialog.sheet button[value=ok]").await;
+    ed.wait_file(
+        |f| f.matches("qd-ph ph=text").count() == 2,
+        "two-column slide added",
+    )
+    .await;
+    assert!(!ed.file().contains("Click to add"));
+    ed.undo_to(&before).await;
+
+    // again: the last layout is preselected; Enter adds it before b
+    open_gallery().await;
+    assert_eq!(
+        ed.eval(&format!(
+            "{sheet}.querySelector('input[name=layout]:checked').value"
+        ))
+        .await,
+        "two-columns"
+    );
+    ed.key("Enter", "Enter", 13, 0).await;
+    ed.wait_file(
+        |f| f.matches("qd-ph ph=text").count() == 2,
+        "added with Enter",
+    )
+    .await;
+    let new = slide_ids(&ed.cli(&["slides"]))[1].clone();
+    ed.settle().await;
+    ed.go(&new).await;
+    let first = format!("[data-qd=\"{new}/0\"]");
+    assert!(
+        ed.eval(&format!("getComputedStyle(document.querySelector('#preview').contentDocument.querySelector('{first}'), '::before').content"))
+            .await.as_str().unwrap().contains("Click to add text")
+    );
+
+    // a click on a text placeholder types into it; the markers go when it's filled
+    ed.click_in_slide(&first).await;
+    ed.wait("window.qdSession() !== null").await;
+    ed.type_text("Left side").await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait_file(
+        |f| f.contains("Left side\n:::") && f.matches("qd-ph ph=text").count() == 1,
+        "placeholder filled",
+    )
+    .await;
+
+    // an image dropped on an image placeholder fills it
+    ed.settle().await;
+    let v = ed.cli(&["add", "--layout", "image-text", "--after", "b"]);
+    let img = v["placeholders"][1]["ref"].as_str().unwrap().to_string();
+    let slide = img.split('/').next().unwrap().to_string();
+    ed.settle().await;
+    ed.go(&slide).await;
+    ed.eval(&format!(
+        r#"(() => {{
+  const box = document.querySelector('#preview').contentDocument.querySelector('[data-qd="{img}"]');
+  const r = box.getBoundingClientRect();
+  const dt = new DataTransfer();
+  dt.items.add(new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1])], 'pic.png', {{ type: 'image/png' }}));
+  const at = {{ bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }};
+  box.dispatchEvent(new DragEvent('dragover', at));
+  box.dispatchEvent(new DragEvent('drop', at));
+}})()"#
+    ))
+    .await;
+    ed.wait_file(
+        |f| f.contains("![](images/pic.png)") && !f.contains("ph=image"),
+        "image placeholder filled",
+    )
+    .await;
 }

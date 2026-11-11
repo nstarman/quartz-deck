@@ -65,8 +65,8 @@ export function makeActions(api) {
   const kv = (t) => t.full?.attrs?.kv || {};
   const setAttr = (t, key, value) => api.op('set', value ? { slide: t.slideId, attr: [`${key}=${value}`] } : { slide: t.slideId, unset: [key] });
   const slide = [
-    { id: 'slide-before', label: 'Add slide before', run: (t) => api.op('add', { before: t.slideId }) },
-    { id: 'slide-after', label: 'Add slide after', run: (t) => api.op('add', { after: t.slideId }) },
+    { id: 'slide-before', label: 'Add slide before…', run: (t) => api.addSlide({ before: t.slideId }) },
+    { id: 'slide-after', label: 'Add slide after…', run: (t) => api.addSlide({ after: t.slideId }) },
     { id: 'slide-dup', label: 'Duplicate slide', run: (t) => api.op('dup', { slide: t.slideId }) },
     { id: 'slide-cut', label: 'Cut slide', run: async (t) => { await api.copySlide(t); return api.op('rm', { slide: t.slideId }); } },
     { id: 'slide-copy', label: 'Copy slide', run: (t) => api.copySlide(t) },

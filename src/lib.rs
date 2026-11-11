@@ -9,6 +9,7 @@ pub mod export;
 pub mod focus;
 pub mod images;
 pub mod kernel;
+pub mod layouts;
 pub mod offline;
 pub mod ops;
 pub mod outputs;

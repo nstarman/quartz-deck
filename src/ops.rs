@@ -361,6 +361,98 @@ pub fn add(d: &Deck, spec: &SlideSpec, pos: Pos) -> Result<Patch> {
     ))
 }
 
+/// A new slide from a layout (spec 009 US1): its heading and boxes, each box
+/// with a fresh id and scaled to the deck's slide size, placeholders empty
+/// (their purpose comments are the layout's, not the deck's). Returns the patch
+/// and each placeholder's place among the slide's blocks, id, kind and purpose.
+pub fn add_layout(
+    d: &Deck,
+    l: &crate::layouts::Layout,
+    title: Option<&str>,
+    pos: Pos,
+) -> Result<(Patch, Vec<serde_json::Value>)> {
+    let src = &l.deck;
+    let s = &src.slides[0];
+    let mut ctx = Ctx::new(d);
+    let nl = ctx.nl();
+    let ph = l.placeholders();
+    let mut found = Vec::new();
+    let mut parts = Vec::new();
+    for b in &s.blocks {
+        let marked = b
+            .attrs
+            .as_ref()
+            .filter(|a| b.kind == BlockKind::Box && a.has_class("qd-ph"));
+        let Some(a) = marked else {
+            parts.push(match b.kind {
+                BlockKind::Notes => format!("::: notes{nl}:::"),
+                _ => src.slice(b.span).to_string(),
+            });
+            continue;
+        };
+        let (mut a, p) = (a.clone(), &ph[found.len()]);
+        let id = ctx.fresh("b");
+        a.set_id(&id);
+        let r = crate::layouts::scale(p.rect, d.width, d.height);
+        for (k, v) in ["left", "top", "width", "height"].into_iter().zip(r) {
+            a.set(k, &px(v));
+        }
+        parts.push(format!("::: {}{nl}:::", a.render()));
+        found.push(serde_json::json!({"index": parts.len() - 1, "id": id, "kind": p.kind, "purpose": p.purpose}));
+    }
+    let head = s.attrs.clone().unwrap_or_default();
+    let spec = SlideSpec {
+        title: title.map(str::to_string),
+        body: Some(parts.join(&format!("{nl}{nl}"))),
+        attrs: head
+            .kv()
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect(),
+        classes: head.classes().into_iter().map(str::to_string).collect(),
+    };
+    let at = ctx.insertion(pos)?;
+    let id = ctx.slide_id(spec.title.as_deref());
+    let text = new_slide_text(&mut ctx, &spec, &id)?;
+    let ins = ctx.place(at, &text);
+    let mut assigned = vec![id.clone()];
+    assigned.extend(
+        found
+            .iter()
+            .map(|f| f["id"].as_str().unwrap_or_default().to_string()),
+    );
+    Ok((
+        patch(
+            "add",
+            id,
+            vec![(Span { start: at, end: at }, ins)],
+            assigned,
+        ),
+        found,
+    ))
+}
+
+/// A placeholder box filled (spec 009): its first line without the markers,
+/// around `md` (or `md` itself, when it is the whole block with its fences).
+fn fill_placeholder(old: &str, md: &str, nl: &str) -> Option<String> {
+    let first = old.lines().next()?;
+    let (pre, rest) = first.split_once('{')?;
+    let mut a = Attrs::parse(&format!("{{{rest}"))?;
+    if !a.has_class("qd-ph") {
+        return None;
+    }
+    a.remove_class("qd-ph");
+    a.unset("ph");
+    let head = format!("{pre}{}", a.render());
+    Some(match md.split_once(nl) {
+        Some((line, body)) if line.trim_start().starts_with(":::") && line.contains("qd-ph") => {
+            format!("{head}{nl}{body}")
+        }
+        _ if md.trim_start().starts_with(":::") => md.to_string(),
+        _ => format!("{head}{nl}{md}{nl}{}", pre.trim_end()),
+    })
+}
+
 pub fn dup(d: &Deck, slide: &str, after: Option<&str>) -> Result<Patch> {
     let mut ctx = Ctx::new(d);
     let s = ctx.slide(slide)?;
@@ -615,6 +707,7 @@ pub fn edit(d: &Deck, element: &str, md: &str, expect_text: Option<&str>) -> Res
             "replacement text is empty; to delete use `qd body` or edit the file".into(),
         ));
     }
+    let md = fill_placeholder(d.slice(b.span), &md, d.nl).unwrap_or(md);
     keep_structure(
         d,
         patch("edit", b.id.clone(), vec![(b.span, md)], Vec::new()),

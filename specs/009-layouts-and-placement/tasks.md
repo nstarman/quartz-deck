@@ -23,19 +23,19 @@ written first and seen failing.
 
 ## Phase 1: Setup
 
-- [ ] T001 Add `src/layouts.rs` (empty module, `pub mod layouts;` in `src/lib.rs`) and the folder `src/layouts/` for the built-in layout files.
+- [X] T001 Add `src/layouts.rs` (empty module, `pub mod layouts;` in `src/lib.rs`) and the folder `src/layouts/` for the built-in layout files.
 
 ---
 
 ## Phase 2: Foundational (blocks US1 and US3)
 
-- [ ] T002 Write failing unit tests in `src/layouts.rs`:
+- [X] T002 Write failing unit tests in `src/layouts.rs`:
   - a layout file parses into name, description and slide markdown;
   - name rule `[a-z0-9-]{1,40}`;
   - its boxes (kind from `ph=`, purpose from the comment, `left/top/width/height`) are listed;
   - scaling 1050×700 → 1280×720 multiplies each coordinate and rounds;
   - lookup order is deck, then the person's, then built-in.
-- [ ] T003 Implement the layout file format in `src/layouts.rs` (data-model "Layout"): `parse`, `boxes`, `scale`, `list(deck_dir, config_dir)`, `find(name, …)`. T002 passes.
+- [X] T003 Implement the layout file format in `src/layouts.rs` (data-model "Layout"): `parse`, `boxes`, `scale`, `list(deck_dir, config_dir)`, `find(name, …)`. T002 passes.
 
 **Checkpoint**: layouts can be read; no deck change yet.
 
@@ -45,21 +45,21 @@ written first and seen failing.
 
 **Independent Test**: spec US1; quickstart §1–§2.
 
-- [ ] T004 [P] [US1] Write the 12 built-in layouts in `src/layouts/` (title, title-content, two-columns, three-columns, image-text, text-image, full-image, section, big-number, quote, title-notes, blank) per research R1/R2, each with a description and a purpose comment per placeholder; a unit test parses all 12 and checks each has the placeholders its name promises.
-- [ ] T005 [P] [US1] Write failing tests:
+- [X] T004 [P] [US1] Write the 12 built-in layouts in `src/layouts/` (title, title-content, two-columns, three-columns, image-text, text-image, full-image, section, big-number, quote, title-notes, blank) per research R1/R2, each with a description and a purpose comment per placeholder; a unit test parses all 12 and checks each has the placeholders its name promises.
+- [X] T005 [P] [US1] Write failing tests:
   - **`src/ops.rs` units:** `add_layout` inserts one slide (one patch); each box gets a fresh id; it returns placeholder refs with kind and purpose; `--title` fills the title.
   - **More `src/ops.rs` units:** `edit` of a block marked `.qd-ph` drops `.qd-ph` and `ph=` in the same patch; a placeholder is listed in `show_json` as `"placeholder"`.
   - **`tests/cli.rs` `layouts_list_and_add`:** `qd layouts`; `qd add --layout two-columns --after intro --title X` then `qd edit <ref> --md …` fills it; undo removes the slide in one step; an unknown layout is `E_NOT_FOUND`.
   - **SC-002 render check:** every built-in added unfilled renders with Quarto (when present) and the output holds no placeholder words.
-- [ ] T006 [US1] Implement `ops::add_layout` and placeholder fill in `src/ops.rs`; `qd layouts` and `qd add --layout` in `src/cli.rs` (and `qd schema`); `GET /api/layouts` in `src/server.rs`; `placeholder` in `show_json`. T005 passes.
-- [ ] T007 [P] [US1] Write failing browser test `slide_from_a_layout` in `tests/onslide.rs`:
+- [X] T006 [US1] Implement `ops::add_layout` and placeholder fill in `src/ops.rs`; `qd layouts` and `qd add --layout` in `src/cli.rs` (and `qd schema`); `GET /api/layouts` in `src/server.rs`; `placeholder` in `show_json`. T005 passes.
+- [X] T007 [P] [US1] Write failing browser test `slide_from_a_layout` in `tests/onslide.rs`:
   - the + opens the gallery with previews and the last used preselected;
   - Enter adds "two-columns";
   - both text placeholders show "Click to add text" on the canvas only;
   - typing into each fills it;
   - an image dropped on an image placeholder fills it;
   - ⌘Z once removes the slide.
-- [ ] T008 [US1] The gallery: a gallery field in `src/ui/sheet.js` (previews drawn from the layout's boxes, arrows/Enter/Esc); Insert ▸ Slide after…/before…, the list's + and ⇧⌘N open it (`src/ui/editor.js`, `src/ui/list.js`, `src/ui/actions.json`); `ui.last_layout` in `src/settings.rs`. Placeholder prompts in `PREVIEW_CSS`; typing into an empty box; an image dropped on an image placeholder replaces it (`src/ui/editor.js`). T007 passes.
+- [X] T008 [US1] The gallery: a gallery field in `src/ui/sheet.js` (previews drawn from the layout's boxes, arrows/Enter/Esc); Insert ▸ Slide after…/before…, the list's + and ⇧⌘N open it (`src/ui/editor.js`, `src/ui/list.js`, `src/ui/actions.json`); `ui.last_layout` in `src/settings.rs`. Placeholder prompts in `PREVIEW_CSS`; typing into an empty box; an image dropped on an image placeholder replaces it (`src/ui/editor.js`). T007 passes.
 
 **Checkpoint**: US1 works alone (MVP).
 

@@ -12,6 +12,8 @@ enum Kind {
     Choice(&'static [&'static str]),
     Bool,
     Number,
+    /// A layout's name (spec 009)
+    Name,
 }
 
 struct Def {
@@ -91,6 +93,7 @@ const DEFS: &[Def] = &[
     ui("ui.source_was_open", Kind::Bool, || json!(false)),
     ui("ui.source_full", Kind::Bool, || json!(false)),
     ui("ui.form_panel", Kind::Bool, || json!(false)),
+    ui("ui.last_layout", Kind::Name, || json!("title-content")),
 ];
 
 fn find(key: &str) -> Option<&'static Def> {
@@ -102,6 +105,7 @@ fn valid(d: &Def, v: &Value) -> bool {
         Kind::Choice(xs) => v.as_str().is_some_and(|s| xs.contains(&s)),
         Kind::Bool => v.is_boolean(),
         Kind::Number => v.is_number() || v.is_null(),
+        Kind::Name => v.as_str().is_some_and(crate::layouts::valid_name),
     }
 }
 
@@ -110,6 +114,7 @@ fn allowed(d: &Def) -> String {
         Kind::Choice(xs) => xs.join(", "),
         Kind::Bool => "true, false".into(),
         Kind::Number => "a number".into(),
+        Kind::Name => "a layout name".into(),
     }
 }
 
@@ -202,6 +207,7 @@ pub fn defs() -> Value {
                 Kind::Choice(xs) => ("choice", json!(xs)),
                 Kind::Bool => ("bool", Value::Null),
                 Kind::Number => ("number", Value::Null),
+                Kind::Name => ("name", Value::Null),
             };
             json!({"key": d.key, "label": d.label, "description": d.description, "type": kind, "values": values, "default": (d.default)()})
         })

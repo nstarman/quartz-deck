@@ -176,6 +176,12 @@ const PREVIEW_CSS = `html:not(.qd-present) {
   .slide-menu-button { display: none !important; }
   /* an untitled slide (spec 008 US1): a placeholder on the canvas only, never in the file */
   .reveal .slides section > h2:empty::before { content: 'Click to add title'; color: #9a9aa0; font-weight: 400; }
+  /* a layout's empty boxes (spec 009): what goes there, on the canvas only */
+  .qd-ph:not(:has(*)) { display: flex !important; align-items: center; justify-content: center; outline: 2px dashed #b9b9bf;
+    outline-offset: -2px; border-radius: 6px; cursor: text; }
+  .qd-ph:not(:has(*))::before { content: 'Click to add text'; color: #9a9aa0; font-size: .6em; }
+  .qd-ph[data-ph=image]:not(:has(*))::before { content: 'Drop an image'; }
+  .qd-ph[data-ph=image]:not(:has(*)) { cursor: copy; }
   [data-qd]:hover { outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; }
   .qd-sel, .qd-sel:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 2px; }
   .qd-editing, .qd-editing:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 4px; cursor: text; }
@@ -446,8 +452,22 @@ frame.addEventListener('load', () => {
 
 // ---------- slide list (spec 008 US1: list.js) ----------
 
+/** A new slide `where` (`{after}`/`{before}`), from a layout picked in the gallery (spec 009). */
+async function addSlide(where, anchor) {
+  const { layouts } = await fetch('/api/layouts').then((r) => r.json());
+  const v = await ask({
+    title: 'New slide', ok: 'Add slide', anchor,
+    fields: [{ name: 'layout', kind: 'gallery', label: 'Layout', options: layouts, value: settings.get('ui.last_layout'), size: [state.deck.width, state.deck.height] }],
+  });
+  if (!v?.layout) return null;
+  settings.set({ 'ui.last_layout': v.layout });
+  const r = await op('add', { ...where, layout: v.layout });
+  if (r) { state.goAfterRender = r.target; state.sel = null; await fetchDeck(); }
+  return r;
+}
+
 const slideList = makeList({
-  state, frame, go, op, fetchDeck, openMenu,
+  state, frame, go, op, fetchDeck, openMenu, addSlide,
   slideMenu: async (id) => actions.slide(await slideTarget(id)),
 });
 
@@ -805,7 +825,8 @@ function pendingBadge(on) {
 /** What a click on `node` would edit: a block, a slide title, or a title-slide field. */
 function editTarget(node) {
   const el = node.closest?.('[data-qd]');
-  if (el) return el.classList.contains('absolute') ? null : { kind: 'block', root: el };
+  // a positioned box selects for dragging, but a layout's empty text box is for typing into
+  if (el) return el.classList.contains('absolute') && !el.matches('.qd-ph[data-ph=text]') ? null : { kind: 'block', root: el };
   const sec = node.closest?.('section');
   if (!sec) return null;
   if (sec.id === 'title-slide') {
@@ -868,6 +889,14 @@ function beginSession(s, point) {
   const doc = s.root.ownerDocument;
   openSession(s);
   s.root.contentEditable = 'true';
+  // an empty box (a layout's placeholder) gets a paragraph to type into: the
+  // browser would put the text straight into the box, which isn't markdown
+  if (s.kind === 'block' && !s.root.children.length && !s.root.textContent.trim()) {
+    s.root.textContent = '';
+    s.root.append(doc.createElement('p'));
+    s.root.firstChild.append(doc.createElement('br'));
+    point = null;
+  }
   doc.execCommand('styleWithCSS', false, false);
   doc.execCommand('defaultParagraphSeparator', false, 'p');
   frame.focus(); // keyboard input must reach the iframe (e.g. after a menu in the page had focus)
@@ -1166,6 +1195,7 @@ async function slideTarget(slideId) {
 
 const actions = makeActions({
   runCells: run.runCells,
+  addSlide: (where) => addSlide(where),
   op: async (name, args) => {
     if (name === 'rm') {
       const many = slideList.selected(args.slide); // the picked slides, if this is one (spec 008 US9)
@@ -1531,6 +1561,11 @@ async function dropImage(file, on, y) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) return say(`${file.name}: ${body.error?.message || res.statusText}`, true);
+  // a layout's image placeholder takes the image in its place
+  if (on?.matches('.qd-ph[data-ph=image]')) {
+    if (await op('edit', { element: on.dataset.qd, md: `![](${body.path}){width="100%"}` })) await fetchDeck();
+    return;
+  }
   const r = on?.getBoundingClientRect();
   const where = on ? { [y > r.top + r.height / 2 ? 'after' : 'before']: on.dataset.qd } : { end: true };
   await insertBlock(slide.id, where, { md: `![](${body.path})` });

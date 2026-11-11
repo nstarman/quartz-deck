@@ -505,6 +505,17 @@ async fn blocking(f: impl FnOnce() -> Result<Value> + Send + 'static) -> Respons
     }
 }
 
+/// `GET /api/layouts`: what `qd layouts` lists, boxes scaled to this deck (spec 009).
+async fn api_layouts(State(app): State<Shared>) -> Response {
+    match app.store.read() {
+        Ok(d) => {
+            let list = crate::layouts::list(&app.dir(), &crate::store::config_root());
+            Json(json!({"layouts": list.iter().map(|l| l.json(d.width, d.height)).collect::<Vec<_>>()})).into_response()
+        }
+        Err(e) => err_response(e),
+    }
+}
+
 /// `GET /api/images`: the images beside the deck (spec 008 US5).
 async fn api_images(State(app): State<Shared>) -> Response {
     let dir = app.dir();
@@ -1042,6 +1053,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
                 "/api/images",
                 get(api_images).post(api_image_add).layer(limit),
             )
+            .route("/api/layouts", get(api_layouts))
             .nest_service(
                 "/preview",
                 ServeDir::new(&out).fallback(ServeDir::new(&deck_dir)),

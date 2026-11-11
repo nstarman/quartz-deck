@@ -218,7 +218,12 @@ enum Cmd {
         /// Heading class (repeatable)
         #[arg(long = "class")]
         classes: Vec<String>,
+        /// Start from a layout (see `qd layouts`); returns its placeholders' refs
+        #[arg(long, conflicts_with_all = ["md", "file"])]
+        layout: Option<String>,
     },
+    /// Slide layouts to start a new slide from: built-in, yours and the deck's
+    Layouts,
     /// Duplicate a slide (new ids)
     Dup {
         slide: String,
@@ -545,6 +550,9 @@ fn output_of(cmd: &str) -> &'static str {
         }
         "schema" => r#"{"commands":[...],"errors":[...]}"#,
         "images" => r#"{"images":[{"path","kind","size","modified"}]}"#,
+        "layouts" => {
+            r#"{"layouts":[{"name","description","from":"built-in|mine|deck","placeholders":[{"kind","purpose"}],"boxes":[{"kind","left","top","width","height"}]}]}"#
+        }
         "image" => r#"{"path"} (with --slide: the edit, as block add, plus "path")"#,
         "skill" => r#"{"skill":"<markdown>"} or {"ok","path"} with --install"#,
         "undo" | "redo" => r#"{"ok","op","undone|redone","version"}"#,
@@ -775,6 +783,10 @@ fn block_json(d: &Deck, b: &Block) -> Value {
     let text = d.slice(b.span);
     let mut v = json!({"id": b.id, "explicit": b.id_explicit, "kind": b.kind, "text": text,
         "hash": crate::deck::version_of(text.as_bytes()), "lines": d.lines(b.span), "attrs": attrs_json(b.attrs.as_ref())});
+    // a layout's empty box (spec 009): what it is waiting for
+    if let Some(a) = b.attrs.as_ref().filter(|a| a.has_class("qd-ph")) {
+        v["placeholder"] = json!(a.get("ph").unwrap_or("text"));
+    }
     if matches!(b.kind, BlockKind::Cell | BlockKind::Code) {
         // ```{python} (kind "cell", executable) or ```python (kind "code", shown) → "python"
         let info = text
@@ -807,22 +819,22 @@ fn block_json(d: &Deck, b: &Block) -> Value {
 }
 
 fn summary(d: &Deck, s: &Slide) -> String {
-    let first = s.blocks.iter().find(|b| {
-        !matches!(
-            b.kind,
-            BlockKind::Notes | BlockKind::Pause | BlockKind::Html
-        )
-    });
-    let line = first
-        .map(|b| {
-            d.slice(b.span)
-                .lines()
-                .next()
-                .unwrap_or("")
-                .trim()
-                .to_string()
+    // the first line of content: not a div's fence (a box, a layout's empty
+    // placeholder, spec 009), not notes or markup
+    let line = s
+        .blocks
+        .iter()
+        .filter(|b| {
+            !matches!(
+                b.kind,
+                BlockKind::Notes | BlockKind::Pause | BlockKind::Html
+            )
         })
-        .unwrap_or_default();
+        .flat_map(|b| d.slice(b.span).lines())
+        .map(str::trim)
+        .find(|l| !l.is_empty() && !l.starts_with(":::"))
+        .unwrap_or_default()
+        .to_string();
     if line.chars().count() > 80 {
         line.chars().take(79).collect::<String>() + "…"
     } else {
@@ -1389,9 +1401,44 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             after,
             before,
             title,
+            layout: Some(name),
+            ..
+        } => {
+            let store = ctx.store()?;
+            let l = crate::layouts::find(name, &deck_dir(&store), &crate::store::config_root())?;
+            let mut found = Vec::new();
+            let mut v = ctx.edit(|d| {
+                let (p, f) = ops::add_layout(d, &l, title.as_deref(), at(after, before))?;
+                found = f;
+                Ok(p)
+            })?;
+            let slide = v["target"].as_str().unwrap_or_default().to_string();
+            let mut ph = Vec::new();
+            if title.is_none() {
+                ph.push(json!({"ref": slide, "kind": "title", "purpose": "the slide's title (qd title)"}));
+            }
+            ph.extend(found.into_iter().map(|f| {
+                json!({"ref": format!("{slide}/{}", f["index"]), "id": f["id"], "kind": f["kind"], "purpose": f["purpose"]})
+            }));
+            v["placeholders"] = json!(ph);
+            Ok(v)
+        }
+        Cmd::Layouts => {
+            let store = ctx.store()?;
+            let d = store.read()?;
+            let list = crate::layouts::list(&deck_dir(&store), &crate::store::config_root());
+            Ok(
+                json!({"layouts": list.iter().map(|l| l.json(d.width, d.height)).collect::<Vec<_>>()}),
+            )
+        }
+        Cmd::Add {
+            after,
+            before,
+            title,
             input,
             attrs,
             classes,
+            layout: None,
         } => {
             let spec = SlideSpec {
                 title: title.clone(),
@@ -1710,4 +1757,9 @@ pub fn main() -> i32 {
             e.exit_code()
         }
     }
+}
+
+/// The folder the deck is in.
+fn deck_dir(store: &Store) -> PathBuf {
+    store.path.parent().unwrap_or(Path::new(".")).to_path_buf()
 }
