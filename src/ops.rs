@@ -1356,9 +1356,7 @@ pub fn block_place(
         BlockKind::Pause => return refuse("a pause has nothing to show"),
         _ => {}
     }
-    if width.is_some() || height.is_some() {
-        check_size(width.unwrap_or(1.0), height.unwrap_or(1.0))?;
-    }
+    check_size(width.unwrap_or(1.0), height.unwrap_or(1.0))?;
     let mut ctx = Ctx::new(d);
     let id = ctx.fresh("b");
     let text = d.slice(b.span);
@@ -1372,22 +1370,21 @@ pub fn block_place(
             }
         }
     };
-    let img_attrs = b
-        .attrs
-        .clone()
-        .filter(|_| b.kind == BlockKind::Image)
-        .unwrap_or_default();
     // an image that already has a size keeps it inside a wrapper, so unplace can restore it
-    let new = if b.kind == BlockKind::Image && GEOM.iter().all(|k| img_attrs.get(k).is_none()) {
-        let mut a = img_attrs;
+    let new = if b.kind == BlockKind::Image
+        && b.attrs
+            .as_ref()
+            .is_none_or(|a| GEOM.iter().all(|k| a.get(k).is_none()))
+    {
+        let mut a = b.attrs.clone().unwrap_or_default();
         if a.id().is_none() {
             a.set_id(&id);
         }
         set(&mut a);
         let t = text.trim_end();
-        let head = match t.rfind("){") {
-            Some(p) if b.attrs.is_some() => &t[..=p],
-            _ => t,
+        let head = match b.attrs {
+            Some(_) => box_attrs_range(text, true).map_or(t, |(a0, _)| &text[..a0]),
+            None => t,
         };
         format!("{head}{}{}", a.render(), &text[t.len()..])
     } else {
@@ -1439,9 +1436,8 @@ pub fn block_unplace(d: &Deck, r: &str) -> Result<Patch> {
                 a.render()
             )));
         }
-        let body = &text[text.find('\n').map_or(text.len(), |n| n + 1)..];
-        let close = body.trim_end().rfind('\n').unwrap_or(0);
-        body[..close].trim_end_matches('\r').to_string()
+        let lines: Vec<&str> = text.split(d.nl).collect();
+        lines[1..lines.len() - 1].join(d.nl)
     };
     Ok(patch(
         "block unplace",

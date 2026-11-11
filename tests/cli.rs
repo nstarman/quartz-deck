@@ -1201,9 +1201,9 @@ fn place_and_unplace() {
         before,
         "unplace takes off exactly what place wrote"
     );
-    e.ok(&["undo"]);
-    e.ok(&["undo"]);
-    e.ok(&["undo"]);
+    for _ in 0..3 {
+        e.ok(&["undo"]);
+    }
     assert_eq!(e.text(), before);
     e.ok(&[
         "block",

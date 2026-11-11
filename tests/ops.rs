@@ -805,11 +805,11 @@ fn place_and_unplace_round_trip() {
     }
     // with a height, both are written
     let p = ops::block_place(&d, "a/7", (1.0, 2.0), Some(30.0), Some(40.0)).unwrap();
-    assert!(ops::apply(&d.text, &p).unwrap().contains("![](q.png){#b-"));
+    let t = ops::apply(&d.text, &p).unwrap();
+    assert!(t.contains("![](q.png){#b-"), "{t}");
     assert!(
-        ops::apply(&d.text, &p)
-            .unwrap()
-            .contains(".absolute left=1 top=2 width=30 height=40}")
+        t.contains(".absolute left=1 top=2 width=30 height=40}"),
+        "{t}"
     );
 }
 

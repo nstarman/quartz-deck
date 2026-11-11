@@ -220,9 +220,11 @@ function highlight() {
 
 // ---------- placing an element freely (spec 009 US2) ----------
 
+const revealScale = () => frameWin()?.Reveal?.getScale?.() || 1;
+
 /** `block place` args for target `t`: where its element shows on the slide now, in slide px. */
 function placement(t) {
-  const s = frameWin().Reveal?.getScale?.() || 1;
+  const s = revealScale();
   const sec = t.el.closest('section').getBoundingClientRect();
   const r = t.el.getBoundingClientRect();
   // a block is as wide as the slide; the box is as wide as its text (a little more, so it doesn't rewrap)
@@ -246,7 +248,7 @@ function placeDrag(e) {
   if (!e.altKey || e.button !== 0 || !el || el.classList.contains('absolute') || state.session || presenting()) return;
   e.preventDefault(); // no text selection
   const doc = el.ownerDocument;
-  const s = frameWin().Reveal?.getScale?.() || 1;
+  const s = revealScale();
   const [x0, y0] = [e.clientX, e.clientY];
   let moved = false;
   const onMove = (ev) => {
@@ -274,7 +276,8 @@ function placeDrag(e) {
 function markOffSlide(w) {
   const { width, height } = w.Reveal.getConfig();
   for (const b of w.document.querySelectorAll('.absolute[data-qd]')) {
-    const off = b.offsetLeft < 0 || b.offsetTop < 0 || b.offsetLeft + b.offsetWidth > width || b.offsetTop + b.offsetHeight > height;
+    const r = rectOf(b);
+    const off = r.l < 0 || r.t < 0 || r.l + r.w > width || r.t + r.h > height;
     b.classList.toggle('qd-off', off);
     b.title = off ? 'Outside the slide: it won’t show when presenting' : '';
   }
@@ -300,7 +303,7 @@ function attachOverlay(box) {
   ov.className = 'qd-overlay';
   ov.title = 'Drag to move';
   // the slide is drawn scaled: size the handles in screen pixels
-  ov.style.setProperty('--px', String(1 / (frameWin().Reveal?.getScale?.() || 1)));
+  ov.style.setProperty('--px', String(1 / (revealScale())));
   for (const [name, [x, y]] of Object.entries(HANDLES)) {
     const h = doc.createElement('div');
     h.className = 'qd-handle';
@@ -315,7 +318,7 @@ function attachOverlay(box) {
     e.preventDefault();
     e.stopPropagation();
     const dir = e.target.dataset.dir || null;
-    const scale = frameWin().Reveal?.getScale?.() || 1;
+    const scale = revealScale();
     const start = rectOf(box);
     const x0 = e.clientX;
     const y0 = e.clientY;

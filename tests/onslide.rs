@@ -416,7 +416,17 @@ impl Ed {
         self.type_text(text).await;
     }
 
-    async fn mouse(&self, t: DispatchMouseEventType, (x, y): (f64, f64), right: bool) {
+    async fn mouse(&self, t: DispatchMouseEventType, at: (f64, f64), right: bool) {
+        self.mouse_with(t, at, right, 0).await;
+    }
+    /// A mouse event with modifier keys held (1 Alt, 2 Ctrl, 4 Meta, 8 Shift).
+    async fn mouse_with(
+        &self,
+        t: DispatchMouseEventType,
+        (x, y): (f64, f64),
+        right: bool,
+        mods: i64,
+    ) {
         let up = matches!(t, DispatchMouseEventType::MouseReleased);
         let p = DispatchMouseEventParams::builder()
             .r#type(t)
@@ -435,6 +445,7 @@ impl Ed {
                 1
             })
             .click_count(1)
+            .modifiers(mods)
             .build()
             .unwrap();
         self.page.execute(p).await.unwrap();
@@ -1745,7 +1756,9 @@ async fn framed_editor_takes_theme_and_messages() {
     ed.click_editor("#menubar [data-menu=Menu]").await;
     assert_eq!(
         ed.menu_labels().await,
-        ["File", "Edit", "Insert", "Slide", "View", "Run", "Help"]
+        [
+            "File", "Edit", "Insert", "Slide", "Arrange", "View", "Run", "Help"
+        ]
     );
     ed.click_menu("Slide").await;
     ed.click_menu("Duplicate slide").await;
@@ -1841,11 +1854,13 @@ async fn menu_bar_runs_every_action() {
     );
     assert_eq!(
         ed.eval("qdMenus().then(Object.keys)").await,
-        json!(["File", "Edit", "Insert", "Slide", "View", "Run", "Help"])
+        json!([
+            "File", "Edit", "Insert", "Slide", "Arrange", "View", "Run", "Help"
+        ])
     );
     assert_eq!(
         ed.eval("[...document.querySelectorAll('#menubar[role=menubar] > [role=menuitem][aria-haspopup=menu]')].filter((b) => b.offsetParent).length").await,
-        7
+        8
     );
     // clicking an open menu's name again closes it
     let shown = "!document.querySelector('#ctxmenu').hidden";
@@ -2251,7 +2266,7 @@ async fn menus_open_fast() {
         .await;
     let times = times.as_object().unwrap();
     eprintln!("menu and reference open times (ms): {times:?}");
-    assert_eq!(times.len(), 8, "7 menus and the reference: {times:?}");
+    assert_eq!(times.len(), 9, "8 menus and the reference: {times:?}");
     for (what, ms) in times {
         assert!(
             ms.as_f64().unwrap() < 100.0,
@@ -3338,29 +3353,14 @@ async fn place_freely() {
     let to = (from.0 + 120.0, from.1 + 90.0);
     {
         use DispatchMouseEventType::*;
-        let steps = [
+        let mid = (from.0 + 30.0, from.1 + 20.0);
+        for (t, at) in [
             (MousePressed, from),
-            (MouseMoved, (from.0 + 30.0, from.1 + 20.0)),
+            (MouseMoved, mid),
             (MouseMoved, to),
             (MouseReleased, to),
-        ];
-        for (t, (x, y)) in steps {
-            let up = matches!(t, MouseReleased);
-            ed.page
-                .execute(
-                    DispatchMouseEventParams::builder()
-                        .r#type(t)
-                        .x(x)
-                        .y(y)
-                        .button(MouseButton::Left)
-                        .buttons(if up { 0 } else { 1 })
-                        .click_count(1)
-                        .modifiers(1) // Alt
-                        .build()
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
+        ] {
+            ed.mouse_with(t, at, false, 1).await; // ⌥ held
         }
     }
     ed.wait_file(|f| f.contains("- x\n- y\n:::"), "list placed")
@@ -3383,9 +3383,7 @@ async fn place_freely() {
 
     // the placed list is selected: a corner handle resizes it
     ed.settle().await;
-    let handle = "(() => { const f = document.querySelector('#preview'); const h = f.contentDocument.querySelector('.qd-handle[data-dir=se]'); const a = f.getBoundingClientRect(); const r = h.getBoundingClientRect(); return [a.left + r.left + r.width / 2, a.top + r.top + r.height / 2]; })()";
-    ed.wait("!!document.querySelector('#preview').contentDocument.querySelector('.qd-handle[data-dir=se]')").await;
-    let h = ed.point(handle).await;
+    let h = ed.slide_point(".qd-handle[data-dir=se]").await;
     let w0 = num(&f, "width");
     ed.press_and_move(h, (h.0 + 40.0, h.1 + 20.0)).await;
     ed.mouse(
