@@ -1187,15 +1187,8 @@ async fn insert_drag_delete_and_empty_slides() {
 async fn copy_and_paste_carry_the_markdown() {
     let Some(ed) = Ed::open(P2).await else { return };
     ed.go("a").await;
-    let menu_open = "!document.querySelector('#ctxmenu').hidden";
-    for _ in 0..3 {
-        ed.right_click(ed.slide_point("[data-qd=\"a/2\"]").await)
-            .await;
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        if ed.eval(menu_open).await == true {
-            break;
-        }
-    }
+    ed.right_click(ed.slide_point("[data-qd=\"a/2\"]").await)
+        .await;
     ed.click_menu("Copy").await;
     ed.go("b").await;
     ed.right_click(ed.slide_point("[data-qd=\"b/0\"] p").await)
@@ -3416,7 +3409,11 @@ async fn place_freely() {
 
     // arrow keys nudge it by 1, ⇧ by 10 (selected again: a slow render may drop the selection)
     ed.settle().await;
-    ed.select(list).await;
+    let selected = format!("{SEL} === 'a/1'");
+    if ed.eval(&selected).await != true {
+        ed.click_in_slide(list).await; // a click selects a placed box
+    }
+    ed.wait(&selected).await;
     let l0 = num(&ed.file(), "left");
     ed.key("ArrowRight", "ArrowRight", 39, 0).await;
     ed.wait_file(|f| num(f, "left") == l0 + 1.0, "nudged by 1")
@@ -3432,16 +3429,24 @@ async fn place_freely() {
     ed.menu("Arrange", "Put back in the flow").await;
     ed.wait_file(|f| f == before, "back in the flow").await;
 
-    // the columns can't be placed: greyed out, with the reason as its tooltip
+    // the columns can't be placed: greyed out, with the reason as its tooltip.
+    // Read it as soon as the menu shows: a render landing may close the menu again.
     ed.settle().await;
-    ed.right_click(ed.slide_point("[data-qd=\"a/2\"]").await)
-        .await;
-    assert!(
-        ed.menu_labels()
-            .await
-            .contains(&"Place freely (disabled)".to_string())
+    let item = "(() => { const li = [...document.querySelectorAll('#ctxmenu li')].find((li) => li.firstChild?.textContent === 'Place freely' && li.offsetParent); return li ? [li.getAttribute('aria-disabled'), li.title] : null; })()";
+    let mut place = Value::Null;
+    for _ in 0..10 {
+        ed.right_click(ed.slide_point("[data-qd=\"a/2\"]").await)
+            .await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        place = ed.eval(item).await;
+        if !place.is_null() {
+            break;
+        }
+    }
+    assert_eq!(
+        place[0], "true",
+        "Place freely is greyed out on the columns"
     );
-    let why = ed.eval("[...document.querySelectorAll('#ctxmenu li')].find((li) => li.firstChild?.textContent === 'Place freely').title").await;
-    assert!(why.as_str().unwrap().contains("div"), "{why}");
+    assert!(place[1].as_str().unwrap().contains("div"), "{place}");
     ed.close_menu().await;
 }

@@ -213,6 +213,7 @@ function highlight() {
     const els = doc.querySelectorAll(`[data-qd="${CSS.escape(state.sel)}"]`);
     els.forEach((el) => el.classList.add('qd-sel'));
     const box = [...els].find((el) => el.classList.contains('absolute'));
+    if (els.length) state.selBox = !!box; // kept while a new render swaps in (the arrow keys)
     if (box) attachOverlay(box);
   }
   placeElbar();
@@ -1808,7 +1809,7 @@ for (const [ids, on, table] of [[ELEMENT, 'el', 'element'], [SLIDE, 'slide', 'sl
   }
 }
 // arrow keys nudge a placed element (spec 009 US2), ⇧ by 10; otherwise they stay reveal.js's
-const boxSelected = () => !!state.sel && !!elOf(state.sel)?.classList.contains('absolute');
+const boxSelected = () => !!state.sel && !!state.selBox;
 for (const [dir, dx, dy] of [['left', -1, 0], ['right', 1, 0], ['up', 0, -1], ['down', 0, 1]]) {
   keys.on(`box-nudge-${dir}`, {
     key: boxSelected,
