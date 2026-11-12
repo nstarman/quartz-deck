@@ -177,6 +177,21 @@ enum Cmd {
         #[command(subcommand)]
         action: Option<EnvCmd>,
     },
+    /// The deck's versions from git, newest first (spec 012)
+    History {
+        /// Only the versions in which this slide changed
+        #[arg(long)]
+        slide: Option<String>,
+        /// At most this many versions
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        /// Skip this many (paging)
+        #[arg(long, default_value_t = 0)]
+        skip: usize,
+        /// Start a history: a git repository in the deck's folder, the deck committed
+        #[arg(long, conflicts_with = "slide")]
+        init: bool,
+    },
     /// Render the deck with Quarto (as `quarto render`) and report the output
     Render {
         /// Output format (default: the deck's own, usually revealjs)
@@ -635,6 +650,9 @@ fn output_of(cmd: &str) -> &'static str {
         "serve" => r#"{"url","port","pid"} (one line, then serves until stopped)"#,
         "url" => r#"{"url"}"#,
         "pdf" => r#"{"path","pages","per_slide","notes","compressed"}"#,
+        "history" => {
+            r#"{"kind":"history","path","versions":[{"rev"|null,"short","time","author","message","qd","path"}],"more"}; with --init: {"ok","repo","rev"}"#
+        }
         "export" => {
             r#"{"kind":"export","ok"…} (offline); with --to: {"ok","kind":"export-format","format","route","out","files":[...],"losses":[{"feature","keep","what","slides":[...]}],"notes":[...],"changed_during","dry_run"?}; with --list: {"kind":"export-formats","formats":[{"name","label","group","ext","needs","ready","hint"?}]} — offline: {"kind":"export","ok","out","html","files":[...],"check":{offline_check},"assets":[{"name","version","sha256","source","path"}],"pdf"?:{"path","pages","per_slide","notes","compressed"},"staging"? (when ok is false)}"#
         }
@@ -1497,6 +1515,13 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                 })
                 .collect();
             Ok(json!({ "outputs": list }))
+        }
+        Cmd::History { init: true, .. } => crate::history::init(&ctx.store()?.path),
+        Cmd::History {
+            slide, limit, skip, ..
+        } => {
+            let (s, d) = read()?;
+            crate::history::history(&s.path, &d, slide.as_deref(), *limit, *skip)
         }
         Cmd::Render { to } => {
             let s = ctx.store()?;

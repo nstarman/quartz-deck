@@ -47,6 +47,7 @@ const UI_MODULES: &[(&str, &str)] = &[
     ("list.js", include_str!("ui/list.js")),
     ("settings.js", include_str!("ui/settings.js")),
     ("sheet.js", include_str!("ui/sheet.js")),
+    ("history.js", include_str!("ui/history.js")),
     ("action-list.js", ACTION_LIST_JS),
 ];
 
@@ -130,7 +131,7 @@ type Shared = Arc<App>;
 
 fn err_response(e: QdError) -> Response {
     let status = match e {
-        QdError::NotFound(_) => StatusCode::NOT_FOUND,
+        QdError::NotFound(_) | QdError::NoRepo => StatusCode::NOT_FOUND,
         QdError::Ambiguous(_)
         | QdError::InvalidArg(_)
         | QdError::InvalidSetting(_)
@@ -290,7 +291,8 @@ async fn api_op(
     }
     let store = app.store.clone();
     let res = tokio::task::spawn_blocking(move || {
-        run_op(&store, &body.op, &body.args, body.expect.as_deref())
+        // the editor's edits are the person's (spec 012 commit messages)
+        crate::store::as_person(|| run_op(&store, &body.op, &body.args, body.expect.as_deref()))
     })
     .await;
     match res {
@@ -509,6 +511,57 @@ async fn api_layouts(State(app): State<Shared>) -> Response {
         Ok(d) => Json(crate::layouts::json_for(&app.dir(), d.width, d.height)).into_response(),
         Err(e) => err_response(e),
     }
+}
+
+/// `GET /api/history?slide=&limit=&skip=` (spec 012): `qd history`.
+async fn api_history(
+    State(app): State<Shared>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
+    let num = |k: &str, d: usize| q.get(k).and_then(|v| v.parse().ok()).unwrap_or(d);
+    let (limit, skip, slide) = (num("limit", 50), num("skip", 0), q.get("slide").cloned());
+    blocking(move || {
+        let d = app.store.read()?;
+        crate::history::history(&app.store.path, &d, slide.as_deref(), limit, skip)
+    })
+    .await
+}
+
+/// `POST /api/history/render {"rev"}` (token: it runs Quarto, no code): the
+/// deck as it was, rendered once into the cache and served under `/history/`,
+/// with the current slides that differ from it (`changed`).
+async fn api_history_render(
+    State(app): State<Shared>,
+    headers: HeaderMap,
+    Json(req): Json<Value>,
+) -> Response {
+    if !authorized(&app, &headers) {
+        return forbidden();
+    }
+    let Some(rev) = req["rev"].as_str().map(String::from) else {
+        return err_response(QdError::InvalidArg("rev is required".into()));
+    };
+    blocking(move || {
+        let (path, cache) = (&app.store.path, app.store.cache_dir());
+        let html = crate::history::render_version(path, cache, &rev)?;
+        let changed = crate::history::changed_at(path, &app.store.read()?, &rev)?;
+        let rel: Vec<String> = html
+            .strip_prefix(cache.join("history"))
+            .unwrap_or(&html)
+            .iter()
+            .map(|p| url_encode(&p.to_string_lossy()))
+            .collect();
+        Ok(json!({"href": format!("/history/{}", rel.join("/")), "changed": changed}))
+    })
+    .await
+}
+
+/// `POST /api/history/init` (token: it creates a repository beside the deck).
+async fn api_history_init(State(app): State<Shared>, headers: HeaderMap) -> Response {
+    if !authorized(&app, &headers) {
+        return forbidden();
+    }
+    blocking(move || crate::history::init(&app.store.path)).await
 }
 
 /// `POST /api/layouts` (token, same origin): save, rename or remove a saved
@@ -1072,6 +1125,13 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
                 get(api_images).post(api_image_add).layer(limit),
             )
             .route("/api/layouts", get(api_layouts).post(api_layouts_change))
+            .route("/api/history", get(api_history))
+            .route("/api/history/render", post(api_history_render))
+            .route("/api/history/init", post(api_history_init))
+            .nest_service(
+                "/history",
+                ServeDir::new(app.store.cache_dir().join("history")),
+            )
             .nest_service(
                 "/preview",
                 ServeDir::new(&out).fallback(ServeDir::new(&deck_dir)),
