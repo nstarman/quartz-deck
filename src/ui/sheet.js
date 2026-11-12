@@ -92,6 +92,12 @@ function field(f, values, checks, submit) {
   const input = el('input', { type: 'text', name: f.name, value: f.value ?? '', placeholder: f.placeholder ?? '' });
   const label = el('label', { textContent: f.label });
   label.append(input);
+  if (f.suggestions) { // the browser's own completion list
+    const list = el('datalist', { id: `sheet-${f.name}-list` });
+    list.append(...f.suggestions.map((value) => el('option', { value })));
+    input.setAttribute('list', list.id);
+    label.append(list);
+  }
   if (f.kind === 'files') {
     const list = el('ul', { className: 'files', ariaLabel: 'Images beside the deck' });
     fetch('/api/images').then((r) => r.json()).then(({ images }) => {

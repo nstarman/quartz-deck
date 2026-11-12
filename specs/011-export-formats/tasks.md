@@ -112,11 +112,11 @@ page. File ▸ Export is now a submenu with every format (one action each:
 
 **Independent Test**: spec US4; quickstart §5.
 
-- [ ] T015 [P] [US4] Write failing tests:
+- [X] T015 [P] [US4] Write failing tests:
   - **`src/formats.rs` units:** a writer from Pandoc's list that isn't in `FORMATS` gets group `other`, route `pandoc` and an ext from the map (`rst`, `org`, `latex→tex`, `asciidoc→adoc`, default `txt`).
   - **`tests/export_formats.rs` `other_writers`:** `--to rst` and `--to org` write files that hold every slide title, `route: "pandoc"`, and the note "Quarto-only features may be simplified". `--to nosuch` fails with `E_INVALID_ARG`.
   - **Browser test `export_other_format`:** Export ▾ ▸ Other format… opens a filterable list; picking `rst` exports it.
-- [ ] T016 [US4] Read the writer list once per process (`quarto pandoc --list-output-formats`), implement the Pandoc route (Quarto to `md` with the filter, then `quarto pandoc -t`), and build the "Other format…" sheet in the editor. T015 passes.
+- [X] T016 [US4] Read the writer list once per process (`quarto pandoc --list-output-formats`), implement the Pandoc route (Quarto to `md` with the filter, then `quarto pandoc -t`), and build the "Other format…" sheet in the editor. T015 passes.
 
 ---
 
