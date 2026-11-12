@@ -192,6 +192,13 @@ enum Cmd {
         #[arg(long, conflicts_with = "slide")]
         init: bool,
     },
+    /// The slides that changed between two versions, or a version and the file (spec 012)
+    Diff {
+        /// The older version (anything git accepts: a hash, HEAD~2, a tag)
+        from: String,
+        /// The newer version (default: the current file)
+        to: Option<String>,
+    },
     /// Render the deck with Quarto (as `quarto render`) and report the output
     Render {
         /// Output format (default: the deck's own, usually revealjs)
@@ -652,6 +659,9 @@ fn output_of(cmd: &str) -> &'static str {
         "pdf" => r#"{"path","pages","per_slide","notes","compressed"}"#,
         "history" => {
             r#"{"kind":"history","path","versions":[{"rev"|null,"short","time","author","message","qd","path"}],"more"}; with --init: {"ok","repo","rev"}"#
+        }
+        "diff" => {
+            r#"{"kind":"diff","from","to"|"uncommitted","slides":[{"kind":"added|removed|moved|changed","id","title","from"|null,"to"|null,"diff"?}]}"#
         }
         "export" => {
             r#"{"kind":"export","ok"…} (offline); with --to: {"ok","kind":"export-format","format","route","out","files":[...],"losses":[{"feature","keep","what","slides":[...]}],"notes":[...],"changed_during","dry_run"?}; with --list: {"kind":"export-formats","formats":[{"name","label","group","ext","needs","ready","hint"?}]} — offline: {"kind":"export","ok","out","html","files":[...],"check":{offline_check},"assets":[{"name","version","sha256","source","path"}],"pdf"?:{"path","pages","per_slide","notes","compressed"},"staging"? (when ok is false)}"#
@@ -1541,6 +1551,10 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
         } => {
             let (s, d) = read()?;
             crate::history::history(&s.path, &d, slide.as_deref(), *limit, *skip)
+        }
+        Cmd::Diff { from, to } => {
+            let (s, d) = read()?;
+            crate::history::compare(&s.path, &d, from, to.as_deref())
         }
         Cmd::Render { to } => {
             let s = ctx.store()?;

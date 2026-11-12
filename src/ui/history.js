@@ -1,6 +1,7 @@
 // History (spec 012 US1): the deck's versions from git, newest first, and one
 // of them rendered beside the current deck, with the slides that changed
-// since then marked in the slide list.
+// since then marked in the slide list; Compare lists those slides, with
+// each one's source diff (US3).
 
 import { token, el } from '/ui/run.js';
 
@@ -10,6 +11,8 @@ const then = $('#then');
 const thenFrame = $('iframe', then);
 let open = null; // the version shown beside the current deck
 let changed = [];
+const changes = $('.changes', panel);
+const diffView = $('pre.diff', panel);
 
 const post = (path, body) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-QD-Token': token }, body: JSON.stringify(body) });
 
@@ -64,7 +67,13 @@ async function load() {
   }
 }
 
+function clearCompare() {
+  changes.replaceChildren();
+  diffView.hidden = true;
+}
+
 async function show(v) {
+  clearCompare();
   say(`Rendering ${v.short}…`);
   const res = await post('/api/history/render', { rev: v.rev });
   const body = await res.json().catch(() => ({}));
@@ -82,6 +91,7 @@ async function show(v) {
 function close() {
   open = null;
   changed = [];
+  clearCompare();
   then.hidden = true;
   thenFrame.removeAttribute('src');
   for (const b of panel.querySelectorAll('button[data-rev]')) b.setAttribute('aria-pressed', 'false');
@@ -91,6 +101,34 @@ function close() {
 /** The current deck went to slide `anchor`: the version beside it follows. */
 export function follow(anchor) {
   if (open && thenFrame.contentWindow) thenFrame.contentWindow.location.hash = '#/' + anchor;
+}
+
+export const versionOpen = () => !!open;
+
+/** Compare the open version with the deck now: the slides that changed (US3). */
+export async function compare() {
+  if (!open) return;
+  clearCompare();
+  const res = await fetch(`/api/history/diff?from=${encodeURIComponent(open.rev)}`);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) return say(body.error?.message || res.statusText);
+  const n = body.slides.length;
+  say(n ? `${n} slide${n > 1 ? 's' : ''} changed since ${open.short}:` : `No slide changed since ${open.short}.`);
+  for (const c of body.slides) {
+    const li = el('li');
+    li.append(el('button', { type: 'button', textContent: `${c.kind} · ${c.title || c.id}`, onclick: () => showChange(c) }));
+    changes.append(li);
+  }
+}
+
+/** One changed slide: its source diff, and both previews at that slide. */
+function showChange(c) {
+  diffView.replaceChildren(...(c.diff || '').split('\n').filter((l) => l && !/^(---|\+\+\+|@@)/.test(l)).map((l) =>
+    el('span', { className: { '+': 'add', '-': 'del' }[l[0]] || '', textContent: l + '\n' })));
+  diffView.hidden = !c.diff;
+  // the version beside follows the current deck (follow); a removed slide is only there
+  if (c.kind === 'removed') follow(c.id);
+  else $('#preview').contentWindow.location.hash = '#/' + c.id;
 }
 
 export const isOpen = () => !panel.hidden;

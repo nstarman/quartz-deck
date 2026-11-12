@@ -3,7 +3,7 @@
 
 mod common;
 use common::{git_repo, have, hook, qd, settings};
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::path::Path;
 
 fn run(dir: &Path, args: &[&str]) -> (bool, Value) {
@@ -97,6 +97,40 @@ fn history_lists_versions() {
     let (_, v) = run(t.path(), &["history", "--limit", "1"]);
     assert_eq!(v["versions"][0]["short"], "uncommitted");
     assert_eq!(v["versions"][0]["rev"], Value::Null);
+}
+
+/// 012 US3 (T012): `qd diff REV [REV]` lists the slides that changed.
+#[test]
+fn diff_versions() {
+    let t = tempfile::tempdir().unwrap();
+    five_commits(t.path());
+    let kinds = |v: &Value| -> Vec<Value> {
+        let s = v["slides"].as_array().unwrap().iter();
+        s.map(|c| json!([c["kind"], c["id"], c["from"], c["to"]]))
+            .collect()
+    };
+    // against the file (equal to HEAD): the reorder's text, then two edited
+    let (ok, v) = run(t.path(), &["diff", "HEAD~2"]);
+    assert!(ok, "{v}");
+    assert_eq!(v["kind"], "diff");
+    assert_eq!(v["to"], "uncommitted");
+    assert_eq!(kinds(&v), [json!(["changed", "two", 1, 1])]);
+    assert!(v["slides"][0]["diff"].as_str().unwrap().contains("+B2"));
+    // two versions, the older under its old name (renamed since)
+    let (ok, v) = run(t.path(), &["diff", "HEAD~4", "HEAD~1"]);
+    assert!(ok, "{v}");
+    // one changed and moved below two; two kept its text, so it isn't listed
+    // (a swap moves one slide, and the changed one is listed anyway)
+    assert_eq!(kinds(&v), [json!(["changed", "one", 1, 2])]);
+    // an uncommitted added slide
+    let deck = t.path().join("talks/deck.qmd");
+    let text = std::fs::read_to_string(&deck).unwrap();
+    std::fs::write(&deck, format!("{text}\n## Three {{#three}}\n\nC\n")).unwrap();
+    let (_, v) = run(t.path(), &["diff", "HEAD"]);
+    assert_eq!(kinds(&v), [json!(["added", "three", null, 3])]);
+    let (ok, v) = run(t.path(), &["diff", "nosuch"]);
+    assert!(!ok);
+    assert_eq!(v["error"]["code"], "E_NOT_FOUND");
 }
 
 #[test]
