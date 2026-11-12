@@ -1,0 +1,72 @@
+---
+title: "Carry-over"
+format: revealjs
+jupyter: python3
+---
+
+## Columns {#cols}
+
+:::: {.columns}
+::: {.column width="50%"}
+LEFTCOL text
+:::
+::: {.column width="50%"}
+RIGHTCOL text
+:::
+::::
+
+::: notes
+NOTESCOLS spoken here
+:::
+
+## Placed {#placed}
+
+Flow text FLOWTXT
+
+::: {#b-1 .absolute left="600px" top="300px" width="200px"}
+PLACEDBOX text
+:::
+
+## Fragments {#frags}
+
+- FRAGA
+
+. . .
+
+- FRAGB
+
+::: {.fragment}
+FRAGC
+:::
+
+## Background {#bg background-image="bg.png"}
+
+BGSLIDE text
+
+## Math {#math}
+
+$$E = mc^2 \label{MATHEQ}$$
+
+Inline $\alpha^2$.
+
+## Plot {#plot}
+
+```{python}
+#| fig-cap: "PLOTCAP"
+import matplotlib.pyplot as plt
+plt.plot([1, 3, 2])
+```
+
+## Interactive {#plotly}
+
+```{python}
+
+import plotly.graph_objects as go
+go.Figure(go.Scatter(x=[1,2,3], y=[3,1,2]))
+```
+
+## Callout {#callout}
+
+::: {.callout-note}
+CALLOUTTXT
+:::
