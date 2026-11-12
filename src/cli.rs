@@ -1040,17 +1040,21 @@ impl Ctx<'_> {
         Store::open(&find_deck(&self.cli.deck)?)
     }
 
+    /// `--expect`: refuse when the file is not at that version.
+    fn check_expect(&self, d: &Deck) -> Result<()> {
+        match &self.cli.expect {
+            Some(e) if e != &d.version => Err(QdError::Conflict(format!(
+                "expected version {e}, file is at {}",
+                d.version
+            ))),
+            _ => Ok(()),
+        }
+    }
+
     fn edit(&self, f: impl FnOnce(&Deck) -> Result<Patch>) -> Result<Value> {
         let store = self.store()?;
         let d = store.read()?;
-        if let Some(e) = &self.cli.expect
-            && e != &d.version
-        {
-            return Err(QdError::Conflict(format!(
-                "expected version {e}, file is at {}",
-                d.version
-            )));
-        }
+        self.check_expect(&d)?;
         let p = f(&d)?;
         let after = ops::apply(&d.text, &p)?;
         let diff = ops::diff(&d.text, &after);
@@ -1243,7 +1247,10 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             action: Some(MetaCmd::Unset { key }),
         } => ctx.edit(|d| ops::meta_unset(d, key)),
         Cmd::Bib { zotero } => {
-            crate::bib::patch(&read()?.1, &[])?; // no marker pair: fail before asking Zotero
+            // a stale --expect or no marker pair: fail before asking Zotero
+            let d = read()?.1;
+            ctx.check_expect(&d)?;
+            crate::bib::patch(&d, &[])?;
             let (rows, warnings) = crate::bib::lines(&crate::bib::fetch(zotero)?);
             let mut v = ctx.edit(|d| crate::bib::patch(d, &rows))?;
             v["entries"] = json!(rows.len());
