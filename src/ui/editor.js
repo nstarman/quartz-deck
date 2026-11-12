@@ -12,7 +12,7 @@ import { makeList } from '/ui/list.js';
 import * as pane from '/ui/pane.js';
 import * as run from '/ui/run.js';
 import * as focus from '/ui/focus.js';
-import { ask } from '/ui/sheet.js';
+import { ask, confirmSheet } from '/ui/sheet.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const frame = $('#preview');
@@ -223,10 +223,17 @@ function highlight() {
 
 const revealScale = () => frameWin()?.Reveal?.getScale?.() || 1;
 
+/** Where `el` shows on its slide now, [left, top, width, height] in slide px. */
+function slideRect(el) {
+  const s = revealScale();
+  const sec = el.closest('section').getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  return [r.left - sec.left, r.top - sec.top, r.width, r.height].map((v) => Math.round(v / s));
+}
+
 /** `block place` args for target `t`: where its element shows on the slide now, in slide px. */
 function placement(t) {
   const s = revealScale();
-  const sec = t.el.closest('section').getBoundingClientRect();
   const r = t.el.getBoundingClientRect();
   // a block is as wide as the slide; the box is as wide as its text (a little more, so it doesn't rewrap)
   let right = 0;
@@ -239,7 +246,8 @@ function placement(t) {
     right = Math.max(right, range.getBoundingClientRect().right);
   }
   const w = right ? Math.min(r.width, right - r.left + 8 * s) : r.width;
-  return { element: t.ref, at: `${Math.round((r.left - sec.left) / s)},${Math.round((r.top - sec.top) / s)}`, width: Math.round(w / s) };
+  const [l, top] = slideRect(t.el);
+  return { element: t.ref, at: `${l},${top}`, width: Math.round(w / s) };
 }
 
 /** ⌥-drag on an element in the flow: it follows the pointer, and the drop places it there. */
@@ -523,12 +531,60 @@ frame.addEventListener('load', () => {
 
 // ---------- slide list (spec 008 US1: list.js) ----------
 
+// ---------- saved layouts (spec 009 US3) ----------
+
+const LAYOUT_NAME = (x) => (/^[a-z0-9-]{1,40}$/.test(x) ? '' : 'Lowercase letters, digits and - (up to 40)');
+
+/** `POST /api/layouts`: the new list, 'taken' for a name in use, or null (said). */
+async function layoutChange(change) {
+  const res = await fetch('/api/layouts', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-QD-Token': run.token }, body: JSON.stringify(change) });
+  const body = await res.json().catch(() => ({}));
+  if (res.status === 409) return 'taken';
+  if (!res.ok) { say(body.error?.message || res.statusText, true); return null; }
+  return body;
+}
+
+/** Slide ▸ Save slide as layout…: a name, where to keep it, and where each element shows now. */
+async function saveLayout(t) {
+  const v = await ask({
+    title: 'Save slide as layout', ok: 'Save',
+    fields: [
+      { name: 'name', kind: 'text', label: 'Name', placeholder: 'e.g. chart-and-notes', validate: LAYOUT_NAME },
+      { name: 'where', kind: 'choice', label: 'Keep it', value: 'deck', options: [['deck', 'With this deck'], ['mine', 'In my layouts, for every deck']] },
+    ],
+  });
+  if (!v) return;
+  const at = {};
+  t.full.blocks.forEach((b, i) => {
+    const el = b.kind !== 'box' && elOf(`${t.slideId}/${i}`);
+    const r = el && slideRect(el);
+    if (r?.[2] > 0 && r[3] > 0) at[`${t.slideId}/${i}`] = r; // a slide not on screen measures 0: stacked instead
+  });
+  const save = { slide: t.slideId, name: v.name, where: v.where, at };
+  let r = await layoutChange({ save });
+  if (r === 'taken' && (await confirmSheet('Replace layout?', `There is already a layout named “${v.name}” there.`, 'Replace'))) r = await layoutChange({ save: { ...save, replace: true } });
+  if (r && r !== 'taken') say(`Saved layout “${v.name}”`);
+}
+
+/** The gallery's rename and delete, for saved layouts. */
+const manageLayouts = {
+  rename: async (o) => {
+    const v = await ask({ title: `Rename “${o.name}”`, ok: 'Rename', fields: [{ name: 'to', kind: 'text', label: 'New name', validate: LAYOUT_NAME }] });
+    if (!v) return null;
+    const r = await layoutChange({ rename: { from: o.name, to: v.to, where: o.from } });
+    if (r === 'taken') say(`There is already a layout named “${v.to}”`, true);
+    return r && r !== 'taken' ? v.to : null;
+  },
+  remove: async (o) => (await confirmSheet('Delete layout?', `“${o.name}” will be deleted. Slides made from it stay as they are.`, 'Delete'))
+    && !!(await layoutChange({ rm: { name: o.name, where: o.from } })),
+};
+
 /** A new slide `where` (`{after}`/`{before}`), from a layout picked in the gallery (spec 009). */
 async function addSlide(where, anchor) {
   const { layouts } = await fetch('/api/layouts').then((r) => r.json());
   const v = await ask({
     title: 'New slide', ok: 'Add slide', anchor,
-    fields: [{ name: 'layout', kind: 'gallery', label: 'Layout', options: layouts, value: settings.get('ui.last_layout'), size: [state.deck.width, state.deck.height] }],
+    fields: [{ name: 'layout', kind: 'gallery', label: 'Layout', options: layouts, value: settings.get('ui.last_layout'), size: [state.deck.width, state.deck.height], manage: manageLayouts }],
   });
   if (!v?.layout) return null;
   settings.set({ 'ui.last_layout': v.layout });
@@ -1286,6 +1342,7 @@ const actions = makeActions({
     return r;
   },
   placement,
+  saveLayout,
   beginEditRef: (t) => t.el && beginEdit({ kind: 'block', root: t.el }, null).then((ok) => ok || beginSource(t.el)),
   beginSourceEl: (t) => t.el && beginSource(t.el),
   beginSlideSource: (t) => beginSlideSource(frame.contentDocument?.getElementById(t.anchor)),
@@ -1795,7 +1852,7 @@ keys.on('undo', () => undoRedo('undo'));
 keys.on('redo', () => undoRedo('redo'));
 // element and slide actions: the right-click menus' own (actions.js), on what is selected / shown
 const ELEMENT = ['edit', 'source', 'cut', 'copy', 'paste', 'dup', 'delete', 'up', 'down', 'fragment', 'class-smaller', 'class-incremental', 'class-custom', 'place', 'unplace'];
-const SLIDE = ['slide-before', 'slide-after', 'slide-dup', 'slide-cut', 'slide-copy', 'slide-paste', 'slide-hide', 'slide-rm', 'slide-bg', 'slide-bgimg', 'slide-notes', 'slide-source', 'slide-link'];
+const SLIDE = ['slide-before', 'slide-after', 'slide-dup', 'slide-cut', 'slide-copy', 'slide-paste', 'slide-hide', 'slide-rm', 'slide-bg', 'slide-bgimg', 'slide-notes', 'slide-source', 'slide-link', 'layout-save'];
 for (const [ids, on, table] of [[ELEMENT, 'el', 'element'], [SLIDE, 'slide', 'slide']]) {
   for (const id of ids) {
     keys.on(id, {
