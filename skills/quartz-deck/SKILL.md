@@ -71,6 +71,7 @@ when the current directory has exactly one `.qmd`.
 | duplicate | `qd dup results` |
 | paste slides (markdown, e.g. copied from another deck) | `qd paste --after intro --md -` (ids that clash are renewed) |
 | new slide from a layout | `qd layouts` lists them (title-content, two-columns, image-text, …, with their placeholders); `qd add --layout two-columns --after intro --title "Before and after"` returns `placeholders` with a `ref` each: fill them with `qd edit <ref> --md "…"` (an image: `--md "![](images/x.png)"`); placeholders left empty render as nothing |
+| place an element anywhere | `qd block place results/1 --at 600,400` (px of the slide; `--width W` or `--size W,H`) wraps it in an `.absolute` box, bytes unchanged; then `qd box move/resize` it; `qd block unplace <ref>` puts it back exactly. Divs (columns, callouts) and notes are refused: place what's inside |
 | reorder | `qd move results --before intro` / `--after last`; several at once keep their order: `qd move a b c --after last` |
 | delete | `qd rm @4` (several: `qd rm a b`, one undo step) |
 | retitle | `qd title results "Findings"` (`""` = untitled) |

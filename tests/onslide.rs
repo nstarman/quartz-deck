@@ -304,8 +304,20 @@ impl Ed {
 
     /// Page point of a preview element (`sel` in the iframe): `x` is a JS
     /// expression over its rect `r` (e.g. `r.width / 2`), y its middle.
+    /// Waits for the element: a new render may be swapping in.
     async fn slide_at(&self, sel: &str, x: &str) -> (f64, f64) {
-        self.point(&format!("(() => {{ const f = document.querySelector('#preview'); const el = f.contentDocument.querySelector({sel:?}); const a = f.getBoundingClientRect(); const r = el.getBoundingClientRect(); return [a.left + r.left + {x}, a.top + r.top + r.height / 2]; }})()")).await
+        let start = Instant::now();
+        loop {
+            let v = self.eval(&format!("(() => {{ const f = document.querySelector('#preview'); const el = f.contentDocument?.querySelector({sel:?}); if (!el) return null; const a = f.getBoundingClientRect(); const r = el.getBoundingClientRect(); return [a.left + r.left + {x}, a.top + r.top + r.height / 2]; }})()")).await;
+            if let Some(p) = v.as_array() {
+                return (p[0].as_f64().unwrap(), p[1].as_f64().unwrap());
+            }
+            assert!(
+                start.elapsed() < Duration::from_secs(30),
+                "{sel} never on the slide"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
     async fn slide_point(&self, sel: &str) -> (f64, f64) {
@@ -416,7 +428,17 @@ impl Ed {
         self.type_text(text).await;
     }
 
-    async fn mouse(&self, t: DispatchMouseEventType, (x, y): (f64, f64), right: bool) {
+    async fn mouse(&self, t: DispatchMouseEventType, at: (f64, f64), right: bool) {
+        self.mouse_with(t, at, right, 0).await;
+    }
+    /// A mouse event with modifier keys held (1 Alt, 2 Ctrl, 4 Meta, 8 Shift).
+    async fn mouse_with(
+        &self,
+        t: DispatchMouseEventType,
+        (x, y): (f64, f64),
+        right: bool,
+        mods: i64,
+    ) {
         let up = matches!(t, DispatchMouseEventType::MouseReleased);
         let p = DispatchMouseEventParams::builder()
             .r#type(t)
@@ -435,6 +457,7 @@ impl Ed {
                 1
             })
             .click_count(1)
+            .modifiers(mods)
             .build()
             .unwrap();
         self.page.execute(p).await.unwrap();
@@ -1745,7 +1768,9 @@ async fn framed_editor_takes_theme_and_messages() {
     ed.click_editor("#menubar [data-menu=Menu]").await;
     assert_eq!(
         ed.menu_labels().await,
-        ["File", "Edit", "Insert", "Slide", "View", "Run", "Help"]
+        [
+            "File", "Edit", "Insert", "Slide", "Arrange", "View", "Run", "Help"
+        ]
     );
     ed.click_menu("Slide").await;
     ed.click_menu("Duplicate slide").await;
@@ -1841,11 +1866,13 @@ async fn menu_bar_runs_every_action() {
     );
     assert_eq!(
         ed.eval("qdMenus().then(Object.keys)").await,
-        json!(["File", "Edit", "Insert", "Slide", "View", "Run", "Help"])
+        json!([
+            "File", "Edit", "Insert", "Slide", "Arrange", "View", "Run", "Help"
+        ])
     );
     assert_eq!(
         ed.eval("[...document.querySelectorAll('#menubar[role=menubar] > [role=menuitem][aria-haspopup=menu]')].filter((b) => b.offsetParent).length").await,
-        7
+        8
     );
     // clicking an open menu's name again closes it
     let shown = "!document.querySelector('#ctxmenu').hidden";
@@ -2251,7 +2278,7 @@ async fn menus_open_fast() {
         .await;
     let times = times.as_object().unwrap();
     eprintln!("menu and reference open times (ms): {times:?}");
-    assert_eq!(times.len(), 8, "7 menus and the reference: {times:?}");
+    assert_eq!(times.len(), 9, "8 menus and the reference: {times:?}");
     for (what, ms) in times {
         assert!(
             ms.as_f64().unwrap() < 100.0,
@@ -3314,4 +3341,112 @@ async fn slide_from_a_layout() {
         "image placeholder filled",
     )
     .await;
+}
+
+const PLACE: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## A {#a}\n\nFirst para.\n\n- x\n- y\n\n:::: {.columns}\n::: {.column}\nLeft\n:::\n::::\n";
+
+/// Spec 009 US2: ⌥-drag a list to place it where it falls; the handles resize it,
+/// the arrow keys nudge it (⇧ by 10), and "Put back in the flow" restores the
+/// file. A div can't be placed, and the menu says why.
+#[tokio::test(flavor = "multi_thread")]
+async fn place_freely() {
+    let Some(ed) = Ed::open(PLACE).await else {
+        return;
+    };
+    let before = ed.file();
+    ed.settle().await;
+    ed.go("a").await;
+    let list = "[data-qd=\"a/1\"]";
+    // where the list should land: its slide position now, plus the drag in slide px
+    let want = ed
+        .eval(&format!("(() => {{ const w = document.querySelector('#preview').contentWindow; const s = w.Reveal.getScale(); const el = w.document.querySelector('{list}'); const sec = el.closest('section').getBoundingClientRect(); const r = el.getBoundingClientRect(); return [(r.left - sec.left + 120) / s, (r.top - sec.top + 90) / s]; }})()"))
+        .await;
+    let from = ed.slide_at(list, "10").await;
+    let to = (from.0 + 120.0, from.1 + 90.0);
+    {
+        use DispatchMouseEventType::*;
+        let mid = (from.0 + 30.0, from.1 + 20.0);
+        for (t, at) in [
+            (MousePressed, from),
+            (MouseMoved, mid),
+            (MouseMoved, to),
+            (MouseReleased, to),
+        ] {
+            ed.mouse_with(t, at, false, 1).await; // ⌥ held
+        }
+    }
+    ed.wait_file(|f| f.contains("- x\n- y\n:::"), "list placed")
+        .await;
+    let num = |f: &str, k: &str| -> f64 {
+        let i = f.find(&format!(" {k}=")).unwrap() + k.len() + 2;
+        f[i..].split([' ', '}']).next().unwrap().parse().unwrap()
+    };
+    let f = ed.file();
+    assert!(
+        (num(&f, "left") - want[0].as_f64().unwrap()).abs() <= 2.0,
+        "{f} want {want}"
+    );
+    assert!(
+        (num(&f, "top") - want[1].as_f64().unwrap()).abs() <= 2.0,
+        "{f} want {want}"
+    );
+    assert!(!f.contains("height="), "text keeps its height: {f}");
+    assert!(f.contains("First para.\n\n:::"), "nothing else moved: {f}");
+
+    // the placed list is selected: a corner handle resizes it
+    ed.settle().await;
+    let h = ed.slide_point(".qd-handle[data-dir=se]").await;
+    let w0 = num(&f, "width");
+    ed.press_and_move(h, (h.0 + 40.0, h.1 + 20.0)).await;
+    ed.mouse(
+        DispatchMouseEventType::MouseReleased,
+        (h.0 + 40.0, h.1 + 20.0),
+        false,
+    )
+    .await;
+    ed.wait_file(|f| f.contains("height="), "resized").await;
+    assert!(num(&ed.file(), "width") > w0);
+
+    // arrow keys nudge it by 1, ⇧ by 10 (selected again: a slow render may drop the selection)
+    ed.settle().await;
+    let selected = format!("{SEL} === 'a/1'");
+    if ed.eval(&selected).await != true {
+        ed.click_in_slide(list).await; // a click selects a placed box
+    }
+    ed.wait(&selected).await;
+    let l0 = num(&ed.file(), "left");
+    ed.key("ArrowRight", "ArrowRight", 39, 0).await;
+    ed.wait_file(|f| num(f, "left") == l0 + 1.0, "nudged by 1")
+        .await;
+    ed.settle().await;
+    let t0 = num(&ed.file(), "top");
+    ed.key("ArrowDown", "ArrowDown", 40, 8).await; // ⇧
+    ed.wait_file(|f| num(f, "top") == t0 + 10.0, "nudged by 10")
+        .await;
+
+    // Arrange ▸ Put back in the flow: the file as it was
+    ed.settle().await;
+    ed.menu("Arrange", "Put back in the flow").await;
+    ed.wait_file(|f| f == before, "back in the flow").await;
+
+    // the columns can't be placed: greyed out, with the reason as its tooltip.
+    // Read it as soon as the menu shows: a render landing may close the menu again.
+    ed.settle().await;
+    let item = "(() => { const li = [...document.querySelectorAll('#ctxmenu li')].find((li) => li.firstChild?.textContent === 'Place freely' && li.offsetParent); return li ? [li.getAttribute('aria-disabled'), li.title] : null; })()";
+    let mut place = Value::Null;
+    for _ in 0..10 {
+        ed.right_click(ed.slide_point("[data-qd=\"a/2\"]").await)
+            .await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        place = ed.eval(item).await;
+        if !place.is_null() {
+            break;
+        }
+    }
+    assert_eq!(
+        place[0], "true",
+        "Place freely is greyed out on the columns"
+    );
+    assert!(place[1].as_str().unwrap().contains("div"), "{place}");
+    ed.close_menu().await;
 }

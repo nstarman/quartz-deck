@@ -773,3 +773,68 @@ fn add_from_a_layout_and_fill_it() {
             .contains("qd-ph ph=text left=60")
     );
 }
+
+/// Spec 009 US2: placing wraps an element (or positions an image) with its
+/// bytes unchanged; unplacing restores the file byte for byte (SC-003).
+#[test]
+fn place_and_unplace_round_trip() {
+    use quartz_deck::deck::BlockKind;
+    let src = "---\nformat: revealjs\n---\n\n## A {#a}\n\nA paragraph.\n\n- one\n- two\n\n> a quote\n\n$$\nx^2\n$$\n\n```{python}\n1 + 1\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n![](p.png){.fragment}\n\n![](q.png)\n\n![](r.png){width=\"50%\"}\n";
+    let d = Deck::parse(src.into());
+    let n = d.slides[0].blocks.len();
+    assert_eq!(n, 9);
+    for i in 0..n {
+        let r = format!("a/{i}");
+        let orig = d.slice(d.slides[0].blocks[i].span);
+        let p = ops::block_place(&d, &r, (600.0, 400.0), Some(300.0), None).unwrap();
+        let placed = Deck::parse(ops::apply(&d.text, &p).unwrap());
+        let b = &placed.slides[0].blocks[i];
+        let t = placed.slice(b.span);
+        assert_eq!(b.kind, BlockKind::Box, "{t}");
+        assert!(t.contains(".absolute left=600 top=400 width=300}"), "{t}");
+        assert!(!t.contains("height"), "text keeps its natural height: {t}");
+        assert_eq!(p.target, b.id);
+        if !orig.starts_with("![](p") && !orig.starts_with("![](q") {
+            assert!(t.contains(orig), "the block's bytes are unchanged: {t}");
+        }
+        if orig.contains(".fragment") {
+            assert!(t.contains(".fragment"), "{t}");
+        }
+        let u = ops::block_unplace(&placed, &p.target).unwrap();
+        assert_eq!(ops::apply(&placed.text, &u).unwrap(), src, "block {i}");
+    }
+    // with a height, both are written
+    let p = ops::block_place(&d, "a/7", (1.0, 2.0), Some(30.0), Some(40.0)).unwrap();
+    let t = ops::apply(&d.text, &p).unwrap();
+    assert!(t.contains("![](q.png){#b-"), "{t}");
+    assert!(
+        t.contains(".absolute left=1 top=2 width=30 height=40}"),
+        "{t}"
+    );
+}
+
+/// Spec 009 US2 (FR-012): what can't be placed or unplaced says why.
+#[test]
+fn place_refusals() {
+    use quartz_deck::error::QdError;
+    let src = "---\nformat: revealjs\n---\n\n## A {#a}\n\n:::: {.columns}\n::: {.column}\nx\n:::\n::::\n\nText.\n\n::: {#b-1 .absolute .qd-ph ph=text left=1 top=2 width=3 height=4}\n:::\n\n::: notes\nSay it.\n:::\n";
+    let d = Deck::parse(src.into());
+    let why = |r: Result<Patch, QdError>| match r {
+        Err(QdError::InvalidArg(m)) => m,
+        other => panic!("expected a refusal, got {other:?}"),
+    };
+    let place = |r: &str| ops::block_place(&d, r, (0.0, 0.0), None, None);
+    assert!(why(place("a/0")).contains("div"));
+    assert!(why(place("a/2")).contains("already"));
+    assert!(why(place("a/3")).contains("notes"));
+    assert!(why(ops::block_unplace(&d, "a/1")).contains("not placed"));
+    assert!(why(ops::block_unplace(&d, "a/2")).contains(".qd-ph"));
+    // an image box made by `box add` goes back to a plain image
+    let b = Deck::parse(BASIC.to_string());
+    let p = ops::block_unplace(&b, "b-plot").unwrap();
+    assert!(
+        ops::apply(&b.text, &p)
+            .unwrap()
+            .contains("\n![](plot.png)\n")
+    );
+}

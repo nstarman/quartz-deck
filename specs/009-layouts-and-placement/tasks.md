@@ -69,17 +69,17 @@ written first and seen failing.
 
 **Independent Test**: spec US2; quickstart §3–§4.
 
-- [ ] T009 [P] [US2] Write failing tests:
+- [X] T009 [P] [US2] Write failing tests:
   - **`src/ops.rs` units:** `block_place` wraps a paragraph, list, quote, equation, code cell and table, and puts `.absolute` attributes on an image, with the block's bytes unchanged; `block_unplace` restores each byte for byte; refusals (div, notes, box, a box with extra attributes for unplace) give their reasons; a fragment keeps its class.
   - **`tests/cli.rs` `place_and_unplace`:** `qd block place results/1 --at 600,400`, then `qd box move --by`, then `qd block unplace` → the file equals the original apart from the move-free round trip; one undo each.
-- [ ] T010 [US2] Implement `ops::block_place` and `ops::block_unplace` (research R4) and `qd block place/unplace` in `src/cli.rs`. T009 passes.
-- [ ] T011 [P] [US2] Write failing browser test `place_freely` in `tests/onslide.rs`:
+- [X] T010 [US2] Implement `ops::block_place` and `ops::block_unplace` (research R4) and `qd block place/unplace` in `src/cli.rs`. T009 passes.
+- [X] T011 [P] [US2] Write failing browser test `place_freely` in `tests/onslide.rs`:
   - ⌥-drag a list: a copy follows the pointer and the drop places it there (within 2 px);
   - the handles resize it;
   - arrow keys nudge (⇧ by 10);
   - "Put back in the flow" restores the file;
   - "Place freely" is disabled on the columns block, with its reason as the tooltip.
-- [ ] T012 [US2] Editor: ⌥-drag to place, Arrange menu (Place freely, Put back in the flow) and right-click entries, nudge actions `box-nudge-*` in `src/ui/actions.json`, `src/ui/editor.js`; an off-slide element gets a dashed outline. T011 passes.
+- [X] T012 [US2] Editor: ⌥-drag to place, Arrange menu (Place freely, Put back in the flow) and right-click entries, nudge actions `box-nudge-*` in `src/ui/actions.json`, `src/ui/editor.js`; an off-slide element gets a dashed outline. T011 passes.
 
 **Checkpoint**: US1 + US2 = the P1 scope.
 
