@@ -1390,10 +1390,9 @@ const actions = makeActions({
     const r = await op(name, args);
     if (!r) return null;
     if (name === 'dup') { state.goAfterRender = r.target; copiedFrom.set(r.target, slideById(args.slide)?.anchor); }
-    if (name.startsWith('block') && name !== 'block rm' && r.target?.includes('/')) state.sel = r.target;
+    if (/^(block|box) /.test(name) && name !== 'block rm' && r.target?.includes('/')) state.sel = r.target; // the element at its new place
     if (name === 'block rm' || name === 'rm') state.sel = null;
     if (name === 'block place') state.sel = args.element; // the box is where the element was
-    if (name.startsWith('box ') && r.target?.includes('/')) state.sel = r.target; // stacking: the box at its new place
     await fetchDeck();
     await renderPanel();
     renderSlidebar();
@@ -1918,7 +1917,7 @@ for (const [ids, on, table] of [[ELEMENT, 'el', 'element'], [SLIDE, 'slide', 'sl
       // Paste reads the system clipboard on a key press; from a menu it needs our own copy
       enabled: (ctx) => !!ctx[on] && actions.can(id, ctx[on], table) && (!id.endsWith('paste') || !!ctx.e || !!state.clip),
       checked: (ctx) => ctx[on] && actions.checked(id, ctx[on], table),
-      why: (ctx) => ctx[on] && actions.why(id, ctx[on], table),
+      why: (ctx) => ctx[on] && actions.tip(id, ctx[on], table),
       run: (ctx) => actions.run(id, ctx[on], table),
     });
   }

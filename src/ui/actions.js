@@ -113,6 +113,7 @@ export function makeActions(api) {
   ];
   const emptyArea = [...slide, '-', { id: 'insert-end', label: 'Insert', items: (t) => insertMenu(t, { end: true }) }];
 
+  const tip = (a, t) => a?.why?.(t) ?? a?.title;
   /** Menu items for a target, with functions resolved against it. */
   const shown = (a, t) => a === '-' || !a.visible || a.visible(t);
   const resolve = (list, t) => list.filter((a) => shown(a, t)).map((a) => (a === '-' ? a : {
@@ -121,7 +122,7 @@ export function makeActions(api) {
     shortcut: keys.shortcut(a.id), // keys come from the action list (spec 007)
     checked: typeof a.checked === 'function' ? a.checked(t) : undefined,
     disabled: a.enabled ? !a.enabled(t) : false,
-    title: a.why?.(t) ?? a.title,
+    title: tip(a, t),
     items: a.items ? a.items(t) : undefined,
     run: a.run && (() => a.run(t)),
   }));
@@ -141,6 +142,8 @@ export function makeActions(api) {
     can,
     checked: (id, t, table = 'element') => find(id, table)?.checked?.(t),
     /** Why action `id` can't act on `t` (a disabled item's tooltip). */
-    why: (id, t, table = 'element') => { const a = find(id, table); return a?.why?.(t) ?? a?.title; },
+    why: (id, t, table = 'element') => find(id, table)?.why?.(t),
+    /** Its tooltip: why it can't act on `t`, else what to know about it. */
+    tip: (id, t, table = 'element') => tip(find(id, table), t),
   };
 }

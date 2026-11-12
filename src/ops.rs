@@ -1457,11 +1457,13 @@ pub fn box_order(d: &Deck, r: &str, to: &str) -> Result<Patch> {
             "'{r}' is not placed freely; only placed elements stack"
         )));
     }
-    let i = on_slide(d, s, r)?;
     let boxes: Vec<usize> = (0..s.blocks.len())
         .filter(|&j| s.blocks[j].kind == BlockKind::Box)
         .collect();
-    let k = boxes.iter().position(|&j| j == i).unwrap();
+    let k = boxes
+        .iter()
+        .position(|&j| s.blocks[j].span == b.span)
+        .unwrap();
     let refuse = |m: &str| Err(QdError::InvalidArg(format!("'{r}' is already {m}")));
     let (after, j) = match to {
         "front" | "forward" if k + 1 == boxes.len() => return refuse("in front"),
@@ -1470,22 +1472,15 @@ pub fn box_order(d: &Deck, r: &str, to: &str) -> Result<Patch> {
         "forward" => (true, boxes[k + 1]),
         "back" => (false, boxes[0]),
         "backward" => (false, boxes[k - 1]),
-        _ => {
-            return Err(QdError::Usage(format!(
-                "box {to}: front, back, forward or backward"
-            )));
-        }
+        _ => unreachable!("box order {to}"),
     };
     let next = format!("{}/{j}", s.id);
-    let mut p = block_move(
-        d,
-        r,
-        if after {
-            Pos::After(&next)
-        } else {
-            Pos::Before(&next)
-        },
-    )?;
+    let pos = if after {
+        Pos::After(&next)
+    } else {
+        Pos::Before(&next)
+    };
+    let mut p = block_move(d, r, pos)?;
     p.op = format!("box {to}");
     Ok(p)
 }
