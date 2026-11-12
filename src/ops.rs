@@ -257,30 +257,34 @@ impl<'a> Ctx<'a> {
         })
     }
 
-    /// Text to insert at `at` so that `slide_text` becomes its own slide.
     fn place(&self, at: usize, slide_text: &str) -> String {
-        let nl = self.nl();
-        let before = &self.d.text[..at];
-        let core = slide_text.trim_end_matches(['\n', '\r']);
-        let prefix = if before.is_empty() || before.ends_with(&format!("{nl}{nl}")) {
-            ""
-        } else if before.ends_with(nl) {
-            nl
-        } else {
-            "\n\n"
-        };
-        let prefix = if prefix == "\n\n" {
-            format!("{nl}{nl}")
-        } else {
-            prefix.to_string()
-        };
-        let suffix = if at == self.d.text.len() {
-            nl.to_string()
-        } else {
-            format!("{nl}{nl}")
-        };
-        format!("{prefix}{core}{suffix}")
+        place(self.d, at, slide_text)
     }
+}
+
+/// Text to insert at `at` in `d` so that `slide_text` becomes its own slide.
+pub(crate) fn place(d: &Deck, at: usize, slide_text: &str) -> String {
+    let nl = d.nl;
+    let before = &d.text[..at];
+    let core = slide_text.trim_end_matches(['\n', '\r']);
+    let prefix = if before.is_empty() || before.ends_with(&format!("{nl}{nl}")) {
+        ""
+    } else if before.ends_with(nl) {
+        nl
+    } else {
+        "\n\n"
+    };
+    let prefix = if prefix == "\n\n" {
+        format!("{nl}{nl}")
+    } else {
+        prefix.to_string()
+    };
+    let suffix = if at == d.text.len() {
+        nl.to_string()
+    } else {
+        format!("{nl}{nl}")
+    };
+    format!("{prefix}{core}{suffix}")
 }
 
 fn single_line(s: &str, what: &str) -> Result<()> {
@@ -302,7 +306,7 @@ fn norm(md: &str, nl: &str) -> String {
     with_nl(md.replace("\r\n", "\n").trim_matches('\n').trim_end(), nl)
 }
 
-fn patch(
+pub(crate) fn patch(
     op: &str,
     target: String,
     replacements: Vec<(Span, String)>,

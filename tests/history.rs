@@ -133,6 +133,58 @@ fn diff_versions() {
     assert_eq!(v["error"]["code"], "E_NOT_FOUND");
 }
 
+/// 012 US4 (T014): `qd restore REV --slide REF` is an ordinary edit:
+/// undoable, conflict-checked, committed when the setting is on.
+#[test]
+fn restore_slide() {
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path();
+    let git = git_repo(dir);
+    std::fs::create_dir_all(dir.join("talks")).unwrap();
+    let deck = dir.join("talks/deck.qmd");
+    let first = "## One {#one}\n\nA\n\n## Two {#two}\n\nB\n";
+    std::fs::write(&deck, first).unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-qm", "first"]);
+    let now = "## One {#one}\n\nA2\n\n## Two {#two}\n\nB2\n";
+    std::fs::write(&deck, now).unwrap();
+    git(&["commit", "-qam", "second"]);
+
+    let (ok, v) = run(dir, &["restore", "HEAD~1", "--slide", "one"]);
+    assert!(ok, "{v}");
+    assert_eq!(
+        v["op"],
+        format!(
+            "restore slide one from {}",
+            git(&["rev-parse", "--short=7", "HEAD~1"]).trim()
+        )
+    );
+    assert_eq!(
+        std::fs::read_to_string(&deck).unwrap(),
+        now.replace("A2", "A")
+    );
+    let (ok, _) = run(dir, &["undo"]);
+    assert!(ok);
+    assert_eq!(std::fs::read_to_string(&deck).unwrap(), now);
+    let (ok, v) = run(dir, &["--expect", "stale", "restore", "HEAD~1"]);
+    assert!(!ok);
+    assert_eq!(v["error"]["code"], "E_CONFLICT");
+    let (ok, v) = run(dir, &["restore", "nosuch", "--slide", "one"]);
+    assert!(!ok);
+    assert_eq!(v["error"]["code"], "E_NOT_FOUND");
+
+    // with Save as git commit on: one more commit, none lost (SC-004)
+    settings(dir, json!({"history.commit": true}));
+    let before = git(&["rev-list", "HEAD"]);
+    let (ok, v) = run(dir, &["restore", "HEAD~1"]);
+    assert!(ok, "{v}");
+    assert!(v["commit"]["rev"].is_string(), "{v}");
+    let after = git(&["rev-list", "HEAD"]);
+    assert_eq!(after.lines().count(), before.lines().count() + 1);
+    assert!(after.ends_with(&before));
+    assert_eq!(std::fs::read_to_string(&deck).unwrap(), first);
+}
+
 #[test]
 fn history_per_slide() {
     let t = tempfile::tempdir().unwrap();
