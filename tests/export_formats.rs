@@ -200,7 +200,24 @@ fn list_and_no_tex() {
         .iter()
         .map(|f| f["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["revealjs", "revealjs-pdf", "pptx", "beamer"]);
+    assert_eq!(
+        names,
+        [
+            "revealjs",
+            "revealjs-pdf",
+            "pptx",
+            "beamer",
+            "docx",
+            "html",
+            "pdf",
+            "typst",
+            "gfm",
+            "commonmark",
+            "ipynb",
+            "odt",
+            "epub"
+        ]
+    );
 
     // no TeX anywhere: PATH without it and an empty HOME
     let home = tempfile::tempdir().unwrap();
@@ -215,13 +232,109 @@ fn list_and_no_tex() {
     };
     let o = run(&["--list"]);
     let v: Value = serde_json::from_slice(&o.stdout).unwrap();
-    let beamer = &v["formats"][3];
-    assert_eq!(beamer["ready"], false);
-    assert_eq!(beamer["hint"], "install TeX: quarto install tinytex");
+    let not_ready: Vec<&str> = v["formats"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["ready"] == false)
+        .map(|f| f["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(not_ready, ["beamer", "pdf"], "Typst comes with Quarto");
+    assert_eq!(
+        v["formats"][3]["hint"],
+        "install TeX: quarto install tinytex"
+    );
     let start = std::time::Instant::now();
     let o = run(&["--to", "beamer"]);
     assert!(start.elapsed().as_secs() < 2, "SC-004");
     let e: Value = serde_json::from_slice(&o.stderr).unwrap();
     assert_eq!(e["error"]["code"], "E_NO_TEX");
     assert!(!t.path().join("export").exists(), "nothing written");
+}
+
+/// The text of a document export, for marker words: Office/EPUB XML, the
+/// notebook's JSON, a PDF through `pdftotext` (if installed), or the file.
+fn text_of(p: &Path) -> Option<String> {
+    match p.extension()?.to_str()? {
+        "docx" => Some(office_xml(p, "word/").0),
+        "odt" => Some(office_xml(p, "content").0),
+        "pdf" => Command::new("pdftotext")
+            .arg(p)
+            .arg("-")
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned()),
+        _ => std::fs::read_to_string(p).ok(),
+    }
+}
+
+#[test]
+fn documents() {
+    if !ready() {
+        return;
+    }
+    let (t, deck) = fixture();
+    let before = std::fs::read(&deck).unwrap();
+    for (to, file) in [
+        ("docx", "carry.docx"),
+        ("typst", "carry.pdf"),
+        ("gfm", "carry.md"),
+        ("ipynb", "carry.ipynb"),
+        ("html", "carry.html"),
+        ("odt", "carry.odt"),
+    ] {
+        let (ok, v, err) = export(t.path(), &["--to", to]);
+        assert!(ok, "{to}: {err}");
+        assert_eq!(
+            features(&v)[..2],
+            if to == "html" {
+                ["placed", "pause"]
+            } else {
+                ["columns", "placed"]
+            },
+            "{to}"
+        );
+        let Some(text) = text_of(&t.path().join("export").join(file)) else {
+            eprintln!("{to}: no pdftotext, contents not checked");
+            continue;
+        };
+        for m in [
+            "LEFTCOL",
+            "PLACEDBOX",
+            "FRAGA",
+            "FRAGC",
+            "BGSLIDE",
+            "CALLOUTTXT",
+        ] {
+            assert!(text.contains(m), "{to} lost {m}");
+        }
+        assert!(text.contains("NOTESCOLS"), "{to}: notes kept");
+        assert!(text.contains("Speaker notes"), "{to}: notes labelled");
+        assert!(!text.contains(". . ."), "{to}: no pause dots");
+        assert!(!text.contains("plt.plot"), "{to}: code hidden");
+    }
+    // Markdown's figure and the page's libraries share carry_files/, beside them
+    let files = t.path().join("export/carry_files");
+    assert!(files.join("figure-commonmark").is_dir() && files.join("libs").is_dir());
+    let md = std::fs::read_to_string(t.path().join("export/carry.md")).unwrap();
+    assert!(md.contains("](carry_files/figure-commonmark/"), "{md}");
+    let nb: Value = serde_json::from_str(
+        &std::fs::read_to_string(t.path().join("export/carry.ipynb")).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        nb["cells"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["cell_type"] == "code"),
+        "code cells stay code cells"
+    );
+    assert_eq!(
+        std::fs::read(&deck).unwrap(),
+        before,
+        "the deck is unchanged"
+    );
+    assert!(leftovers(t.path()).is_empty(), "{:?}", leftovers(t.path()));
 }

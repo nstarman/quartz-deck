@@ -62,6 +62,21 @@ pub const FORMATS: &[Format] = &[
     ),
     f("pptx", "PowerPoint", "slides", "pptx", None),
     f("beamer", "Beamer PDF", "slides", "pdf", Some(Tool::Tex)),
+    f("docx", "Word", "documents", "docx", None),
+    f("html", "HTML page", "documents", "html", None),
+    f("pdf", "PDF (LaTeX)", "documents", "pdf", Some(Tool::Tex)),
+    f("typst", "PDF (Typst)", "documents", "pdf", None),
+    f("gfm", "Markdown (GitHub)", "documents", "md", None),
+    f(
+        "commonmark",
+        "Markdown (CommonMark)",
+        "documents",
+        "md",
+        None,
+    ),
+    f("ipynb", "Jupyter notebook", "documents", "ipynb", None),
+    f("odt", "OpenDocument", "documents", "odt", None),
+    f("epub", "EPUB", "documents", "epub", None),
 ];
 
 pub fn find(name: &str) -> Result<&'static Format> {
@@ -133,12 +148,18 @@ pub fn keeps(format: &str, f: Feature) -> Keep {
     match (format, f) {
         ("revealjs" | "revealjs-pdf", _) => Kept,
         (_, Placed) => Flow,
+        ("html" | "ipynb", Interactive) => Kept,
         (_, BackgroundMedia | Interactive | Theme) => Lost,
         ("pptx", Pause | Fragment) => AllShown,
         ("beamer", Fragment) => AllShown,
         ("beamer", Notes) => Hidden,
         ("beamer", BackgroundImage) => Lost,
         ("pptx" | "beamer", _) => Kept,
+        // documents (research R1): one section per slide, notes after the content
+        (_, Notes) => Kept,
+        (_, Pause | Fragment) => AllShown,
+        ("html", Columns) => Kept,
+        (_, Columns) => Flow,
         _ => Lost,
     }
 }
@@ -322,6 +343,32 @@ pub fn run(
         &["--metadata-file", &meta_s],
         true,
     )?;
+    // Markdown and the html page keep figures and libraries in `<name>_files/`
+    // beside them (FR-009): it moves with the file, under the file's own name
+    let name = made
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    let made_files = staging.join(format!("{name}_files"));
+    if made_files.is_dir() {
+        let out_stem = out.file_stem().unwrap_or_default().to_string_lossy();
+        let files = parent.join(format!("{out_stem}_files"));
+        let text = std::fs::read_to_string(&made)?;
+        std::fs::write(
+            &made,
+            text.replace(&format!("{name}_files/"), &format!("{out_stem}_files/")),
+        )?;
+        // merged, not replaced: the html page and Markdown of one deck share it
+        // (`libs/` and `figure-html/` beside `figure-commonmark/`)
+        std::fs::create_dir_all(&files)?;
+        for e in std::fs::read_dir(&made_files)?.flatten() {
+            let to = files.join(e.file_name());
+            let _ = std::fs::remove_dir_all(&to).or_else(|_| std::fs::remove_file(&to));
+            std::fs::rename(e.path(), to)?;
+        }
+        v["files"] = json!([files]);
+    }
     std::fs::rename(&made, &out).map_err(|e| {
         QdError::Io(std::io::Error::other(format!(
             "could not write {} ({e}); close the file if another app has it open, and try again",
@@ -399,6 +446,35 @@ mod tests {
                 s("interactive", "lost", &["plotly"]),
             ]
         );
+    }
+
+    #[test]
+    fn document_columns_of_the_table() {
+        use Feature::*;
+        use Keep::*;
+        for d in [
+            "docx",
+            "html",
+            "pdf",
+            "typst",
+            "gfm",
+            "commonmark",
+            "ipynb",
+            "odt",
+            "epub",
+        ] {
+            assert_eq!(keeps(d, Notes), Kept, "{d}: notes after the content");
+            assert_eq!(keeps(d, Pause), AllShown, "{d}");
+            assert_eq!(keeps(d, Placed), Flow, "{d}");
+            assert_eq!(keeps(d, BackgroundImage), Lost, "{d}");
+            assert_eq!(
+                keeps(d, Columns),
+                if d == "html" { Kept } else { Flow },
+                "{d}"
+            );
+            let live = matches!(d, "html" | "ipynb");
+            assert_eq!(keeps(d, Interactive), if live { Kept } else { Lost }, "{d}");
+        }
     }
 
     #[test]

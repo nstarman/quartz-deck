@@ -1961,18 +1961,38 @@ keys.setContext(async (e) => {
 keys.on('render', { enabled: () => !busy.render, run: renderDeck });
 keys.on('export', { enabled: () => !busy.export, run: () => exportDeck(false) });
 keys.on('export-pdf', { enabled: () => !busy.export, run: () => exportDeck(true) });
-keys.on('export-pptx', { enabled: () => !busy.export, run: () => exportTo('pptx', 'PowerPoint') });
-keys.on('export-beamer', { enabled: () => !busy.export, run: () => exportTo('beamer', 'Beamer PDF') });
+// spec 011: one action per format; a format whose tool is missing is disabled, saying why
+const EXPORTS = { pptx: 'pptx', beamer: 'beamer', docx: 'docx', html: 'html', latex: 'pdf', typst: 'typst', gfm: 'gfm', commonmark: 'commonmark', ipynb: 'ipynb', odt: 'odt', epub: 'epub' };
+let formats = new Map();
+async function loadFormats() {
+  const res = await fetch('/api/op', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-QD-Token': run.token }, body: JSON.stringify({ op: 'export', args: { list: true } }) });
+  if (res.ok) formats = new Map((await res.json()).formats.map((f) => [f.name, f]));
+}
+loadFormats();
+for (const [id, name] of Object.entries(EXPORTS)) {
+  keys.on('export-' + id, {
+    enabled: () => !busy.export && formats.get(name)?.ready !== false,
+    why: () => formats.get(name)?.hint,
+    run: () => exportTo(name, formats.get(name)?.label || name),
+  });
+}
 keys.on('preview', () => window.open('/present/', '_blank', 'noopener'));
 keys.on('present', () => present(false));
 keys.on('present-start', () => present(true));
 $('#present').addEventListener('click', () => keys.run('present'));
 /** A header button that opens a menu of actions. */
-const menuButton = (sel, ids, disabled = () => false) => $(sel).addEventListener('click', (e) => {
+const menuButton = (sel, ids, before = () => {}) => $(sel).addEventListener('click', async (e) => {
   const r = e.currentTarget.getBoundingClientRect();
-  openMenu(ids.map((id) => ({ label: keys.action(id).label, shortcut: keys.shortcut(id), disabled: disabled(), run: () => keys.run(id) })), r.left, r.bottom + 2);
+  await before();
+  openMenu(ids.map((id) => {
+    if (id === '-') return id;
+    const h = keys.handler(id);
+    return { label: keys.action(id).label, shortcut: keys.shortcut(id), disabled: h?.enabled?.({}) === false, title: h?.why?.({}), run: () => keys.run(id) };
+  }), r.left, r.bottom + 2);
 });
-menuButton('#export-menu', ['export', 'export-pdf', 'export-pptx', 'export-beamer'], () => busy.export);
+// the menu is File ▸ Export's list; formats are checked again on each open (a TeX install)
+const docs = Object.keys(EXPORTS).slice(2).map((id) => 'export-' + id);
+menuButton('#export-menu', ['export', 'export-pdf', 'export-pptx', 'export-beamer', '-', ...docs], loadFormats);
 menuButton('#present-more', ['present', 'present-start', 'preview']);
 keys.on('undo', () => undoRedo('undo'));
 keys.on('redo', () => undoRedo('redo'));
