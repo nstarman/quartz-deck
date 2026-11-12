@@ -1304,3 +1304,101 @@ fn box_stacking() {
     assert!(e.text().find("Two").unwrap() < e.text().find("One").unwrap());
     e.err(&["box", "forward", "b-1"], "E_INVALID_ARG", 1);
 }
+
+/// A stand-in for Zotero's local API: answers every request with `page`
+/// (items, an attachment and a note); returns its base URL.
+fn fake_zotero(page: Value) -> String {
+    use std::io::{Read, Write};
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", l.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for s in l.incoming() {
+            let mut s = s.unwrap();
+            let mut buf = [0u8; 4096];
+            let n = s.read(&mut buf).unwrap();
+            let req = String::from_utf8_lossy(&buf[..n]);
+            assert!(
+                req.starts_with("GET /api/users/0/collections/ABCD1234/items/top?"),
+                "{req}"
+            );
+            let body = page.to_string();
+            let _ = write!(
+                s,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+        }
+    });
+    url
+}
+
+/// Spec 010 US5: `qd bib --zotero KEY` writes the list between the markers, as an edit.
+#[test]
+fn bib_from_zotero() {
+    let deck = "---\ntitle: T\n---\n\n## References {#refs}\n\n<!-- bibliography:start -->\n- stale\n<!-- bibliography:end -->\n\n## End\n";
+    let e = Env::with(deck);
+    let url = fake_zotero(json!([
+        {"data": {"itemType": "journalArticle", "title": "Streams", "date": "2025", "DOI": "10.1/x",
+                  "creators": [{"creatorType": "author", "lastName": "Bonaca"}]}},
+        {"data": {"itemType": "journalArticle", "title": "No link", "date": "2020",
+                  "creators": [{"creatorType": "author", "lastName": "Ab"}]}},
+        {"data": {"itemType": "attachment", "title": "PDF"}},
+        {"data": {"itemType": "note", "note": "x"}},
+    ]));
+    let bib = |args: &[&str]| {
+        let mut c = e.cmd();
+        c.env("QD_ZOTERO_URL", &url)
+            .args(["bib", "--zotero", "ABCD1234"])
+            .args(args);
+        c.output().unwrap()
+    };
+    let out = bib(&["--dry-run"]);
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        (v["dry_run"].clone(), v["entries"].clone()),
+        (json!(true), json!(2)),
+        "{v}"
+    );
+    assert_eq!(e.text(), deck, "dry run writes nothing");
+
+    let v: Value = serde_json::from_slice(&bib(&[]).stdout).unwrap();
+    assert_edit(&v, "bib");
+    assert_eq!(v["warnings"].as_array().unwrap().len(), 1, "{v}");
+    let want = deck.replace(
+        "- stale\n",
+        "- {{< paper url=\"\" who=\"Ab\" year=\"2020\" title=\"No link\" >}}\n- {{< paper url=\"https://doi.org/10.1/x\" who=\"Bonaca\" year=\"2025\" title=\"Streams\" >}}\n",
+    );
+    assert_eq!(e.text(), want);
+    e.ok(&["undo"]);
+    assert_eq!(e.text(), deck);
+
+    // a stale --expect, no marker pair, two pairs, Zotero not running: the file stays
+    e.err(
+        &[
+            "--expect",
+            "0000000000000000",
+            "bib",
+            "--zotero",
+            "ABCD1234",
+        ],
+        "E_CONFLICT",
+        1,
+    );
+    let none = Env::with("## R\n");
+    none.err(&["bib", "--zotero", "ABCD1234"], "E_NOT_FOUND", 1);
+    let block = "<!-- bibliography:start -->\n<!-- bibliography:end -->\n";
+    Env::with(&block.repeat(2)).err(&["bib", "--zotero", "ABCD1234"], "E_AMBIGUOUS", 1);
+    let closed = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap();
+    let out = e
+        .cmd()
+        .env("QD_ZOTERO_URL", format!("http://{closed}"))
+        .args(["bib", "--zotero", "ABCD1234"])
+        .output()
+        .unwrap();
+    let err: Value = serde_json::from_slice(&out.stderr).unwrap();
+    assert_eq!(err["error"]["code"], "E_ZOTERO", "{err}");
+    assert_eq!(e.text(), deck);
+}

@@ -148,6 +148,17 @@ The first export downloads MathJax 3.2.2 (and Chrome for Testing if no
 Chrome/Chromium is installed; `qd browser` shows which is used), verified by
 SHA-256; later exports work offline. `--no-download` forbids downloads.
 
+## References from Zotero
+
+`qd bib --zotero KEY` (KEY: the 8-character collection key) rewrites the
+lines between `<!-- bibliography:start -->` and `<!-- bibliography:end -->`
+(on the References slide) as one `- {{< paper url= who= year= title= >}}`
+line per item of the collection, read from the running Zotero 7's local API
+(Settings > Advanced > "Allow other applications on this computer to
+communicate with Zotero"). It is an edit like any other (`--dry-run`,
+`--expect`, `qd undo`); `warnings` lists items with no DOI or URL.
+`E_ZOTERO`: Zotero is not running or the API is off.
+
 ## Errors and what to do
 
 | code | meaning | recover |
@@ -164,6 +175,7 @@ SHA-256; later exports work offline. `--no-download` forbids downloads.
 | `E_NO_QUARTO` | Quarto missing (preview/render only) | install Quarto; edits still work |
 | `E_OFFLINE` | the deck would not work offline | read `problems` in the stdout report; fix; re-run |
 | `E_OFFLINE_INCOMPATIBLE` | chalkboard/multiplex can't be one offline file | remove the feature for the export |
+| `E_ZOTERO` | `qd bib` cannot reach Zotero's local API | start Zotero 7 and allow other applications to talk to it (Settings > Advanced) |
 | `E_NO_ENV` | deck has code cells but no environment | `qd env init`, then `qd env add <pkgs>` |
 | `E_LOCK_STALE` | manifest edited, lock out of date | `qd env sync` |
 | `E_ENV_TOOL` / `E_ENV` | uv/pixi missing, or it failed | install per the hint / read `details` |

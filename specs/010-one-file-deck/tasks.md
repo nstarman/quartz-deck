@@ -31,7 +31,11 @@ description: "Tasks for 010 one-file deck"
 
 - [X] T008 [US4] Ghostscript recompression in `offline::print_pdf` when `gs` is on PATH (`compressed` in the result); `-notes.pdf` default name for `qd pdf --notes` and `qd export --pdf --notes`.
 
-## Phase 6: Polish
+## Phase 6: US5 — References from Zotero (P3)
+
+- [X] T012 [US5] `src/bib.rs` (port of `bibliography.py`): labels, links, sorting with 2021a/b, warnings, marker patch; unit tests. `qd bib --zotero KEY` through the normal edit path; `E_ZOTERO`. CLI test `bib_from_zotero` against a stand-in server (dry run, write, undo, errors).
+
+## Phase 7: Polish
 
 - [X] T009 Skill, README, `qd schema`, ROADMAP (010 added, later plans renumbered).
 - [X] T010 Try on the PPP talk (copied to a temp folder): export, check, PDF; record the result in the PR.

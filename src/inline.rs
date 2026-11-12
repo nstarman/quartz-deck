@@ -52,7 +52,7 @@ pub fn local(p: &str) -> bool {
 }
 
 // ponytail: the five entities pandoc writes in attributes, not the full HTML table
-fn unescape(s: &str) -> String {
+pub(crate) fn unescape(s: &str) -> String {
     s.replace("&quot;", "\"")
         .replace("&#39;", "'")
         .replace("&lt;", "<")
@@ -61,7 +61,7 @@ fn unescape(s: &str) -> String {
 }
 
 /// The file a relative URL points at: without `?query`/`#hash`, `%`-decoded.
-fn file_for(root: &Path, path: &str) -> PathBuf {
+pub(crate) fn file_for(root: &Path, path: &str) -> PathBuf {
     let p = path.split(['?', '#']).next().unwrap_or("");
     root.join(&*percent_encoding::percent_decode_str(p).decode_utf8_lossy())
 }
@@ -222,7 +222,7 @@ pub fn inline(text: &str, root: &Path, strip_notes: bool) -> Inlined {
             continue;
         };
         let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
-        gz.write_all(&bytes).and_then(|_| gz.flush()).unwrap();
+        gz.write_all(&bytes).unwrap();
         let gz = gz.finish().unwrap();
         let id = format!("inlined-app-{i}");
         data += &format!(
@@ -348,10 +348,9 @@ mod tests {
 
     /// The gzipped, base64 app with this id, unpacked.
     fn app(html: &str, id: &str) -> Vec<u8> {
-        let start = html.find(&format!("id=\"{id}\">")).unwrap() + id.len() + 6;
-        let end = start + html[start..].find("</script>").unwrap();
+        let b64 = html.split_once(&format!("id=\"{id}\">")).unwrap().1;
         let gz = base64::engine::general_purpose::STANDARD
-            .decode(&html[start..end])
+            .decode(b64.split_once("</script>").unwrap().0)
             .unwrap();
         let mut out = Vec::new();
         flate2::read::GzDecoder::new(&gz[..])

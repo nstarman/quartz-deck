@@ -160,10 +160,7 @@ pub fn collect_files(d: &Deck) -> Vec<String> {
         .slides
         .iter()
         .filter_map(|s| s.attrs.as_ref())
-        .filter_map(|a| {
-            // background iframes (apps) are inlined: crate::inline
-            a.get("background-video")
-        })
+        .filter_map(|a| a.get("background-video")) // background iframes (apps): crate::inline
         .map(String::from)
         .collect();
     out.extend(

@@ -69,6 +69,13 @@ enum Cmd {
     Slides,
     /// Show one slide: attributes, source and blocks
     Show { slide: String },
+    /// Write the References list from a Zotero collection between the deck's
+    /// `<!-- bibliography:start -->` and `<!-- bibliography:end -->` lines
+    Bib {
+        /// Collection key (8 characters, from the collection's Zotero URL); read from the running Zotero's local API
+        #[arg(long)]
+        zotero: String,
+    },
     /// Print front matter, or set/unset a top-level key
     Meta {
         #[command(subcommand)]
@@ -613,6 +620,9 @@ fn output_of(cmd: &str) -> &'static str {
             r#"{"version","slide":{"id","explicit","index","kind","level","title","attrs":{"id","classes","kv"},"opaque","source","blocks":[{"id","explicit","kind","text","attrs","geom"?}]}}"#
         }
         "meta" => r#"{"version","front_matter":{...}}"#,
+        "bib" => {
+            r#"{"ok","op":"bib","diff","version","target":"bibliography","entries","warnings":[...]} (an edit: --dry-run, --expect, qd undo)"#
+        }
         "check" => {
             r#"{"ok","version","problems":[{"severity":"error|warning","code","slide","message"}]} or with --offline {"kind":"offline_check","ok","html","slides","steps","problems":[{"code":"P_*","severity","slide","message","hint","url"?}],"size":{"bytes","largest":[{"bytes","kind","context"}]}}"#
         }
@@ -714,7 +724,8 @@ fn schema() -> Value {
         "E_ENV",
         "E_NOT_CODE",
         "E_ENGINE",
-        "E_RUN"
+        "E_RUN",
+        "E_ZOTERO"
     ]);
     v["refs"] = json!({
         "slide": "explicit id | auto id | @N (1-based) | first | last",
@@ -1231,6 +1242,14 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
         Cmd::Meta {
             action: Some(MetaCmd::Unset { key }),
         } => ctx.edit(|d| ops::meta_unset(d, key)),
+        Cmd::Bib { zotero } => {
+            crate::bib::patch(&read()?.1, &[])?; // no marker pair: fail before asking Zotero
+            let (rows, warnings) = crate::bib::lines(&crate::bib::fetch(zotero)?);
+            let mut v = ctx.edit(|d| crate::bib::patch(d, &rows))?;
+            v["entries"] = json!(rows.len());
+            v["warnings"] = json!(warnings);
+            Ok(v)
+        }
         Cmd::Check {
             offline: true,
             html,

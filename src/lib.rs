@@ -1,5 +1,6 @@
 pub mod assets;
 pub mod attrs;
+pub mod bib;
 pub mod browser;
 pub mod cli;
 pub mod deck;

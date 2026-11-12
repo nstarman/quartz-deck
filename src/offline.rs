@@ -31,6 +31,13 @@ pub struct Problem {
 }
 
 impl Problem {
+    fn warning(code: &'static str, slide: Option<String>, message: String) -> Problem {
+        Problem {
+            severity: "warning",
+            ..Problem::error(code, slide, message, None)
+        }
+    }
+
     pub(crate) fn error(
         code: &'static str,
         slide: Option<String>,
@@ -312,9 +319,9 @@ async fn in_deck(browser: &Browser, page: &Page, frame: &FrameId) -> bool {
 
 /// The file a `file:` URL names (without `?query`/`#hash`, `%`-decoded).
 fn file_path(url: &str) -> Option<PathBuf> {
-    let p = url.strip_prefix("file://")?.split(['?', '#']).next()?;
-    Some(PathBuf::from(
-        &*percent_encoding::percent_decode_str(p).decode_utf8_lossy(),
+    Some(crate::inline::file_for(
+        Path::new("/"),
+        url.strip_prefix("file://")?,
     ))
 }
 
@@ -469,14 +476,11 @@ async fn check_page(
         }
         // the slide at its fullest: every fragment is shown now
         for m in op.eval(OVERFLOW_JS).await?.as_array().into_iter().flatten() {
-            problems.push(Problem {
-                code: "P_OVERFLOW",
-                severity: "warning",
-                slide: anchor.clone(),
-                message: format!("outside the slide: {}", m.as_str().unwrap_or("")),
-                hint: hint("P_OVERFLOW"),
-                url: None,
-            });
+            problems.push(Problem::warning(
+                "P_OVERFLOW",
+                anchor.clone(),
+                format!("outside the slide: {}", m.as_str().unwrap_or("")),
+            ));
         }
         for bg in s["backgrounds"]
             .as_array()
@@ -497,14 +501,11 @@ async fn check_page(
     *op.current.lock().unwrap() = None;
     let cfg = op.eval(CONFIG_JS).await?;
     if cfg["showNotes"] == true {
-        problems.push(Problem {
-            code: "P_NOTES_VISIBLE",
-            severity: "warning",
-            slide: None,
-            message: "speaker notes are shown to the audience (show-notes)".into(),
-            hint: hint("P_NOTES_VISIBLE"),
-            url: None,
-        });
+        problems.push(Problem::warning(
+            "P_NOTES_VISIBLE",
+            None,
+            "speaker notes are shown to the audience (show-notes)".into(),
+        ));
     }
     if cfg["multiplex"] == true {
         problems.push(Problem::error(

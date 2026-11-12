@@ -104,6 +104,24 @@ PDF and the notes PDF sit side by side.
 true and the page count is unchanged; with `--notes` the file is
 `deck-notes.pdf`.
 
+### User Story 5 — References from Zotero (Priority: P3)
+
+`qd bib --zotero KEY` writes the deck's References list from a Zotero
+collection straight into the `.qmd`, between `<!-- bibliography:start … -->`
+and `<!-- bibliography:end -->` on the References slide (port of the skill's
+`bibliography.py`). One `- {{< paper url= who= year= title= >}}` line per
+item, sorted by label, equal labels getting 2026a/2026b; the link is the DOI,
+or the item's URL for arXiv's 10.48550 DOIs; an item with no link is a
+warning. It is an ordinary qd edit: JSON result, `--dry-run`, `--expect`,
+`qd undo`, a patch of only those lines. Nothing leaves the machine (Zotero 7's
+local API on localhost).
+
+**Independent Test**: against a stand-in for Zotero's API, the list between
+the markers is replaced and nothing else changes; undo restores it; a missing
+pair is `E_NOT_FOUND`, two pairs `E_AMBIGUOUS`, Zotero not running `E_ZOTERO`,
+and the file is untouched in each case. On the PPP talk with the real Zotero
+the result is byte-identical to `bibliography.py`'s.
+
 ### Edge Cases
 
 - An inlined library's own code mentions `<iframe src="${…}">`: script
@@ -146,6 +164,11 @@ true and the page count is unchanged; with `--notes` the file is
   q 88, RGB) and the result MUST say `compressed: true`.
 - **FR-010**: `qd pdf --notes` without `--out` MUST write `<stem>-notes.pdf`;
   `qd export --pdf --notes` likewise.
+- **FR-012**: `qd bib --zotero KEY` MUST read only `localhost:23119`
+  (Zotero 7's local API; attachments and notes skipped; pages of 100), accept
+  only an 8-character alphanumeric key, and replace only the lines between the
+  one marker pair, as an edit with `--dry-run`, `--expect` and undo. It MUST
+  fail before contacting Zotero when the pair is missing or repeated.
 - **FR-011**: The CLI, `qd schema`, the editor API (`strip-notes`) and the
   Skill MUST describe the new flag and fields.
 
