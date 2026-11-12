@@ -321,9 +321,10 @@ function nearest(edges, lines, reach) {
   return best;
 }
 
+const clearGuides = (sec) => sec.querySelectorAll('.qd-guide').forEach((g) => g.remove());
+
 /** Snap rectangle `r` (moved, or resized from `dir`) to `lines`, drawing the guides it meets on `sec`. */
 function snap(r, dir, lines, sec, reach) {
-  sec.querySelectorAll('.qd-guide').forEach((g) => g.remove());
   const x = nearest(!dir ? [r.l, r.l + r.w / 2, r.l + r.w] : dir.includes('w') ? [r.l] : dir.includes('e') ? [r.l + r.w] : [], lines.xs, reach);
   const y = nearest(!dir ? [r.t, r.t + r.h / 2, r.t + r.h] : dir.includes('n') ? [r.t] : dir.includes('s') ? [r.t + r.h] : [], lines.ys, reach);
   if (x) {
@@ -400,18 +401,18 @@ function attachOverlay(box) {
           if (dir.includes('n')) r.t = start.t + start.h - r.h;
           if (dir.includes('w')) r.l = start.l + start.w - r.w;
         }
-        r.w = Math.max(1, r.w);
-        r.h = Math.max(1, r.h);
       }
-      // ⌘/Ctrl held: placed freely, this drag only
-      if (lines && !ev.metaKey && !ev.ctrlKey) snap(r, dir, lines, sec, SNAP_PX / scale);
-      else sec.querySelectorAll('.qd-guide').forEach((g) => g.remove());
+      clearGuides(sec);
+      // ⌘/Ctrl held: placed freely, this drag only; a ⇧ resize keeps its proportions instead
+      if (lines && !ev.metaKey && !ev.ctrlKey && !(dir && ev.shiftKey)) snap(r, dir, lines, sec, SNAP_PX / scale);
+      r.w = Math.max(1, r.w);
+      r.h = Math.max(1, r.h);
       cur = { l: Math.round(r.l), t: Math.round(r.t), w: Math.round(r.w), h: Math.round(r.h) };
       place(box, cur);
       place(ov, cur);
     };
     const onUp = async () => {
-      sec.querySelectorAll('.qd-guide').forEach((g) => g.remove());
+      clearGuides(sec);
       ov.removeEventListener('pointermove', onMove);
       ov.removeEventListener('pointerup', onUp);
       ov.removeEventListener('pointercancel', onUp);

@@ -244,8 +244,9 @@ mod tests {
         assert_eq!(v["source.side"], "left");
         assert_eq!(v["theme"], "system");
         assert_eq!(v["confirm.slide_delete"], true);
+        assert_eq!(v["placement.snap"], true);
         assert!(notices.is_empty());
-        assert_eq!(defs().as_array().unwrap().len(), 6, "ui.* are not shown");
+        assert_eq!(defs().as_array().unwrap().len(), 7, "ui.* are not shown");
     }
 
     #[test]

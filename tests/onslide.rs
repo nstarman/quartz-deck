@@ -215,12 +215,16 @@ impl Ed {
 
     /// Press at `from` and move to `to` in steps, the button still down.
     async fn press_and_move(&self, from: (f64, f64), to: (f64, f64)) {
+        self.press_and_move_with(from, to, 0).await;
+    }
+    /// The same with modifier keys held (1 Alt, 2 Ctrl, 4 Meta, 8 Shift).
+    async fn press_and_move_with(&self, from: (f64, f64), to: (f64, f64), mods: i64) {
         use DispatchMouseEventType::*;
-        self.mouse(MousePressed, from, false).await;
+        self.mouse_with(MousePressed, from, false, mods).await;
         for i in 1..=8 {
             let t = i as f64 / 8.0;
             let at = (from.0 + (to.0 - from.0) * t, from.1 + (to.1 - from.1) * t);
-            self.mouse(MouseMoved, at, false).await;
+            self.mouse_with(MouseMoved, at, false, mods).await;
         }
     }
 
@@ -3345,6 +3349,12 @@ async fn slide_from_a_layout() {
     .await;
 }
 
+/// The number attribute `k` of the first element that has one in `f` (`left=600` → 600).
+fn num(f: &str, k: &str) -> f64 {
+    let i = f.find(&format!(" {k}=")).unwrap() + k.len() + 2;
+    f[i..].split([' ', '}']).next().unwrap().parse().unwrap()
+}
+
 const PLACE: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## A {#a}\n\nFirst para.\n\n- x\n- y\n\n:::: {.columns}\n::: {.column}\nLeft\n:::\n::::\n";
 
 /// Spec 009 US2: ⌥-drag a list to place it where it falls; the handles resize it,
@@ -3379,10 +3389,6 @@ async fn place_freely() {
     }
     ed.wait_file(|f| f.contains("- x\n- y\n:::"), "list placed")
         .await;
-    let num = |f: &str, k: &str| -> f64 {
-        let i = f.find(&format!(" {k}=")).unwrap() + k.len() + 2;
-        f[i..].split([' ', '}']).next().unwrap().parse().unwrap()
-    };
     let f = ed.file();
     assert!(
         (num(&f, "left") - want[0].as_f64().unwrap()).abs() <= 2.0,
@@ -3561,10 +3567,6 @@ async fn guides_and_snapping() {
         .await
         .as_f64()
         .unwrap();
-    let num = |f: &str, k: &str| -> f64 {
-        let i = f.find(&format!(" {k}=")).unwrap() + k.len() + 2;
-        f[i..].split([' ', '}']).next().unwrap().parse().unwrap()
-    };
     // drag box b-1's overlay by (dx, dy) slide px, with modifier keys held
     let drag = async |dx: f64, dy: f64, mods: i64| -> bool {
         ed.settle().await;
@@ -3575,17 +3577,7 @@ async fn guides_and_snapping() {
         .await;
         let from = ed.slide_point(".qd-overlay").await;
         let to = (from.0 + dx * scale, from.1 + dy * scale);
-        ed.mouse_with(MousePressed, from, false, mods).await;
-        for i in 1..=8 {
-            let t = f64::from(i) / 8.0;
-            ed.mouse_with(
-                MouseMoved,
-                (from.0 + (to.0 - from.0) * t, from.1 + (to.1 - from.1) * t),
-                false,
-                mods,
-            )
-            .await;
-        }
+        ed.press_and_move_with(from, to, mods).await;
         let guide = ed
             .eval("!!document.querySelector('#preview').contentDocument.querySelector('.qd-guide')")
             .await
