@@ -284,6 +284,30 @@ pub fn render(
     out_dir: &Path,
     preview: bool,
 ) -> Result<PathBuf> {
+    // stored outputs are in the preview copy; the preview never runs code (R7)
+    let extra: &[&str] = if preview {
+        &["-M", "embed-resources:false", "--no-execute"]
+    } else {
+        &[]
+    };
+    render_to(
+        deck_path, text, tag, out_dir, "revealjs", "html", extra, !preview,
+    )
+}
+
+/// [`render`] to any Quarto format: `<stem>.qd-<tag>.<ext>` in `out_dir`,
+/// with `extra` arguments; `execute` false never runs code.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn render_to(
+    deck_path: &Path,
+    text: &str,
+    tag: &str,
+    out_dir: &Path,
+    to: &str,
+    ext: &str,
+    extra: &[&str],
+    execute: bool,
+) -> Result<PathBuf> {
     let dir = deck_path.parent().unwrap_or(Path::new("."));
     let stem = deck_path.file_stem().unwrap_or_default().to_string_lossy();
     let name = format!("{stem}.qd-{tag}");
@@ -292,15 +316,12 @@ pub fn render(
         "render".as_ref(),
         copy.as_os_str(),
         "--to".as_ref(),
-        "revealjs".as_ref(),
+        to.as_ref(),
         "--output-dir".as_ref(),
         out_dir.as_os_str(),
     ];
-    if preview {
-        // stored outputs are in the copy; the preview never runs code (R7)
-        args.extend(["-M", "embed-resources:false", "--no-execute"].map(OsStr::new));
-    }
-    let (mut quarto, wrapped) = quarto_cmd(dir, if preview { "" } else { text }, &args)?;
+    args.extend(extra.iter().map(OsStr::new));
+    let (mut quarto, wrapped) = quarto_cmd(dir, if execute { text } else { "" }, &args)?;
     std::fs::create_dir_all(out_dir)?;
     std::fs::write(&copy, text)?;
     let out = run_quarto(&mut quarto);
@@ -313,7 +334,7 @@ pub fn render(
             &name,
         ));
     }
-    Ok(out_dir.join(format!("{name}.html")))
+    Ok(out_dir.join(format!("{name}.{ext}")))
 }
 
 /// Final render of the deck file itself (US5): exactly `quarto render <deck>

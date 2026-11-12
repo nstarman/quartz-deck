@@ -25,3 +25,14 @@ pub fn have(tool: &str) -> bool {
     }
     ok
 }
+
+/// qd's temp files (`.qd-` in the name) left in `dir` or `dir/export`;
+/// the offline export's `.qd-export` marker is meant to stay.
+pub fn leftovers(dir: &Path) -> Vec<String> {
+    [dir.to_path_buf(), dir.join("export")]
+        .iter()
+        .flat_map(|d| std::fs::read_dir(d).into_iter().flatten().flatten())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.contains(".qd-") && n != ".qd-export")
+        .collect()
+}

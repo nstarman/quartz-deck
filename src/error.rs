@@ -42,6 +42,9 @@ pub enum QdError {
     Usage(String),
     #[error("no browser available: {0}")]
     NoBrowser(String),
+    /// A format needs TeX (`beamer`, `pdf`) and none was found.
+    #[error("{0} needs TeX, and none was found")]
+    NoTex(String),
     #[error("download failed: {0}")]
     Download(String),
     /// The offline check failed; the report is printed on stdout.
@@ -87,6 +90,7 @@ impl QdError {
             Self::NoServer => "E_NO_SERVER",
             Self::Usage(_) => "E_USAGE",
             Self::NoBrowser(_) => "E_NO_BROWSER",
+            Self::NoTex(_) => "E_NO_TEX",
             Self::Download(_) => "E_DOWNLOAD",
             Self::Offline(_) => "E_OFFLINE",
             Self::OfflineIncompatible(_) => "E_OFFLINE_INCOMPATIBLE",
@@ -136,6 +140,7 @@ impl QdError {
             Self::NoBrowser(_) => {
                 "install Google Chrome, set QD_CHROME to a Chrome/Chromium binary, or allow qd to download one (drop --no-download / QD_NO_DOWNLOAD)"
             }
+            Self::NoTex(_) => "install TeX: quarto install tinytex",
             Self::Download(_) => {
                 "check the network connection and retry; a file that fails its checksum is never used"
             }
