@@ -27,6 +27,8 @@ function tree() {
   return top;
 }
 const MENUS = tree();
+/** A submenu's items, resolved now (`['File', 'Export']` for the header's Export ▾). */
+export const submenu = (path, ctx = {}) => resolve(path.reduce((items, name) => items.find((x) => x.label === name).items, MENUS), ctx);
 
 /** One menu's items for menu.js, resolved against the editor's context now. */
 function resolve(items, ctx) {

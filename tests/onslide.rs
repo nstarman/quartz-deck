@@ -3711,7 +3711,7 @@ async fn export_menu_pptx() {
 #[tokio::test]
 async fn export_menu_disables_missing_tools() {
     // no TeX: only Quarto's own folder (symlinks resolved) and the system's, an empty HOME
-    let Ok(quarto) = which_quarto() else {
+    let Some(quarto) = which_quarto() else {
         return;
     };
     let path = format!("{}:/usr/bin:/bin", quarto.parent().unwrap().display());
@@ -3746,11 +3746,10 @@ async fn export_menu_disables_missing_tools() {
     assert_eq!(tip, "install TeX: quarto install tinytex");
 }
 
-fn which_quarto() -> std::io::Result<std::path::PathBuf> {
-    let p = std::env::var_os("PATH").unwrap_or_default();
-    std::env::split_paths(&p)
+fn which_quarto() -> Option<std::path::PathBuf> {
+    std::env::split_paths(&std::env::var_os("PATH")?)
         .map(|d| d.join("quarto"))
-        .find(|q| q.is_file())
-        .ok_or_else(|| std::io::Error::other("no quarto"))
-        .and_then(std::fs::canonicalize)
+        .find(|q| q.is_file())?
+        .canonicalize()
+        .ok()
 }

@@ -351,7 +351,8 @@ pub fn run(
         .to_string_lossy()
         .into_owned();
     let made_files = staging.join(format!("{name}_files"));
-    if made_files.is_dir() {
+    // (a PDF's own `_files/` holds intermediate figures only: it stays behind)
+    if made_files.is_dir() && matches!(fmt.ext, "md" | "html") {
         let out_stem = out.file_stem().unwrap_or_default().to_string_lossy();
         let files = parent.join(format!("{out_stem}_files"));
         let text = std::fs::read_to_string(&made)?;
