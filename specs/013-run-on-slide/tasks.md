@@ -28,16 +28,16 @@ Paths are relative to the repo root.
 
 ## Phase 1: Setup
 
-- [ ] T001 Add `src/ui/runslide.js` (an empty module, imported by `src/ui/editor.js` and served like the other `/ui/` modules) and `tests/engine.rs` (an empty test file using `mod common;`).
+- [X] T001 Add `src/ui/runslide.js` (an empty module, imported by `src/ui/editor.js` and served like the other `/ui/` modules) and `tests/engine.rs` (an empty test file using `mod common;`).
 
 ---
 
 ## Phase 2: Foundational (blocks every story)
 
-- [ ] T002 Write failing tests:
+- [X] T002 Write failing tests:
   - **`src/render.rs` unit**: `output_html` puts `data-qd-cell="REF"` on the `qd-output` block (it takes the ref), and the stale marks stay as they are.
   - **`tests/onslide.rs` `cell_output_carries_html`**: in a Python deck with an environment (skip without uv), a run's SSE `cell_output` has `html` with that block, and the preview's block for a cell with stored output carries `data-qd-cell`.
-- [ ] T003 Pass the cell's ref into `render::output_html` (`src/render.rs`). In the run handler in `src/server.rs`, add `html` to `cell_output`. Update `specs/004-source-and-run/contracts/http.md`'s event list with a pointer to 013's contract. T002 passes.
+- [X] T003 Pass the cell's ref into `render::output_html` (`src/render.rs`). In the run handler in `src/server.rs`, add `html` to `cell_output`. Update `specs/004-source-and-run/contracts/http.md`'s event list with a pointer to 013's contract. T002 passes.
 
 **Checkpoint**: every run's result can be put into the slide without a re-render.
 
@@ -47,7 +47,7 @@ Paths are relative to the repo root.
 
 **Independent Test**: spec US1; quickstart §1, §4.
 
-- [ ] T004 [P] [US1] Write failing browser tests in `tests/onslide.rs`:
+- [X] T004 [P] [US1] Write failing browser tests in `tests/onslide.rs`:
   - **`run_from_slide`**:
     - hovering a cell shows a ▶ named "Run cell REF";
     - clicking it gives the cell `qd-running`;
@@ -60,7 +60,7 @@ Paths are relative to the repo root.
   - **`no_run_without_token`**:
     - `/present/` and the editor opened without `#t=` show no ▶;
     - `POST /api/run` without the token is 403 (already true; the test pins it).
-- [ ] T005 [US1] Build the overlay in `src/ui/runslide.js`:
+- [X] T005 [US1] Build the overlay in `src/ui/runslide.js`:
   - **The ▶**: on the hovered or selected cell, or a running one (positioned like 003's hover bar). It runs through `run.runCells([ref])`, and becomes ■ while running (`/api/run/interrupt`).
   - **State classes** on the cell element, from `run_started`, `cell_output` and `run_done`, and stale from `/api/outputs`.
   - **The in-place swap** of `qd-output[data-qd-cell]`, or an insert after the cell when it had none.
@@ -80,20 +80,42 @@ Paths are relative to the repo root.
 
 **Independent Test**: spec US2; quickstart §2.
 
-- [ ] T006 [P] [US2] Write failing browser tests in `tests/onslide.rs`:
+- [X] T006 [P] [US2] Write failing browser tests in `tests/onslide.rs`:
   - **`popup_run`**:
     - the pop-up on a code cell shows "Run ⇧Enter", and a math pop-up doesn't;
     - after changing the code, ⇧Enter writes the deck (one undo step, Edit ▸ Undo returns it), runs the cell, and the slide's output updates while `#srcedit` stays open;
     - unchanged text runs without writing (the deck's version is the same).
   - **`popup_run_refused`**: changing the file underneath first (a CLI edit to the same cell) makes Run show the conflict in the pop-up's error line, run nothing (no `run_started`), and keep the typed text.
   - **`run_ordering`**: two quick runs of a cell whose output is the run's own counter end with the second run's output on the slide.
-- [ ] T007 [US2] In `src/ui/source.js`, add `openSource(rect, text, {save, cancel, run?})`: a **Run ⇧Enter** button and the key when `run` is given. Then:
+- [X] T007 [US2] In `src/ui/source.js`, add `openSource(rect, text, {save, cancel, run?})`: a **Run ⇧Enter** button and the key when `run` is given. Then:
   - in `src/ui/editor.js`, pass `run` for code cells: save through the existing path, then `runCells([ref])` only if the save succeeded;
   - in `src/ui/runslide.js`, keep the newest run id per cell and ignore older `cell_output`s (FR-007).
 
   T006 passes.
 
 **Checkpoint**: P1 complete (MVP: one PR, US1 + US2).
+
+As built:
+- **No `data-qd-cell` attribute.** Each cell's output block already sits
+  inside its wrapper, `[data-qd="REF"]`, so the editor finds the block
+  there. `render::output_div` is the bare block, and it is what
+  `cell_output.html` carries.
+- **Placeholder for invisible cells.** Revealjs hides code by default
+  (`echo: false`), so a cell that has never run showed nothing on the slide,
+  and there was nothing to point at. The preview now marks cell wrappers
+  `.qd-cell`, and in the editor (not when presenting) an empty one shows
+  "Code cell, not run yet".
+- **The ▶** sits at the cell's top right for the hovered or selected cell.
+  The element bar's Run button for a selected cell stays as it was.
+- **⇧Enter** is the existing `run-cell` action, now also where an element is
+  selected. It runs the source pane's caret cell only when the key comes
+  from the source pane. No `run-stop-cell` action was needed: the ▶ turns
+  into ■, and Run ▸ Stop still works.
+- **Order of runs (FR-007).** `run_cells_over_http` fires five runs back to
+  back and checks that they report in the order asked, and that the last
+  one is stored. It passed every time without changes: the session takes
+  them in order. So there is no queue in the server and no guard in the
+  editor.
 
 ---
 

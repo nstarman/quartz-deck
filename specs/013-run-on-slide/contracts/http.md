@@ -9,10 +9,10 @@ No new endpoints. Every run endpoint still requires the session token
 | What | Change |
 |---|---|
 | `POST /api/run` | Runs with the deck's engine (research R2). A missing engine, kernel or language is `400 E_ENGINE`, and the hint names what is missing. |
-| SSE `cell_output` | Adds `"html"`: the preview's block for that cell, with `data-qd-cell="REF"`. The editor swaps it into the slide in place. |
+| SSE `cell_output` | Adds `"html"`: the preview's block for that cell (`<div class="cell-output qd-output">`). The editor swaps it in place inside the cell's `[data-qd="REF"]` wrapper. |
 | SSE `kernel` | Adds `"engine": {"kind", "label"}`, so the badge can say `R · idle` instead of `Python · idle`. |
 | `GET /api/outputs` | Adds `"engine": {"kind", "label", "kernel"?}` or `{"error"}` when the engine can't run here. |
-| Preview HTML | Each stored-output block carries `data-qd-cell="REF"`. Nothing else in the rendered deck changes, and `/present/` is untouched. |
+| Preview HTML | Cell wrappers gain the class `qd-cell`, which the editor uses for its "Code cell, not run yet" placeholder (never shown when presenting). Nothing else in the rendered deck changes. |
 
 ## Unchanged
 

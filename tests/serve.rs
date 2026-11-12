@@ -632,6 +632,13 @@ fn run_cells_over_http() {
     assert!(ev.wait("kernel", wait).unwrap().contains("starting"));
     let out = ev.wait("cell_output", wait).expect("cell output");
     assert!(out.contains("42"), "{out}");
+    // 013: the block the slide shows, for the editor to swap in place
+    let out: Value = serde_json::from_str(&out).unwrap();
+    let html = out["html"].as_str().unwrap_or_default();
+    assert!(
+        html.starts_with("<div class=\"cell-output qd-output") && html.contains("42"),
+        "{out}"
+    );
     assert!(ev.wait("run_done", wait).unwrap().contains("\"done\""));
 
     // Run all: in order, skipping eval:false and non-Python, stopping at the failure
@@ -673,6 +680,26 @@ fn run_cells_over_http() {
         html.contains("qd-output")
             && html.contains("/outputs/")
             && html.contains("ZeroDivisionError")
+    );
+
+    // 013 FR-007: runs happen in the order asked, so the newest is the one shown and stored
+    for _ in 0..5 {
+        assert_eq!(run(print, &auth), 202);
+    }
+    let mut seen = vec![];
+    while seen.len() < 5 {
+        let o: Value = serde_json::from_str(&ev.wait("cell_output", wait).unwrap()).unwrap();
+        seen.push((o["run"].as_u64().unwrap(), o["counter"].as_u64().unwrap()));
+    }
+    let mut sorted = seen.clone();
+    sorted.sort();
+    assert_eq!(seen, sorted, "in the order asked");
+    ev.wait("run_done", wait).unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    let outputs: Value = serde_json::from_str(&get(p, "/api/outputs").1).unwrap();
+    assert_eq!(
+        outputs["cells"]["print/0"]["counter"], seen[4].1,
+        "the last asked is stored"
     );
 
     // an edited cell's output is marked stale
