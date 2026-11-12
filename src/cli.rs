@@ -794,8 +794,9 @@ fn run_cells(
     timeout: Option<u64>,
 ) -> Result<Value> {
     let d = s.read()?;
+    let engine = crate::engine::detect(&s.path, &d)?;
     let mut r = if let Ok(session) = crate::server::running(s) {
-        crate::kernel::plan(&d, cells, all, fresh)?; // refs checked here, errors as CLI codes
+        crate::kernel::plan(&d, &engine, cells, all, fresh)?; // refs checked here, errors as CLI codes
         let body =
             json!({"cells": cells, "all": all, "fresh": fresh, "wait": true, "timeout": timeout});
         let (status, text) = to_server(&session, "api/run", Some(&body))?;
@@ -813,14 +814,14 @@ fn run_cells(
         v["mode"] = json!("live");
         v
     } else {
-        let plan = crate::kernel::plan(&d, cells, all, true)?;
+        let plan = crate::kernel::plan(&d, &engine, cells, all, true)?;
         let out = crate::outputs::Outputs::new(s);
         let mut runs = vec![];
         let res = if plan.is_empty() {
             Ok("done") // nothing to run needs no environment
         } else {
             let dir = s.path.parent().unwrap_or(Path::new("."));
-            let k = crate::kernel::Session::start(&crate::env::require(dir)?, dir)?;
+            let k = crate::kernel::Session::start(&engine, dir)?;
             let t = timeout.map(std::time::Duration::from_secs);
             crate::kernel::run_plan(&k, &out, plan, t, |cell, rec| {
                 runs.extend(rec.map(|rec| out.entry(cell, rec)));
@@ -836,6 +837,7 @@ fn run_cells(
     };
     r["ok"] = json!(r["status"] == "done");
     r["op"] = json!("run");
+    r["engine"] = engine.to_json();
     r["version"] = json!(d.version); // runs never change the file: ready for an --expect
     Ok(r)
 }

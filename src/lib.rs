@@ -4,6 +4,7 @@ pub mod bib;
 pub mod browser;
 pub mod cli;
 pub mod deck;
+pub mod engine;
 pub mod env;
 pub mod error;
 pub mod export;

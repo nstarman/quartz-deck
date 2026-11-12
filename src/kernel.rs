@@ -1,10 +1,10 @@
-//! A live Jupyter session for a deck (spec 004 R4): the embedded Python bridge
-//! (`kernel_bridge.py`) runs inside the deck's environment and starts a kernel
-//! over IPC sockets; qd talks to it in JSON lines. One request at a time;
-//! `interrupt` may be sent while a cell runs.
+//! A live session for a deck: a Jupyter kernel through the embedded Python
+//! bridge (`kernel_bridge.py`, spec 004 R4; any kernel since 013), or R through
+//! `kernel_bridge.R` for knitr decks (013 R4). qd talks to either in the same
+//! JSON lines. One request at a time; `interrupt` may be sent while a cell runs.
 
 use crate::deck::{Block, BlockKind, Deck, code_open, version_of};
-use crate::env::Env;
+use crate::engine::{Engine, Kind};
 use crate::error::{QdError, Result};
 use crate::outputs::Outputs;
 use serde_json::{Value, json};
@@ -16,25 +16,30 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const BRIDGE: &str = include_str!("kernel_bridge.py");
+const BRIDGE_R: &str = include_str!("kernel_bridge.R");
 
 /// Cold start measured at ~8 s (environment + kernel); allow for a first sync.
 const START: Duration = Duration::from_secs(180);
 
+/// The language of a code block (`python` for ```` ```{python} ````).
+pub fn cell_lang<'a>(d: &'a Deck, b: &Block) -> &'a str {
+    let info = d
+        .slice(b.span)
+        .lines()
+        .next()
+        .and_then(code_open)
+        .map_or("", |(_, _, i)| i);
+    let lang = info.trim_start_matches([' ', '{']);
+    &lang[..lang.find([' ', ',', '}']).unwrap_or(lang.len())]
+}
+
 /// The code of cell `b` to execute, or None for `#| eval: false`;
-/// `E_NOT_CODE` for anything but an executable cell, `E_ENGINE` unless Python.
+/// `E_NOT_CODE` for anything but an executable cell.
 pub fn cell_code(d: &Deck, b: &Block) -> Result<Option<String>> {
     if b.kind != BlockKind::Cell {
         return Err(QdError::NotCode(b.id.clone()));
     }
-    let text = d.slice(b.span);
-    let mut lines = text.lines();
-    let info = lines.next().and_then(code_open).map_or("", |(_, _, i)| i);
-    let lang = info.trim_start_matches([' ', '{']);
-    let lang = &lang[..lang.find([' ', ',', '}']).unwrap_or(lang.len())];
-    if lang != "python" {
-        return Err(QdError::Engine(lang.to_string()));
-    }
-    let body: Vec<&str> = lines.collect();
+    let body: Vec<&str> = d.slice(b.span).lines().skip(1).collect();
     let body = &body[..body.len().saturating_sub(1)]; // the closing fence
     let off = body.iter().any(|l| {
         let o = l
@@ -49,15 +54,34 @@ pub fn cell_code(d: &Deck, b: &Block) -> Result<Option<String>> {
 /// A cell to run: (ref, fingerprint, code).
 pub type Planned = (String, String, String);
 
+/// Whether `engine` runs cell `b` (`E_ENGINE` if it is in another language).
+pub fn runnable(d: &Deck, b: &Block, engine: &Engine) -> Result<Option<String>> {
+    let code = cell_code(d, b)?;
+    let lang = cell_lang(d, b);
+    if !engine.runs(lang) {
+        return Err(QdError::Engine(format!(
+            "{lang} cells in a deck that runs {}",
+            engine.label()
+        )));
+    }
+    Ok(code)
+}
+
 /// The cells to run, in order: the picked `cells` (in the order given), or
 /// every cell (`all`), or from the top through the furthest picked one (`fresh`,
 /// a new session has no state). Run all / fresh skip what can't run here;
-/// picked cells must be runnable code.
-pub fn plan(d: &Deck, cells: &[String], all: bool, fresh: bool) -> Result<Vec<Planned>> {
+/// picked cells must be code that `engine` runs.
+pub fn plan(
+    d: &Deck,
+    engine: &Engine,
+    cells: &[String],
+    all: bool,
+    fresh: bool,
+) -> Result<Vec<Planned>> {
     let mut picked = vec![];
     for r in cells {
         let (_, b) = d.element(r)?;
-        cell_code(d, b)?;
+        runnable(d, b, engine)?;
         picked.push(b.id.clone());
     }
     let last = d
@@ -72,7 +96,7 @@ pub fn plan(d: &Deck, cells: &[String], all: bool, fresh: bool) -> Result<Vec<Pl
         if b.kind != BlockKind::Cell || !wanted {
             continue;
         }
-        if let Ok(Some(code)) = cell_code(d, b) {
+        if let Ok(Some(code)) = runnable(d, b, engine) {
             plan.push((b.id.clone(), version_of(d.slice(b.span).as_bytes()), code));
         }
     }
@@ -106,6 +130,7 @@ pub fn run_plan(
 }
 
 pub struct Session {
+    pub engine: Engine,
     child: Child,
     stdin: Mutex<Option<ChildStdin>>,
     /// Replies in request order; holding the lock = the session is busy.
@@ -114,12 +139,62 @@ pub struct Session {
 }
 
 impl Session {
-    /// Start the bridge in `env` (cwd `dir`) and wait until its kernel is ready.
-    pub fn start(env: &Env, dir: &Path) -> Result<Session> {
-        let mut child = env
-            .wrap(Path::new("python"))?
-            .args(["-I", "-c", BRIDGE])
-            .env("QD_KERNEL", crate::env::KERNEL)
+    /// Start `engine`'s bridge (cwd `dir`) and wait until it is ready.
+    /// Jupyter: in the deck's environment when it has one (004), else with
+    /// uv's throwaway `jupyter_client` for a kernel named or found by language
+    /// (013 R3). knitr: R running `kernel_bridge.R` (R4).
+    pub fn start(engine: &Engine, dir: &Path) -> Result<Session> {
+        let path = std::env::var_os("PATH");
+        let mut cmd = match engine.kind {
+            Kind::Jupyter => {
+                let env = crate::env::find(dir);
+                let mut c = match &env {
+                    Some(env) => env.wrap(Path::new("python"))?,
+                    // a Python deck without a named kernel needs its environment (004)
+                    None if engine.kernel.is_none() && engine.language == "python" => {
+                        return Err(QdError::NoEnv(dir.display().to_string()));
+                    }
+                    None => {
+                        let uv = crate::render::which("uv", path).ok_or(QdError::EnvTool("uv"))?;
+                        let mut c = std::process::Command::new(uv);
+                        c.args([
+                            "run",
+                            "-q",
+                            "--no-project",
+                            "--with",
+                            "jupyter_client",
+                            "python",
+                        ]);
+                        c
+                    }
+                };
+                let own = env.is_some() && engine.language == "python";
+                let kernel = engine
+                    .kernel
+                    .as_deref()
+                    .or(own.then_some(crate::env::KERNEL));
+                c.args(["-I", "-c", BRIDGE])
+                    .env("QD_KERNEL", kernel.unwrap_or_default())
+                    .env("QD_LANGUAGE", &engine.language);
+                c
+            }
+            Kind::Knitr => {
+                let r = crate::render::which("Rscript", path).ok_or_else(|| {
+                    QdError::Engine(
+                        "r cells: R is not installed (https://cran.r-project.org)".into(),
+                    )
+                })?;
+                let script = crate::store::cache_root().join("kernel_bridge.R");
+                std::fs::create_dir_all(script.parent().unwrap())?;
+                std::fs::write(&script, BRIDGE_R)?;
+                let mut c = std::process::Command::new(r);
+                c.args(["--no-save", "--no-restore"]).arg(&script);
+                let [w, h, dpi] = engine.fig;
+                c.env("QD_FIG", format!("{w} {h} {dpi}"));
+                c
+            }
+        };
+        let mut child = cmd
             .current_dir(dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -147,13 +222,18 @@ impl Session {
             }
         });
         let s = Session {
+            engine: engine.clone(),
             stdin: Mutex::new(child.stdin.take()),
             child,
             replies: Mutex::new(rx),
             stderr,
         };
-        s.reply(&s.replies.lock().unwrap(), START, "start")?;
-        Ok(s)
+        let ready = s.reply(&s.replies.lock().unwrap(), START, "start")?;
+        // the bridge says what is missing (a kernel, an R package) and exits
+        match ready["error"].as_str() {
+            Some(e) => Err(QdError::Engine(e.into())),
+            None => Ok(s),
+        }
     }
 
     fn send(&self, req: Value) -> Result<()> {
@@ -206,8 +286,18 @@ impl Session {
     }
 
     /// Stop the running cell (it finishes with status `stopped`); no-op when idle.
+    /// R is interrupted by a signal (SIGINT), only while a cell runs.
     pub fn interrupt(&self) -> Result<()> {
-        self.send(json!({"op": "interrupt"}))
+        if self.engine.kind == Kind::Jupyter {
+            return self.send(json!({"op": "interrupt"}));
+        }
+        if self.replies.try_lock().is_err() {
+            // ponytail: `kill` the command, not a libc dependency
+            std::process::Command::new("kill")
+                .args(["-INT", &self.child.id().to_string()])
+                .status()?;
+        }
+        Ok(())
     }
 
     /// Fresh kernel state (waits for any running cell first: interrupt it to hurry).

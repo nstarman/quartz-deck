@@ -2,7 +2,8 @@
 a Jupyter kernel over IPC sockets, and talk to qd in JSON lines.
 
 stdin:  {"op": "execute", "code": "..."} | {"op": "restart"} | {"op": "interrupt"}
-stdout: {"ready": true}, then one reply per execute/restart (interrupt has none):
+stdout: {"ready": true} (or {"error": "..."} when the kernel can't start), then
+        one reply per execute/restart (interrupt has none):
         {"status": "ok|error|stopped", "counter": n, "outputs": [...]} | {"restarted": true}
 Outputs: {"kind": "text", "text"} | {"kind": "html", "html"} |
          {"kind": "image", "mime", "path" (a file in a temporary folder)} | {"kind": "error", "ename", "evalue", "traceback"}
@@ -19,6 +20,7 @@ import tempfile
 import threading
 
 from jupyter_client import KernelManager
+from jupyter_client.kernelspec import KernelSpecManager
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
@@ -79,8 +81,23 @@ def execute(kc, km, code, stop):
     return {"status": status, "counter": counter, "outputs": outputs}
 
 
+def kernel_name():
+    """QD_KERNEL, else the first installed kernel for QD_LANGUAGE (Quarto's rule)."""
+    specs = KernelSpecManager().get_all_specs()
+    name, lang = os.environ.get("QD_KERNEL"), os.environ.get("QD_LANGUAGE", "python")
+    if name:
+        return name if name in specs else None
+    return next((k for k, s in sorted(specs.items()) if s["spec"]["language"].lower() == lang), None)
+
+
 def main():
-    km = KernelManager(kernel_name=os.environ.get("QD_KERNEL", "python3"), transport="ipc")
+    name = kernel_name()
+    if name is None:
+        found = ", ".join(sorted(KernelSpecManager().get_all_specs())) or "none"
+        wanted = os.environ.get("QD_KERNEL") or "for " + os.environ.get("QD_LANGUAGE", "python")
+        say({"error": f"no Jupyter kernel {wanted} is installed (found: {found})"})
+        return
+    km = KernelManager(kernel_name=name, transport="ipc")
     km.ip = os.path.join(tempfile.mkdtemp(prefix="qd-kernel-"), "k")
     km.start_kernel()
     kc = km.client()
