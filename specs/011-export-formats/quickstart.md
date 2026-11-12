@@ -64,8 +64,8 @@ For gfm, `export/carry_files/` holds the plot and is listed in `files`.
 qd --deck carry.qmd export --to rst
 ```
 
-Expected: `route: "pandoc"`, a note that Quarto features may be
-simplified, and every slide title in `export/carry.rst`.
+Expected: every slide title in `export/carry.rst`, the notes under their
+label, and the plot in `export/carry_files/figure-rst/`, listed in `files`.
 
 ## 6. Editor
 

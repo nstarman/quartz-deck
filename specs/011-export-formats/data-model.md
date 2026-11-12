@@ -11,7 +11,6 @@ the JSON it prints.
 | `label` | string | menu text: "PowerPoint", "Beamer PDF", "Word", … |
 | `group` | `slides` \| `documents` \| `other` | menu group |
 | `ext` | string | output extension without the dot (`pptx`, `pdf`, `md`, …) |
-| `route` | `quarto` \| `pandoc` \| `offline` | `offline` = the 002/010 export (`revealjs`, `revealjs-pdf`) |
 | `needs` | `tex` \| `browser` \| null | tool checked before rendering |
 | `ready` | bool | `needs` is null or the tool was found |
 
@@ -59,7 +58,6 @@ Only `kept` produces no loss.
   "ok": true,
   "kind": "export-format",
   "format": "pptx",
-  "route": "quarto",
   "out": "/abs/export/talk.pptx",
   "files": [],
   "losses": [
@@ -82,7 +80,7 @@ before the export starts.
 
 ```json
 {"kind": "export-formats", "formats": [
-  {"name": "pptx", "label": "PowerPoint", "group": "slides", "ext": "pptx", "route": "quarto", "needs": null, "ready": true},
-  {"name": "beamer", "label": "Beamer PDF", "group": "slides", "ext": "pdf", "route": "quarto", "needs": "tex", "ready": false, "hint": "install TeX: quarto install tinytex"}
+  {"name": "pptx", "label": "PowerPoint", "group": "slides", "ext": "pptx", "needs": null, "ready": true},
+  {"name": "beamer", "label": "Beamer PDF", "group": "slides", "ext": "pdf", "needs": "tex", "ready": false, "hint": "install TeX: quarto install tinytex"}
 ]}
 ```

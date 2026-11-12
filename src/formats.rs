@@ -274,11 +274,10 @@ fn writers() -> &'static [String] {
 }
 
 /// A writer with no menu entry (US4): its name and file extension.
-fn other<'a>(name: &'a str, writers: &'a [String]) -> Option<(&'a String, &'a str)> {
-    if FORMATS.iter().any(|f| f.name == name) {
+fn other<'a>(name: &'a str, writers: &[String]) -> Option<&'a str> {
+    if FORMATS.iter().any(|f| f.name == name) || !writers.iter().any(|w| w == name) {
         return None;
     }
-    let w = writers.iter().find(|w| *w == name)?;
     let ext = match name {
         "latex" | "context" => "tex",
         "rst" | "org" | "rtf" | "ms" | "opml" | "icml" | "fb2" | "textile" | "native" => name,
@@ -300,7 +299,7 @@ fn other<'a>(name: &'a str, writers: &'a [String]) -> Option<(&'a String, &'a st
         }
         _ => "txt",
     };
-    Some((w, ext))
+    Some(ext)
 }
 
 /// `qd export --list` (FR-011).
@@ -318,11 +317,9 @@ pub fn list() -> Value {
             v
         })
         .chain(writers().iter().filter_map(|w| {
-            let (name, ext) = other(w, writers())?;
-            Some(
-                json!({"name": name, "label": name, "group": "other", "ext": ext,
-                        "needs": null, "ready": true}),
-            )
+            other(w, writers()).map(|ext| {
+                json!({"name": w, "label": w, "group": "other", "ext": ext, "needs": null, "ready": true})
+            })
         }))
         .collect();
     json!({"kind": "export-formats", "formats": formats})
@@ -354,14 +351,14 @@ pub fn run(
     out: Option<PathBuf>,
     dry_run: bool,
 ) -> Result<Value> {
-    // a menu format through Quarto, or any other Pandoc writer: Quarto to
-    // Markdown (code runs, the filter applies), then Pandoc (US4)
-    let (ext, pandoc) = match find(name) {
+    // a menu format, or any other writer Quarto's Pandoc has (US4): the same
+    // Quarto render either way (research R3)
+    let ext = match find(name) {
         Ok(f) if f.needs == Some(Tool::Tex) && !tex_here() => {
             return Err(QdError::NoTex(f.label.into()));
         }
-        Ok(f) => (f.ext, false),
-        Err(e) => (other(name, writers()).ok_or(e)?.1, true),
+        Ok(f) => f.ext,
+        Err(e) => other(name, writers()).ok_or(e)?,
     };
     let d = store.read()?;
     let deck_dir = store.path.parent().unwrap_or(Path::new(".")).to_path_buf();
@@ -373,14 +370,8 @@ pub fn run(
         .into_owned();
     let out = out.unwrap_or_else(|| deck_dir.join("export").join(format!("{stem}.{ext}")));
     let out = std::path::absolute(&out)?;
-    let mut v = json!({"ok": true, "kind": "export-format", "format": name,
-        "route": if pandoc { "pandoc" } else { "quarto" }, "out": out, "files": [],
-        "losses": losses(&d, name), "notes": [], "changed_during": false});
-    if pandoc {
-        v["notes"] = json!([
-            "converted from Markdown with Pandoc: Quarto-only features may be simplified in this format"
-        ]);
-    }
+    let mut v = json!({"ok": true, "kind": "export-format", "format": name, "out": out,
+        "files": [], "losses": losses(&d, name), "notes": [], "changed_during": false});
     if dry_run {
         v["dry_run"] = json!(true);
         return Ok(v);
@@ -403,42 +394,31 @@ pub fn run(
         ),
     )?;
     let meta_s = meta.to_string_lossy();
-    let (to, to_ext) = if pandoc { ("md", "md") } else { (name, ext) };
-    let mut made = crate::render::render_to(
+    let made = crate::render::render_to(
         &store.path,
         &d.text,
         &tag,
         &staging,
-        to,
-        to_ext,
+        name,
+        ext,
         &["--metadata-file", &meta_s],
         true,
     )?;
-    if pandoc {
-        let md = made.clone();
-        made.set_extension(ext);
-        let o = std::process::Command::new(crate::render::quarto()?)
-            .args(["pandoc", "-f", "markdown", "-t", name, "-o"])
-            .args([&made, &md])
-            .current_dir(&staging)
-            .output()?;
-        if !o.status.success() {
-            return Err(QdError::Render(String::from_utf8_lossy(&o.stderr).into()));
-        }
-    }
-    // Markdown and the html page keep figures and libraries in `<name>_files/`
-    // beside them (FR-009): it moves with the file, under the file's own name
+    // a text output (Markdown, the html page, rst, LaTeX, …) refers to figures
+    // and libraries in `<name>_files/` (FR-009): it moves with the file, under
+    // the file's own name; a PDF's own `_files/` holds intermediate figures only
     let made_name = made
         .file_stem()
         .unwrap_or_default()
         .to_string_lossy()
         .into_owned();
     let made_files = staging.join(format!("{made_name}_files"));
-    // (a PDF's own `_files/` holds intermediate figures only: it stays behind)
-    if made_files.is_dir() && (pandoc || matches!(ext, "md" | "html")) {
+    let text = std::fs::read_to_string(&made)
+        .ok()
+        .filter(|t| made_files.is_dir() && t.contains(&format!("{made_name}_files/")));
+    if let Some(text) = text {
         let out_stem = out.file_stem().unwrap_or_default().to_string_lossy();
         let files = parent.join(format!("{out_stem}_files"));
-        let text = std::fs::read_to_string(&made)?;
         std::fs::write(
             &made,
             text.replace(
@@ -565,13 +545,12 @@ mod tests {
     }
 
     #[test]
-    fn other_writers_take_the_pandoc_route() {
+    fn other_writers_are_accepted_by_name() {
         let writers = ["rst", "org", "latex", "asciidoc", "pptx", "plain"].map(String::from);
-        let (name, ext) = other("rst", &writers).unwrap();
-        assert_eq!((name.as_str(), ext), ("rst", "rst"));
-        assert_eq!(other("latex", &writers).unwrap().1, "tex");
-        assert_eq!(other("asciidoc", &writers).unwrap().1, "adoc");
-        assert_eq!(other("plain", &writers).unwrap().1, "txt");
+        assert_eq!(other("rst", &writers), Some("rst"));
+        assert_eq!(other("latex", &writers), Some("tex"));
+        assert_eq!(other("asciidoc", &writers), Some("adoc"));
+        assert_eq!(other("plain", &writers), Some("txt"));
         assert!(
             other("pptx", &writers).is_none(),
             "a menu format, not an other"

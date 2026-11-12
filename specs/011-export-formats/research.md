@@ -50,7 +50,7 @@ or the loss report (FR-013) would be wrong (SC-002).
 
 ## R2. Adapting a slide deck for other formats: one Lua filter
 
-Decision: every Quarto-route export (except revealjs and revealjs-pdf)
+Decision: every export (except revealjs and revealjs-pdf)
 renders the copy with `--metadata-file <tmp>.yml` holding
 `echo: false` (only when the deck has no `echo` of its own) and
 `filters: [qd-export.lua]`. The filter is embedded in the binary
@@ -74,28 +74,29 @@ Alternatives considered:
   re-parsing pauses and divs that Pandoc already parses. The filter is
   20 lines.
 
-## R3. Routes
+## R3. One route: Quarto
 
-Decision:
-- **Quarto route**: `quarto render <copy> --to <f> --metadata-file … -o
-  <name>`, run in the deck's folder through the same helper that live
-  rendering uses (`render::quarto_cmd` + `run_quarto`), so the deck's
-  environment (004), its kernel and the one-Quarto-run-at-a-time lock
-  apply. Used when `<f>` is one of Quarto's formats.
-- **Pandoc route** (P3): render the copy `--to md` by the Quarto route
-  (code runs, filter applied), then
-  `quarto pandoc <copy>.md -t <writer> -o <out>` in the same folder. Used
-  for writers that Quarto has no format for. The result carries a note
-  (FR-006).
-- How qd tells the two apart: names in a fixed list of Quarto formats
-  (`pptx beamer docx odt html pdf typst gfm commonmark commonmark_x ipynb
-  epub epub2 epub3 latex context ms rtf jats* docbook* asciidoc
-  markdown*`) take the Quarto route, and other writers from `quarto pandoc
-  --list-output-formats` take the Pandoc route. Quarto accepts any Pandoc
-  writer with `--to`, but formats outside its list skip its format
-  defaults, so Pandoc is the simpler and more predictable path for them.
-  ponytail: fixed list; read Quarto's own list if it ever gains a command
-  for it.
+Decision: every format except the offline export (`revealjs`,
+`revealjs-pdf`, 002/010) is `quarto render <copy> --to <name>
+--metadata-file … --output-dir <staging>`. It runs in the deck's folder
+through the same helper that live rendering uses (`render::render_to`, then
+`quarto_cmd` and `run_quarto`), so the deck's environment (004), its kernel
+and the one-Quarto-run-at-a-time lock all apply. The writer list for
+`qd export --list` and for accepting a name comes from
+`quarto pandoc --list-output-formats`.
+
+Checked 2026-11-12 on the fixture, with the filter: `quarto render --to`
+works for rst, org, asciidoc, latex, plain, mediawiki, jats, docbook5, man
+and rtf. All exit 0, and each keeps the notes (labelled) and the callout,
+with no ". . .". rst, for example, has every slide title, the math as
+`.. math::`, and the plot as `deck_files/figure-rst/…png`.
+
+Alternatives considered: rendering to Markdown with Quarto and converting it
+with `quarto pandoc -t <writer>` (the first plan, built and then dropped).
+It needed a second process, a `route` field and a "may be simplified" note,
+and it gained nothing: Quarto already passes any writer to its Pandoc after
+running its own filters. The person's decision (spec Clarifications): easy
+routing to every format is the reason to build on Quarto.
 
 ## R4. Tools
 

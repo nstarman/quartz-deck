@@ -7,9 +7,9 @@
 
 `qd export --to <format>` and an Export ▾ menu cover every format Quarto
 and its Pandoc can write. A new module `src/formats.rs` holds the format
-table (name, label, group, extension, route, tool, carry-over column). It
-checks for the tool, renders a temp copy of the deck with Quarto (or Quarto
-to Markdown, then Pandoc), applies one embedded Lua filter that adapts
+table (name, label, group, extension, tool, carry-over column). It
+checks for the tool, renders a temp copy of the deck with Quarto to the chosen
+format (any writer its Pandoc has), applies one embedded Lua filter that adapts
 slides for other formats, moves the output into place only on success,
 and reports losses computed from the deck model. Plain `qd export` and its
 PDF stay as they are. The code starts after PR #43 merges (research R8).
@@ -40,7 +40,7 @@ licences: no new dependencies.
 | III. CLI first | `qd export --to`, `qd export --list` come first; the menu calls them through `/api/op`. JSON result, `E_NO_TEX` error code, `qd schema` updated. Pass. |
 | IV. Live preview | Unaffected; exports use the same Quarto lock, so they wait for a preview render instead of breaking it. Pass. |
 | V. Safe concurrent edits | Exports don't edit. The export uses a copy of the text read at start; the result says if the deck changed meanwhile. Pass. |
-| VI. Test first | Unit tests for the table, losses and route choice; CLI tests for each format group with the fixture deck; a browser test for the menu. Pass. |
+| VI. Test first | Unit tests for the table, losses and format lookup; CLI tests for each format group with the fixture deck; a browser test for the menu. Pass. |
 | VII. Simplicity | One module, one filter, no new crates; losses from the deck model instead of parsers per output format (R6); no still-image converter (R5). Pass. |
 | Constraints: token for code | `/api/op` starts requiring the token for `render`, `export`, `pdf`, which closes an existing gap (R7). Pass. |
 
@@ -118,12 +118,13 @@ and `needs`.
    `.qd-export-<nanos>.lua` and the metadata `.qd-export-<nanos>.yml` next
    to the deck. The metadata holds `echo: false` (unless the deck sets
    `echo`) and the filter.
-4. Quarto route: `quarto render <copy> --to <name> --metadata-file <yml>
-   -o <tmp-out-name>`. Pandoc route: render `--to md`, then
-   `quarto pandoc <copy>.md -t <name> -o <tmp-out>`. Both go through
-   `render::quarto_cmd`/`run_quarto`, so the environment and lock apply.
-5. Move `<tmp-out>` to `out` (default `export/<stem>.<ext>`) and move the
-   `<stem>_files/` folder Quarto writes for Markdown next to it. Remove
+4. `quarto render <copy> --to <name> --metadata-file <yml> --output-dir
+   <staging>` for every format, menu or not (research R3), through
+   `render::render_to`, so the environment and lock apply.
+5. Move the output to `out` (default `export/<stem>.<ext>`). When the output
+   is text and Quarto wrote a `<name>_files/` folder (figures, the HTML
+   page's libraries), merge it into `<out>_files/` beside it and rewrite the
+   references. Remove
    the copy, the filter and the metadata in every case (a guard struct
    with Drop).
 6. Return the result (data-model.md). If the deck's text changed during
@@ -179,7 +180,7 @@ and pdf, so the result can link the file.
   with disabled formats; tests.
 - US3 (P2): the document formats (table columns and tests); notes in
   documents; extra files for Markdown.
-- US4 (P3): the Pandoc route and "Other format…".
+- US4 (P3): any other writer by name, the same route, and "Other format…".
 - Polish: README, ROADMAP, action inventory, quickstart run, concision
   audit.
 

@@ -153,10 +153,10 @@ SHA-256; later exports work offline. `--no-download` forbids downloads.
 `qd export --to <format>` writes `export/<deck>.<ext>` (`--out FILE` for
 another path); `qd export --list` lists every format with `ready` and, if not,
 a `hint`. Menu formats: `pptx`, `beamer`, `docx`, `html`, `pdf` (LaTeX),
-`typst`, `gfm`, `commonmark`, `ipynb`, `odt`, `epub`; any other Pandoc
-writer (`rst`, `org`, `latex`, `asciidoc`, …) goes Quarto → Markdown → Pandoc
-(`"route": "pandoc"`, with a note that Quarto-only features may be
-simplified). The deck is never changed; code runs as in a render.
+`typst`, `gfm`, `commonmark`, `ipynb`, `odt`, `epub`, and any other writer
+Quarto's Pandoc has (`rst`, `org`, `latex`, `asciidoc`, …). Each is one
+Quarto render of a copy, so code runs and Quarto's features are kept; the
+deck is never changed.
 
 Read `losses` in the result before telling the person an export is done:
 each is `{feature, keep, what, slides}`, e.g. `placed` boxes in the `flow`,
@@ -164,8 +164,8 @@ each is `{feature, keep, what, slides}`, e.g. `placed` boxes in the `flow`,
 `background-image` or `interactive` `lost`. Only features the deck uses are
 listed. `qd --dry-run export --to X` reports them without rendering, which
 is the way to pick a format. Documents get one section per slide with notes
-under "Speaker notes"; Markdown and the HTML page put figures and libraries
-in `export/<deck>_files/` (listed in `files`).
+under "Speaker notes"; text formats (Markdown, the HTML page, rst, LaTeX, …)
+put figures and libraries in `export/<deck>_files/` (listed in `files`).
 
 `E_NO_TEX` (Beamer, `pdf`): install TeX with `quarto install tinytex`, or use
 `typst`, which needs nothing extra.

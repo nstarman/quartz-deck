@@ -242,12 +242,13 @@ qd export --to pptx         # export/<deck>.pptx: slides, notes in the notes, ba
 qd export --to beamer       # export/<deck>.pdf through LaTeX: pauses become overlays
 qd export --to docx         # a handout: one section per slide, notes under "Speaker notes"
 qd export --to gfm          # Markdown, figures in export/<deck>_files/
-qd export --to rst          # any other Pandoc writer: Quarto to Markdown, then Pandoc
+qd export --to rst          # any other writer Quarto's Pandoc has, by name
 qd --dry-run export --to pptx   # what won't carry over, without rendering
 ```
 
-Each export renders a copy of the deck with Quarto, so code runs and callouts,
-cross-references and figures are kept; the deck is never changed. The result
+Every format is one Quarto render of a copy of the deck (`quarto render --to
+<format>`), so code runs and callouts, cross-references and figures are kept,
+and any writer Quarto's Pandoc has works by name; the deck is never changed. The result
 lists what a format can't keep, slide by slide: placed boxes go back in the
 flow, pauses and fragments are shown all at once, background images are kept
 only in PowerPoint, interactive figures only in the HTML page and the

@@ -83,7 +83,6 @@ fn pptx_and_beamer() {
     let out = t.path().join("export/carry.pptx");
     assert_eq!(v["kind"], "export-format");
     assert_eq!(v["format"], "pptx");
-    assert_eq!(v["route"], "quarto");
     assert_eq!(
         Path::new(v["out"].as_str().unwrap())
             .canonicalize()
@@ -350,14 +349,6 @@ fn other_writers() {
     for (to, file) in [("rst", "carry.rst"), ("org", "carry.org")] {
         let (ok, v, err) = export(t.path(), &["--to", to]);
         assert!(ok, "{to}: {err}");
-        assert_eq!(v["route"], "pandoc", "{to}");
-        assert!(
-            v["notes"][0]
-                .as_str()
-                .unwrap()
-                .contains("Quarto-only features may be simplified"),
-            "{v}"
-        );
         let text = std::fs::read_to_string(t.path().join("export").join(file)).unwrap();
         for title in [
             "Columns",
@@ -374,6 +365,13 @@ fn other_writers() {
             text.contains("NOTESCOLS") && !text.contains(". . ."),
             "{to}"
         );
+        assert!(text.contains("Speaker notes"), "{to}: notes labelled");
+        if to == "rst" {
+            // the plot beside it, as for Markdown (FR-009)
+            assert!(text.contains("carry_files/figure-rst/"), "{text}");
+            assert!(t.path().join("export/carry_files/figure-rst").is_dir());
+            assert_eq!(v["files"].as_array().unwrap().len(), 1, "{v}");
+        }
     }
     let (ok, v, _) = export(t.path(), &["--list"]);
     assert!(ok);
