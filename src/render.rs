@@ -214,7 +214,9 @@ pub fn preview_copy(d: &Deck, outputs: &Value) -> String {
                 }
                 _ if b.kind == BlockKind::Cell => {
                     let shown = output_html(&outputs[&b.id], nl);
-                    format!("::: {{data-qd=\"{tag}\"}}{nl}{text}{nl}{shown}:::")
+                    // .qd-cell: the editor's placeholder for a cell that shows
+                    // nothing yet (revealjs hides code by default; spec 013)
+                    format!("::: {{.qd-cell data-qd=\"{tag}\"}}{nl}{text}{nl}{shown}:::")
                 }
                 _ => format!("::: {{data-qd=\"{tag}\"}}{nl}{text}{nl}:::"),
             };
@@ -231,11 +233,18 @@ fn esc(t: &str) -> String {
 }
 
 /// A cell's stored outputs (`outputs::Outputs` record) as a raw HTML block for
-/// the preview, which never executes code (R7); stale ones dimmed.
+/// the preview, which never executes code (R7).
 fn output_html(rec: &Value, nl: &str) -> String {
-    let Some(items) = rec["items"].as_array() else {
+    if rec["items"].as_array().is_none() {
         return String::new();
-    };
+    }
+    format!("````{{=html}}{nl}{}{nl}````{nl}", output_div(rec))
+}
+
+/// The `<div class="qd-output">` of [`output_html`], stale ones dimmed: also
+/// what the editor swaps into the slide when a run ends (spec 013 R6).
+pub fn output_div(rec: &Value) -> String {
+    let items = rec["items"].as_array().map_or(&[][..], |v| v);
     let pre = |class: &str, t: &str| format!("<pre class=\"{class}\">{}</pre>", esc(t));
     let body: String = items
         .iter()
@@ -259,7 +268,7 @@ fn output_html(rec: &Value, nl: &str) -> String {
         .collect();
     let stale = rec["stale"] == true;
     format!(
-        "````{{=html}}{nl}<div class=\"cell-output qd-output{}\" data-counter=\"{}\"{}>{body}</div>{nl}````{nl}",
+        "<div class=\"cell-output qd-output{}\" data-counter=\"{}\"{}>{body}</div>",
         if stale { " qd-stale" } else { "" },
         rec["counter"],
         if stale {
@@ -402,8 +411,30 @@ fn clean_log(log: &str, temp_name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     const BASIC: &str = include_str!("../tests/fixtures/basic.qmd");
+
+    #[test]
+    fn output_div_is_the_block_the_preview_shows() {
+        let rec = json!({"counter": 3, "items": [{"kind": "text", "text": "a<b"}]});
+        let div = output_div(&rec);
+        assert_eq!(
+            div,
+            "<div class=\"cell-output qd-output\" data-counter=\"3\"><pre class=\"qd-out-text\">a&lt;b</pre></div>"
+        );
+        assert_eq!(
+            output_html(&rec, "\n"),
+            format!("````{{=html}}\n{div}\n````\n")
+        );
+        assert!(output_div(&json!({"stale": true, "items": []})).contains("qd-stale"));
+        let d = Deck::parse("## A\n\n```{python}\n1\n```\n".into());
+        let c = preview_copy(&d, &json!({}));
+        assert!(
+            c.contains("::: {.qd-cell data-qd=\"a/0\"}\n```{python}"),
+            "{c}"
+        );
+    }
 
     #[test]
     fn preview_copy_marks_blocks() {

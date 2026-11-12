@@ -130,7 +130,7 @@
   {"id": "focus-text", "label": "Back to the text", "vscode_key": "Escape", "where": ["slide"]},
   {"id": "menubar", "label": "Go to the menu bar", "key": "F10", "where": ["anywhere"]},
 
-  {"id": "run-cell", "label": "Run cell", "menu": ["Run"], "key": "Shift+Enter", "where": ["source"], "runs_code": true, "qd": "qd run <cell>"},
+  {"id": "run-cell", "label": "Run cell", "menu": ["Run"], "key": "Shift+Enter", "where": ["source", "element"], "runs_code": true, "qd": "qd run <cell>"},
   {"id": "run-all", "label": "Run all", "menu": ["Run"], "where": ["anywhere"], "runs_code": true, "qd": "qd run --all"},
   {"id": "run-stop", "label": "Stop", "menu": ["Run"], "where": ["anywhere"]},
   {"id": "run-restart", "label": "Restart", "menu": ["Run"], "where": ["anywhere"]},

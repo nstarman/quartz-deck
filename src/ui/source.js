@@ -6,11 +6,13 @@ const box = document.createElement('div');
 box.id = 'srcedit';
 box.hidden = true;
 box.innerHTML = '<textarea spellcheck="false" aria-label="Markdown source"></textarea>'
-  + '<div class="bar"><span class="err" role="alert"></span><span class="hint">⌘Enter or Esc saves</span><button type="button">Cancel</button></div>';
+  + '<div class="bar"><span class="err" role="alert"></span><span class="hint">⌘Enter or Esc saves</span>'
+  + '<button type="button" class="run" hidden title="Save, run this cell and keep editing">Run ⇧Enter</button><button type="button" class="cancel">Cancel</button></div>';
 document.body.append(box);
 const ta = box.querySelector('textarea');
 const err = box.querySelector('.err');
-const cancel = box.querySelector('button');
+const cancel = box.querySelector('.cancel');
+const runB = box.querySelector('.run');
 
 let current = null;
 
@@ -22,10 +24,12 @@ function fit() {
 /**
  * Open the editor over `rect` (page coordinates) with `text`.
  * `on.save(text)` is called on ⌘/Ctrl+Enter, Escape or blur; `on.cancel()` on Cancel
- * (or Escape after a refused save).
+ * (or Escape after a refused save). With `on.run(text)` (a code cell, spec 013),
+ * Run and ⇧Enter save without closing and run the cell.
  */
 export function openSource(rect, text, on) {
   current = on;
+  runB.hidden = !on.run;
   ta.value = text;
   err.textContent = '';
   fit();
@@ -59,10 +63,12 @@ ta.addEventListener('keydown', (e) => {
   e.stopPropagation();
   if (e.key === 'Escape') { e.preventDefault(); if (err.textContent) current.cancel(); else current.save(ta.value); return; }
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); current.save(ta.value); }
+  if (e.key === 'Enter' && e.shiftKey && current.run) { e.preventDefault(); current.run(ta.value); }
 });
 ta.addEventListener('blur', () => {
   // clicking elsewhere saves, unless the last save was refused (fix it or Esc)
   setTimeout(() => { if (current && !err.textContent && document.activeElement !== ta) current.save(ta.value); }, 0);
 });
-cancel.addEventListener('mousedown', (e) => e.preventDefault()); // keep the text focused: no blur save
+for (const b of [cancel, runB]) b.addEventListener('mousedown', (e) => e.preventDefault()); // keep the text focused: no blur save
 cancel.addEventListener('click', () => current?.cancel());
+runB.addEventListener('click', () => current?.run?.(ta.value));

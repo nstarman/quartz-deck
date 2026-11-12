@@ -48,6 +48,7 @@ const UI_MODULES: &[(&str, &str)] = &[
     ("settings.js", include_str!("ui/settings.js")),
     ("sheet.js", include_str!("ui/sheet.js")),
     ("history.js", include_str!("ui/history.js")),
+    ("runslide.js", include_str!("ui/runslide.js")),
     ("action-list.js", ACTION_LIST_JS),
 ];
 
@@ -489,11 +490,12 @@ fn run_cells(
             };
             app.state("idle");
             runs.push(outputs.entry(cell, rec));
+            let html = crate::render::output_div(rec);
             let rec = with_urls(rec.clone());
             app.emit(
                 "cell_output",
                 json!({"run": run, "cell": cell, "counter": rec["counter"],
-                "status": rec["status"], "items": rec["items"]}),
+                "status": rec["status"], "items": rec["items"], "html": html}),
             );
         })
     };
