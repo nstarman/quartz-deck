@@ -96,8 +96,8 @@ the deck folder carries no libraries and no build scripts:
   `\class{fragment}`) from qd's cache, downloaded once and checked by SHA-256, and, for a deck with
   Python Plotly cells, plotly.js from the Python plotly package; `embed-resources` inlines both. The
   header also defines `.print-only` / `.print-hide` for PDF stills, lets reveal.js find fragments
-  inside equations once MathJax is done (section 2, Math), and hands keyboard focus back to the deck
-  after a click into an embedded app;
+  inside equations once MathJax is done (section 2, Math), hands keyboard focus back to the deck
+  after a click into an embedded app, and defines a no-op `MathJax.Hub` for WebKit (section 6b);
 - for a deck with Python Plotly cells it adds a cell that switches Plotly to a renderer that outputs
   bare divs: no per-figure plotly.js, no CDN MathJax tag;
 - after Quarto renders, it puts apps, `<object>` files and SVG `<image href>` files inside the deck
@@ -105,8 +105,7 @@ the deck folder carries no libraries and no build scripts:
   image beside it.
 
 If the project already sets `url: "about:blank"`, qd assumes the deck loads MathJax itself and adds no
-header. The scaffold's `_quarto.yml` therefore sets no `html-math-method`. The scaffold's
-`_talk/html/skip-steps.html` defines a no-op `MathJax.Hub` for WebKit (section 6b).
+header. The scaffold's `_quarto.yml` therefore sets no `html-math-method`.
 
 Folder layout (the scaffold in `assets/`):
 
@@ -660,9 +659,7 @@ reproduced by the test in WebKit.
   mask image from a separate file in a deck opened as a local file. Embed the mask as a `data:` URI in
   the CSS and set both `-webkit-mask` and `mask` (the `paper` shortcode's CSS does this).
 - **MathJax**: WebKit fires `load` for the math plugin's `about:blank` script, and the plugin then calls
-  MathJax 2's API: a page error. qd's header (at quartz-deck 90fec66) does not define `MathJax.Hub`,
-  so the scaffold's `_talk/html/skip-steps.html` (included after the body, after MathJax has loaded)
-  defines a no-op one.
+  MathJax 2's API: a page error. qd's header defines a no-op `MathJax.Hub` for it.
 - **Checks**: `qd export` checks in Chromium only. The skill's end-to-end test also opens the exported
   decks in Playwright's WebKit, close to Safari but not Safari: step through the deck in Safari once
   too. The PDF route is Chromium only.

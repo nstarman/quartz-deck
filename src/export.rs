@@ -190,7 +190,7 @@ pub struct Options {
 
 /// qd's offline header (from the quarto-revealjs skill's `_deck/header.html`):
 /// MathJax config + local MathJax (+ plotly.js), print stills, fragments in
-/// equations, keyboard back from embedded apps.
+/// equations, keyboard back from embedded apps, a no-op `MathJax.Hub` for WebKit.
 fn header_html(mathjax: &Path, plotly: Option<&Path>) -> String {
     let src = |p: &Path| p.to_string_lossy().replace('"', "%22");
     let plotly = plotly
@@ -202,6 +202,11 @@ fn header_html(mathjax: &Path, plotly: Option<&Path>) -> String {
   window.MathJax = {{ tex: {{ packages: {{ "[+]": ["html"] }} }}, svg: {{ fontCache: "global" }} }};
 </script>
 <script src="{mj}"></script>
+<script>
+  // WebKit fires `load` for the math plugin's about:blank script, and the plugin then calls
+  // MathJax 2's API (a page error): a no-op stand-in
+  MathJax.Hub = MathJax.Hub || {{ Config() {{}}, Queue() {{}} }};
+</script>
 {plotly}<style>
   .print-only {{ display: none; }}
   html.print-pdf .print-only {{ display: block; }}
