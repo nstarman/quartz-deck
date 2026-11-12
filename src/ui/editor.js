@@ -127,7 +127,7 @@ async function op(name, args = {}, { fileExpect = true } = {}) {
   status('Saving…', true);
   const res = await fetch('/api/op', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-QD-Token': run.token },
     body: JSON.stringify({ op: name, args, ...(fileExpect ? { expect: state.version } : {}) }),
   });
   const body = await res.json().catch(() => ({}));

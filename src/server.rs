@@ -283,7 +283,9 @@ async fn api_op(
     headers: HeaderMap,
     Json(body): Json<OpBody>,
 ) -> Response {
-    if !same_origin(&headers) {
+    // render, export and pdf run the deck's code (constitution, 011 FR-021)
+    let runs_code = matches!(body.op.as_str(), "render" | "export" | "pdf");
+    if !same_origin(&headers) || (runs_code && !authorized(&app, &headers)) {
         return forbidden();
     }
     let store = app.store.clone();
@@ -297,12 +299,6 @@ async fn api_op(
             let deck_dir = app.dir();
             let href = |p: &Value| {
                 let path = std::path::Path::new(p.as_str()?);
-                if !matches!(
-                    path.extension().and_then(|e| e.to_str()),
-                    Some("html" | "pdf")
-                ) {
-                    return None;
-                }
                 let rel = path.strip_prefix(&deck_dir).ok()?;
                 let parts: Vec<String> = rel
                     .iter()

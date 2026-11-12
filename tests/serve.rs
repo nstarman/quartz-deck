@@ -427,12 +427,13 @@ fn api_op_over_http() {
         BASIC
     );
 
-    // render through the API: the reply links the final output for the browser
+    // render through the API (it runs code: token): the reply links the final output
+    let json_auth = format!("application/json\r\nX-QD-Token: {}", server.token);
     let (status, out) = post(
         server.port,
         "/api/op",
         &host,
-        "application/json",
+        &json_auth,
         r#"{"op":"render"}"#,
     );
     assert_eq!(status, 200, "{out}");
@@ -464,7 +465,7 @@ fn api_op_over_http() {
             server.port,
             "/api/op",
             &host,
-            "application/json",
+            &json_auth,
             r#"{"op":"export","args":{"pdf":true}}"#,
         );
         assert_eq!(status, 200, "{out}");
@@ -590,6 +591,19 @@ fn run_cells_over_http() {
         200,
         "run_op refuses run"
     );
+    // 011 FR-021: render, export and pdf run code, so they need the token too
+    for op in ["render", "export", "pdf"] {
+        let body = format!(r#"{{"op":"{op}","args":{{"dry_run":true}}}}"#);
+        assert_eq!(
+            post(p, "/api/op", "127.0.0.1", "application/json", &body).0,
+            403,
+            "{op} without the token"
+        );
+    }
+    let dry = r#"{"op":"export","args":{"to":"pptx","dry_run":true}}"#;
+    let (code, body) = post(p, "/api/op", "127.0.0.1", &auth, dry);
+    assert_eq!(code, 200, "{body}");
+    assert!(body.contains(r#""kind":"export-format""#), "{body}");
     assert_eq!(run(r#"{"cells":["plain/0"]}"#, &auth), 400, "E_NOT_CODE");
     assert_eq!(run(r#"{"cells":["r/0"]}"#, &auth), 400, "E_ENGINE");
 

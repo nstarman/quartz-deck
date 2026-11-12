@@ -98,7 +98,13 @@ enum Cmd {
     },
     /// Export one self-contained offline HTML (apps, objects, SVG images inlined; only background videos ship beside it), checked offline
     Export {
-        /// Destination folder (default: export/ next to the deck)
+        /// Another format (`qd export --list`): pptx, beamer, …; default the offline web page
+        #[arg(long, conflicts_with = "list")]
+        to: Option<String>,
+        /// List the formats, whether each is ready, and what it needs
+        #[arg(long)]
+        list: bool,
+        /// Destination folder (default: export/ next to the deck); with --to, the output file
         #[arg(long)]
         out: Option<PathBuf>,
         /// Also print a PDF
@@ -630,7 +636,7 @@ fn output_of(cmd: &str) -> &'static str {
         "url" => r#"{"url"}"#,
         "pdf" => r#"{"path","pages","per_slide","notes","compressed"}"#,
         "export" => {
-            r#"{"kind":"export","ok","out","html","files":[...],"check":{offline_check},"assets":[{"name","version","sha256","source","path"}],"pdf"?:{"path","pages","per_slide","notes","compressed"},"staging"? (when ok is false)}"#
+            r#"{"kind":"export","ok"…} (offline); with --to: {"ok","kind":"export-format","format","route","out","files":[...],"losses":[{"feature","keep","what","slides":[...]}],"notes":[...],"changed_during","dry_run"?}; with --list: {"kind":"export-formats","formats":[{"name","label","group","ext","needs","ready","hint"?}]} — offline: {"kind":"export","ok","out","html","files":[...],"check":{offline_check},"assets":[{"name","version","sha256","source","path"}],"pdf"?:{"path","pages","per_slide","notes","compressed"},"staging"? (when ok is false)}"#
         }
         "browser" => r#"{"path","source":"env|installed|download","version"} or {"ok","removed"}"#,
         "render" => r#"{"ok","output":"<absolute path>","format","log"}"#,
@@ -1286,18 +1292,37 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             };
             Ok(serde_json::to_value(report).unwrap())
         }
+        Cmd::Export { list: true, .. } => Ok(crate::formats::list()),
         Cmd::Export {
+            to: Some(to),
+            out,
+            pdf,
+            notes,
+            per_slide,
+            strip_notes,
+            ..
+        } if to != "revealjs" && to != "revealjs-pdf" => {
+            if *pdf || *notes || *per_slide || *strip_notes {
+                return Err(QdError::Usage(format!(
+                    "--pdf, --notes, --per-slide and --strip-notes are for the offline export, not --to {to}"
+                )));
+            }
+            crate::formats::run(&ctx.store()?, to, out.clone(), cli.dry_run)
+        }
+        Cmd::Export {
+            to,
             out,
             pdf,
             notes,
             per_slide,
             strip_notes,
             no_download,
+            ..
         } => crate::export::run(
             &ctx.store()?,
             &crate::export::Options {
                 out: out.clone(),
-                pdf: *pdf,
+                pdf: *pdf || to.as_deref() == Some("revealjs-pdf"),
                 notes: *notes,
                 per_slide: *per_slide,
                 strip_notes: *strip_notes,
