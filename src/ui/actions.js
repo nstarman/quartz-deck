@@ -70,6 +70,13 @@ export function makeActions(api) {
     '-',
     { id: 'place', label: 'Place freely', visible: (t) => t.block.kind !== 'box', why: (t) => UNPLACEABLE[t.block.kind], enabled: (t) => !UNPLACEABLE[t.block.kind], run: (t) => api.op('block place', api.placement(t)) },
     { id: 'unplace', label: 'Put back in the flow', visible: (t) => t.block.kind === 'box', run: (t) => api.op('block unplace', { element: t.ref }) },
+    // stacking (US5): boxes stack in source order, later on top; a fragment's click order follows it too
+    ...[['front', 'Bring to front', 1], ['forward', 'Bring forward', 1], ['backward', 'Send backward', -1], ['back', 'Send to back', -1]].map(([to, label, d]) => ({
+      id: `box-${to}`, label, title: 'Changes the order in the file, which is also the order fragments appear in',
+      visible: (t) => t.block.kind === 'box',
+      enabled: (t) => t.kinds.some((k, j) => k === 'box' && (d > 0 ? j > t.index : j < t.index)),
+      run: (t) => api.op(`box ${to}`, { box: t.ref }),
+    })),
   ];
 
   const kv = (t) => t.full?.attrs?.kv || {};
@@ -114,7 +121,7 @@ export function makeActions(api) {
     shortcut: keys.shortcut(a.id), // keys come from the action list (spec 007)
     checked: typeof a.checked === 'function' ? a.checked(t) : undefined,
     disabled: a.enabled ? !a.enabled(t) : false,
-    title: a.why?.(t),
+    title: a.why?.(t) ?? a.title,
     items: a.items ? a.items(t) : undefined,
     run: a.run && (() => a.run(t)),
   }));
@@ -134,6 +141,6 @@ export function makeActions(api) {
     can,
     checked: (id, t, table = 'element') => find(id, table)?.checked?.(t),
     /** Why action `id` can't act on `t` (a disabled item's tooltip). */
-    why: (id, t, table = 'element') => find(id, table)?.why?.(t),
+    why: (id, t, table = 'element') => { const a = find(id, table); return a?.why?.(t) ?? a?.title; },
   };
 }

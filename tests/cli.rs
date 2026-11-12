@@ -1287,3 +1287,20 @@ fn own_layouts() {
     bad(&["layout", "rm", "two-columns"], "E_INVALID_ARG");
     bad(&["layout", "rename", "two-columns", "x"], "E_INVALID_ARG");
 }
+
+/// Spec 009 US5: `qd box front|back|forward|backward`, one undo step each.
+#[test]
+fn box_stacking() {
+    let e = Env::with(
+        "---\nformat: revealjs\n---\n\n## A {#a}\n\n::: {#b-1 .absolute left=1 top=1 width=9 height=9}\nOne\n:::\n\n::: {#b-2 .absolute left=5 top=5 width=9 height=9}\nTwo\n:::\n",
+    );
+    let before = e.text();
+    let v = e.ok(&["box", "front", "b-1"]);
+    assert_eq!(v["target"], "a/1");
+    assert!(e.text().find("Two").unwrap() < e.text().find("One").unwrap());
+    e.ok(&["undo"]);
+    assert_eq!(e.text(), before);
+    e.ok(&["box", "back", "b-2"]);
+    assert!(e.text().find("Two").unwrap() < e.text().find("One").unwrap());
+    e.err(&["box", "forward", "b-1"], "E_INVALID_ARG", 1);
+}

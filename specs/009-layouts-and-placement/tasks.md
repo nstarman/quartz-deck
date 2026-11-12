@@ -117,11 +117,11 @@ written first and seen failing.
 
 **Independent Test**: spec US5; quickstart §7.
 
-- [ ] T020 [P] [US5] Write failing tests:
+- [X] T020 [P] [US5] Write failing tests:
   - **`src/ops.rs` units:** `box_order` front/back/forward/backward moves only that box among the slide's boxes.
   - **`tests/cli.rs`:** `qd box front` one undo.
   - **Browser:** Arrange ▸ Bring to front puts the lower box on top on the canvas.
-- [ ] T021 [US5] Implement `ops::box_order`, `qd box front|back|forward|backward`, the four Arrange actions with keys in `src/ui/actions.json` (checked by the node test). T020 passes.
+- [X] T021 [US5] Implement `ops::box_order`, `qd box front|back|forward|backward`, the four Arrange actions with keys in `src/ui/actions.json` (checked by the node test). T020 passes.
 
 ---
 
