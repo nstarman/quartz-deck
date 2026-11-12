@@ -42,6 +42,11 @@ cargo install --path .
 qd skill --install ~/.claude/skills/quartz-deck   # teach Claude Code to use qd
 ```
 
+`skills/quarto-revealjs/` is the agent Skill for offline, archivable Quarto reveal.js decks built
+with qd, listed in [nstarman/skills](https://github.com/nstarman/skills). Unlike the rest of this
+repository it is MIT-licensed (`skills/quarto-revealjs/LICENSE`); its end-to-end test is
+`tests/skills/quarto-revealjs/run.sh`.
+
 ## Use
 
 ```bash
