@@ -2,7 +2,7 @@
 //! locally; tests/common `git_repo`). Rendering old versions needs Quarto.
 
 mod common;
-use common::{git_repo, have, qd};
+use common::{git_repo, have, hook, qd, settings};
 use serde_json::Value;
 use std::path::Path;
 
@@ -209,4 +209,175 @@ fn render_old_version() {
         std::fs::read_dir(dir.join("talks")).unwrap().count() == 1,
         "nothing written beside the deck"
     );
+}
+
+// ---------- US2: save as git commit ----------
+
+fn commit(dir: &Path, deck: &str) -> quartz_deck::error::Result<Option<String>> {
+    let repo = quartz_deck::history::repo(&dir.join(deck))
+        .unwrap()
+        .unwrap();
+    quartz_deck::history::commit_deck(&repo, "qd: edit (agent)")
+}
+
+/// talks/deck.qmd committed once, plus `other.txt`.
+fn one_commit(dir: &Path) -> impl Fn(&[&str]) -> String + '_ {
+    let git = git_repo(dir);
+    std::fs::create_dir_all(dir.join("talks")).unwrap();
+    std::fs::write(dir.join("talks/deck.qmd"), "## One {#one}\n\nA\n").unwrap();
+    std::fs::write(dir.join("other.txt"), "1\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-qm", "first"]);
+    git
+}
+
+#[test]
+fn commit_only_the_deck() {
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path();
+    let git = one_commit(dir);
+    assert_eq!(
+        commit(dir, "talks/deck.qmd").unwrap(),
+        None,
+        "the deck equals HEAD"
+    );
+    std::fs::write(dir.join("other.txt"), "2\n").unwrap();
+    git(&["add", "other.txt"]);
+    std::fs::write(dir.join("other.txt"), "3\n").unwrap();
+    std::fs::write(dir.join("talks/deck.qmd"), "## One {#one}\n\nB\n").unwrap();
+    let rev = commit(dir, "talks/deck.qmd").unwrap().unwrap();
+    assert_eq!(git(&["rev-parse", "HEAD"]).trim(), rev);
+    assert_eq!(
+        git(&["show", "--name-only", "--format=", "HEAD"]).trim(),
+        "talks/deck.qmd"
+    );
+    assert_eq!(git(&["status", "--porcelain"]), "MM other.txt\n");
+    // an untracked deck is added and committed
+    std::fs::write(dir.join("talks/new.qmd"), "## New\n").unwrap();
+    commit(dir, "talks/new.qmd").unwrap().unwrap();
+    assert_eq!(
+        git(&["show", "--name-only", "--format=", "HEAD"]).trim(),
+        "talks/new.qmd"
+    );
+    assert_eq!(git(&["status", "--porcelain"]), "MM other.txt\n");
+}
+
+#[test]
+fn commit_follows_git_config() {
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path();
+    let git = one_commit(dir);
+    let marker = dir.join("hook-ran");
+    hook(dir, &format!("touch {marker:?}"));
+    std::fs::write(dir.join("talks/deck.qmd"), "## One {#one}\n\nB\n").unwrap();
+    commit(dir, "talks/deck.qmd").unwrap().unwrap();
+    assert!(marker.exists(), "the person's hook ran");
+    hook(dir, "echo 'no commits today' >&2; exit 1");
+    std::fs::write(dir.join("talks/deck.qmd"), "## One {#one}\n\nC\n").unwrap();
+    let e = commit(dir, "talks/deck.qmd").unwrap_err();
+    assert_eq!(e.code(), "E_GIT");
+    assert!(e.to_string().contains("no commits today"), "{e}");
+    assert!(
+        std::fs::read_to_string(dir.join("talks/deck.qmd"))
+            .unwrap()
+            .contains("C"),
+        "the edit stays"
+    );
+    assert_eq!(git(&["log", "--format=%s"]).lines().count(), 2);
+}
+
+#[test]
+fn no_commit_when_busy() {
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path();
+    let git = one_commit(dir);
+    git(&["checkout", "-qb", "side"]);
+    std::fs::write(dir.join("other.txt"), "side\n").unwrap();
+    git(&["commit", "-qam", "side"]);
+    git(&["checkout", "-q", "main"]);
+    std::fs::write(dir.join("other.txt"), "main\n").unwrap();
+    git(&["commit", "-qam", "main"]);
+    assert!(quartz_deck::history::git(dir, &["merge", "-q", "side"]).is_err());
+    std::fs::write(dir.join("talks/deck.qmd"), "## One {#one}\n\nB\n").unwrap();
+    let e = commit(dir, "talks/deck.qmd").unwrap_err();
+    assert_eq!(e.code(), "E_REPO_BUSY");
+    assert_eq!(git(&["log", "-1", "--format=%s"]).trim(), "main");
+}
+
+#[test]
+fn cli_edit_commits_without_server() {
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path();
+    let git = one_commit(dir);
+    let (ok, v) = run(dir, &["title", "one", "X"]);
+    assert!(ok && v.get("commit").is_none(), "off by default: {v}");
+    settings(dir, serde_json::json!({"history.commit": true}));
+    let (ok, v) = run(dir, &["title", "one", "Y"]);
+    assert!(ok, "{v}");
+    assert_eq!(
+        v["commit"]["rev"].as_str().unwrap(),
+        git(&["rev-parse", "HEAD"]).trim()
+    );
+    assert_eq!(
+        git(&["log", "-1", "--format=%s"]).trim(),
+        "qd: title one ×2 (agent)",
+        "both edits since the last commit"
+    );
+    // outside git: no commit, no error
+    let out = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(out.path().join("talks")).unwrap();
+    std::fs::write(out.path().join("talks/deck.qmd"), "## One {#one}\n").unwrap();
+    settings(out.path(), serde_json::json!({"history.commit": true}));
+    let (ok, v) = run(out.path(), &["title", "one", "Z"]);
+    assert!(ok && v.get("commit").is_none(), "{v}");
+}
+
+#[test]
+fn serve_commits_after_a_pause() {
+    if !have("quarto") {
+        return;
+    }
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path();
+    let git = one_commit(dir);
+    settings(
+        dir,
+        serde_json::json!({"history.commit": true, "history.pause": 5}),
+    );
+    let mut child = qd(dir)
+        .args(["--deck", "talks/deck.qmd", "serve", "--port", "0"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufRead::read_line(
+        &mut std::io::BufReader::new(child.stdout.take().unwrap()),
+        &mut line,
+    )
+    .unwrap();
+    let count = || {
+        git(&["rev-list", "--count", "HEAD"])
+            .trim()
+            .parse::<u32>()
+            .unwrap()
+    };
+    for x in ["A", "B", "C"] {
+        assert!(run(dir, &["title", "one", x]).0);
+    }
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    assert_eq!(count(), 1, "not before the pause");
+    std::thread::sleep(std::time::Duration::from_secs(5));
+    assert_eq!(count(), 2, "one commit for the burst");
+    assert_eq!(
+        git(&["log", "-1", "--format=%s"]).trim(),
+        "qd: title one ×3 (agent)"
+    );
+    assert!(run(dir, &["title", "one", "D"]).0);
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    let (ok, v) = run(dir, &["stop"]);
+    assert!(ok, "{v}");
+    child.wait().unwrap();
+    assert_eq!(count(), 3, "stopping commits what is pending");
+    assert!(git(&["show", "HEAD:talks/deck.qmd"]).contains("## D"));
 }

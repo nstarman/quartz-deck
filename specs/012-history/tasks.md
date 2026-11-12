@@ -76,16 +76,16 @@ version beside follows its slide (by id), so no keys of its own were needed.
 
 **Independent Test**: spec US2; quickstart §2.
 
-- [ ] T008 [P] [US2] Write failing tests:
+- [X] T008 [P] [US2] Write failing tests:
   - **`src/history.rs` units for `message(entries)`**: ops in order with repeats folded (`edit ×3`); `(person)`, `(agent)`, `(person, agent)`; no entries gives `edit source (person)`; the subject is capped at 72 characters.
   - **`tests/history.rs` `commit_only_the_deck`**: with `other.txt` staged and then changed again, and the deck changed, `commit_deck` commits the deck alone and `git status` still shows `MM other.txt`. An untracked deck is added and committed. A deck equal to HEAD gives no commit.
   - **`commit_follows_git_config`**: a `pre-commit` hook that writes a marker runs on qd's commit. A hook that exits 1 makes the commit fail with its message, and the deck file keeps the edit.
   - **`no_commit_when_busy`**: during a conflicted merge, `commit_deck` returns `E_REPO_BUSY` and makes no commit.
   - **`cli_edit_commits_without_server`**: with `history.commit` on and no server, `qd title one X` succeeds with `"commit": {"rev"}`, and `git log -1` is `qd: title one (agent)`.
   - **`serve_commits_after_a_pause`**: with `history.pause` at 5 and `qd serve` running, three edits within 2 s and then a wait of 6 s give exactly one new commit holding all three. One more edit later gives a second commit. Stopping the server commits a pending edit.
-- [ ] T009 [US2] Implement `message`, `commit_deck` (R2, R3) in `src/history.rs`. Add the server's pending timer, commit on stop, and the SSE `history` event in `src/server.rs`. Add the CLI commit when there's no server, plus `"commit"` in the edit result, in `src/cli.rs`. T008 passes.
-- [ ] T010 [P] [US2] Write a failing browser test `history_commit_notice` in `tests/onslide.rs`: with the setting on, an edit shows "Saving a version…" until the pause ends, then "Saved as a version". A repository whose hook refuses shows a notice with the hook's message, and the edit is still in the file.
-- [ ] T011 [US2] In `src/ui/history.js` / `editor.js`: handle the notice (SSE `history`) and add the Settings entries (History section) and the panel's top line ("Saving a version in 12 s"). T010 passes.
+- [X] T009 [US2] Implement `message`, `commit_deck` (R2, R3) in `src/history.rs`. Add the server's pending timer, commit on stop, and the SSE `history` event in `src/server.rs`. Add the CLI commit when there's no server, plus `"commit"` in the edit result, in `src/cli.rs`. T008 passes.
+- [X] T010 [P] [US2] Write a failing browser test `history_commit_notice` in `tests/onslide.rs`: with the setting on, an edit shows "Saving a version…" until the pause ends, then "Saved as a version". A repository whose hook refuses shows a notice with the hook's message, and the edit is still in the file.
+- [X] T011 [US2] In `src/ui/history.js` / `editor.js`: handle the notice (SSE `history`) and add the Settings entries (History section) and the panel's top line ("Saving a version in 12 s"). T010 passes.
 
 **Checkpoint**: P1 complete.
 

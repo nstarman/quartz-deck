@@ -1052,6 +1052,14 @@ es.addEventListener('rendered', (e) => {
     load(d.html, d.version);
   }
 });
+// Save as git commit (spec 012 US2)
+es.addEventListener('history', (e) => {
+  const d = JSON.parse(e.data);
+  if (d.state === 'pending') { say('Saving a version…'); clearTimeout(say.t); }
+  else if (d.state === 'committed') { say('Saved as a version'); if (hist.isOpen()) hist.toggle(true); }
+  else if (d.state === 'unchanged') say('');
+  else say(`Not saved as a version: ${d.reason}`, true);
+});
 es.addEventListener('render_error', (e) => {
   const d = JSON.parse(e.data);
   status('Render failed — showing the last good one');
