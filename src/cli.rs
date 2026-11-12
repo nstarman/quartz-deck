@@ -69,6 +69,13 @@ enum Cmd {
     Slides,
     /// Show one slide: attributes, source and blocks
     Show { slide: String },
+    /// Write the References list from a Zotero collection between the deck's
+    /// `<!-- bibliography:start -->` and `<!-- bibliography:end -->` lines
+    Bib {
+        /// Collection key (8 characters, from the collection's Zotero URL); read from the running Zotero's local API
+        #[arg(long)]
+        zotero: String,
+    },
     /// Print front matter, or set/unset a top-level key
     Meta {
         #[command(subcommand)]
@@ -89,7 +96,7 @@ enum Cmd {
         #[arg(long)]
         no_download: bool,
     },
-    /// Export a self-contained offline deck (one HTML + files that cannot be inlined), checked offline
+    /// Export one self-contained offline HTML (apps, objects, SVG images inlined; only background videos ship beside it), checked offline
     Export {
         /// Destination folder (default: export/ next to the deck)
         #[arg(long)]
@@ -103,6 +110,9 @@ enum Cmd {
         /// PDF: one page per slide instead of per fragment step
         #[arg(long, requires = "pdf")]
         per_slide: bool,
+        /// Remove speaker notes (a copy to share)
+        #[arg(long)]
+        strip_notes: bool,
         /// Never download MathJax or a browser (also QD_NO_DOWNLOAD=1)
         #[arg(long)]
         no_download: bool,
@@ -112,7 +122,7 @@ enum Cmd {
         /// Rendered HTML to print (default: export/<deck>.html)
         #[arg(long)]
         html: Option<PathBuf>,
-        /// Output PDF (default: next to the HTML)
+        /// Output PDF (default: next to the HTML; <deck>-notes.pdf with --notes)
         #[arg(long)]
         out: Option<PathBuf>,
         /// Speaker notes on separate pages
@@ -610,14 +620,17 @@ fn output_of(cmd: &str) -> &'static str {
             r#"{"version","slide":{"id","explicit","index","kind","level","title","attrs":{"id","classes","kv"},"opaque","source","blocks":[{"id","explicit","kind","text","attrs","geom"?}]}}"#
         }
         "meta" => r#"{"version","front_matter":{...}}"#,
+        "bib" => {
+            r#"{"ok","op":"bib","diff","version","target":"bibliography","entries","warnings":[...]} (an edit: --dry-run, --expect, qd undo)"#
+        }
         "check" => {
-            r#"{"ok","version","problems":[{"severity":"error|warning","code","slide","message"}]} or with --offline {"kind":"offline_check","ok","html","slides","steps","problems":[{"code":"P_*","severity","slide","message","hint","url"?}]}"#
+            r#"{"ok","version","problems":[{"severity":"error|warning","code","slide","message"}]} or with --offline {"kind":"offline_check","ok","html","slides","steps","problems":[{"code":"P_*","severity","slide","message","hint","url"?}],"size":{"bytes","largest":[{"bytes","kind","context"}]}}"#
         }
         "serve" => r#"{"url","port","pid"} (one line, then serves until stopped)"#,
         "url" => r#"{"url"}"#,
-        "pdf" => r#"{"path","pages","per_slide","notes"}"#,
+        "pdf" => r#"{"path","pages","per_slide","notes","compressed"}"#,
         "export" => {
-            r#"{"kind":"export","ok","out","html","files":[...],"check":{offline_check},"assets":[{"name","version","sha256","source","path"}],"pdf"?:{"path","pages","per_slide","notes"},"staging"? (when ok is false)}"#
+            r#"{"kind":"export","ok","out","html","files":[...],"check":{offline_check},"assets":[{"name","version","sha256","source","path"}],"pdf"?:{"path","pages","per_slide","notes","compressed"},"staging"? (when ok is false)}"#
         }
         "browser" => r#"{"path","source":"env|installed|download","version"} or {"ok","removed"}"#,
         "render" => r#"{"ok","output":"<absolute path>","format","log"}"#,
@@ -711,7 +724,8 @@ fn schema() -> Value {
         "E_ENV",
         "E_NOT_CODE",
         "E_ENGINE",
-        "E_RUN"
+        "E_RUN",
+        "E_ZOTERO"
     ]);
     v["refs"] = json!({
         "slide": "explicit id | auto id | @N (1-based) | first | last",
@@ -1026,17 +1040,21 @@ impl Ctx<'_> {
         Store::open(&find_deck(&self.cli.deck)?)
     }
 
+    /// `--expect`: refuse when the file is not at that version.
+    fn check_expect(&self, d: &Deck) -> Result<()> {
+        match &self.cli.expect {
+            Some(e) if e != &d.version => Err(QdError::Conflict(format!(
+                "expected version {e}, file is at {}",
+                d.version
+            ))),
+            _ => Ok(()),
+        }
+    }
+
     fn edit(&self, f: impl FnOnce(&Deck) -> Result<Patch>) -> Result<Value> {
         let store = self.store()?;
         let d = store.read()?;
-        if let Some(e) = &self.cli.expect
-            && e != &d.version
-        {
-            return Err(QdError::Conflict(format!(
-                "expected version {e}, file is at {}",
-                d.version
-            )));
-        }
+        self.check_expect(&d)?;
         let p = f(&d)?;
         let after = ops::apply(&d.text, &p)?;
         let diff = ops::diff(&d.text, &after);
@@ -1228,6 +1246,17 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
         Cmd::Meta {
             action: Some(MetaCmd::Unset { key }),
         } => ctx.edit(|d| ops::meta_unset(d, key)),
+        Cmd::Bib { zotero } => {
+            // a stale --expect or no marker pair: fail before asking Zotero
+            let d = read()?.1;
+            ctx.check_expect(&d)?;
+            crate::bib::patch(&d, &[])?;
+            let (rows, warnings) = crate::bib::lines(&crate::bib::fetch(zotero)?);
+            let mut v = ctx.edit(|d| crate::bib::patch(d, &rows))?;
+            v["entries"] = json!(rows.len());
+            v["warnings"] = json!(warnings);
+            Ok(v)
+        }
         Cmd::Check {
             offline: true,
             html,
@@ -1262,6 +1291,7 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             pdf,
             notes,
             per_slide,
+            strip_notes,
             no_download,
         } => crate::export::run(
             &ctx.store()?,
@@ -1270,6 +1300,7 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                 pdf: *pdf,
                 notes: *notes,
                 per_slide: *per_slide,
+                strip_notes: *strip_notes,
                 allow_download: allow_download(*no_download),
             },
         ),
@@ -1305,7 +1336,10 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                     h
                 }
             };
-            let out = out.clone().unwrap_or_else(|| html.with_extension("pdf"));
+            let out = out.clone().unwrap_or_else(|| {
+                let stem = html.file_stem().unwrap_or_default().to_string_lossy();
+                html.with_file_name(crate::offline::pdf_name(&stem, *notes))
+            });
             let chrome = crate::browser::find(&ctx.cache_root(), allow_download(*no_download))?;
             Ok(serde_json::to_value(crate::offline::print_pdf(
                 &html, &out, *notes, *per_slide, &chrome,
