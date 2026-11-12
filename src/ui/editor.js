@@ -602,7 +602,7 @@ async function layoutChange(change) {
   const res = await fetch('/api/layouts', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-QD-Token': run.token }, body: JSON.stringify(change) });
   const body = await res.json().catch(() => ({}));
   if (res.status === 409) return 'taken';
-  if (!res.ok) { say(body.error?.message || res.statusText, true); return null; }
+  if (!res.ok) { say(res.status === 403 ? 'Saving layouts needs the editor link from `qd serve` or `qd url`' : body.error?.message || res.statusText, true); return null; }
   return body;
 }
 
@@ -618,7 +618,8 @@ async function saveLayout(t) {
   if (!v) return;
   const at = {};
   t.full.blocks.forEach((b, i) => {
-    const el = b.kind !== 'box' && elOf(`${t.slideId}/${i}`);
+    // where each element shows now: flow elements, and boxes without a full px place
+    const el = elOf(`${t.slideId}/${i}`);
     const r = el && slideRect(el);
     if (r?.[2] > 0 && r[3] > 0) at[`${t.slideId}/${i}`] = r; // a slide not on screen measures 0: stacked instead
   });
@@ -1749,7 +1750,7 @@ async function dropImage(file, on, y) {
     body: file,
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) return say(`${file.name}: ${body.error?.message || res.statusText}`, true);
+  if (!res.ok) return say(res.status === 403 ? 'Adding images needs the editor link from `qd serve` or `qd url`' : `${file.name}: ${body.error?.message || res.statusText}`, true);
   // a layout's image placeholder takes the image in its place
   if (on?.matches('.qd-ph[data-ph=image]')) {
     if (await op('edit', { element: on.dataset.qd, md: `![](${body.path}){width="100%"}` })) await fetchDeck();
