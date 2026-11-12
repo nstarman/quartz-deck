@@ -125,7 +125,7 @@ page. File ▸ Export is now a submenu with every format (one action each:
 - [X] T017 [P] Docs: README export section, the qd skill (`qd export --to`, `--list`, losses, `E_NO_TEX`), `specs/ROADMAP.md` 011 status, and the 007 action inventory ("Added by 011").
 - [X] T018 Run quickstart §1–§7 in the browser pane and record it in `specs/011-export-formats/checklists/quickstart-run.md`.
 - [X] T019 Final constitution re-check in `plan.md`; fmt, clippy, `cargo test --no-fail-fast` and `node --test vscode/test/*.test.js` green.
-- [ ] T020 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
+- [X] T020 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
 
 ---
 
