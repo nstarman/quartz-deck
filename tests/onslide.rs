@@ -3465,21 +3465,29 @@ async fn save_a_layout() {
     let file = |n: &str| ed.dir.path().join(format!("_layouts/{n}.md"));
     ed.settle().await;
     ed.go("a").await;
+    // type into the sheet's name field and press OK
+    let answer = async |text: &str| {
+        ed.wait(&format!(
+            "document.activeElement === document.querySelector('{top} input[type=text]')"
+        ))
+        .await;
+        ed.type_text(text).await;
+        ed.click_editor(&format!("{top} button[value=ok]")).await;
+    };
     ed.menu("Slide", "Save slide as layout…").await;
-    ed.wait(&format!(
-        "document.activeElement === document.querySelector('{top} input[type=text]')"
-    ))
+    answer("my-list").await;
+    ed.until_cli(
+        &["layouts"],
+        |v| {
+            v["layouts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|l| l["name"] == "my-list")
+        },
+        "layout never saved",
+    )
     .await;
-    ed.type_text("my-list").await;
-    ed.click_editor(&format!("{top} button[value=ok]")).await;
-    let start = Instant::now();
-    while !file("my-list").exists() {
-        assert!(
-            start.elapsed() < Duration::from_secs(10),
-            "layout never saved"
-        );
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
     let saved = std::fs::read_to_string(file("my-list")).unwrap();
     assert_eq!(saved.matches("ph=text").count(), 3, "{saved}");
     assert!(
@@ -3506,12 +3514,7 @@ async fn save_a_layout() {
     );
     ed.click_editor(&format!("{top} label[data-layout=my-list] button.rename"))
         .await;
-    ed.wait(&format!(
-        "document.activeElement === document.querySelector('{top} input[type=text]')"
-    ))
-    .await;
-    ed.type_text("corner").await;
-    ed.click_editor(&format!("{top} button[value=ok]")).await;
+    answer("corner").await;
     ed.wait(&format!(
         "!!document.querySelector('{top} label[data-layout=corner]')"
     ))

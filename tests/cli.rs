@@ -1229,6 +1229,7 @@ fn place_and_unplace() {
 #[test]
 fn own_layouts() {
     let e = Env::new();
+    let bad = |a: &[&str], code| e.err(a, code, 1);
     let v = e.ok(&[
         "layout",
         "save",
@@ -1259,17 +1260,9 @@ fn own_layouts() {
         from(&e.ok(&["layouts"]), "results-plot"),
         Some(json!("deck"))
     );
-    e.err(
-        &["layout", "save", "results", "results-plot"],
-        "E_CONFLICT",
-        1,
-    );
+    bad(&["layout", "save", "results", "results-plot"], "E_CONFLICT");
     e.ok(&["layout", "save", "results", "results-plot", "--replace"]);
-    e.err(
-        &["layout", "save", "results", "Bad Name"],
-        "E_INVALID_ARG",
-        1,
-    );
+    bad(&["layout", "save", "results", "Bad Name"], "E_INVALID_ARG");
 
     let before = e.text();
     let v = e.ok(&[
@@ -1291,10 +1284,6 @@ fn own_layouts() {
     assert_eq!(from(&e.ok(&["layouts"]), "mine-2"), Some(json!("mine")));
     e.ok(&["layout", "rm", "mine-2", "--mine"]);
     assert_eq!(from(&e.ok(&["layouts"]), "mine-2"), None);
-    e.err(&["layout", "rm", "two-columns"], "E_INVALID_ARG", 1);
-    e.err(
-        &["layout", "rename", "two-columns", "x"],
-        "E_INVALID_ARG",
-        1,
-    );
+    bad(&["layout", "rm", "two-columns"], "E_INVALID_ARG");
+    bad(&["layout", "rename", "two-columns", "x"], "E_INVALID_ARG");
 }

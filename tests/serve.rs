@@ -1092,9 +1092,12 @@ fn layouts_over_http() {
     );
     assert!(!dir.join("_layouts").exists());
 
-    let (s, b) = send(&tok, &save);
-    assert_eq!(s, 200, "{b}");
-    let v: Value = serde_json::from_str(&b).unwrap();
+    let call = |body: &str, want: u16| {
+        let (s, b) = send(&tok, body);
+        assert_eq!(s, want, "{body}: {b}");
+        b
+    };
+    let v: Value = serde_json::from_str(&call(&save, 200)).unwrap();
     assert!(
         v["layouts"]
             .as_array()
@@ -1102,31 +1105,23 @@ fn layouts_over_http() {
             .iter()
             .any(|l| l["name"] == "plot" && l["from"] == "deck")
     );
-    let (s, b) = send(&tok, &save);
-    assert_eq!(s, 409, "{b}");
-    let (s, b) = send(
-        &tok,
+    call(&save, 409);
+    call(
         &json!({"save": {"slide": "results", "name": "../x", "where": "deck"}}).to_string(),
+        400,
     );
-    assert_eq!(s, 400, "{b}");
-    let (s, b) = send(
-        &tok,
+    call(
         &json!({"rename": {"from": "plot", "to": "plot-2", "where": "deck"}}).to_string(),
+        200,
     );
-    assert_eq!(s, 200, "{b}");
     assert!(dir.join("_layouts/plot-2.md").exists());
-    let (s, b) = send(
-        &tok,
+    call(
         &json!({"rm": {"name": "plot-2", "where": "deck"}}).to_string(),
+        200,
     );
-    assert_eq!(s, 200, "{b}");
     assert!(!dir.join("_layouts/plot-2.md").exists());
-    assert_eq!(
-        send(
-            &tok,
-            &json!({"rm": {"name": "two-columns", "where": "deck"}}).to_string()
-        )
-        .0,
-        400
+    call(
+        &json!({"rm": {"name": "two-columns", "where": "deck"}}).to_string(),
+        400,
     );
 }

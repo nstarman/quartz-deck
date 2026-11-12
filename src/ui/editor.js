@@ -531,7 +531,6 @@ frame.addEventListener('load', () => {
 
 // ---------- slide list (spec 008 US1: list.js) ----------
 
-/** A new slide `where` (`{after}`/`{before}`), from a layout picked in the gallery (spec 009). */
 // ---------- saved layouts (spec 009 US3) ----------
 
 const LAYOUT_NAME = (x) => (/^[a-z0-9-]{1,40}$/.test(x) ? '' : 'Lowercase letters, digits and - (up to 40)');
@@ -580,6 +579,7 @@ const manageLayouts = {
     && !!(await layoutChange({ rm: { name: o.name, where: o.from } })),
 };
 
+/** A new slide `where` (`{after}`/`{before}`), from a layout picked in the gallery (spec 009). */
 async function addSlide(where, anchor) {
   const { layouts } = await fetch('/api/layouts').then((r) => r.json());
   const v = await ask({

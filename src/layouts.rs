@@ -226,16 +226,20 @@ pub fn from_slide(
     let mut stacked = 0.0;
     for b in &s.blocks {
         let text = d.slice(b.span);
-        let (kind, purpose) = match b.kind {
+        let kind = match b.kind {
             BlockKind::Notes => {
                 out.push("::: notes\n:::".into());
                 continue;
             }
             BlockKind::Pause | BlockKind::Html => continue,
-            BlockKind::Box if text.contains("![") => ("image", "image"),
-            BlockKind::Box => ("text", "text"),
-            BlockKind::Image => ("image", "image"),
-            k => ("text", if k == BlockKind::List { "list" } else { "text" }),
+            BlockKind::Box if text.contains("![") => "image",
+            BlockKind::Image => "image",
+            _ => "text",
+        };
+        let purpose = if b.kind == BlockKind::List {
+            "list"
+        } else {
+            kind
         };
         let g = b
             .attrs
@@ -243,19 +247,16 @@ pub fn from_slide(
             .filter(|_| b.kind == BlockKind::Box)
             .map(crate::ops::geom);
         let px = |l: &Option<crate::ops::Length>| l.as_ref().and_then(|l| l.px());
-        let r = match (
-            g.as_ref()
-                .map(|g| [px(&g.left), px(&g.top), px(&g.width), px(&g.height)]),
-            places.get(&b.span.start),
-        ) {
-            (Some([Some(l), Some(t), Some(w), Some(h)]), _) => [l * sx, t * sy, w * sx, h * sy],
-            (_, Some(r)) => [r[0] * sx, r[1] * sy, r[2] * sx, r[3] * sy],
-            _ => {
+        // where it is in the deck's px: a box's own place, else where it shows (`at`)
+        let r = g
+            .and_then(|g| Some([px(&g.left)?, px(&g.top)?, px(&g.width)?, px(&g.height)?]))
+            .or_else(|| places.get(&b.span.start).copied())
+            .map(|r| [r[0] * sx, r[1] * sy, r[2] * sx, r[3] * sy])
+            .unwrap_or_else(|| {
                 stacked += 1.0;
                 [60.0, 50.0 + 120.0 * stacked, 930.0, 100.0]
-            }
-        }
-        .map(f64::round);
+            })
+            .map(f64::round);
         out.push(format!(
             "::: {{.absolute .qd-ph ph={kind} left={} top={} width={} height={}}}\n<!-- {purpose} -->\n:::",
             r[0], r[1], r[2], r[3]
@@ -309,8 +310,10 @@ fn existing(dir: &Path, name: &str) -> Result<PathBuf> {
     }
 }
 
-pub fn rm(dir: &Path, name: &str) -> Result<()> {
-    Ok(std::fs::remove_file(existing(dir, name)?)?)
+pub fn rm(dir: &Path, name: &str) -> Result<PathBuf> {
+    let p = existing(dir, name)?;
+    std::fs::remove_file(&p)?;
+    Ok(p)
 }
 
 /// Rename a saved layout: its file and the name in its front matter.
@@ -348,18 +351,15 @@ pub fn change(d: &Deck, deck_dir: &Path, config: &Path, req: &Value) -> Result<P
     let dir = folder(v["where"].as_str().unwrap_or("deck"), deck_dir, config)?;
     match op.as_str() {
         "save" => {
-            let at = if v["at"].is_null() {
-                Default::default()
-            } else {
+            let at: Option<std::collections::HashMap<String, [f64; 4]>> =
                 serde_json::from_value(v["at"].clone())
-                    .map_err(|e| bad(format!("'at': {{ref: [left, top, width, height]}}: {e}")))?
-            };
+                    .map_err(|e| bad(format!("'at': {{ref: [left, top, width, height]}}: {e}")))?;
+            let at = at.unwrap_or_default();
             let name = arg("name")?;
             let text = from_slide(d, arg("slide")?, name, &at)?;
             save(&dir, name, &text, v["replace"] == true)
         }
-        "rm" => rm(&dir, arg("name")?)
-            .map(|_| dir.join(format!("{}.md", arg("name").unwrap_or_default()))),
+        "rm" => rm(&dir, arg("name")?),
         "rename" => rename(&dir, arg("from")?, arg("to")?),
         _ => Err(bad(format!("unknown layout change '{op}'"))),
     }
@@ -536,10 +536,7 @@ mod tests {
         rm(&dir, "mine-2").unwrap();
         assert!(!dir.join("mine-2.md").exists());
         assert!(matches!(rm(&dir, "nope"), Err(QdError::NotFound(_))));
-        for r in [
-            rm(&dir, "two-columns"),
-            rename(&dir, "two-columns", "x").map(|_| ()),
-        ] {
+        for r in [rm(&dir, "two-columns"), rename(&dir, "two-columns", "x")] {
             assert!(matches!(r, Err(QdError::InvalidArg(m)) if m.contains("built-in")));
         }
     }
