@@ -176,8 +176,9 @@ with sync_playwright() as p:
         return fs > 100 and stack == "grid" and ab == ["600px", "1000px"], f"r-fit-text {fs:.0f}px, r-stack display={stack}, absolute={ab}"
     check("Layout (r-stack, r-fit-text, .absolute)", layout)
     check("Slide visibility: hidden", lambda: (ev("!document.getElementById('hidden')"), "hidden slide removed"))
+    slnum = lambda: ev("document.querySelector('.slide-number').textContent.replace(/\\s+/g, '')")
     def uncounted():
-        go("last"); num = ev("document.querySelector('.slide-number').textContent.replace(/\\s+/g, '')")
+        go("last"); num = slnum()
         total = ev("document.querySelectorAll('.reveal .slides section:not(.stack)').length")
         return int(num.split("/")[1]) < total, f"last slide '{num}', {total} slides in the page (uncounted ones left out)"
     check("Slide visibility: uncounted", uncounted)
@@ -199,7 +200,6 @@ with sync_playwright() as p:
         go("autoslide"); ok = until(pg, "Reveal.getCurrentSlide().id !== 'autoslide'", 6000)
         return ok, f"now on '{cur()}'"
     check("Auto-slide (per slide)", autoslide)
-    slnum = lambda: ev("document.querySelector('.slide-number').textContent.replace(/\\s+/g, '')")
     check("Slide numbers c/t", lambda: (bool(re.fullmatch(r"\d+/\d+", slnum())), slnum()))
     def jump():
         go("content"); key("g"); pg.keyboard.type("4"); key("Enter")

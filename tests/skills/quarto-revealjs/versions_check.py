@@ -27,11 +27,10 @@ except metadata.PackageNotFoundError:
 
 print(f"quarto {quarto} (verified {want['quarto']}), bundled reveal.js {revealjs} (verified {want['revealjs']}), "
       f"plotly {plotly} (verified {want['plotly']})")
-for name, have in [("quarto", quarto), ("plotly", plotly), ("revealjs", revealjs)]:
+for name, have in [("quarto", quarto), ("plotly", plotly)]:
     if have != want[name]:
-        if name != "revealjs":
-            print(f"::warning::{name} is {have}, the skill was verified with {want[name]}; "
-                  f"if the tests pass, update skills/quarto-revealjs/versions.json")
+        print(f"::warning::{name} is {have}, the skill was verified with {want[name]}; "
+              f"if the tests pass, update skills/quarto-revealjs/versions.json")
 if revealjs != want["revealjs"]:
     print(f"::error::Quarto now bundles reveal.js {revealjs} (was {want['revealjs']}): re-verify the guide's "
           f"feature table and update the skill, see skills/quarto-revealjs/UPDATING.md")
