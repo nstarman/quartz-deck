@@ -4,13 +4,13 @@
 built only with quartz-deck's `qd`, and the per-deck tools are gone (`inline_apps.py`, `make_pdf.py`,
 `check_offline.py`, `check_overflow.py`, `size_report.py`, `bibliography.py`, `_quarto-share.yml`,
 `_deck/header.html`, `_deck/setup.qmd`, `_vendor/`). To convert a folder:
-1. Install `qd` at the commit in `versions.json` (SKILL.md, step 0).
+1. Install `qd` (SKILL.md, step 0).
 2. Copy `assets/Makefile` (set `ZOTERO`) and move the sources into the layout in SKILL.md: decks at
    the root, one per folder; css, html pieces, figures, apps and scripts under `_talk/`. Fix the paths
    in the deck (`apps/x.html` → `_talk/apps/x.html`, and so on).
 3. From `_quarto.yml` remove `html-math-method`, the `include-in-header` of the old header and
-   `pdf-separate-fragments`; include `_talk/html/skip-steps.html` after the body (it carries the
-   WebKit `MathJax.Hub` stand-in the old header had). Delete `_vendor/` and the scripts above, and
+   `pdf-separate-fragments`; include `_talk/html/skip-steps.html` after the body. (qd's header
+   carries the WebKit `MathJax.Hub` stand-in the old header had.) Delete `_vendor/` and the scripts above, and
    the `{{< include _deck/setup.qmd >}}` line (qd adds its own Plotly renderer).
 4. Put `<!-- bibliography:start -->` and `<!-- bibliography:end -->` on the References slide in
    place of `{{< include _bibliography.qmd >}}`, run `make refs`, and delete `_bibliography.qmd`.
@@ -66,9 +66,8 @@ Every claim in `references/quarto-revealjs-guide.md` was observed in a browser a
    - Offline check fails (qd's, or `offline_check.py` in WebKit): something now loads from the
      network. Usually a new CDN default in Quarto's templates (`share/formats/revealjs/`) or in
      plotly.py's notebook renderer. The offline header and Plotly renderer are qd's
-     (`src/export.rs` in this repository): fix them in the same pull request, and move `qd` in
-     `versions.json` to the merged commit. Adjust `assets/_quarto.yml` only for what the deck
-     itself sets.
+     (`src/export.rs` in this repository): fix them in the same pull request. Adjust
+     `assets/_quarto.yml` only for what the deck itself sets.
    - A gotcha step fails: the documented gotcha no longer holds (KaTeX now embedded, chalkboard
      now allowed). Update the guide, SKILL.md and the fixture.
    - Render fails: an option was renamed or removed; check Quarto's schema in
@@ -78,14 +77,14 @@ Every claim in `references/quarto-revealjs-guide.md` was observed in a browser a
    `tests/skills/quarto-revealjs/fixture/reveal-features.qmd`, a check to `feature_check.py`, and a
    row to the guide. Re-check the guide's "Gotchas" and the `SKILL.md` gotchas one by one; several
    (preview links only for http, `#/id` rewriting, the 95% iframe cap) are version-specific.
-4. **Re-check the workarounds** still need to exist: in qd's header the `about:blank` math URL, the
-   `Reveal.sync()` after MathJax and the iframe focus hand-back; in `assets/_talk/html/skip-steps.html`
-   the WebKit `MathJax.Hub` stand-in (drop it once qd's header defines one). Remove any that the new
-   versions make unnecessary, and say so in the guide.
+4. **Re-check the workarounds** in qd's header (`src/export.rs`) still need to exist: the
+   `about:blank` math URL, the WebKit `MathJax.Hub` stand-in, the `Reveal.sync()` after MathJax and
+   the iframe focus hand-back. Remove any that the new versions make unnecessary, and say so in the
+   guide.
 5. **Record the versions**: update `versions.json` (`verified` date, `quarto`, `revealjs`, `mathjax`,
-   `plotly`, `qd`), and the version numbers quoted in the guide's first paragraph and `SKILL.md`
-   (including the `cargo install --rev`): the commit people install. The workflow builds `qd` from
-   the checkout it tests, so a change to qd is tested with the skill in the same pull request.
+   `plotly`), and the version numbers quoted in the guide's first paragraph and `SKILL.md`. There is
+   no qd version to record: people install qd from `main`, and the workflow builds it from the
+   checkout it tests, so a change to qd is tested with the skill in the same pull request.
 6. Open a pull request in quartz-deck; the workflow runs on it. nstarman/skills lists the skill from
    `skills/quarto-revealjs` on `main` (`registry/quarto-revealjs.json`), so it needs no change unless
    the skill's description changes.

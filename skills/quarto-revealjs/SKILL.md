@@ -20,9 +20,10 @@ use an embedded browser pane or a headless script, never a Chrome window or `ope
 
 ## Set up a deck folder (once)
 
-0. Install `qd` once, at the commit in `versions.json`:
+0. Install `qd` from quartz-deck's `main`, where this skill lives too (the skill's scaffold and the
+   qd on the same branch go together); run it again to update:
    ```bash
-   cargo install --locked --git https://github.com/nstarman/quartz-deck --rev 90fec66
+   cargo install --locked --git https://github.com/nstarman/quartz-deck
    ```
    It finds Google Chrome (or downloads its own with `qd browser --install`) and downloads MathJax
    3.2.2 into its cache on first use.
