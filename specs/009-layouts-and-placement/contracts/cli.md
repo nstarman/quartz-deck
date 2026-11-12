@@ -17,15 +17,16 @@ plus `"placeholders": [{"ref": "s-ab12/0", "id": "b-cd34", "kind": "text", "purp
 `E_NOT_FOUND` for an unknown layout. `--layout` with `--md`/`--file` is
 `E_USAGE`.
 
-## `qd layout save SLIDE NAME [--mine | --deck] [--replace] [--at REF=X,Y,W,H …]`
+## `qd layout save SLIDE NAME [--mine] [--replace] [--at REF=X,Y,W,H …]`
 
-Saves the slide's structure as a layout (R3). `--deck` (default) writes
-`_layouts/NAME.md` beside the deck, `--mine` the config folder. A taken name
-is `E_CONFLICT` unless `--replace`. `--at` gives a flow element's place on the
+Saves the slide's structure as a layout (R3): `_layouts/NAME.md` beside the
+deck, or with `--mine` the config folder (`--deck` is already the global deck
+path option). A taken name
+is `E_CONFLICT` unless `--replace`. No text of the slide is kept. `--at` gives a flow element's place on the
 canvas (the editor sends them; without it a flow element becomes a full-width
 text placeholder stacked under the title).
 
-## `qd layout rm NAME [--mine | --deck]` and `qd layout rename OLD NEW [--mine | --deck]`
+## `qd layout rm NAME [--mine]` and `qd layout rename OLD NEW [--mine]`
 
 Built-in layouts can't be removed or renamed (`E_INVALID_ARG`).
 

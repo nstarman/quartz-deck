@@ -8,7 +8,7 @@ const BACKGROUNDS = ['#ffffff', '#fdf6e3', '#f4f6fb', '#eaf4ec', '#fff4e5', '#fd
 const previewUrl = (path) => '/preview/' + path.split('/').map(encodeURIComponent).join('/');
 
 /**
- * Ask: `fields` are `{name, label, kind: 'text'|'swatches'|'files'|'gallery', value,
+ * Ask: `fields` are `{name, label, kind: 'text'|'swatches'|'files'|'choice'|'gallery', value,
  * validate?(value) → message, placeholder?}`; `anchor` is the element (or rect) it
  * opens beside. Resolves to `{name: value}` on OK, `null` otherwise.
  */
@@ -41,7 +41,7 @@ export function ask({ title, message = '', fields = [], ok = 'OK', cancel = 'Can
     d.style.left = Math.max(8, Math.min(r.left, innerWidth - d.offsetWidth - 8)) + 'px';
     d.style.top = Math.max(8, r.bottom + 4 + d.offsetHeight > innerHeight ? r.top - d.offsetHeight - 4 : r.bottom + 4) + 'px';
   }
-  (form.querySelector('input[type=radio]:checked') || form.querySelector('input:not([type=color])') || okB).focus();
+  (form.querySelector('.is-gallery input:checked') || form.querySelector('input[type=text]') || okB).focus();
   // a task later: the dialog puts focus back where it was first, so a caller can then move it
   return new Promise((done) => d.addEventListener('close', () => setTimeout(() => {
     done(d.returnValue === 'ok' ? Object.fromEntries(Object.entries(values).map(([k, get]) => [k, get()])) : null);
@@ -56,6 +56,17 @@ function field(f, values, checks, submit) {
   const wrap = el('div', { className: `field is-${f.kind}` });
   const err = el('span', { className: 'error', role: 'alert' });
   if (f.kind === 'gallery') return gallery(f, wrap, values, submit);
+  if (f.kind === 'choice') { // one of `f.options`, [[value, label], …]
+    const group = el('div', { className: 'choice', role: 'radiogroup', ariaLabel: f.label });
+    for (const [value, text] of f.options) {
+      const l = el('label');
+      l.append(el('input', { type: 'radio', name: f.name, value, checked: value === f.value }), ` ${text}`);
+      group.append(l);
+    }
+    wrap.append(el('span', { className: 'label', textContent: f.label }), group);
+    values[f.name] = () => group.querySelector('input:checked')?.value;
+    return wrap;
+  }
   if (f.kind === 'swatches') {
     let value = f.value ?? '';
     const group = el('div', { className: 'swatches', role: 'radiogroup', ariaLabel: f.label });
@@ -147,8 +158,32 @@ function gallery(f, wrap, values, submit) {
       Object.assign(box.style, { left: `${(100 * b.left) / w}%`, top: `${(100 * b.top) / h}%`, width: `${(100 * b.width) / w}%`, height: `${(100 * b.height) / h}%` });
       preview.append(box);
     }
-    label.append(radio, preview, el('span', { className: 'name', textContent: o.name.replace(/-/g, ' ') }));
+    const name = el('span', { className: 'name', textContent: o.name.replace(/-/g, ' ') });
+    label.append(radio, preview, name);
     label.addEventListener('dblclick', submit);
+    // saved layouts (US3): rename and delete in place; `f.manage` does the asking and saving
+    if (f.manage && o.from !== 'built-in') {
+      const tool = (cls, text, run) => {
+        const b = el('button', { type: 'button', className: cls, textContent: text, title: `${text} “${o.name}”` });
+        b.addEventListener('click', (e) => { e.preventDefault(); run(); });
+        return b;
+      };
+      const tools = el('span', { className: 'tools' });
+      tools.append(
+        tool('rename', 'Rename', async () => {
+          const to = await f.manage.rename(o);
+          if (!to) return;
+          o.name = label.dataset.layout = radio.value = to;
+          name.textContent = to.replace(/-/g, ' ');
+        }),
+        tool('delete', 'Delete', async () => {
+          if (!(await f.manage.remove(o))) return;
+          label.remove();
+          if (!wrap.querySelector('input:checked')) wrap.querySelector('input').checked = true;
+        }),
+      );
+      label.append(tools);
+    }
     grid.append(label);
   }
   if (!wrap.querySelector('input:checked')) wrap.querySelector('input').checked = true;

@@ -176,6 +176,195 @@ pub fn find(name: &str, deck_dir: &Path, config: &Path) -> Result<Layout> {
         .ok_or_else(|| QdError::NotFound(format!("layout '{name}' (see qd layouts)")))
 }
 
+/// The folder `place` names: `deck` (`_layouts/` beside the deck) or `mine`.
+pub fn folder(place: &str, deck_dir: &Path, config: &Path) -> Result<PathBuf> {
+    match place {
+        "deck" => Ok(deck_folder(deck_dir)),
+        "mine" => Ok(my_folder(config)),
+        _ => Err(QdError::InvalidArg(format!(
+            "'{place}': a layout lives in 'deck' or 'mine'"
+        ))),
+    }
+}
+
+/// Slide `slide` of `d` as a layout file named `name` (R3): an empty heading
+/// with the slide's classes, each element a placeholder where it shows (flow
+/// elements at `at`, by ref, in the deck's px; else stacked under the title),
+/// notes as an empty notes block. None of the slide's text is kept.
+pub fn from_slide(
+    d: &Deck,
+    slide: &str,
+    name: &str,
+    at: &std::collections::HashMap<String, [f64; 4]>,
+) -> Result<String> {
+    let s = d.slide(slide)?;
+    let mut places = std::collections::HashMap::new();
+    for (r, rect) in at {
+        let (es, b) = d.element(r)?;
+        if es.index != s.index {
+            return Err(QdError::InvalidArg(format!(
+                "'{r}' is not on slide '{slide}'"
+            )));
+        }
+        places.insert(b.span.start, *rect);
+    }
+    let (sx, sy) = (BASE.0 / f64::from(d.width), BASE.1 / f64::from(d.height));
+    let mut head = "#".repeat(usize::from(s.level.max(1)));
+    let classes: Vec<String> = s
+        .attrs
+        .iter()
+        .flat_map(|a| a.classes())
+        .map(|c| format!(".{c}"))
+        .collect();
+    if !classes.is_empty() {
+        head = format!("{head} {{{}}}", classes.join(" "));
+    }
+    let mut out = vec![format!(
+        "---\nname: {name}\ndescription: Saved from slide {}\n---\n\n{head}",
+        s.id
+    )];
+    let mut stacked = 0.0;
+    for b in &s.blocks {
+        let text = d.slice(b.span);
+        let kind = match b.kind {
+            BlockKind::Notes => {
+                out.push("::: notes\n:::".into());
+                continue;
+            }
+            BlockKind::Pause | BlockKind::Html => continue,
+            BlockKind::Box if text.contains("![") => "image",
+            BlockKind::Image => "image",
+            _ => "text",
+        };
+        let purpose = if b.kind == BlockKind::List {
+            "list"
+        } else {
+            kind
+        };
+        let g = b
+            .attrs
+            .as_ref()
+            .filter(|_| b.kind == BlockKind::Box)
+            .map(crate::ops::geom);
+        let px = |l: &Option<crate::ops::Length>| l.as_ref().and_then(|l| l.px());
+        // where it is in the deck's px: a box's own place, else where it shows (`at`)
+        let r = g
+            .and_then(|g| Some([px(&g.left)?, px(&g.top)?, px(&g.width)?, px(&g.height)?]))
+            .or_else(|| places.get(&b.span.start).copied())
+            .map(|r| [r[0] * sx, r[1] * sy, r[2] * sx, r[3] * sy])
+            .unwrap_or_else(|| {
+                stacked += 1.0;
+                [60.0, 50.0 + 120.0 * stacked, 930.0, 100.0]
+            })
+            .map(f64::round);
+        out.push(format!(
+            "::: {{.absolute .qd-ph ph={kind} left={} top={} width={} height={}}}\n<!-- {purpose} -->\n:::",
+            r[0], r[1], r[2], r[3]
+        ));
+    }
+    Ok(out.join("\n\n") + "\n")
+}
+
+fn built_in(name: &str) -> bool {
+    BUILT_IN
+        .iter()
+        .any(|t| t.contains(&format!("\nname: {name}\n")))
+}
+
+fn file(dir: &Path, name: &str) -> Result<PathBuf> {
+    if !valid_name(name) {
+        return Err(QdError::InvalidArg(format!(
+            "'{name}': a layout name is 1–40 of a-z, 0-9 and -"
+        )));
+    }
+    Ok(dir.join(format!("{name}.md")))
+}
+
+/// Write layout `text` as `dir/name.md`; a taken name needs `replace`.
+pub fn save(dir: &Path, name: &str, text: &str, replace: bool) -> Result<PathBuf> {
+    let p = file(dir, name)?;
+    if p.exists() && !replace {
+        return Err(QdError::Taken(format!(
+            "a layout named '{name}' is already there"
+        )));
+    }
+    std::fs::create_dir_all(dir)?;
+    std::fs::write(&p, text)?;
+    Ok(p)
+}
+
+/// The saved layout `name` in `dir` (built-in ones can't be changed).
+fn existing(dir: &Path, name: &str) -> Result<PathBuf> {
+    let p = file(dir, name)?;
+    if p.exists() {
+        Ok(p)
+    } else if built_in(name) {
+        Err(QdError::InvalidArg(format!(
+            "'{name}' is a built-in layout; those can't be changed"
+        )))
+    } else {
+        Err(QdError::NotFound(format!(
+            "layout '{name}' in {}",
+            dir.display()
+        )))
+    }
+}
+
+pub fn rm(dir: &Path, name: &str) -> Result<PathBuf> {
+    let p = existing(dir, name)?;
+    std::fs::remove_file(&p)?;
+    Ok(p)
+}
+
+/// Rename a saved layout: its file and the name in its front matter.
+pub fn rename(dir: &Path, from: &str, to: &str) -> Result<PathBuf> {
+    let old = existing(dir, from)?;
+    let new = file(dir, to)?;
+    if new.exists() {
+        return Err(QdError::Taken(format!(
+            "a layout named '{to}' is already there"
+        )));
+    }
+    let text = std::fs::read_to_string(&old)?.replacen(
+        &format!("\nname: {from}\n"),
+        &format!("\nname: {to}\n"),
+        1,
+    );
+    std::fs::write(&new, text)?;
+    std::fs::remove_file(old)?;
+    Ok(new)
+}
+
+/// One change to the saved layouts, as `POST /api/layouts` sends it (and `qd
+/// layout …`): `{"save": {slide, name, where, replace, at}}`, `{"rm": {name,
+/// where}}` or `{"rename": {from, to, where}}`. Returns the file it wrote or removed.
+pub fn change(d: &Deck, deck_dir: &Path, config: &Path, req: &Value) -> Result<PathBuf> {
+    let bad = |m: String| QdError::InvalidArg(m);
+    let (op, v) = req
+        .as_object()
+        .and_then(|o| o.iter().next())
+        .ok_or_else(|| bad("expected {\"save\"|\"rm\"|\"rename\": {…}}".into()))?;
+    let arg = |k: &str| {
+        v[k].as_str()
+            .ok_or_else(|| bad(format!("'{k}' is missing")))
+    };
+    let dir = folder(v["where"].as_str().unwrap_or("deck"), deck_dir, config)?;
+    match op.as_str() {
+        "save" => {
+            let at: Option<std::collections::HashMap<String, [f64; 4]>> =
+                serde_json::from_value(v["at"].clone())
+                    .map_err(|e| bad(format!("'at': {{ref: [left, top, width, height]}}: {e}")))?;
+            let at = at.unwrap_or_default();
+            let name = arg("name")?;
+            let text = from_slide(d, arg("slide")?, name, &at)?;
+            save(&dir, name, &text, v["replace"] == true)
+        }
+        "rm" => rm(&dir, arg("name")?),
+        "rename" => rename(&dir, arg("from")?, arg("to")?),
+        _ => Err(bad(format!("unknown layout change '{op}'"))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -281,5 +470,74 @@ mod tests {
             find("nope", deck.path(), config.path()).unwrap_err().code(),
             "E_NOT_FOUND"
         );
+    }
+
+    /// Spec 009 US3: a slide becomes a layout: its title an empty heading, each
+    /// element a placeholder where it was (flow ones at `at`, else stacked), notes kept empty.
+    #[test]
+    fn a_slide_becomes_a_layout() {
+        let d = Deck::parse(
+            "---\nformat: revealjs\n---\n\n## Results {#r .center}\n\nIntro.\n\n- a\n\n![](p.png){#b-1 .absolute left=600 top=100 width=300 height=200}\n\n::: notes\nSay.\n:::\n".into(),
+        );
+        let at =
+            std::collections::HashMap::from([("r/1".to_string(), [60.0, 300.0, 400.0, 150.0])]);
+        let text = from_slide(&d, "r", "results", &at).unwrap();
+        let l = Layout::parse(&text, "mine").unwrap();
+        assert_eq!(l.name, "results");
+        let ph: Vec<(String, [f64; 4])> = l
+            .placeholders()
+            .into_iter()
+            .map(|p| (p.kind, p.rect))
+            .collect();
+        assert_eq!(
+            ph,
+            [
+                ("text".into(), [60.0, 170.0, 930.0, 100.0]),
+                ("text".into(), [60.0, 300.0, 400.0, 150.0]),
+                ("image".into(), [600.0, 100.0, 300.0, 200.0]),
+            ]
+        );
+        assert!(text.contains("\n## {.center}\n"), "{text}");
+        assert!(text.contains("::: notes\n:::"), "{text}");
+        for gone in ["Intro.", "- a", "Say.", "Results", "p.png", "#b-1"] {
+            assert!(!text.contains(gone), "{gone} in {text}");
+        }
+    }
+
+    #[test]
+    fn save_rm_rename() {
+        let d = tempfile::tempdir().unwrap();
+        let dir = d.path().join("_layouts");
+        let text = |n: &str| format!("---\nname: {n}\n---\n\n##\n");
+        let p = save(&dir, "mine-1", &text("mine-1"), false).unwrap();
+        assert!(p.ends_with("_layouts/mine-1.md"));
+        assert!(matches!(
+            save(&dir, "mine-1", &text("mine-1"), false),
+            Err(QdError::Taken(_))
+        ));
+        save(&dir, "mine-1", &text("mine-1"), true).unwrap();
+        assert!(matches!(
+            save(&dir, "Bad Name", "", false),
+            Err(QdError::InvalidArg(_))
+        ));
+        rename(&dir, "mine-1", "mine-2").unwrap();
+        let l = Layout::parse(
+            &std::fs::read_to_string(dir.join("mine-2.md")).unwrap(),
+            "deck",
+        )
+        .unwrap();
+        assert_eq!(l.name, "mine-2");
+        assert!(!dir.join("mine-1.md").exists());
+        save(&dir, "other", &text("other"), false).unwrap();
+        assert!(matches!(
+            rename(&dir, "mine-2", "other"),
+            Err(QdError::Taken(_))
+        ));
+        rm(&dir, "mine-2").unwrap();
+        assert!(!dir.join("mine-2.md").exists());
+        assert!(matches!(rm(&dir, "nope"), Err(QdError::NotFound(_))));
+        for r in [rm(&dir, "two-columns"), rename(&dir, "two-columns", "x")] {
+            assert!(matches!(r, Err(QdError::InvalidArg(m)) if m.contains("built-in")));
+        }
     }
 }
