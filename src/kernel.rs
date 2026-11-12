@@ -155,8 +155,7 @@ impl Session {
                         return Err(QdError::NoEnv(dir.display().to_string()));
                     }
                     None => {
-                        let uv = crate::render::which("uv", path).ok_or(QdError::EnvTool("uv"))?;
-                        let mut c = std::process::Command::new(uv);
+                        let mut c = crate::env::tool_cmd(crate::env::Tool::Uv, path)?;
                         c.args([
                             "run",
                             "-q",
@@ -184,11 +183,8 @@ impl Session {
                         "r cells: R is not installed (https://cran.r-project.org)".into(),
                     )
                 })?;
-                let script = crate::store::cache_root().join("kernel_bridge.R");
-                std::fs::create_dir_all(script.parent().unwrap())?;
-                std::fs::write(&script, BRIDGE_R)?;
                 let mut c = std::process::Command::new(r);
-                c.args(["--no-save", "--no-restore"]).arg(&script);
+                c.args(["-e", BRIDGE_R]);
                 let [w, h, dpi] = engine.fig;
                 c.env("QD_FIG", format!("{w} {h} {dpi}"));
                 c

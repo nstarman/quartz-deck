@@ -6,7 +6,8 @@ use crate::error::{QdError, Result};
 use serde_json::{Value, json};
 use std::path::Path;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Kind {
     Jupyter,
     Knitr,
@@ -26,21 +27,14 @@ pub struct Engine {
 
 impl Engine {
     pub fn to_json(&self) -> Value {
-        let kind = match self.kind {
-            Kind::Jupyter => "jupyter",
-            Kind::Knitr => "knitr",
-        };
-        json!({"kind": kind, "kernel": self.kernel, "label": self.label()})
+        json!({"kind": self.kind, "kernel": self.kernel, "label": self.label()})
     }
 
-    /// What the editor's badge says: `Python`, `R`, `Julia`, or the language.
+    /// What the editor's badge says: the language, capitalised (`Python`, `R`).
     pub fn label(&self) -> String {
-        match self.language.as_str() {
-            "python" => "Python".into(),
-            "r" => "R".into(),
-            "julia" => "Julia".into(),
-            l => l.into(),
-        }
+        let mut c = self.language.chars();
+        c.next()
+            .map_or(String::new(), |f| f.to_uppercase().chain(c).collect())
     }
 
     /// Whether this engine runs `lang` cells (as Quarto: knitr runs R, a

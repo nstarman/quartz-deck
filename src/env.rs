@@ -78,7 +78,7 @@ pub fn require(deck_dir: &Path) -> Result<Env> {
 }
 
 /// The tool found on `path` (`$PATH`), or `E_ENV_TOOL`.
-fn tool_cmd(tool: Tool, path: Option<OsString>) -> Result<Command> {
+pub(crate) fn tool_cmd(tool: Tool, path: Option<OsString>) -> Result<Command> {
     let bin = crate::render::which(tool.name(), path).ok_or(QdError::EnvTool(tool.name()))?;
     Ok(Command::new(bin))
 }

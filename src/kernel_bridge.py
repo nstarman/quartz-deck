@@ -81,9 +81,8 @@ def execute(kc, km, code, stop):
     return {"status": status, "counter": counter, "outputs": outputs}
 
 
-def kernel_name():
+def kernel_name(specs):
     """QD_KERNEL, else the first installed kernel for QD_LANGUAGE (Quarto's rule)."""
-    specs = KernelSpecManager().get_all_specs()
     name, lang = os.environ.get("QD_KERNEL"), os.environ.get("QD_LANGUAGE", "python")
     if name:
         return name if name in specs else None
@@ -91,9 +90,10 @@ def kernel_name():
 
 
 def main():
-    name = kernel_name()
+    specs = KernelSpecManager().get_all_specs()
+    name = kernel_name(specs)
     if name is None:
-        found = ", ".join(sorted(KernelSpecManager().get_all_specs())) or "none"
+        found = ", ".join(sorted(specs)) or "none"
         wanted = os.environ.get("QD_KERNEL") or "for " + os.environ.get("QD_LANGUAGE", "python")
         say({"error": f"no Jupyter kernel {wanted} is installed (found: {found})"})
         return

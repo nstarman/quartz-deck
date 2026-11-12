@@ -84,9 +84,7 @@ fn knitr_cells() {
     let dir = t.path();
     deck(dir, R_DECK);
     // one session: the second cell sees the first's variable
-    let t0 = std::time::Instant::now();
     let (ok, r) = qd(dir, &[], &["run", "a/0", "b/0", "c/0"]);
-    eprintln!("knitr: inspect + R start + 3 cells in {:?}", t0.elapsed()); // research R4
     assert!(ok, "{r}");
     assert_eq!(r["engine"]["kind"], "knitr");
     assert!(
