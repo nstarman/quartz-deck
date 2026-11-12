@@ -144,10 +144,12 @@ fn dedupe(text: &str) -> String {
     before_reveal(&out, &(holders + RESTORE))
 }
 
+// `window.qdApps` settles once every app has its blob: URL (qd's check waits for it)
 const LOADER: &str = r#"
+  const done = [];
   for (const [id, [path, type]] of Object.entries(apps)) {
     const gz = Uint8Array.from(atob(document.getElementById(id).textContent), (c) => c.charCodeAt(0));
-    new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).blob().then((b) => {
+    done.push(new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).blob().then((b) => {
       const url = URL.createObjectURL(new Blob([b], { type }));
       document.querySelectorAll("[data-background-iframe]").forEach((e) => {
         if (e.getAttribute("data-background-iframe") === path) e.setAttribute("data-background-iframe", url);
@@ -158,8 +160,9 @@ const LOADER: &str = r#"
         // reveal.js got there first (the deck opened on this slide): load it now
         if (f.getAttribute("src") === path || (!f.getAttribute("src") && f.closest("section.present"))) f.setAttribute("src", url);
       });
-    });
+    }));
   }
+  window.qdApps = Promise.all(done);
 })();</script>
 "#;
 

@@ -243,12 +243,13 @@ impl OfflinePage {
         })
     }
 
-    /// Navigate and wait until reveal.js is ready and MathJax (if any) has typeset.
+    /// Navigate and wait until reveal.js is ready, MathJax (if any) has typeset and apps qd inlined have their URLs.
     pub async fn load(&self, url: &str) -> Result<()> {
         self.page.goto(url).await.map_err(other)?;
         self.eval(
             r#"new Promise(res => { const go = async () => {
                  if (window.MathJax?.startup?.promise) { try { await MathJax.startup.promise; } catch (e) {} }
+                 if (window.qdApps) { try { await window.qdApps; } catch (e) {} } // apps inlined by qd export
                  res(true);
                };
                if (!window.Reveal) return res(false);
