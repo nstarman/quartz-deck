@@ -59,7 +59,7 @@ export function makeActions(api) {
     { id: 'paste', label: 'Paste after', run: (t) => api.paste(t) },
     { id: 'dup', label: 'Duplicate', run: (t) => api.op('block dup', { element: t.ref }) },
     { id: 'delete', label: 'Delete', run: (t) => api.op('block rm', { element: t.ref }) },
-    { id: 'history-restore-element', label: 'Restore from this version', visible: () => !!api.versionRev(), run: (t) => api.op('restore', { rev: api.versionRev(), element: t.ref }) },
+    { id: 'history-restore-element', label: 'Restore from this version', visible: () => !!api.version(), run: (t) => api.op('restore', { rev: api.version().rev, element: t.ref }) },
     '-',
     { id: 'up', label: 'Move up', enabled: (t) => t.index > 0, run: (t) => api.op('block move', { element: t.ref, before: `${t.slideId}/${t.index - 1}` }) },
     { id: 'down', label: 'Move down', enabled: (t) => t.index < t.count - 1, run: (t) => api.op('block move', { element: t.ref, after: `${t.slideId}/${t.index + 1}` }) },
@@ -91,7 +91,7 @@ export function makeActions(api) {
     { id: 'slide-paste', label: 'Paste slides after', run: (t) => api.pasteSlides(t) },
     { id: 'slide-hide', label: 'Hidden in the presentation', checked: (t) => kv(t).visibility === 'hidden', run: (t) => setAttr(t, 'visibility', kv(t).visibility === 'hidden' ? null : 'hidden') },
     { id: 'slide-rm', label: 'Delete slide…', run: async (t) => (!settings.get('confirm.slide_delete') || await confirmSheet('Delete slide?', `"${t.title || t.slideId}" will be deleted. Undo brings it back.`, 'Delete')) && api.op('rm', { slide: t.slideId }) },
-    { id: 'history-restore-slide', label: 'Restore slide from this version', visible: () => !!api.versionRev(), run: (t) => api.op('restore', { rev: api.versionRev(), slide: t.slideId }) },
+    { id: 'history-restore-slide', label: 'Restore slide from this version', visible: () => !!api.version(), run: (t) => api.op('restore', { rev: api.version().rev, slide: t.slideId }) },
     '-',
     { id: 'slide-bg', label: 'Background colour…', run: async (t) => {
       const v = await ask({ title: 'Background colour', fields: [{ name: 'c', kind: 'swatches', label: 'Colour', value: kv(t)['background-color'] || '' }] });

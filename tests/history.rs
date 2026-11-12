@@ -142,7 +142,8 @@ fn restore_slide() {
     let git = git_repo(dir);
     std::fs::create_dir_all(dir.join("talks")).unwrap();
     let deck = dir.join("talks/deck.qmd");
-    std::fs::write(&deck, "## One {#one}\n\nA\n\n## Two {#two}\n\nB\n").unwrap();
+    let first = "## One {#one}\n\nA\n\n## Two {#two}\n\nB\n";
+    std::fs::write(&deck, first).unwrap();
     git(&["add", "."]);
     git(&["commit", "-qm", "first"]);
     let now = "## One {#one}\n\nA2\n\n## Two {#two}\n\nB2\n";
@@ -181,10 +182,7 @@ fn restore_slide() {
     let after = git(&["rev-list", "HEAD"]);
     assert_eq!(after.lines().count(), before.lines().count() + 1);
     assert!(after.ends_with(&before));
-    assert_eq!(
-        std::fs::read_to_string(&deck).unwrap(),
-        "## One {#one}\n\nA\n\n## Two {#two}\n\nB\n"
-    );
+    assert_eq!(std::fs::read_to_string(&deck).unwrap(), first);
 }
 
 #[test]

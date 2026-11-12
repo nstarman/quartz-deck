@@ -3938,9 +3938,7 @@ async fn history_restore() {
     )
     .await;
     ed.settle().await;
-    ed.eval(&keys("undo")).await;
-    ed.wait_file(|f| f == v2, "undo").await;
-    ed.settle().await;
+    ed.undo_to(&v2).await;
     // the whole version: asks first; cancel leaves the file alone
     ed.eval(&keys("history-restore")).await;
     ed.wait("document.querySelector('dialog.sheet[open]')?.textContent.includes('first draft')")

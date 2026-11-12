@@ -343,12 +343,13 @@ pub enum Restore<'a> {
 /// element as it was in `old` (FR-015). REF resolves in `old`. A slide gone
 /// now goes back after its nearest earlier slide that is still there.
 pub fn restore(current: &Deck, old: &Deck, short: &str, what: Restore) -> Result<Patch> {
-    let patch = |what: String, span: Span, text: String| Patch {
-        op: format!("restore {what} from {short}"),
-        replacements: vec![(span, text)],
-        assigned_ids: vec![],
-        target: String::new(),
-        converted_units: false,
+    let patch = |what: String, span: Span, text: String| {
+        crate::ops::patch(
+            &format!("restore {what} from {short}"),
+            String::new(),
+            vec![(span, text)],
+            vec![],
+        )
     };
     let pair = pairs(old, current);
     let now = |i: usize| pair.iter().position(|&p| p == Some(i));
@@ -381,7 +382,6 @@ pub fn restore(current: &Deck, old: &Deck, short: &str, what: Restore) -> Result
                     format!("{text}{tail}"),
                 ));
             }
-            let nl = current.nl;
             let at = (0..oi).rev().find_map(now).map_or_else(
                 || {
                     current
@@ -391,23 +391,11 @@ pub fn restore(current: &Deck, old: &Deck, short: &str, what: Restore) -> Result
                 },
                 |j| current.slides[j].span.end,
             );
-            let before = &current.text[..at];
-            let gap = if before.is_empty() || before.ends_with(&format!("{nl}{nl}")) {
-                ""
-            } else if before.ends_with(nl) {
-                nl
-            } else {
-                &format!("{nl}{nl}")
-            };
-            let end = if at < current.text.len() {
-                format!("{nl}{nl}")
-            } else {
-                nl.to_string()
-            };
+            let text = crate::ops::place(current, at, text);
             Ok(patch(
                 format!("slide {}", os.id),
                 Span { start: at, end: at },
-                format!("{gap}{text}{end}"),
+                text,
             ))
         }
         Restore::Element(r) => {
@@ -766,7 +754,13 @@ mod tests {
 
     fn restored(cur: &str, old: &str, what: Restore) -> Result<String> {
         let (cur, old) = (Deck::parse(cur.into()), Deck::parse(old.into()));
-        crate::ops::apply(&cur.text, &restore(&cur, &old, "abc1234", what)?)
+        let p = restore(&cur, &old, "abc1234", what)?;
+        assert!(
+            p.op.starts_with("restore ") && p.op.ends_with(" from abc1234"),
+            "{}",
+            p.op
+        );
+        crate::ops::apply(&cur.text, &p)
     }
 
     #[test]
@@ -801,14 +795,6 @@ mod tests {
         assert!(e.to_string().contains("restore the slide"), "{e}");
         // the whole deck
         assert_eq!(restored(&cur, &old, Restore::Deck).unwrap(), old);
-        let p = restore(
-            &Deck::parse(cur.clone()),
-            &Deck::parse(old.clone()),
-            "abc1234",
-            Restore::Slide("one"),
-        )
-        .unwrap();
-        assert_eq!(p.op, "restore slide one from abc1234");
     }
 
     #[test]

@@ -1486,7 +1486,7 @@ const actions = makeActions({
   pasteSlides,
   say,
   slideUrl: (anchor) => `${location.origin}/#/${anchor}`,
-  versionRev: hist.versionRev,
+  version: hist.version,
 });
 
 /** Right-click in the preview: the element's menu, or the slide's (empty area). */
