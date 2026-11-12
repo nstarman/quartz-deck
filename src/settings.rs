@@ -89,6 +89,13 @@ const DEFS: &[Def] = &[
         Kind::Bool,
         || json!(true),
     ),
+    def(
+        "placement.snap",
+        "Snap to guides",
+        "While dragging a box, it snaps to the slide's edges and centre and to other elements (hold ⌘/Ctrl to place it freely).",
+        Kind::Bool,
+        || json!(true),
+    ),
     ui("ui.source_width", Kind::Number, || Value::Null),
     ui("ui.source_was_open", Kind::Bool, || json!(false)),
     ui("ui.source_full", Kind::Bool, || json!(false)),

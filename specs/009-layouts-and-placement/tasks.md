@@ -105,11 +105,11 @@ written first and seen failing.
 
 **Independent Test**: spec US4; quickstart §6.
 
-- [ ] T018 [P] [US4] Write failing browser test `guides_and_snapping`:
+- [X] T018 [P] [US4] Write failing browser test `guides_and_snapping`:
   - dragging a box near the slide's centre shows a guide and lands it exactly centred;
   - near another box's edge, it aligns;
   - ⌘ held, or the setting off: no guide, no snap.
-- [ ] T019 [US4] Guides and snapping in `src/ui/editor.js` (research R5: candidate lines, 6 px, a 1 px guide), `placement.snap` in `src/settings.rs` with View ▸ Snap to guides. T018 passes.
+- [X] T019 [US4] Guides and snapping in `src/ui/editor.js` (research R5: candidate lines, 6 px, a 1 px guide), `placement.snap` in `src/settings.rs` with View ▸ Snap to guides. T018 passes.
 
 ---
 

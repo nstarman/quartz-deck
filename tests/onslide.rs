@@ -3542,3 +3542,80 @@ async fn save_a_layout() {
     assert!(!file("corner").exists());
     ed.key("Escape", "Escape", 27, 0).await;
 }
+
+const GUIDES: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## A {#a}\n\n::: {#b-1 .absolute left=100 top=100 width=200 height=100}\nOne\n:::\n\n::: {#b-2 .absolute left=600 top=400 width=200 height=100}\nTwo\n:::\n";
+
+/// Spec 009 US4: dragging a box near the slide's centre shows a guide and lands
+/// it exactly centred; near another box's edge it aligns; with ⌘ held, or the
+/// setting off, it goes where it's dropped.
+#[tokio::test(flavor = "multi_thread")]
+async fn guides_and_snapping() {
+    use DispatchMouseEventType::*;
+    let Some(ed) = Ed::open(GUIDES).await else {
+        return;
+    };
+    ed.settle().await;
+    ed.go("a").await;
+    let scale = ed
+        .eval("document.querySelector('#preview').contentWindow.Reveal.getScale()")
+        .await
+        .as_f64()
+        .unwrap();
+    let num = |f: &str, k: &str| -> f64 {
+        let i = f.find(&format!(" {k}=")).unwrap() + k.len() + 2;
+        f[i..].split([' ', '}']).next().unwrap().parse().unwrap()
+    };
+    // drag box b-1's overlay by (dx, dy) slide px, with modifier keys held
+    let drag = async |dx: f64, dy: f64, mods: i64| -> bool {
+        ed.settle().await;
+        ed.click_in_slide("#b-1").await;
+        ed.wait(
+            "!!document.querySelector('#preview').contentDocument.querySelector('.qd-overlay')",
+        )
+        .await;
+        let from = ed.slide_point(".qd-overlay").await;
+        let to = (from.0 + dx * scale, from.1 + dy * scale);
+        ed.mouse_with(MousePressed, from, false, mods).await;
+        for i in 1..=8 {
+            let t = f64::from(i) / 8.0;
+            ed.mouse_with(
+                MouseMoved,
+                (from.0 + (to.0 - from.0) * t, from.1 + (to.1 - from.1) * t),
+                false,
+                mods,
+            )
+            .await;
+        }
+        let guide = ed
+            .eval("!!document.querySelector('#preview').contentDocument.querySelector('.qd-guide')")
+            .await
+            == true;
+        ed.mouse_with(MouseReleased, to, false, mods).await;
+        guide
+    };
+    let at = |l: f64, t: f64| move |f: &str| num(f, "left") == l && num(f, "top") == t;
+
+    // 3 px off the slide's centre (box centre at 525, 350): a guide, and it snaps
+    assert!(drag(328.0, 203.0, 0).await, "a guide while dragging");
+    ed.wait_file(at(425.0, 300.0), "centred on the slide").await;
+    assert_eq!(
+        ed.eval("document.querySelector('#preview').contentDocument.querySelectorAll('.qd-guide').length").await,
+        0,
+        "the guides go when the drag ends"
+    );
+    // 3 px from b-2's left edge: it aligns (and stays on the slide's middle)
+    drag(178.0, 0.0, 0).await;
+    ed.wait_file(at(600.0, 300.0), "aligned with the other box")
+        .await;
+    // ⌘ held: no snap
+    assert!(!drag(-173.0, 0.0, 4).await, "no guide with ⌘ held");
+    ed.wait_file(at(427.0, 300.0), "dropped where it was let go")
+        .await;
+    // View ▸ Snap to guides off: no snap
+    ed.settle().await;
+    ed.menu("View", "Snap to guides").await;
+    ed.wait("(async () => (await fetch('/api/settings').then((r) => r.json())).values['placement.snap'] === false)()").await;
+    assert!(!drag(-3.0, 0.0, 0).await, "no guide with snapping off");
+    ed.wait_file(at(424.0, 300.0), "not snapped with the setting off")
+        .await;
+}
