@@ -50,12 +50,18 @@ document.body.append(dialog);
 function control(d) {
   const id = `set-${d.key}`;
   const choice = d.type === 'choice';
-  const input = choice ? el('select', { id }) : el('input', { id, type: 'checkbox', checked: !!values[d.key] });
+  const number = d.type === 'number'; // `values`: [min, max]
+  const input = choice ? el('select', { id })
+    : number ? el('input', { id, type: 'number', min: d.values?.[0] ?? '', max: d.values?.[1] ?? '', step: 1, value: values[d.key] })
+    : el('input', { id, type: 'checkbox', checked: !!values[d.key] });
   if (choice) {
     input.append(...d.values.map((v) => new Option(LABELS[v] || v, v)));
     input.value = values[d.key];
   }
-  input.addEventListener('change', () => set({ [d.key]: choice ? input.value : input.checked }));
+  input.addEventListener('change', () => {
+    if (number && !input.checkValidity()) return input.reportValidity();
+    set({ [d.key]: choice ? input.value : number ? Number(input.value) : input.checked });
+  });
   const row = el('div', { className: 'setting' });
   row.append(el('label', { htmlFor: id, textContent: d.label }), input, el('small', { textContent: d.description }));
   return row;

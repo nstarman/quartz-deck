@@ -2074,7 +2074,8 @@ async fn settings_apply_live_and_stick() {
     // Reset to defaults asks first, then everything is back (theme follows the system)
     ed.key(",", "Comma", 188, 2).await;
     ed.wait("document.querySelector('#settings').open").await;
-    ed.click_js("(r => [r.left + r.width / 2, r.top + r.height / 2])([...document.querySelectorAll('#settings button')].find((b) => b.textContent.startsWith('Reset')).getBoundingClientRect())").await;
+    // the window scrolls when it is taller than the test's 800×600 window
+    ed.click_js("(b => (b.scrollIntoView(), (r => [r.left + r.width / 2, r.top + r.height / 2])(b.getBoundingClientRect())))([...document.querySelectorAll('#settings button')].find((b) => b.textContent.startsWith('Reset')))").await;
     ed.wait("document.querySelector('dialog.sheet[open]')?.textContent.includes('default')")
         .await;
     ed.click_editor("dialog.sheet button[value=ok]").await;

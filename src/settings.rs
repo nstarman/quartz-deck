@@ -12,6 +12,8 @@ enum Kind {
     Choice(&'static [&'static str]),
     Bool,
     Number,
+    /// A whole number from .0 to .1 (spec 012's pause)
+    Range(u32, u32),
     /// A layout's name (spec 009)
     Name,
 }
@@ -107,7 +109,7 @@ const DEFS: &[Def] = &[
         "history.pause",
         "Pause before committing (seconds)",
         "Edits closer together than this become one commit (5 to 600).",
-        Kind::Number,
+        Kind::Range(5, 600),
         || json!(30),
     ),
     ui("ui.source_width", Kind::Number, || Value::Null),
@@ -126,6 +128,9 @@ fn valid(d: &Def, v: &Value) -> bool {
         Kind::Choice(xs) => v.as_str().is_some_and(|s| xs.contains(&s)),
         Kind::Bool => v.is_boolean(),
         Kind::Number => v.is_number() || v.is_null(),
+        Kind::Range(lo, hi) => v
+            .as_u64()
+            .is_some_and(|n| (lo as u64..=hi as u64).contains(&n)),
         Kind::Name => v.as_str().is_some_and(crate::layouts::valid_name),
     }
 }
@@ -135,6 +140,7 @@ fn allowed(d: &Def) -> String {
         Kind::Choice(xs) => xs.join(", "),
         Kind::Bool => "true, false".into(),
         Kind::Number => "a number".into(),
+        Kind::Range(lo, hi) => format!("a whole number from {lo} to {hi}"),
         Kind::Name => "a layout name".into(),
     }
 }
@@ -228,6 +234,7 @@ pub fn defs() -> Value {
                 Kind::Choice(xs) => ("choice", json!(xs)),
                 Kind::Bool => ("bool", Value::Null),
                 Kind::Number => ("number", Value::Null),
+                Kind::Range(lo, hi) => ("number", json!([lo, hi])),
                 Kind::Name => ("name", Value::Null),
             };
             json!({"key": d.key, "label": d.label, "description": d.description, "type": kind, "values": values, "default": (d.default)()})
@@ -280,6 +287,15 @@ mod tests {
         assert_eq!(
             set(&p, &m(json!({"nope": 1}))).unwrap_err().code(),
             "E_INVALID_SETTING"
+        );
+        // spec 012: the pause is a whole number of seconds from 5 to 600
+        for bad in [json!(3), json!(601), json!(7.5), json!("30")] {
+            let e = set(&p, &m(json!({"history.pause": bad}))).unwrap_err();
+            assert!(e.to_string().contains("from 5 to 600"), "{e}");
+        }
+        assert_eq!(
+            set(&p, &m(json!({"history.pause": 45}))).unwrap()["history.pause"],
+            45
         );
 
         let v = set(
