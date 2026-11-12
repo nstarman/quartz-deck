@@ -128,12 +128,21 @@ impl Drop for Ed {
 
 impl Ed {
     async fn open(deck: &str) -> Option<Ed> {
+        Self::open_with_env(deck, &[]).await
+    }
+
+    /// [`Ed::open`] with the server started under extra environment variables.
+    async fn open_with_env(deck: &str, env: &[(&str, &str)]) -> Option<Ed> {
         let chrome = chrome()?;
         let slot = slot().await;
         let watchdog = Watchdog::start();
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("deck.qmd"), deck).unwrap();
-        let out = qd(dir.path()).args(["serve", "--detach"]).output().unwrap();
+        let out = qd(dir.path())
+            .args(["serve", "--detach"])
+            .envs(env.iter().copied())
+            .output()
+            .unwrap();
         let info: Value = serde_json::from_slice(&out.stdout)
             .unwrap_or_else(|_| panic!("serve: {}", String::from_utf8_lossy(&out.stderr)));
         let url = info["url"].as_str().unwrap().to_string();
@@ -3657,14 +3666,17 @@ async fn export_menu_pptx() {
     ed.click_editor("#export-menu").await;
     let labels = ed.menu_labels().await;
     for l in [
-        "Export web page (works offline)",
-        "Export web page and PDF",
-        "Export PowerPoint…",
-        "Export Beamer PDF…",
+        "Web page (works offline)",
+        "Web page and slides PDF",
+        "PowerPoint…",
+        "Beamer PDF…",
+        "Word…",
+        "PDF (Typst)…",
+        "Jupyter notebook…",
     ] {
         assert!(labels.iter().any(|x| x == l), "{l} in {labels:?}");
     }
-    ed.click_menu("Export PowerPoint…").await;
+    ed.click_menu("PowerPoint…").await;
     let sheet = "document.querySelector('dialog.sheet[open]')";
     ed.wait(&format!(
         "{sheet}?.innerText.includes('Placed boxes are in the flow, without their position (p)')"
@@ -3692,4 +3704,52 @@ async fn export_menu_pptx() {
     )
     .await;
     assert_eq!(ed.file(), before, "the deck is unchanged");
+}
+
+/// Spec 011 US2 (T011): with no TeX, Beamer and PDF (LaTeX) are disabled in
+/// Export ▾ and File ▸ Export, with the install command as the tooltip.
+#[tokio::test]
+async fn export_menu_disables_missing_tools() {
+    // no TeX: only Quarto's own folder (symlinks resolved) and the system's, an empty HOME
+    let Some(quarto) = which_quarto() else {
+        return;
+    };
+    let path = format!("{}:/usr/bin:/bin", quarto.parent().unwrap().display());
+    let home = tempfile::tempdir().unwrap();
+    let Some(ed) = Ed::open_with_env(
+        EXPORTS,
+        &[("PATH", &path), ("HOME", home.path().to_str().unwrap())],
+    )
+    .await
+    else {
+        return;
+    };
+    ed.settle().await;
+    ed.click_editor("#export-menu").await;
+    let labels = ed.menu_labels().await;
+    for (l, off) in [
+        ("Beamer PDF…", true),
+        ("PDF (LaTeX)…", true),
+        ("PowerPoint…", false),
+        ("PDF (Typst)…", false),
+    ] {
+        let want = if off {
+            format!("{l} (disabled)")
+        } else {
+            l.to_string()
+        };
+        assert!(labels.contains(&want), "{want} in {labels:?}");
+    }
+    let tip = ed
+        .eval("[...document.querySelectorAll('#ctxmenu li')].find((li) => li.firstChild?.textContent === 'Beamer PDF…')?.title")
+        .await;
+    assert_eq!(tip, "install TeX: quarto install tinytex");
+}
+
+fn which_quarto() -> Option<std::path::PathBuf> {
+    std::env::split_paths(&std::env::var_os("PATH")?)
+        .map(|d| d.join("quarto"))
+        .find(|q| q.is_file())?
+        .canonicalize()
+        .ok()
 }

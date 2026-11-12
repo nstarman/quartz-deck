@@ -81,8 +81,8 @@ tests in `tests/export_formats.rs` (T009's CLI tests are there too).
   - **`tests/cli.rs` `export_list`:** `qd export --list` returns every format in data-model "Format list" order, with `ready` and `hint`; `--list` with `--to` is a usage error.
   - **`tests/cli.rs` `no_tex_fails_fast`:** with `PATH` reduced to Quarto's folder and `/usr/bin:/bin` and `HOME` set to a temp dir, `--to beamer` and `--to pdf` fail with `E_NO_TEX` in under 2 s, write no file, and run no code. `--to typst` still gets past the check.
 - [X] T010 [US2] Implement `tex_found`, the check at the start of `run` (FR-015), `list()` with `ready`/`needs`/`hint`, and `--list` in `src/cli.rs` (plus the `export-formats` shape in `qd schema`). T009 passes.
-- [ ] T011 [P] [US2] Write a failing browser test `export_menu_disables_missing_tools` in `tests/onslide.rs`: the server is started with TeX hidden; Beamer PDF and PDF (LaTeX) are disabled, with "install TeX: quarto install tinytex" as the tooltip; PowerPoint and PDF (Typst) stay enabled.
-- [ ] T012 [US2] The menu reads `qd export --list` through `/api/op` each time it opens and disables formats that aren't ready, with the hint as the tooltip (through `actions.js` `why()`). T011 passes.
+- [X] T011 [P] [US2] Write a failing browser test `export_menu_disables_missing_tools` in `tests/onslide.rs`: the server is started with TeX hidden; Beamer PDF and PDF (LaTeX) are disabled, with "install TeX: quarto install tinytex" as the tooltip; PowerPoint and PDF (Typst) stay enabled.
+- [X] T012 [US2] The menu reads `qd export --list` through `/api/op` each time it opens and disables formats that aren't ready, with the hint as the tooltip (through `actions.js` `why()`). T011 passes.
 
 **Checkpoint**: P1 complete.
 
@@ -92,12 +92,19 @@ tests in `tests/export_formats.rs` (T009's CLI tests are there too).
 
 **Independent Test**: spec US3; quickstart §4.
 
-- [ ] T013 [P] [US3] Write failing tests:
+- [X] T013 [P] [US3] Write failing tests:
   - **`src/formats.rs` units:** losses for docx, odt, html, pdf, typst, gfm, commonmark, ipynb and epub follow the spec's table for the fixture; each column is checked.
   - **`tests/export_formats.rs` `documents`:** on the fixture, docx, typst, gfm and ipynb each contain every marker word. NOTESCOLS follows a "Speaker notes" label; no ". . ."; no `plt.plot` source (echo off). gfm lists `export/carry_files/…png` in `files` and the file exists. ipynb's code cells are code cells. The deck hash is unchanged.
-- [ ] T014 [US3] Add the Documents rows to `FORMATS` (labels "Word", "Web page", "PDF (LaTeX)", "PDF (Typst)", "Markdown (GitHub)", "Markdown (CommonMark)", "Jupyter notebook", "OpenDocument", "EPUB"). Move the Markdown `<stem>_files/` folder next to the output and list it in `files` (FR-009). Add the Documents group to the menu. T013 passes.
+- [X] T014 [US3] Add the Documents rows to `FORMATS` (labels "Word", "Web page", "PDF (LaTeX)", "PDF (Typst)", "Markdown (GitHub)", "Markdown (CommonMark)", "Jupyter notebook", "OpenDocument", "EPUB"). Move the Markdown `<stem>_files/` folder next to the output and list it in `files` (FR-009). Add the Documents group to the menu. T013 passes.
 
 **Checkpoint**: all menu formats work.
+
+As built: Quarto's `<name>_files/` folder (Markdown figures, the HTML
+page's libraries) is merged into `<out>_files/` beside the output and the
+references rewritten, so the HTML page and Markdown of one deck can share
+it. The HTML page is labelled "HTML page" to tell it from the offline web
+page. File ▸ Export is now a submenu with every format (one action each:
+`export-docx`, `export-latex` for `pdf`, …).
 
 ---
 
