@@ -1662,6 +1662,32 @@ async fn popup_run_refused() {
     assert!(ed.file().contains("6 * 8"), "the file keeps the other edit");
 }
 
+/// 013 US3 (T009): an R cell on a knitr deck runs from its ▶; its plot
+/// shows on the slide and the source bar names the engine. Needs R.
+#[tokio::test(flavor = "multi_thread")]
+async fn run_knitr_from_slide() {
+    if !have("Rscript") {
+        return;
+    }
+    let deck =
+        "---\ntitle: R\nformat: revealjs\n---\n\n## Plot {#plot}\n\n```{r}\nplot(1:10)\n```\n";
+    let Some(ed) = Ed::open(deck).await else {
+        return;
+    };
+    ed.go("plot").await;
+    let cell = "[data-qd='plot/0']";
+    ed.hover_slide(cell).await;
+    ed.wait("!document.querySelector('#runbtn').hidden").await;
+    ed.click_editor("#runbtn").await;
+    ed.wait_secs(
+        &format!("!!{FRAME}.querySelector(\"{cell} .qd-output img\")"),
+        120,
+    )
+    .await;
+    ed.wait("document.querySelector('#srcpane .kernel').textContent === 'R · idle'")
+        .await;
+}
+
 /// 013 FR-008: without the session token (another tab, or the presented
 /// deck) no cell shows a ▶.
 #[tokio::test]

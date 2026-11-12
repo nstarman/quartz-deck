@@ -75,7 +75,8 @@ pub enum QdError {
     Env(String),
     #[error("not a code cell: {0}")]
     NotCode(String),
-    #[error("cannot run {0} cells here yet")]
+    /// The deck's engine can't run here: what is missing (spec 013).
+    #[error("cannot run {0}")]
     Engine(String),
     /// A cell raised or was stopped; the run's result is printed on stdout.
     #[error("{0} did not finish")]
@@ -182,7 +183,7 @@ impl QdError {
             Self::Env(_) => "see details for the tool's output",
             Self::NotCode(_) => "only executable cells (```{python}) run; see `kind` in `qd show`",
             Self::Engine(_) => {
-                "only Python cells run for now; `qd render` still executes the others"
+                "install what the message names (a Jupyter kernel, or R with knitr and rmarkdown); Python decks: `qd env init`"
             }
             Self::Run(_) => {
                 "the outputs in the result on stdout show why; fix the cell (`qd replace`) and run it again"

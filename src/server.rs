@@ -5,7 +5,7 @@ use crate::cli::{run_op, show_json, slides_json};
 use crate::deck::{BlockKind, Deck, version_of};
 use crate::error::{QdError, Result};
 use crate::focus::Snapshot;
-use crate::kernel::{Session as Kernel, cell_code};
+use crate::kernel::{Session as Kernel, runnable};
 use crate::outputs::Outputs;
 use crate::render::{preview_copy, render};
 use crate::store::Store;
@@ -427,10 +427,10 @@ async fn api_run(
     if !authorized(&app, &headers) {
         return forbidden();
     }
-    let plan = app
-        .store
-        .read()
-        .and_then(|d| crate::kernel::plan(&d, &body.cells, body.all, body.fresh));
+    let plan = app.store.read().and_then(|d| {
+        let engine = crate::engine::detect(&app.store.path, &d)?;
+        crate::kernel::plan(&d, &engine, &body.cells, body.all, body.fresh)
+    });
     let plan = match plan {
         Ok(p) => p,
         Err(e) => return err_response(e),
@@ -448,18 +448,22 @@ async fn api_run(
     (StatusCode::ACCEPTED, Json(json!({"run": run}))).into_response()
 }
 
-/// The live session, started (in the deck's environment) if there is none.
+/// The live session for the deck's engine, started if there is none (or the
+/// engine changed: the front matter was edited).
 fn kernel(app: &App) -> Result<Arc<Kernel>> {
+    let engine = crate::engine::detect(&app.store.path, &app.store.read()?)?;
     let mut k = app.kernel.lock().unwrap();
-    if let Some(s) = k.as_ref() {
+    if let Some(s) = k.as_ref().filter(|s| s.engine == engine) {
         return Ok(s.clone());
     }
+    k.take(); // a session for another engine ends here
     app.state("starting");
-    let dir = app.dir();
-    let s = crate::env::require(&dir).and_then(|env| Kernel::start(&env, &dir));
-    let s = Arc::new(s.inspect_err(|_| app.state("stopped"))?);
+    let s = Arc::new(Kernel::start(&engine, &app.dir()).inspect_err(|_| app.state("stopped"))?);
     *k = Some(s.clone());
-    app.state("idle");
+    app.emit(
+        "kernel",
+        json!({"state": "idle", "engine": engine.to_json()}),
+    );
     Ok(s)
 }
 
@@ -689,29 +693,36 @@ async fn api_shutdown(State(app): State<Shared>, headers: HeaderMap) -> Response
 /// `GET /api/outputs`: stored outputs per cell, stale ones marked, and every
 /// code cell in order with its lines (the source pane's Run buttons).
 async fn api_outputs(State(app): State<Shared>) -> Response {
-    match app.store.read() {
-        Ok(d) => {
-            let mut r = Outputs::new(&app.store).report(&d);
-            let order: Vec<Value> = d
-                .blocks()
-                .filter(|b| b.kind == BlockKind::Cell)
-                .map(|b| {
-                    json!({"cell": b.id, "lines": d.lines(b.span),
-                    "runnable": matches!(cell_code(&d, b), Ok(Some(_)))})
-                })
-                .collect();
-            r["order"] = json!(order);
-            for rec in r["cells"]
-                .as_object_mut()
-                .into_iter()
-                .flat_map(|m| m.values_mut())
-            {
-                *rec = with_urls(rec.take());
-            }
-            Json(r).into_response()
+    // blocking: the first look at a non-Python deck asks Quarto (seconds)
+    blocking(move || {
+        let d = app.store.read()?;
+        let engine = crate::engine::detect(&app.store.path, &d);
+        let mut r = Outputs::new(&app.store).report(&d);
+        let order: Vec<Value> = d
+            .blocks()
+            .filter(|b| b.kind == BlockKind::Cell)
+            .map(|b| {
+                let ok = engine
+                    .as_ref()
+                    .is_ok_and(|e| matches!(runnable(&d, b, e), Ok(Some(_))));
+                json!({"cell": b.id, "lines": d.lines(b.span), "runnable": ok})
+            })
+            .collect();
+        r["order"] = json!(order);
+        r["engine"] = match &engine {
+            Ok(e) => e.to_json(),
+            Err(e) => e.to_json(),
+        };
+        for rec in r["cells"]
+            .as_object_mut()
+            .into_iter()
+            .flat_map(|m| m.values_mut())
+        {
+            *rec = with_urls(rec.take());
         }
-        Err(e) => err_response(e),
-    }
+        Ok(r)
+    })
+    .await
 }
 
 /// `GET /outputs/<file>`: a stored figure or full text.
