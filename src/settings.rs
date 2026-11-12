@@ -96,6 +96,20 @@ const DEFS: &[Def] = &[
         Kind::Bool,
         || json!(true),
     ),
+    def(
+        "history.commit",
+        "Save as git commit",
+        "When the deck is in a git repository, edits are committed (the deck file only) after a pause. Commits follow your git settings, signing included.",
+        Kind::Bool,
+        || json!(false),
+    ),
+    def(
+        "history.pause",
+        "Pause before committing (seconds)",
+        "Edits closer together than this become one commit (5 to 600).",
+        Kind::Number,
+        || json!(30),
+    ),
     ui("ui.source_width", Kind::Number, || Value::Null),
     ui("ui.source_was_open", Kind::Bool, || json!(false)),
     ui("ui.source_full", Kind::Bool, || json!(false)),
@@ -246,7 +260,7 @@ mod tests {
         assert_eq!(v["confirm.slide_delete"], true);
         assert_eq!(v["placement.snap"], true);
         assert!(notices.is_empty());
-        assert_eq!(defs().as_array().unwrap().len(), 7, "ui.* are not shown");
+        assert_eq!(defs().as_array().unwrap().len(), 9, "ui.* are not shown");
     }
 
     #[test]

@@ -24,20 +24,20 @@ relative to the repo root.
 
 ## Phase 1: Setup
 
-- [ ] T001 Add `src/history.rs` (`pub mod history;` in `src/lib.rs`), `src/ui/history.js` (empty module, served like the other `/ui/` modules), and a test helper `tests/common/mod.rs::git_repo(dir)` that runs `git init`, sets `user.name`, `user.email` and `commit.gpgsign false` locally, and returns a `git(args)` runner.
+- [X] T001 Add `src/history.rs` (`pub mod history;` in `src/lib.rs`), `src/ui/history.js` (empty module, served like the other `/ui/` modules), and a test helper `tests/common/mod.rs::git_repo(dir)` that runs `git init`, sets `user.name`, `user.email` and `commit.gpgsign false` locally, and returns a `git(args)` runner.
 
 ---
 
 ## Phase 2: Foundational (blocks every story)
 
-- [ ] T002 Write failing tests:
+- [X] T002 Write failing tests:
   - **`src/history.rs` units** (in a temp repository):
     - `repo()` finds the top level, the git dir and the deck's relative path from a subfolder, and returns `None` outside git;
     - `git()` maps a missing binary to `E_NO_GIT` and a failure to `E_GIT` with stderr;
     - `busy()` reports a merge (`MERGE_HEAD`), a rebase (`rebase-merge/`) and a detached head (research R3).
   - **`src/store.rs` units**: a journal entry records `by` (`person`/`agent`); old entries without it read as `agent`; `entries_since(t)` returns the entries newer than `t`, in order.
   - **`src/settings.rs`**: `history.commit` (Bool, false) and `history.pause` (Number, 30, 5–600) exist; the settings count in `src/settings.rs` and `tests/serve.rs` goes up by 2.
-- [ ] T003 Implement `git`, `Repo`, `repo`, `busy` in `src/history.rs`; errors `NoGit` (`E_NO_GIT`, hint "install git"), `NoRepo` (`E_NO_REPO`, hint "`qd history --init`"), `Git(String)` (`E_GIT`) in `src/error.rs`; the journal `by` and `entries_since` in `src/store.rs`, with `/api/op` edits journaled as `person` (`src/server.rs`); the two settings in `src/settings.rs`. T002 passes.
+- [X] T003 Implement `git`, `Repo`, `repo`, `busy` in `src/history.rs`; errors `NoGit` (`E_NO_GIT`, hint "install git"), `NoRepo` (`E_NO_REPO`, hint "`qd history --init`"), `Git(String)` (`E_GIT`) in `src/error.rs`; the journal `by` and `entries_since` in `src/store.rs`, with `/api/op` edits journaled as `person` (`src/server.rs`); the two settings in `src/settings.rs`. T002 passes.
 
 **Checkpoint**: git and the repository state are readable; nothing user-facing yet.
 
@@ -47,21 +47,28 @@ relative to the repo root.
 
 **Independent Test**: spec US1; quickstart §1, §5.
 
-- [ ] T004 [P] [US1] Write failing tests:
+- [X] T004 [P] [US1] Write failing tests:
   - **`tests/history.rs` (new) `history_lists_versions`**: a repository with a deck in `talks/` and five commits (two with `qd:` subjects, one a `git mv` rename). `qd history` returns all five, newest first, with author, time, message, `qd` and the path at each commit. An uncommitted change adds `uncommitted` first. `--limit 2` gives two and `"more": true`.
   - **`history_per_slide`**: `--slide one` lists only the commits where slide `one`'s text changed, matched by id across a reorder.
   - **`history_outside_git`**: `E_NO_REPO` with the hint. `qd history --init` creates the repository in the deck's folder and commits only the deck. A second `--init` is `E_INVALID_ARG`.
   - **`render_old_version`**: `history::render_version` on an old revision renders from the snapshot (an image changed since then shows the old file), runs no code (a cell that would write a marker file doesn't), and is reused from the cache on the second call.
-- [ ] T005 [US1] Implement `log`, `text_at`, `log_slide`, `init`, `render_version` (snapshot via `git archive --format=zip`, unzip, `render::render(..., preview: true)`) in `src/history.rs`. Add `qd history [--slide|--element] [--limit] [--skip] [--init]` in `src/cli.rs`, with the `history` shape in `qd schema`. Add `GET /api/history`, `POST /api/history/render` (token), `POST /api/history/init` (token) and `GET /history/<rev>/…` in `src/server.rs`. T004 passes.
-- [ ] T006 [P] [US1] Write a failing browser test `history_panel` in `tests/onslide.rs`:
+- [X] T005 [US1] Implement `log`, `text_at`, `log_slide`, `init`, `render_version` (snapshot via `git archive --format=zip`, unzip, `render::render(..., preview: true)`) in `src/history.rs`. Add `qd history [--slide|--element] [--limit] [--skip] [--init]` in `src/cli.rs`, with the `history` shape in `qd schema`. Add `GET /api/history`, `POST /api/history/render` (token), `POST /api/history/init` (token) and `GET /history/<rev>/…` in `src/server.rs`. T004 passes.
+- [X] T006 [P] [US1] Write a failing browser test `history_panel` in `tests/onslide.rs`:
   - View ▸ History lists the versions, with a qd badge on `qd:` commits;
   - selecting one shows the second preview with that version's title on slide 1;
   - the slide list marks the changed slides;
   - ← → step both previews;
   - outside git, the panel offers **Start a history here**, and clicking it creates the repository.
-- [ ] T007 [US1] Build the History panel and the second preview in `src/ui/history.js`. Add the `history` action (View, ⌥⌘H) in `src/ui/actions.json`, the layout in `src/ui/editor.css` / `index.html`, and the wiring in `src/ui/editor.js`. T006 passes.
+- [X] T007 [US1] Build the History panel and the second preview in `src/ui/history.js`. Add the `history` action (View, ⌥⌘H) in `src/ui/actions.json`, the layout in `src/ui/editor.css` / `index.html`, and the wiring in `src/ui/editor.js`. T006 passes.
 
 **Checkpoint**: US1 works alone (MVP): any deck already in git can be looked through, in the editor and with `qd history`.
+
+As built: the History panel is an `aside#history` beside the slide list, and
+the version opens in `#then` beside `#preview`. `/api/history/render` also
+returns `changed` (the current slides that differ, `history::changed_since`)
+for the marks. The CSS rule that hid every `aside` while the properties panel
+is closed now hides only `#panel`. Arrow keys move the current deck; the
+version beside follows its slide (by id), so no keys of its own were needed.
 
 ---
 

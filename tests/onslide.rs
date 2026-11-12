@@ -3782,3 +3782,68 @@ async fn export_other_format() {
     )
     .await;
 }
+
+/// Spec 012 US1 (T006): View ▸ History lists the deck's versions; one of them
+/// opens beside the current deck, rendered without running code, with the
+/// slides changed since then marked. Outside git, the panel offers to start
+/// a history (not clicked here: it commits with the machine's own git config).
+#[tokio::test]
+async fn history_panel() {
+    let v1 = "---\ntitle: T\n---\n\n## A {#a}\n\nOLDTEXT\n\n## B {#b}\n\nSame\n";
+    let Some(ed) = Ed::open(v1).await else {
+        return;
+    };
+    ed.settle().await;
+    let toggle = "import('/ui/keys.js').then((k) => k.run('history'))";
+    ed.eval(toggle).await;
+    ed.wait("!!document.querySelector('#history button.start')")
+        .await;
+    ed.eval(toggle).await; // closed
+
+    let dir = ed.dir.path();
+    let git = common::git_repo(dir);
+    git(&["add", "deck.qmd"]);
+    git(&["commit", "-qm", "first draft"]);
+    std::fs::write(dir.join("deck.qmd"), v1.replace("OLDTEXT", "NEWTEXT")).unwrap();
+    git(&["commit", "-qam", "qd: edit a/0 (person)"]);
+    ed.wait_file(|f| f.contains("NEWTEXT"), "the new text")
+        .await;
+    ed.settle().await;
+
+    ed.eval(toggle).await;
+    let list =
+        "[...document.querySelectorAll('#history .msg')].map((m) => m.firstChild.textContent)";
+    ed.wait(&format!(
+        "{list}.join('|') === 'qd: edit a/0 (person)|first draft'"
+    ))
+    .await;
+    assert_eq!(
+        ed.eval("document.querySelectorAll('#history .qd').length")
+            .await,
+        1,
+        "the qd badge"
+    );
+    ed.click_js("(() => { const b = [...document.querySelectorAll('#history button[data-rev]')].at(-1); b.scrollIntoView(); const r = b.getBoundingClientRect(); return [r.left + 10, r.top + 10]; })()")
+        .await;
+    ed.wait_secs(
+        "!document.querySelector('#then').hidden && !!document.querySelector('#then iframe').contentDocument?.body?.innerText.includes('OLDTEXT')",
+        120,
+    )
+    .await;
+    assert!(
+        ed.eval("document.querySelector('#then figcaption').textContent")
+            .await
+            .as_str()
+            .unwrap()
+            .starts_with("first draft"),
+    );
+    // slide a changed since then, b didn't
+    ed.wait("document.querySelector('#slides li[data-id=a]')?.classList.contains('changed') && !document.querySelector('#slides li[data-id=b]').classList.contains('changed')")
+        .await;
+    // closing the panel closes the version beside
+    ed.eval(toggle).await;
+    ed.wait(
+        "document.querySelector('#then').hidden && !document.querySelector('#slides li.changed')",
+    )
+    .await;
+}

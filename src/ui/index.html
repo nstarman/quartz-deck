@@ -26,6 +26,11 @@
     <ol id="slides"></ol>
     <button type="button" id="add-slide" class="wide" title="Add a slide at the end" aria-label="Add a slide at the end">+</button>
   </nav>
+  <aside id="history" aria-label="History" hidden>
+    <h2>History</h2>
+    <p class="status" role="status"></p>
+    <ol class="versions"></ol>
+  </aside>
   <section id="srcpane" aria-label="Source" hidden>
     <div class="srcbar">
       <strong>Source</strong>
@@ -59,7 +64,10 @@
       <label class="inline"><input type="checkbox" name="hidden" aria-label="Hidden in the presentation"> Hidden</label>
       <button type="button" data-act="more" aria-haspopup="menu" title="More slide actions (or right-click the slide)">⋯</button>
     </div>
-    <iframe id="preview" title="Slide preview"></iframe>
+    <div class="previews">
+      <iframe id="preview" title="Slide preview"></iframe>
+      <figure id="then" hidden><figcaption></figcaption><iframe title="The deck as it was"></iframe></figure>
+    </div>
   </section>
   <aside id="panel" aria-label="Properties"></aside>
 </main>

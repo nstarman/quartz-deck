@@ -36,3 +36,33 @@ pub fn leftovers(dir: &Path) -> Vec<String> {
         .filter(|n| n.contains(".qd-") && n != ".qd-export")
         .collect()
 }
+
+/// A git repository in `dir` with a local user and signing off (so the
+/// person's own signing never prompts during tests); returns a runner of
+/// `git -C dir args…` that panics on failure and gives stdout.
+pub fn git_repo(dir: &Path) -> impl Fn(&[&str]) -> String + '_ {
+    let git = move |args: &[&str]| {
+        let o = Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            o.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&o.stderr)
+        );
+        String::from_utf8_lossy(&o.stdout).into_owned()
+    };
+    git(&["init", "-q", "-b", "main"]);
+    for (k, v) in [
+        ("user.name", "Tester"),
+        ("user.email", "tester@example.com"),
+        ("commit.gpgsign", "false"),
+        ("tag.gpgsign", "false"),
+    ] {
+        git(&["config", k, v]);
+    }
+    git
+}

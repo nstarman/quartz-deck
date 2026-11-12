@@ -19,6 +19,33 @@ struct Entry {
     version_after: String,
     before_text: String,
     after_text: String,
+    /// Who made the edit (spec 012 commit messages): `person` through the
+    /// editor, `agent` from a CLI process; entries written before 012 have none.
+    #[serde(default = "agent")]
+    by: String,
+}
+
+fn agent() -> String {
+    "agent".into()
+}
+
+thread_local! {
+    static PERSON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` with its edits journaled as the person's (the editor's `/api/op`).
+pub fn as_person<T>(f: impl FnOnce() -> T) -> T {
+    PERSON.with(|p| p.set(true));
+    let r = f();
+    PERSON.with(|p| p.set(false));
+    r
+}
+
+/// An edit in the undo journal, as history's commit messages read it.
+pub struct Edit {
+    pub ts: u64,
+    pub op: String,
+    pub by: String,
 }
 
 #[derive(Clone)]
@@ -229,6 +256,12 @@ impl Store {
             version_after: version.clone(),
             before_text: before.text.clone(),
             after_text: text.into(),
+            by: if PERSON.with(|p| p.get()) {
+                "person"
+            } else {
+                "agent"
+            }
+            .into(),
         };
         self.push("undo", &entry)?;
         let _ = fs::remove_file(self.journal("redo"));
@@ -261,6 +294,21 @@ impl Store {
         let v = self.replace(&current, &e.after_text)?;
         self.push("undo", &e)?;
         Ok((v, e.op))
+    }
+
+    /// The undo journal's edits made after `ts` (Unix seconds), oldest first.
+    pub fn edits_since(&self, ts: u64) -> Vec<Edit> {
+        fs::read_to_string(self.journal("undo"))
+            .unwrap_or_default()
+            .lines()
+            .filter_map(|l| serde_json::from_str::<Entry>(l).ok())
+            .filter(|e| e.ts > ts)
+            .map(|e| Edit {
+                ts: e.ts,
+                op: e.op,
+                by: e.by,
+            })
+            .collect()
     }
 
     fn journal(&self, name: &str) -> PathBuf {
@@ -354,6 +402,25 @@ mod tests {
         let v = version_of(b"abc");
         assert_eq!(v.len(), 16);
         assert_eq!(v, "ba7816bf8f01cfea");
+    }
+
+    #[test]
+    fn edits_record_who_made_them() {
+        let (_d, s) = setup("a\n");
+        let d = s.read().unwrap();
+        s.write(&d, "b\n", "edit one").unwrap();
+        let d = s.read().unwrap();
+        as_person(|| s.write(&d, "c\n", "title one")).unwrap();
+        let e = s.edits_since(0);
+        let got: Vec<(&str, &str)> = e.iter().map(|e| (e.op.as_str(), e.by.as_str())).collect();
+        assert_eq!(got, [("edit one", "agent"), ("title one", "person")]);
+        assert!(s.edits_since(u64::MAX).is_empty());
+        // entries written before 012 have no `by`: an agent's
+        let old: Entry = serde_json::from_str(
+            r#"{"ts":1,"op":"x","version_before":"a","version_after":"b","before_text":"","after_text":""}"#,
+        )
+        .unwrap();
+        assert_eq!(old.by, "agent");
     }
 
     #[test]
