@@ -181,8 +181,8 @@ const WIDGET_KEYS: &[(&str, usize, &str)] = &[
     ),
     (
         "source.js",
-        2,
-        "the source popup's own Esc and ⌘Enter (moves into the list with US4, T020)",
+        3,
+        "the source popup's own Esc, ⌘Enter and ⇧Enter Run on a code cell (013)",
     ),
     // form ⌘Enter submit; Esc closing a menu while focus is in the preview; the edit
     // session's commit/leave/indent keys (move with US4, T020); the splitter's arrows

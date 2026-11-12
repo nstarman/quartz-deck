@@ -8,6 +8,7 @@ import * as keys from '/ui/keys.js';
 import * as settings from '/ui/settings.js';
 import { submenu } from '/ui/menubar.js';
 import * as hist from '/ui/history.js';
+import * as runslide from '/ui/runslide.js';
 import { openMenu, closeMenu, menuOpen } from '/ui/menu.js';
 import { makeList } from '/ui/list.js';
 import * as pane from '/ui/pane.js';
@@ -196,6 +197,13 @@ const PREVIEW_CSS = `html:not(.qd-present) {
   section > h1:hover, section > h2:hover, section > h3:hover, #title-slide :is(.title, .subtitle, .date):hover {
     outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; cursor: text; }
   .qd-off { outline: 2px dashed #b3261e; outline-offset: 2px; }
+  /* a cell that shows nothing yet (code hidden, never run): something to point at and run (spec 013) */
+  .qd-cell:not(:has(.qd-output, pre))::before { content: 'Code cell, not run yet'; display: block; color: #9a9aa0;
+    font-size: .5em; border: 2px dashed #b9b9bf; border-radius: 6px; padding: .3em .6em; }
+  /* a cell's run state (spec 013): a bar at its left edge */
+  .qd-running { box-shadow: inset 4px 0 0 #c58a00; }
+  .qd-error { box-shadow: inset 4px 0 0 #b3261e; }
+  .qd-stopped { box-shadow: inset 4px 0 0 #8a8a90; }
   .qd-guide { position: absolute; z-index: 1001; pointer-events: none; background: #d6249f; }
   .qd-overlay { position: absolute; box-sizing: border-box; border: 2px solid #2a5bd7; cursor: move;
     touch-action: none; z-index: 1000; }
@@ -532,7 +540,7 @@ function hookFrame() {
     const f = frame.getBoundingClientRect();
     contextMenuAt(e.target.closest('[data-qd]'), sec, f.left + e.clientX, f.top + e.clientY);
   });
-  doc.addEventListener('mousemove', (e) => hoverAt(e.target), { passive: true });
+  doc.addEventListener('mousemove', (e) => { hoverAt(e.target); runslide.hover(e.target); }, { passive: true });
   doc.addEventListener('mousedown', () => closeMenu());
 
   const onReady = () => {
@@ -563,6 +571,7 @@ function hookFrame() {
     if (state.editAfterRender?.version === state.loading) openInserted(state.editAfterRender);
     slideList.refresh();
     hist.mark();
+    runslide.mark();
     markOffSlide(w);
     w.MathJax?.startup?.promise?.then(() => slideList.refresh()); // math typesets after ready
     onSlide();
@@ -1319,7 +1328,7 @@ function pageRect(el) {
 
 function startSourceSession(s, text) {
   openSession(s);
-  openSource(pageRect(s.root), text, { save: () => saveSession(), cancel: () => endSession(s, false) });
+  openSource(pageRect(s.root), text, { save: () => saveSession(), cancel: () => endSession(s, false), run: s.cell ? () => runSource(s) : undefined });
   say('Editing source — ⌘Enter, Esc or click elsewhere saves; Cancel discards');
 }
 
@@ -1335,7 +1344,8 @@ async function beginSource(el, draft = null, base = null) {
     source = block.text;
     hash = block.hash;
   }
-  startSourceSession({ kind: 'block', mode: 'source', root: el, ref, source, hash }, draft ?? source);
+  const cell = !runExternal && !!run.token && run.runnable(ref);
+  startSourceSession({ kind: 'block', mode: 'source', root: el, ref, source, hash, cell }, draft ?? source);
   return true;
 }
 
@@ -1421,6 +1431,23 @@ async function saveSource(s) {
   savedNote(s.root);
   endSession(s, true);
   await fetchDeck();
+}
+
+/** Run in the source pop-up on a code cell (spec 013 US2): save the text if it
+ *  changed (still conflict-checked), keep the pop-up open, then run the cell. */
+async function runSource(s) {
+  if (s.saving) return;
+  const md = sourceText();
+  if (md.trim() !== s.source.trim()) {
+    s.saving = true;
+    const r = await op('edit', { element: s.ref, md, 'expect-text': s.hash }, { fileExpect: false });
+    s.saving = false;
+    if (!r) { sourceError(op.lastError?.message || 'not saved'); return; } // nothing runs (FR-006)
+    const b = await fetchBlock(s.ref); // the next save is checked against this text
+    Object.assign(s, { source: b?.text ?? md, hash: b?.hash ?? s.hash });
+    fetchDeck();
+  }
+  run.runCells([s.ref]);
 }
 
 // test/automation hook (tests/onslide.rs): read-only view of the open edit
@@ -1540,6 +1567,7 @@ elbar.addEventListener('click', async (e) => {
 });
 
 async function placeElbar() {
+  runslide.place();
   const el = !state.session && state.sel && elOf(state.sel);
   if (!el) { elbar.hidden = true; return; }
   const t = await elementTarget(state.sel);
@@ -1701,7 +1729,11 @@ const setTheme = (t) => { if (['light', 'dark', 'hc'].includes(t)) document.docu
 setTheme(framed.get('theme'));
 const runExternal = framed.get('run') === 'external';
 document.documentElement.classList.toggle('run-external', runExternal);
-if (!runExternal) run.initRun({ say, flush: pane.save });
+if (!runExternal) {
+  const selected = () => (state.session ? null : state.sel);
+  run.initRun({ say, flush: pane.save, selected, changed: runslide.mark });
+  runslide.initRunSlide({ elOf, frame, pageRect, selected }, es);
+}
 if (keys.framed) {
   // only the panel that framed this page, and only navigation/display — never edits or code
   addEventListener('message', (e) => {

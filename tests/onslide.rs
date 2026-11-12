@@ -500,8 +500,7 @@ impl Ed {
     }
     /// Hover a preview element until its + / drag handles show.
     async fn hover(&self, sel: &str) {
-        let (x, y) = self.slide_point(sel).await;
-        self.page.move_mouse(Point { x, y }).await.unwrap();
+        self.hover_slide(sel).await;
         self.wait("!document.querySelector('#hoverbar').hidden")
             .await;
     }
@@ -1450,6 +1449,248 @@ async fn run_cells_in_the_editor() {
     )
     .await;
     assert_eq!(ed.file(), RUN_DECK, "running never changes the deck");
+}
+
+/// The preview frame's document, for the run-on-slide tests.
+const FRAME: &str = "document.querySelector('#preview').contentDocument";
+
+impl Ed {
+    /// Move the mouse over a preview element (no click).
+    async fn hover_slide(&self, sel: &str) {
+        let (x, y) = self.slide_point(sel).await;
+        self.page.move_mouse(Point { x, y }).await.unwrap();
+    }
+}
+
+/// 013 US1 (T004): a ▶ on a cell on the slide runs it; the new output is
+/// swapped in place before the preview re-renders, on the same slide; ⇧Enter
+/// runs the selected cell. Needs uv.
+#[tokio::test(flavor = "multi_thread")]
+async fn run_from_slide() {
+    if !have("uv") {
+        return;
+    }
+    let Some(ed) = Ed::open(RUN_DECK).await else {
+        return;
+    };
+    ed.cli(&["env", "init"]);
+    ed.go("print").await;
+    let cell = "[data-qd='print/0']";
+    ed.hover_slide(cell).await;
+    ed.wait("!document.querySelector('#runbtn').hidden && document.querySelector('#runbtn').getAttribute('aria-label') === 'Run cell print/0'")
+        .await;
+    // a mark on the frame's window: gone if the preview re-renders
+    ed.eval(&format!("{FRAME}.defaultView.__same = true")).await;
+    ed.click_editor("#runbtn").await;
+    ed.wait_secs(
+        &format!("{FRAME}.querySelector(\"{cell}\")?.classList.contains('qd-running')"),
+        30,
+    )
+    .await;
+    ed.wait_secs(
+        &format!("{FRAME}.defaultView.__same === true && !!{FRAME}.querySelector(\"{cell} .qd-output\")?.textContent.includes('42')"),
+        120,
+    )
+    .await;
+    assert_eq!(
+        ed.eval(&format!(
+            "{FRAME}.querySelector(\"{cell}\").classList.contains('qd-running')"
+        ))
+        .await,
+        false
+    );
+    assert_eq!(
+        ed.eval("document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide().id")
+            .await,
+        "print",
+        "the same slide"
+    );
+    // ⇧Enter runs the selected cell
+    ed.settle().await;
+    ed.select(cell).await;
+    ed.key("Enter", "Enter", 13, 8).await;
+    ed.wait_secs(
+        &format!("{FRAME}.querySelector(\"{cell} .qd-output\")?.dataset.counter === '2'"),
+        60,
+    )
+    .await;
+    assert_eq!(ed.file(), RUN_DECK, "running never changes the deck");
+}
+
+/// 013 US1 (T004): a cell's state on the slide: error, stale after an
+/// edit, and stopped by its ■. Needs uv.
+#[tokio::test(flavor = "multi_thread")]
+async fn run_states() {
+    if !have("uv") {
+        return;
+    }
+    let Some(ed) = Ed::open(RUN_DECK).await else {
+        return;
+    };
+    ed.cli(&["env", "init"]);
+    // an error
+    ed.go("fails").await;
+    let fails = "[data-qd='fails/0']";
+    ed.select(fails).await;
+    ed.key("Enter", "Enter", 13, 8).await;
+    ed.wait_secs(
+        &format!("{FRAME}.querySelector(\"{fails}\")?.classList.contains('qd-error') && {FRAME}.querySelector(\"{fails} .qd-output\").textContent.includes('ZeroDivisionError')"),
+        120,
+    )
+    .await;
+    // stopped by the ■ on the running cell
+    ed.go("slow").await;
+    let slow = "[data-qd='slow/0']";
+    ed.select(slow).await;
+    ed.key("Enter", "Enter", 13, 8).await;
+    ed.wait(&format!(
+        "{FRAME}.querySelector(\"{slow}\")?.classList.contains('qd-running')"
+    ))
+    .await;
+    ed.wait("document.querySelector('#runbtn').getAttribute('aria-label') === 'Stop cell slow/0'")
+        .await;
+    ed.click_editor("#runbtn").await;
+    ed.wait_secs(
+        &format!("{FRAME}.querySelector(\"{slow}\")?.classList.contains('qd-stopped')"),
+        30,
+    )
+    .await;
+    // stale once the cell's code changes
+    ed.cli(&["run", "print/0"]);
+    ed.cli(&["replace", "--old", "6 * 7", "--new", "6 * 8"]);
+    ed.go("print").await;
+    ed.wait_secs(
+        &format!("{FRAME}.querySelector(\"[data-qd='print/0']\")?.classList.contains('qd-stale')"),
+        60,
+    )
+    .await;
+}
+
+/// The source pop-up on cell `sel`, opened from its menu (Edit markdown).
+impl Ed {
+    async fn popup(&self, sel: &str) {
+        self.right_click(self.slide_point(sel).await).await;
+        self.click_menu("Edit markdown").await;
+        self.src_open().await;
+    }
+    /// Replace the pop-up's text (as typing would) and press ⇧Enter in it.
+    async fn popup_run(&self, text: &str) {
+        self.set_source(text).await;
+        self.key("Enter", "Enter", 13, 8).await;
+    }
+}
+
+/// 013 US2 (T006): Run in the source pop-up saves the edit (one undo step),
+/// runs the cell and keeps the pop-up open; unchanged text runs without
+/// writing. Needs uv.
+#[tokio::test(flavor = "multi_thread")]
+async fn popup_run() {
+    if !have("uv") {
+        return;
+    }
+    let Some(ed) = Ed::open(RUN_DECK).await else {
+        return;
+    };
+    ed.cli(&["env", "init"]);
+    ed.go("print").await;
+    let cell = "[data-qd='print/0']";
+    ed.popup(cell).await;
+    assert_eq!(
+        ed.eval(
+            "(b => !!b && !b.hidden && b.textContent)(document.querySelector('#srcedit .run'))"
+        )
+        .await,
+        "Run ⇧Enter"
+    );
+    ed.popup_run("```{python}\nprint(6 * 9)\n```").await;
+    ed.wait_file(|f| f.contains("print(6 * 9)"), "the edit saved")
+        .await;
+    ed.wait_secs(
+        &format!("!!{FRAME}.querySelector(\"{cell} .qd-output\")?.textContent.includes('54')"),
+        120,
+    )
+    .await;
+    assert_eq!(
+        ed.eval("document.querySelector('#srcedit').hidden").await,
+        false,
+        "the pop-up stays open"
+    );
+    // unchanged: runs again, writes nothing
+    let version = ed.cli(&["slides"])["version"].clone();
+    ed.popup_run("```{python}\nprint(6 * 9)\n```").await;
+    ed.wait_secs(
+        &format!("{FRAME}.querySelector(\"{cell} .qd-output\")?.dataset.counter === '2'"),
+        60,
+    )
+    .await;
+    assert_eq!(ed.cli(&["slides"])["version"], version);
+    // close it; one undo step takes the edit back
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("document.querySelector('#srcedit').hidden").await;
+    ed.undo_to(RUN_DECK).await;
+}
+
+/// 013 US2 (T006): when the save is refused (the cell changed underneath),
+/// Run says why in the pop-up, keeps the text and runs nothing. Needs uv.
+#[tokio::test(flavor = "multi_thread")]
+async fn popup_run_refused() {
+    if !have("uv") {
+        return;
+    }
+    let Some(ed) = Ed::open(RUN_DECK).await else {
+        return;
+    };
+    ed.cli(&["env", "init"]);
+    ed.go("print").await;
+    ed.popup("[data-qd='print/0']").await;
+    ed.cli(&["replace", "--old", "6 * 7", "--new", "6 * 8"]);
+    ed.popup_run("```{python}\nprint(6 * 9)\n```").await;
+    ed.wait("!!document.querySelector('#srcedit .err').textContent")
+        .await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert_eq!(
+        ed.eval(&format!("{SRC}.value")).await,
+        "```{python}\nprint(6 * 9)\n```",
+        "the typed text is kept"
+    );
+    assert_eq!(
+        ed.eval("fetch('/api/outputs').then((r) => r.json()).then((o) => !!o.cells['print/0'])")
+            .await,
+        false,
+        "nothing ran"
+    );
+    assert!(ed.file().contains("6 * 8"), "the file keeps the other edit");
+}
+
+/// 013 FR-008: without the session token (another tab, or the presented
+/// deck) no cell shows a ▶.
+#[tokio::test]
+async fn no_run_without_token() {
+    let Some(ed) = Ed::open(RUN_DECK).await else {
+        return;
+    };
+    ed.go("print").await;
+    ed.hover_slide("[data-qd='print/0']").await;
+    ed.wait("!document.querySelector('#runbtn').hidden").await;
+    // the same editor without its token (a link without #t=)
+    ed.eval("sessionStorage.clear()").await;
+    let origin = ed.eval("location.origin").await;
+    ed.page.reload().await.unwrap();
+    ed.wait_secs(READY, 60).await;
+    ed.go("print").await;
+    ed.hover_slide("[data-qd='print/0']").await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(
+        ed.eval("document.querySelector('#runbtn')?.hidden ?? true")
+            .await,
+        true,
+        "no ▶ without the token"
+    );
+    // the presented deck has no editor at all
+    let present = format!("{}/present/", origin.as_str().unwrap());
+    ed.page.execute(NavigateParams::new(present)).await.unwrap();
+    ed.wait_secs("!!window.Reveal?.isReady?.()", 60).await;
+    assert_eq!(ed.eval("!!document.querySelector('#runbtn')").await, false);
 }
 
 /// Spec 004 US5 (T032): outputs survive a restart of `qd serve` and show in
