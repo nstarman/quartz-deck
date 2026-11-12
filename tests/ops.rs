@@ -700,3 +700,193 @@ fn move_and_rm_several_slides() {
     let a = Deck::parse(ops::apply(&d.text, &p).unwrap());
     assert_eq!(ids(&a), ["", "Conclusion"]);
 }
+
+/// Spec 009 US1: a slide from a layout — its boxes with fresh ids, scaled to
+/// the deck's slide size, placeholders empty; filling one drops its markers.
+#[test]
+fn add_from_a_layout_and_fill_it() {
+    use quartz_deck::layouts;
+    let d = deck();
+    let none = std::path::Path::new("/nonexistent");
+    let l = layouts::find("two-columns", none, none).unwrap();
+    let (p, ph) = ops::add_layout(&d, &l, Some("Before and after"), Pos::After("intro")).unwrap();
+    let a = Deck::parse(ops::apply(&d.text, &p).unwrap());
+    let s = a.slide("before-and-after").unwrap();
+    assert_eq!(a.slides[1].id, "before-and-after", "after intro");
+    assert_eq!(s.blocks.len(), 2);
+    for (i, b) in s.blocks.iter().enumerate() {
+        let text = a.slice(b.span);
+        assert!(
+            text.contains(".qd-ph") && text.contains("ph=text"),
+            "{text}"
+        );
+        assert!(
+            !text.contains("<!--"),
+            "the purpose comment is not written: {text}"
+        );
+        assert!(b.id_explicit && b.id.starts_with("b-"));
+        assert_eq!(ph[i]["id"], b.id);
+        assert_eq!(ph[i]["index"], i);
+    }
+    assert_eq!(ph[1]["purpose"], "right column");
+    assert!(
+        a.slice(s.blocks[1].span)
+            .contains("left=540 top=170 width=450 height=470")
+    );
+    unique_ids(&a);
+
+    // another slide size: scaled
+    let wide = Deck::parse(format!(
+        "---\nformat:\n  revealjs:\n    width: 1280\n    height: 720\n---\n\n{}",
+        d.text
+            .split_once("---\n\n")
+            .map_or(d.text.as_str(), |x| x.1)
+    ));
+    let (p, _) = ops::add_layout(&wide, &l, None, Pos::End).unwrap();
+    assert!(
+        ops::apply(&wide.text, &p)
+            .unwrap()
+            .contains("left=658 top=175 width=549 height=483")
+    );
+
+    // filling: plain markdown keeps the box, without the markers
+    let r = format!("{}/1", s.id);
+    let p = ops::edit(&a, &r, "Users doubled.", None).unwrap();
+    let f = Deck::parse(ops::apply(&a.text, &p).unwrap());
+    let box1 = f.slice(f.element(&r).unwrap().1.span);
+    assert!(
+        box1.starts_with("::: {#b-")
+            && box1.contains(".absolute")
+            && box1.ends_with("Users doubled.\n:::"),
+        "{box1}"
+    );
+    assert!(!box1.contains("qd-ph") && !box1.contains("ph="), "{box1}");
+    // the editor sends the whole block: the markers go too
+    let whole = format!(
+        "{}\nTyped.\n:::",
+        a.slice(s.blocks[0].span).lines().next().unwrap()
+    );
+    let p = ops::edit(&a, &format!("{}/0", s.id), &whole, None).unwrap();
+    assert!(
+        !ops::apply(&a.text, &p)
+            .unwrap()
+            .contains("qd-ph ph=text left=60")
+    );
+}
+
+/// Spec 009 US2: placing wraps an element (or positions an image) with its
+/// bytes unchanged; unplacing restores the file byte for byte (SC-003).
+#[test]
+fn place_and_unplace_round_trip() {
+    use quartz_deck::deck::BlockKind;
+    let src = "---\nformat: revealjs\n---\n\n## A {#a}\n\nA paragraph.\n\n- one\n- two\n\n> a quote\n\n$$\nx^2\n$$\n\n```{python}\n1 + 1\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n![](p.png){.fragment}\n\n![](q.png)\n\n![](r.png){width=\"50%\"}\n";
+    let d = Deck::parse(src.into());
+    let n = d.slides[0].blocks.len();
+    assert_eq!(n, 9);
+    for i in 0..n {
+        let r = format!("a/{i}");
+        let orig = d.slice(d.slides[0].blocks[i].span);
+        let p = ops::block_place(&d, &r, (600.0, 400.0), Some(300.0), None).unwrap();
+        let placed = Deck::parse(ops::apply(&d.text, &p).unwrap());
+        let b = &placed.slides[0].blocks[i];
+        let t = placed.slice(b.span);
+        assert_eq!(b.kind, BlockKind::Box, "{t}");
+        assert!(t.contains(".absolute left=600 top=400 width=300}"), "{t}");
+        assert!(!t.contains("height"), "text keeps its natural height: {t}");
+        assert_eq!(p.target, b.id);
+        if !orig.starts_with("![](p") && !orig.starts_with("![](q") {
+            assert!(t.contains(orig), "the block's bytes are unchanged: {t}");
+        }
+        if orig.contains(".fragment") {
+            assert!(t.contains(".fragment"), "{t}");
+        }
+        let u = ops::block_unplace(&placed, &p.target).unwrap();
+        assert_eq!(ops::apply(&placed.text, &u).unwrap(), src, "block {i}");
+    }
+    // with a height, both are written
+    let p = ops::block_place(&d, "a/7", (1.0, 2.0), Some(30.0), Some(40.0)).unwrap();
+    let t = ops::apply(&d.text, &p).unwrap();
+    assert!(t.contains("![](q.png){#b-"), "{t}");
+    assert!(
+        t.contains(".absolute left=1 top=2 width=30 height=40}"),
+        "{t}"
+    );
+}
+
+/// Spec 009 US2 (FR-012): what can't be placed or unplaced says why.
+#[test]
+fn place_refusals() {
+    use quartz_deck::error::QdError;
+    let src = "---\nformat: revealjs\n---\n\n## A {#a}\n\n:::: {.columns}\n::: {.column}\nx\n:::\n::::\n\nText.\n\n::: {#b-1 .absolute .qd-ph ph=text left=1 top=2 width=3 height=4}\n:::\n\n::: notes\nSay it.\n:::\n";
+    let d = Deck::parse(src.into());
+    let why = |r: Result<Patch, QdError>| match r {
+        Err(QdError::InvalidArg(m)) => m,
+        other => panic!("expected a refusal, got {other:?}"),
+    };
+    let place = |r: &str| ops::block_place(&d, r, (0.0, 0.0), None, None);
+    assert!(why(place("a/0")).contains("div"));
+    assert!(why(place("a/2")).contains("already"));
+    assert!(why(place("a/3")).contains("notes"));
+    assert!(why(ops::block_unplace(&d, "a/1")).contains("not placed"));
+    assert!(why(ops::block_unplace(&d, "a/2")).contains(".qd-ph"));
+    // an image box made by `box add` goes back to a plain image
+    let b = Deck::parse(BASIC.to_string());
+    let p = ops::block_unplace(&b, "b-plot").unwrap();
+    assert!(
+        ops::apply(&b.text, &p)
+            .unwrap()
+            .contains("\n![](plot.png)\n")
+    );
+}
+
+/// Spec 009 US5: stacking reorders a box among the slide's boxes only (later is
+/// on top); the flow elements keep their order. One that can't move further says so.
+#[test]
+fn stacking_reorders_only_boxes() {
+    use quartz_deck::deck::BlockKind;
+    use quartz_deck::error::QdError;
+    let bx = |n: u8| format!("::: {{#b-{n} .absolute left=1 top=1 width=9 height=9}}\n{n}\n:::");
+    let src = format!(
+        "---\nformat: revealjs\n---\n\n## A {{#a}}\n\nText.\n\n{}\n\nMore.\n\n{}\n\n{}\n",
+        bx(1),
+        bx(2),
+        bx(3)
+    );
+    let d = Deck::parse(src);
+    let order = |to: &str, r: &str| -> Vec<String> {
+        let p = ops::box_order(&d, r, to).unwrap();
+        assert_eq!(p.op, format!("box {to}"));
+        let a = Deck::parse(ops::apply(&d.text, &p).unwrap());
+        a.slides[0]
+            .blocks
+            .iter()
+            .map(|b| match b.kind {
+                BlockKind::Box => b.id.clone(),
+                _ => a.slice(b.span).to_string(),
+            })
+            .collect()
+    };
+    assert_eq!(
+        order("front", "b-1"),
+        ["Text.", "More.", "b-2", "b-3", "b-1"]
+    );
+    assert_eq!(
+        order("back", "b-3"),
+        ["Text.", "b-3", "b-1", "More.", "b-2"]
+    );
+    assert_eq!(
+        order("forward", "b-1"),
+        ["Text.", "More.", "b-2", "b-1", "b-3"]
+    );
+    assert_eq!(
+        order("backward", "b-3"),
+        ["Text.", "b-1", "More.", "b-3", "b-2"]
+    );
+    let why = |r: Result<Patch, QdError>| match r {
+        Err(QdError::InvalidArg(m)) => m,
+        other => panic!("expected a refusal, got {other:?}"),
+    };
+    assert!(why(ops::box_order(&d, "b-3", "front")).contains("front"));
+    assert!(why(ops::box_order(&d, "b-1", "backward")).contains("back"));
+    assert!(why(ops::box_order(&d, "a/0", "front")).contains("placed"));
+}

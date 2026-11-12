@@ -348,10 +348,14 @@ fn new_slide_text(ctx: &mut Ctx, spec: &SlideSpec, id: &str) -> Result<String> {
 // ---------- ops ----------
 
 pub fn add(d: &Deck, spec: &SlideSpec, pos: Pos) -> Result<Patch> {
-    let mut ctx = Ctx::new(d);
+    add_in(&mut Ctx::new(d), spec, pos)
+}
+
+/// `add` with `ctx`'s ids already taken (a layout's boxes).
+fn add_in(ctx: &mut Ctx, spec: &SlideSpec, pos: Pos) -> Result<Patch> {
     let at = ctx.insertion(pos)?;
     let id = ctx.slide_id(spec.title.as_deref());
-    let text = new_slide_text(&mut ctx, spec, &id)?;
+    let text = new_slide_text(ctx, spec, &id)?;
     let ins = ctx.place(at, &text);
     Ok(patch(
         "add",
@@ -359,6 +363,82 @@ pub fn add(d: &Deck, spec: &SlideSpec, pos: Pos) -> Result<Patch> {
         vec![(Span { start: at, end: at }, ins)],
         vec![id],
     ))
+}
+
+/// A new slide from a layout (spec 009 US1): its heading and boxes, each box
+/// with a fresh id and scaled to the deck's slide size, placeholders empty
+/// (their purpose comments are the layout's, not the deck's). Returns the patch
+/// and each placeholder's place among the slide's blocks, id, kind and purpose.
+pub fn add_layout(
+    d: &Deck,
+    l: &crate::layouts::Layout,
+    title: Option<&str>,
+    pos: Pos,
+) -> Result<(Patch, Vec<serde_json::Value>)> {
+    let src = &l.deck;
+    let s = &src.slides[0];
+    let mut ctx = Ctx::new(d);
+    let nl = ctx.nl();
+    let ph = l.placeholders();
+    let (mut found, mut ids, mut parts) = (Vec::new(), Vec::new(), Vec::new());
+    for b in &s.blocks {
+        let marked = b
+            .attrs
+            .as_ref()
+            .filter(|a| b.kind == BlockKind::Box && a.has_class("qd-ph"));
+        let Some(a) = marked else {
+            parts.push(match b.kind {
+                BlockKind::Notes => format!("::: notes{nl}:::"),
+                _ => src.slice(b.span).to_string(),
+            });
+            continue;
+        };
+        let (mut a, p) = (a.clone(), &ph[found.len()]);
+        let id = ctx.fresh("b");
+        a.set_id(&id);
+        let r = crate::layouts::scale(p.rect, d.width, d.height);
+        for (k, v) in ["left", "top", "width", "height"].into_iter().zip(r) {
+            a.set(k, &px(v));
+        }
+        parts.push(format!("::: {}{nl}:::", a.render()));
+        found.push(serde_json::json!({"index": parts.len() - 1, "id": id, "kind": p.kind, "purpose": p.purpose}));
+        ids.push(id);
+    }
+    let head = s.attrs.clone().unwrap_or_default();
+    let spec = SlideSpec {
+        title: title.map(str::to_string),
+        body: Some(parts.join(&format!("{nl}{nl}"))),
+        attrs: head
+            .kv()
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect(),
+        classes: head.classes().into_iter().map(str::to_string).collect(),
+    };
+    let mut p = add_in(&mut ctx, &spec, pos)?;
+    p.assigned_ids.extend(ids);
+    Ok((p, found))
+}
+
+/// A placeholder box filled (spec 009): its first line without the markers,
+/// around `md` (or `md` itself, when it is the whole block with its fences).
+fn fill_placeholder(old: &str, md: &str, nl: &str) -> Option<String> {
+    let first = old.lines().next()?;
+    let (pre, rest) = first.split_once('{')?;
+    let mut a = Attrs::parse(&format!("{{{rest}"))?;
+    if !a.has_class("qd-ph") {
+        return None;
+    }
+    a.remove_class("qd-ph");
+    a.unset("ph");
+    let head = format!("{pre}{}", a.render());
+    Some(match md.split_once(nl) {
+        Some((line, body)) if line.trim_start().starts_with(":::") && line.contains("qd-ph") => {
+            format!("{head}{nl}{body}")
+        }
+        _ if md.trim_start().starts_with(":::") => md.to_string(),
+        _ => format!("{head}{nl}{md}{nl}{}", pre.trim_end()),
+    })
 }
 
 pub fn dup(d: &Deck, slide: &str, after: Option<&str>) -> Result<Patch> {
@@ -615,6 +695,7 @@ pub fn edit(d: &Deck, element: &str, md: &str, expect_text: Option<&str>) -> Res
             "replacement text is empty; to delete use `qd body` or edit the file".into(),
         ));
     }
+    let md = fill_placeholder(d.slice(b.span), &md, d.nl).unwrap_or(md);
     keep_structure(
         d,
         patch("edit", b.id.clone(), vec![(b.span, md)], Vec::new()),
@@ -1016,7 +1097,7 @@ impl Length {
         })
     }
 
-    fn px(&self) -> Option<f64> {
+    pub fn px(&self) -> Option<f64> {
         (self.unit == "px").then_some(self.value)
     }
 }
@@ -1251,4 +1332,155 @@ pub fn box_rm(d: &Deck, r: &str) -> Result<Patch> {
     let mut assigned = Vec::new();
     let (new, _) = ctx.rewrite(s, None, None, Some(rest), &mut assigned);
     Ok(patch("box rm", b.id.clone(), vec![(s.span, new)], assigned))
+}
+
+const GEOM: [&str; 6] = ["left", "top", "width", "height", "right", "bottom"];
+
+/// Take an element out of the flow (R4): an image gets `.absolute` and its
+/// position in its own attributes; any other block is wrapped, bytes unchanged.
+pub fn block_place(
+    d: &Deck,
+    r: &str,
+    at: (f64, f64),
+    width: Option<f64>,
+    height: Option<f64>,
+) -> Result<Patch> {
+    let (_, b) = d.element(r)?;
+    let refuse = |why: &str| Err(QdError::InvalidArg(format!("'{r}' can't be placed: {why}")));
+    match b.kind {
+        BlockKind::Box => return refuse("it is already placed freely"),
+        BlockKind::Notes => return refuse("speaker notes aren't on the slide"),
+        BlockKind::Div => {
+            return refuse("it is a div (columns, callout…); place the elements inside it instead");
+        }
+        BlockKind::Pause => return refuse("a pause has nothing to show"),
+        _ => {}
+    }
+    check_size(width.unwrap_or(1.0), height.unwrap_or(1.0))?;
+    let mut ctx = Ctx::new(d);
+    let id = ctx.fresh("b");
+    let text = d.slice(b.span);
+    let set = |a: &mut Attrs| {
+        a.add_class("absolute");
+        a.set("left", &px(at.0));
+        a.set("top", &px(at.1));
+        for (k, v) in [("width", width), ("height", height)] {
+            if let Some(v) = v {
+                a.set(k, &px(v));
+            }
+        }
+    };
+    // an image that already has a size keeps it inside a wrapper, so unplace can restore it
+    let new = if b.kind == BlockKind::Image
+        && b.attrs
+            .as_ref()
+            .is_none_or(|a| GEOM.iter().all(|k| a.get(k).is_none()))
+    {
+        let mut a = b.attrs.clone().unwrap_or_default();
+        if a.id().is_none() {
+            a.set_id(&id);
+        }
+        set(&mut a);
+        let t = text.trim_end();
+        let head = match b.attrs {
+            Some(_) => box_attrs_range(text, true).map_or(t, |(a0, _)| &text[..a0]),
+            None => t,
+        };
+        format!("{head}{}{}", a.render(), &text[t.len()..])
+    } else {
+        let mut a = Attrs::default();
+        a.set_id(&id);
+        set(&mut a);
+        let nl = ctx.nl();
+        format!("::: {}{nl}{text}{nl}:::", a.render())
+    };
+    let target = match b.attrs.as_ref().and_then(|a| a.id()) {
+        Some(own) if b.kind == BlockKind::Image => own.to_string(),
+        _ => id.clone(),
+    };
+    let assigned = if target == id { vec![id] } else { vec![] };
+    Ok(patch("block place", target, vec![(b.span, new)], assigned))
+}
+
+/// Put a placed element back in the flow: exactly undoes `block_place`.
+pub fn block_unplace(d: &Deck, r: &str) -> Result<Patch> {
+    let (s, b) = d.element(r)?;
+    let i = on_slide(d, s, r)?;
+    if b.kind != BlockKind::Box {
+        return Err(QdError::InvalidArg(format!("'{r}' is not placed freely")));
+    }
+    let text = d.slice(b.span);
+    let image = text.trim_start().starts_with("![");
+    let (a0, a1) = box_attrs_range(text, image)
+        .ok_or_else(|| QdError::UnsafeEdit(format!("cannot locate attributes of '{r}'")))?;
+    let mut a = Attrs::parse(&text[a0..a1])
+        .ok_or_else(|| QdError::UnsafeEdit(format!("cannot parse attributes of '{r}'")))?;
+    a.remove_class("absolute");
+    for k in GEOM {
+        a.unset(k);
+    }
+    if a.id().is_some_and(|id| id.starts_with("b-")) {
+        a.items.retain(|i| !matches!(i, crate::attrs::Item::Id(_)));
+    }
+    let new = if image {
+        let rest = if a.is_empty() {
+            String::new()
+        } else {
+            a.render()
+        };
+        format!("{}{rest}{}", &text[..a0], &text[a1..])
+    } else {
+        if !a.is_empty() {
+            return Err(QdError::InvalidArg(format!(
+                "'{r}' has attributes besides its place ({}); edit them in the source",
+                a.render()
+            )));
+        }
+        let lines: Vec<&str> = text.split(d.nl).collect();
+        lines[1..lines.len() - 1].join(d.nl)
+    };
+    Ok(patch(
+        "block unplace",
+        format!("{}/{i}", s.id),
+        vec![(b.span, new)],
+        Vec::new(),
+    ))
+}
+
+/// Stack a box (R6): positioned elements stack in source order, later on top.
+/// `front`/`back` move it after the slide's last box or before its first;
+/// `forward`/`backward` past the next or previous box. Flow elements keep their order.
+pub fn box_order(d: &Deck, r: &str, to: &str) -> Result<Patch> {
+    let (s, b) = d.element(r)?;
+    if b.kind != BlockKind::Box {
+        return Err(QdError::InvalidArg(format!(
+            "'{r}' is not placed freely; only placed elements stack"
+        )));
+    }
+    let boxes: Vec<usize> = (0..s.blocks.len())
+        .filter(|&j| s.blocks[j].kind == BlockKind::Box)
+        .collect();
+    let k = boxes
+        .iter()
+        .position(|&j| s.blocks[j].span == b.span)
+        .unwrap();
+    let refuse = |m: &str| Err(QdError::InvalidArg(format!("'{r}' is already {m}")));
+    let (after, j) = match to {
+        "front" | "forward" if k + 1 == boxes.len() => return refuse("in front"),
+        "back" | "backward" if k == 0 => return refuse("at the back"),
+        "front" => (true, boxes[boxes.len() - 1]),
+        "forward" => (true, boxes[k + 1]),
+        "back" => (false, boxes[0]),
+        "backward" => (false, boxes[k - 1]),
+        _ => unreachable!("box order {to}"),
+    };
+    let next = format!("{}/{j}", s.id);
+    let pos = if after {
+        Pos::After(&next)
+    } else {
+        Pos::Before(&next)
+    };
+    let mut p = block_move(d, r, pos)?;
+    p.op = format!("box {to}");
+    Ok(p)
 }

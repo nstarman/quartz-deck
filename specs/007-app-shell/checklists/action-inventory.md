@@ -137,3 +137,18 @@ These keys operate a control from inside it. They are not actions in their own r
 Labels renamed in plain words by spec 008 US6 (T025); the ids are unchanged.
 
 Added by spec 008 US7 (T030), Insert menu: Code cell `insert-code`, Callout `insert-callout`, Columns `insert-columns`, Speaker notes `insert-notes`, Table `insert-table`, Quote `insert-quote`.
+
+## Added by 009 (layouts and placement)
+
+| Control | Key | Id |
+|---|---|---|
+| Place freely (or ⌥-drag) | — | `place` |
+| Put back in the flow | — | `unplace` |
+| Bring to front | ⌥⇧⌘F | `box-front` |
+| Bring forward | ⌥⌘F | `box-forward` |
+| Send backward | ⌥⌘B | `box-backward` |
+| Send to back | ⌥⇧⌘B | `box-back` |
+| Nudge left, right, up, down | arrows (⇧ by 10) | `box-nudge-left` `box-nudge-right` `box-nudge-up` `box-nudge-down` |
+| Save slide as layout… | — | `layout-save` |
+| Snap to guides | — | `snap` |
+| Slide after… / before… (the gallery) | ⇧⌘N | `slide-after` `slide-before` |

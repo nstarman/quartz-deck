@@ -6,6 +6,7 @@ use chromiumoxide::cdp::browser_protocol::input::{
     DispatchKeyEventParams, DispatchKeyEventType, DispatchMouseEventParams, DispatchMouseEventType,
     InsertTextParams, MouseButton,
 };
+use chromiumoxide::cdp::browser_protocol::page::NavigateParams;
 use chromiumoxide::cdp::js_protocol::runtime::EvaluateParams;
 use chromiumoxide::layout::Point;
 use chromiumoxide::{Browser, BrowserConfig, Page};
@@ -213,14 +214,27 @@ impl Ed {
         }
     }
 
+    /// Open `url` in this tab and wait for the editor there. Not `goto`: it waits
+    /// for the page's load event, which waits for every asset of the preview too.
+    async fn visit(&self, url: &str) {
+        self.eval("window.__left = true").await;
+        self.page.execute(NavigateParams::new(url)).await.unwrap();
+        self.wait_secs(&format!("!window.__left && {READY}"), 60)
+            .await;
+    }
+
     /// Press at `from` and move to `to` in steps, the button still down.
     async fn press_and_move(&self, from: (f64, f64), to: (f64, f64)) {
+        self.press_and_move_with(from, to, 0).await;
+    }
+    /// The same with modifier keys held (1 Alt, 2 Ctrl, 4 Meta, 8 Shift).
+    async fn press_and_move_with(&self, from: (f64, f64), to: (f64, f64), mods: i64) {
         use DispatchMouseEventType::*;
-        self.mouse(MousePressed, from, false).await;
+        self.mouse_with(MousePressed, from, false, mods).await;
         for i in 1..=8 {
             let t = i as f64 / 8.0;
             let at = (from.0 + (to.0 - from.0) * t, from.1 + (to.1 - from.1) * t);
-            self.mouse(MouseMoved, at, false).await;
+            self.mouse_with(MouseMoved, at, false, mods).await;
         }
     }
 
@@ -304,8 +318,20 @@ impl Ed {
 
     /// Page point of a preview element (`sel` in the iframe): `x` is a JS
     /// expression over its rect `r` (e.g. `r.width / 2`), y its middle.
+    /// Waits for the element: a new render may be swapping in.
     async fn slide_at(&self, sel: &str, x: &str) -> (f64, f64) {
-        self.point(&format!("(() => {{ const f = document.querySelector('#preview'); const el = f.contentDocument.querySelector({sel:?}); const a = f.getBoundingClientRect(); const r = el.getBoundingClientRect(); return [a.left + r.left + {x}, a.top + r.top + r.height / 2]; }})()")).await
+        let start = Instant::now();
+        loop {
+            let v = self.eval(&format!("(() => {{ const f = document.querySelector('#preview'); const el = f.contentDocument?.querySelector({sel:?}); if (!el) return null; const a = f.getBoundingClientRect(); const r = el.getBoundingClientRect(); return [a.left + r.left + {x}, a.top + r.top + r.height / 2]; }})()")).await;
+            if let Some(p) = v.as_array() {
+                return (p[0].as_f64().unwrap(), p[1].as_f64().unwrap());
+            }
+            assert!(
+                start.elapsed() < Duration::from_secs(30),
+                "{sel} never on the slide"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
     async fn slide_point(&self, sel: &str) -> (f64, f64) {
@@ -399,10 +425,11 @@ impl Ed {
         .await;
     }
 
-    /// Wait until the preview shows the file as it is now (render caught up, no edit open).
+    /// Wait until the preview shows the file as it is now (render caught up and
+    /// swapped in, no edit open): until then clicks and keys land on the old render.
     async fn settle(&self) {
         self.wait_secs(
-            "(async () => { const v = (await fetch('/api/deck').then((r) => r.json())).version; const st = document.querySelector('#status'); const f = document.querySelector('#preview').contentWindow; return window.qdSession() === null && st.textContent === 'Up to date' && st.title.endsWith(v.slice(0, 7)) && !!f.Reveal?.isReady?.(); })()",
+            "(async () => { const v = (await fetch('/api/deck').then((r) => r.json())).version; const st = document.querySelector('#status'); const f = document.querySelector('#preview'); return window.qdSession() === null && st.textContent === 'Up to date' && st.title.endsWith(v.slice(0, 7)) && !f.hasAttribute('aria-busy') && !!f.contentWindow.Reveal?.isReady?.(); })()",
             60,
         )
         .await;
@@ -416,7 +443,17 @@ impl Ed {
         self.type_text(text).await;
     }
 
-    async fn mouse(&self, t: DispatchMouseEventType, (x, y): (f64, f64), right: bool) {
+    async fn mouse(&self, t: DispatchMouseEventType, at: (f64, f64), right: bool) {
+        self.mouse_with(t, at, right, 0).await;
+    }
+    /// A mouse event with modifier keys held (1 Alt, 2 Ctrl, 4 Meta, 8 Shift).
+    async fn mouse_with(
+        &self,
+        t: DispatchMouseEventType,
+        (x, y): (f64, f64),
+        right: bool,
+        mods: i64,
+    ) {
         let up = matches!(t, DispatchMouseEventType::MouseReleased);
         let p = DispatchMouseEventParams::builder()
             .r#type(t)
@@ -435,6 +472,7 @@ impl Ed {
                 1
             })
             .click_count(1)
+            .modifiers(mods)
             .build()
             .unwrap();
         self.page.execute(p).await.unwrap();
@@ -1423,8 +1461,7 @@ async fn outputs_persist_across_restarts_and_go_stale() {
     // a new server (new port, new token), as when the deck is reopened
     ed.cli(&["stop"]);
     let info = ed.cli(&["serve", "--detach"]);
-    ed.page.goto(info["url"].as_str().unwrap()).await.unwrap();
-    ed.wait_secs(READY, 60).await;
+    ed.visit(info["url"].as_str().unwrap()).await;
     ed.go("print").await;
     let frame = "document.querySelector('#preview').contentDocument";
     ed.wait_secs(
@@ -1509,6 +1546,7 @@ const bodies = {{
   '/api/buffer': JSON.stringify({{base: '', text: '## Pwned\\n'}}),
   '/api/buffer/close': '{{}}',
   '/api/settings': JSON.stringify({{theme: 'dark', 'source.side': 'right', 'confirm.slide_delete': false}}),
+  '/api/layouts': JSON.stringify({{save: {{slide: 'slow', name: 'evil', where: 'deck'}}}}),
   '/api/images?name=evil.svg': '<svg xmlns="http://www.w3.org/2000/svg"><script>parent.pwned = 1</script></svg>',
 }};
 for (const [path, body] of Object.entries(bodies)) {{
@@ -1535,6 +1573,7 @@ return (await unreadable('/')) && (await unreadable('/api/focus'));
     assert_eq!(ed.file(), RUN_DECK, "no edit landed");
     // spec 008: no file was written beside the deck
     assert!(!ed.dir.path().join("images").exists(), "no image added");
+    assert!(!ed.dir.path().join("_layouts").exists(), "no layout saved");
     // spec 007: the person's settings are unchanged
     let v = &ed.cli(&["settings"])["values"];
     assert_eq!(
@@ -1718,8 +1757,7 @@ async fn framed_editor_takes_theme_and_messages() {
     let theme = "document.documentElement.dataset.theme";
     let bg = "getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()";
 
-    ed.page.goto(framed("theme=dark").as_str()).await.unwrap();
-    ed.wait_secs(READY, 60).await;
+    ed.visit(&framed("theme=dark")).await;
     assert_eq!(ed.eval(theme).await, "dark");
     assert_eq!(ed.eval(bg).await, "#18181a");
 
@@ -1745,7 +1783,9 @@ async fn framed_editor_takes_theme_and_messages() {
     ed.click_editor("#menubar [data-menu=Menu]").await;
     assert_eq!(
         ed.menu_labels().await,
-        ["File", "Edit", "Insert", "Slide", "View", "Run", "Help"]
+        [
+            "File", "Edit", "Insert", "Slide", "Arrange", "View", "Run", "Help"
+        ]
     );
     ed.click_menu("Slide").await;
     ed.click_menu("Duplicate slide").await;
@@ -1805,11 +1845,7 @@ async fn framed_editor_takes_theme_and_messages() {
     ed.wait(&format!("{focus_text} === 1")).await;
 
     // the Quarto extension runs cells: no Run bar, no gutter
-    ed.page
-        .goto(framed("theme=light&run=external").as_str())
-        .await
-        .unwrap();
-    ed.wait_secs(READY, 60).await;
+    ed.visit(&framed("theme=light&run=external")).await;
     ed.open_source().await;
     assert_eq!(
         ed.eval("['.runbar', '.gutter'].map((s) => getComputedStyle(document.querySelector('#srcpane ' + s)).display)").await,
@@ -1841,11 +1877,13 @@ async fn menu_bar_runs_every_action() {
     );
     assert_eq!(
         ed.eval("qdMenus().then(Object.keys)").await,
-        json!(["File", "Edit", "Insert", "Slide", "View", "Run", "Help"])
+        json!([
+            "File", "Edit", "Insert", "Slide", "Arrange", "View", "Run", "Help"
+        ])
     );
     assert_eq!(
         ed.eval("[...document.querySelectorAll('#menubar[role=menubar] > [role=menuitem][aria-haspopup=menu]')].filter((b) => b.offsetParent).length").await,
-        7
+        8
     );
     // clicking an open menu's name again closes it
     let shown = "!document.querySelector('#ctxmenu').hidden";
@@ -2018,8 +2056,7 @@ async fn settings_apply_live_and_stick() {
     let deck = other.join("talk.qmd");
     std::fs::write(&deck, P2).unwrap();
     let info = ed.cli(&["--deck", deck.to_str().unwrap(), "serve", "--detach"]);
-    ed.page.goto(info["url"].as_str().unwrap()).await.unwrap();
-    ed.wait_secs(READY, 60).await;
+    ed.visit(info["url"].as_str().unwrap()).await;
     ed.wait(&format!(
         "!document.querySelector('#srcpane').hidden && {main}.contains('source-right') && {theme} === 'light'"
     ))
@@ -2251,7 +2288,7 @@ async fn menus_open_fast() {
         .await;
     let times = times.as_object().unwrap();
     eprintln!("menu and reference open times (ms): {times:?}");
-    assert_eq!(times.len(), 8, "7 menus and the reference: {times:?}");
+    assert_eq!(times.len(), 9, "8 menus and the reference: {times:?}");
     for (what, ms) in times {
         assert!(
             ms.as_f64().unwrap() < 100.0,
@@ -2377,14 +2414,8 @@ async fn audit_measures() {
     let mut failures = vec![];
     for theme in ["light", "dark", "hc"] {
         // through the link: settings (which opening the source pane writes) don't override it
-        ed.page
-            .goto(
-                link.replace("/#t=", &format!("/?theme={theme}#t="))
-                    .as_str(),
-            )
-            .await
-            .unwrap();
-        ed.wait_secs(READY, 60).await;
+        ed.visit(&link.replace("/#t=", &format!("/?theme={theme}#t=")))
+            .await;
         ed.go("highlights").await;
         for source in [false, true] {
             if source {
@@ -2476,6 +2507,12 @@ async fn slide_list_like_a_slide_app() {
     ed.settle().await;
     ed.click_editor("#slides li[data-id=columns] .add-here")
         .await;
+    // the gallery (spec 009): "blank" is an untitled slide
+    ed.wait("document.querySelector('dialog.sheet[open] label[data-layout=blank]') != null")
+        .await;
+    ed.click_editor("dialog.sheet label[data-layout=blank]")
+        .await;
+    ed.click_editor("dialog.sheet button[value=ok]").await;
     ed.wait_file(|f| f.contains("## {#s-"), "untitled slide added")
         .await;
     let new = order()[2].clone();
@@ -2509,6 +2546,10 @@ async fn slide_list_like_a_slide_app() {
     // Enter on a focused slide adds one after it (once the title's save has landed)
     ed.settle().await;
     ed.eval("document.querySelector('#slides li[data-id=model] button').focus()")
+        .await;
+    ed.key("Enter", "Enter", 13, 0).await;
+    // the gallery opens, the last layout picked; Enter again adds it
+    ed.wait("document.querySelector('dialog.sheet[open] input[name=layout]:checked')?.value === 'blank'")
         .await;
     ed.key("Enter", "Enter", 13, 0).await;
     ed.until_cli(
@@ -2854,11 +2895,7 @@ async fn one_top_bar_in_plain_words() {
 
     // VS Code's panel: ☰ in that same row
     let link = ed.cli(&["url"])["url"].as_str().unwrap().to_string();
-    ed.page
-        .goto(link.replace("/#t=", "/?host=vscode#t=").as_str())
-        .await
-        .unwrap();
-    ed.wait_secs(READY, 60).await;
+    ed.visit(&link.replace("/#t=", "/?host=vscode#t=")).await;
     ed.wait("document.querySelector('#menubar').classList.contains('folded')")
         .await;
     assert_eq!(ed.eval(&row("#menubar")).await, true);
@@ -3213,4 +3250,395 @@ async fn browser_markup_still_saves() {
     ed.key("Escape", "Escape", 27, 0).await;
     ed.wait("/an image/.test(document.querySelector('#notice').textContent) && /⌘Z/.test(document.querySelector('#notice').textContent)")
         .await;
+}
+
+/// T007 (spec 009 US1): a new slide from a layout — the gallery from the +,
+/// placeholders shown on the canvas only, typed into, an image dropped on one,
+/// one undo for the add, and the last layout preselected next time.
+#[tokio::test(flavor = "multi_thread")]
+async fn slide_from_a_layout() {
+    let Some(ed) = Ed::open(P2).await else {
+        return;
+    };
+    let sheet = "document.querySelector('dialog.sheet[open]')";
+    let before = ed.file();
+    let open_gallery = async || {
+        ed.settle().await;
+        ed.click_editor("#slides li[data-id=b] .add-here").await;
+        ed.wait(&format!(
+            "{sheet}?.querySelectorAll('.is-gallery .preview').length === 12"
+        ))
+        .await;
+        // the layout preselected
+        ed.eval(&format!(
+            "{sheet}.querySelector('input[name=layout]:checked').value"
+        ))
+        .await
+    };
+
+    // the +: the gallery, title + content preselected; one undo takes the add back
+    assert_eq!(open_gallery().await, "title-content");
+    ed.click_editor("dialog.sheet label[data-layout=two-columns]")
+        .await;
+    ed.click_editor("dialog.sheet button[value=ok]").await;
+    ed.wait_file(
+        |f| f.matches("qd-ph ph=text").count() == 2,
+        "two-column slide added",
+    )
+    .await;
+    assert!(!ed.file().contains("Click to add"));
+    ed.undo_to(&before).await;
+
+    // again: the last layout is preselected; Enter adds it before b
+    assert_eq!(open_gallery().await, "two-columns");
+    ed.key("Enter", "Enter", 13, 0).await;
+    ed.wait_file(
+        |f| f.matches("qd-ph ph=text").count() == 2,
+        "added with Enter",
+    )
+    .await;
+    let new = slide_ids(&ed.cli(&["slides"]))[1].clone();
+    ed.settle().await;
+    ed.go(&new).await;
+    let first = format!("[data-qd=\"{new}/0\"]");
+    assert!(
+        ed.eval(&format!("getComputedStyle(document.querySelector('#preview').contentDocument.querySelector('{first}'), '::before').content"))
+            .await.as_str().unwrap().contains("Click to add text")
+    );
+
+    // a click on a text placeholder types into it; the markers go when it's filled
+    ed.click_in_slide(&first).await;
+    ed.wait("window.qdSession() !== null").await;
+    ed.type_text("Left side").await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait_file(
+        |f| f.contains("Left side\n:::") && f.matches("qd-ph ph=text").count() == 1,
+        "placeholder filled",
+    )
+    .await;
+
+    // an image dropped on an image placeholder fills it
+    ed.settle().await;
+    let v = ed.cli(&["add", "--layout", "image-text", "--after", "b"]);
+    let img = v["placeholders"][1]["ref"].as_str().unwrap().to_string();
+    let slide = img.split('/').next().unwrap().to_string();
+    ed.settle().await;
+    ed.go(&slide).await;
+    ed.eval(&format!(
+        r#"(() => {{
+  const box = document.querySelector('#preview').contentDocument.querySelector('[data-qd="{img}"]');
+  const r = box.getBoundingClientRect();
+  const dt = new DataTransfer();
+  dt.items.add(new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1])], 'pic.png', {{ type: 'image/png' }}));
+  const at = {{ bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }};
+  box.dispatchEvent(new DragEvent('dragover', at));
+  box.dispatchEvent(new DragEvent('drop', at));
+}})()"#
+    ))
+    .await;
+    ed.wait_file(
+        |f| f.contains("![](images/pic.png)") && !f.contains("ph=image"),
+        "image placeholder filled",
+    )
+    .await;
+}
+
+/// The number attribute `k` of the first element that has one in `f` (`left=600` → 600).
+fn num(f: &str, k: &str) -> f64 {
+    let i = f.find(&format!(" {k}=")).unwrap() + k.len() + 2;
+    f[i..].split([' ', '}']).next().unwrap().parse().unwrap()
+}
+
+const PLACE: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## A {#a}\n\nFirst para.\n\n- x\n- y\n\n:::: {.columns}\n::: {.column}\nLeft\n:::\n::::\n";
+
+/// Spec 009 US2: ⌥-drag a list to place it where it falls; the handles resize it,
+/// the arrow keys nudge it (⇧ by 10), and "Put back in the flow" restores the
+/// file. A div can't be placed, and the menu says why.
+#[tokio::test(flavor = "multi_thread")]
+async fn place_freely() {
+    let Some(ed) = Ed::open(PLACE).await else {
+        return;
+    };
+    let before = ed.file();
+    ed.settle().await;
+    ed.go("a").await;
+    let list = "[data-qd=\"a/1\"]";
+    // where the list should land: its slide position now, plus the drag in slide px
+    let want = ed
+        .eval(&format!("(() => {{ const w = document.querySelector('#preview').contentWindow; const s = w.Reveal.getScale(); const el = w.document.querySelector('{list}'); const sec = el.closest('section').getBoundingClientRect(); const r = el.getBoundingClientRect(); return [(r.left - sec.left + 120) / s, (r.top - sec.top + 90) / s]; }})()"))
+        .await;
+    let from = ed.slide_at(list, "10").await;
+    let to = (from.0 + 120.0, from.1 + 90.0);
+    {
+        use DispatchMouseEventType::*;
+        let mid = (from.0 + 30.0, from.1 + 20.0);
+        for (t, at) in [
+            (MousePressed, from),
+            (MouseMoved, mid),
+            (MouseMoved, to),
+            (MouseReleased, to),
+        ] {
+            ed.mouse_with(t, at, false, 1).await; // ⌥ held
+        }
+    }
+    ed.wait_file(|f| f.contains("- x\n- y\n:::"), "list placed")
+        .await;
+    let f = ed.file();
+    assert!(
+        (num(&f, "left") - want[0].as_f64().unwrap()).abs() <= 2.0,
+        "{f} want {want}"
+    );
+    assert!(
+        (num(&f, "top") - want[1].as_f64().unwrap()).abs() <= 2.0,
+        "{f} want {want}"
+    );
+    assert!(!f.contains("height="), "text keeps its height: {f}");
+    assert!(f.contains("First para.\n\n:::"), "nothing else moved: {f}");
+
+    // the placed list is selected: a corner handle resizes it
+    ed.settle().await;
+    let h = ed.slide_point(".qd-handle[data-dir=se]").await;
+    let w0 = num(&f, "width");
+    ed.press_and_move(h, (h.0 + 40.0, h.1 + 20.0)).await;
+    ed.mouse(
+        DispatchMouseEventType::MouseReleased,
+        (h.0 + 40.0, h.1 + 20.0),
+        false,
+    )
+    .await;
+    ed.wait_file(|f| f.contains("height="), "resized").await;
+    assert!(num(&ed.file(), "width") > w0);
+
+    // arrow keys nudge it by 1, ⇧ by 10 (selected again: a slow render may drop the selection)
+    ed.settle().await;
+    let selected = format!("{SEL} === 'a/1'");
+    if ed.eval(&selected).await != true {
+        ed.click_in_slide(list).await; // a click selects a placed box
+    }
+    ed.wait(&selected).await;
+    let l0 = num(&ed.file(), "left");
+    ed.key("ArrowRight", "ArrowRight", 39, 0).await;
+    ed.wait_file(|f| num(f, "left") == l0 + 1.0, "nudged by 1")
+        .await;
+    ed.settle().await;
+    let t0 = num(&ed.file(), "top");
+    ed.key("ArrowDown", "ArrowDown", 40, 8).await; // ⇧
+    ed.wait_file(|f| num(f, "top") == t0 + 10.0, "nudged by 10")
+        .await;
+
+    // Arrange ▸ Put back in the flow: the file as it was
+    ed.settle().await;
+    ed.menu("Arrange", "Put back in the flow").await;
+    ed.wait_file(|f| f == before, "back in the flow").await;
+
+    // the columns can't be placed: greyed out, with the reason as its tooltip.
+    // Read it as soon as the menu shows: a render landing may close the menu again.
+    ed.settle().await;
+    let item = "(() => { const li = [...document.querySelectorAll('#ctxmenu li')].find((li) => li.firstChild?.textContent === 'Place freely' && li.offsetParent); return li ? [li.getAttribute('aria-disabled'), li.title] : null; })()";
+    let mut place = Value::Null;
+    for _ in 0..10 {
+        ed.right_click(ed.slide_point("[data-qd=\"a/2\"]").await)
+            .await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        place = ed.eval(item).await;
+        if !place.is_null() {
+            break;
+        }
+    }
+    assert_eq!(
+        place[0], "true",
+        "Place freely is greyed out on the columns"
+    );
+    assert!(place[1].as_str().unwrap().contains("div"), "{place}");
+    ed.close_menu().await;
+}
+
+/// Spec 009 US3: Slide ▸ Save slide as layout… keeps the slide's structure with
+/// the deck; the gallery lists it under "This deck’s", renames and deletes it,
+/// and a slide from it has the placeholders where the elements were.
+#[tokio::test(flavor = "multi_thread")]
+async fn save_a_layout() {
+    let Some(ed) = Ed::open(P2).await else {
+        return;
+    };
+    let top = "dialog.sheet[open]:last-of-type";
+    let file = |n: &str| ed.dir.path().join(format!("_layouts/{n}.md"));
+    ed.settle().await;
+    ed.go("a").await;
+    // type into the sheet's name field and press OK
+    let answer = async |text: &str| {
+        ed.wait(&format!(
+            "document.activeElement === document.querySelector('{top} input[type=text]')"
+        ))
+        .await;
+        ed.type_text(text).await;
+        ed.click_editor(&format!("{top} button[value=ok]")).await;
+    };
+    ed.menu("Slide", "Save slide as layout…").await;
+    answer("my-list").await;
+    ed.until_cli(
+        &["layouts"],
+        |v| {
+            v["layouts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|l| l["name"] == "my-list")
+        },
+        "layout never saved",
+    )
+    .await;
+    let saved = std::fs::read_to_string(file("my-list")).unwrap();
+    assert_eq!(saved.matches("ph=text").count(), 3, "{saved}");
+    assert!(
+        !saved.contains("First para") && !saved.contains("top=170 width=930"),
+        "measured, not stacked: {saved}"
+    );
+
+    // the gallery lists it under the deck's heading; rename it there
+    let open_gallery = async || {
+        ed.settle().await;
+        ed.click_editor("#slides li[data-id=b] .add-here").await;
+        ed.wait(&format!(
+            "!!document.querySelector('{top} label[data-layout]')"
+        ))
+        .await;
+    };
+    open_gallery().await;
+    assert_eq!(
+        ed.eval(&format!(
+            "document.querySelector('{top} .is-gallery h3').textContent"
+        ))
+        .await,
+        "This deck’s"
+    );
+    ed.click_editor(&format!("{top} label[data-layout=my-list] button.rename"))
+        .await;
+    answer("corner").await;
+    ed.wait(&format!(
+        "!!document.querySelector('{top} label[data-layout=corner]')"
+    ))
+    .await;
+    assert!(file("corner").exists() && !file("my-list").exists());
+
+    // a slide from it: the placeholders where the elements were
+    ed.click_editor(&format!("{top} label[data-layout=corner]"))
+        .await;
+    let before = ed.file();
+    ed.click_editor(&format!("{top} button[value=ok]")).await;
+    ed.wait_file(
+        |f| f.matches("qd-ph ph=text").count() == 3,
+        "slide from the saved layout",
+    )
+    .await;
+    ed.undo_to(&before).await;
+
+    // and delete it from the gallery
+    open_gallery().await;
+    ed.click_editor(&format!("{top} label[data-layout=corner] button.delete"))
+        .await;
+    ed.click_editor(&format!("{top} button[value=ok]")).await; // "Delete layout?"
+    ed.wait("document.querySelectorAll('dialog.sheet[open]').length === 1 && !document.querySelector('dialog.sheet[open] label[data-layout=corner]')").await;
+    assert!(!file("corner").exists());
+    ed.key("Escape", "Escape", 27, 0).await;
+}
+
+const GUIDES: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## A {#a}\n\n::: {#b-1 .absolute left=100 top=100 width=200 height=100}\nOne\n:::\n\n::: {#b-2 .absolute left=600 top=400 width=200 height=100}\nTwo\n:::\n";
+
+/// Spec 009 US4: dragging a box near the slide's centre shows a guide and lands
+/// it exactly centred; near another box's edge it aligns; with ⌘ held, or the
+/// setting off, it goes where it's dropped.
+#[tokio::test(flavor = "multi_thread")]
+async fn guides_and_snapping() {
+    use DispatchMouseEventType::*;
+    let Some(ed) = Ed::open(GUIDES).await else {
+        return;
+    };
+    ed.settle().await;
+    ed.go("a").await;
+    let scale = ed
+        .eval("document.querySelector('#preview').contentWindow.Reveal.getScale()")
+        .await
+        .as_f64()
+        .unwrap();
+    // drag box b-1's overlay by (dx, dy) slide px, with modifier keys held
+    let drag = async |dx: f64, dy: f64, mods: i64| -> bool {
+        ed.settle().await;
+        // a click landing while a new render swaps in is lost: click again until the box is selected
+        let selected =
+            "!!document.querySelector('#preview').contentDocument.querySelector('.qd-overlay')";
+        for _ in 0..5 {
+            ed.click_in_slide("#b-1").await;
+            tokio::time::sleep(Duration::from_millis(400)).await;
+            if ed.eval(selected).await == true {
+                break;
+            }
+        }
+        ed.wait(selected).await;
+        let from = ed.slide_point(".qd-overlay").await;
+        let to = (from.0 + dx * scale, from.1 + dy * scale);
+        ed.press_and_move_with(from, to, mods).await;
+        let guide = ed
+            .eval("!!document.querySelector('#preview').contentDocument.querySelector('.qd-guide')")
+            .await
+            == true;
+        ed.mouse_with(MouseReleased, to, false, mods).await;
+        guide
+    };
+    let at = |l: f64, t: f64| move |f: &str| num(f, "left") == l && num(f, "top") == t;
+
+    // 3 px off the slide's centre (box centre at 525, 350): a guide, and it snaps
+    assert!(drag(328.0, 203.0, 0).await, "a guide while dragging");
+    ed.wait_file(at(425.0, 300.0), "centred on the slide").await;
+    assert_eq!(
+        ed.eval("document.querySelector('#preview').contentDocument.querySelectorAll('.qd-guide').length").await,
+        0,
+        "the guides go when the drag ends"
+    );
+    // 3 px from b-2's left edge: it aligns (and stays on the slide's middle)
+    drag(178.0, 0.0, 0).await;
+    ed.wait_file(at(600.0, 300.0), "aligned with the other box")
+        .await;
+    // ⌘ held: no snap
+    assert!(!drag(-173.0, 0.0, 4).await, "no guide with ⌘ held");
+    ed.wait_file(at(427.0, 300.0), "dropped where it was let go")
+        .await;
+    // View ▸ Snap to guides off: no snap
+    ed.settle().await;
+    ed.menu("View", "Snap to guides").await;
+    ed.wait("(async () => (await fetch('/api/settings').then((r) => r.json())).values['placement.snap'] === false)()").await;
+    assert!(!drag(-3.0, 0.0, 0).await, "no guide with snapping off");
+    ed.wait_file(at(424.0, 300.0), "not snapped with the setting off")
+        .await;
+}
+
+const STACK: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## A {#a}\n\n::: {#b-1 .absolute left=100 top=100 width=300 height=200}\nLower\n:::\n\n::: {#b-2 .absolute left=250 top=150 width=300 height=200}\nUpper\n:::\n";
+
+/// Spec 009 US5: Arrange ▸ Bring to front puts the lower box on top on the
+/// canvas (and in the file, after the other box); ⌥⇧⌘B sends it back again.
+#[tokio::test(flavor = "multi_thread")]
+async fn front_and_back() {
+    let Some(ed) = Ed::open(STACK).await else {
+        return;
+    };
+    // what is on top where the boxes overlap (under the selection's overlay)
+    let top = "(() => { const f = document.querySelector('#preview'); const d = f.contentDocument; const r = d.querySelector('#b-2').getBoundingClientRect(); return d.elementsFromPoint(r.left + 20, r.top + 20).map((e) => e.closest('[data-qd]')).find(Boolean)?.id; })()";
+    ed.settle().await;
+    ed.go("a").await;
+    assert_eq!(ed.eval(top).await, "b-2");
+    let before = ed.file();
+    ed.click_in_slide("#b-1").await;
+    ed.wait(&format!("{SEL} === 'a/0'")).await;
+    ed.menu("Arrange", "Bring to front").await;
+    ed.wait_file(
+        |f| f.find("Upper").unwrap() < f.find("Lower").unwrap(),
+        "brought to front",
+    )
+    .await;
+    ed.settle().await;
+    ed.wait(&format!("{top} === 'b-1'")).await;
+    // the moved box stays selected: ⌥⇧⌘B sends it to the back again
+    ed.wait(&format!("{SEL} === 'a/1'")).await;
+    ed.key("b", "KeyB", 66, 1 | 4 | 8).await; // ⌥⇧⌘B
+    ed.wait_file(|f| f == before, "sent to the back").await;
 }

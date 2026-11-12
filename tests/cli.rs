@@ -1141,3 +1141,166 @@ fn move_and_rm_several_slides() {
     e.ok(&["undo"]);
     assert_eq!(e.text(), before);
 }
+
+/// Spec 009 US1: `qd layouts` and `qd add --layout`, filled with `qd edit`.
+#[test]
+fn layouts_list_and_add() {
+    let e = Env::new();
+    let before = e.text();
+    let v = e.ok(&["layouts"]);
+    let names: Vec<&str> = v["layouts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["name"].as_str().unwrap())
+        .collect();
+    assert!(
+        names.contains(&"two-columns") && names.len() >= 12,
+        "{names:?}"
+    );
+    let v = e.ok(&[
+        "add",
+        "--layout",
+        "image-text",
+        "--after",
+        "intro",
+        "--title",
+        "Chart",
+    ]);
+    let ph = v["placeholders"].as_array().unwrap();
+    assert_eq!(
+        ph.iter()
+            .map(|p| p["kind"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["image", "text"]
+    );
+    let text_ref = ph[1]["ref"].as_str().unwrap();
+    e.ok(&["edit", text_ref, "--md", "Users doubled."]);
+    assert!(e.text().contains("Users doubled.\n:::"));
+    e.ok(&["undo"]);
+    e.ok(&["undo"]);
+    assert_eq!(e.text(), before, "the add is one undo step");
+    e.err(&["add", "--layout", "nope"], "E_NOT_FOUND", 1);
+}
+
+/// Spec 009 US2: place, move, unplace from the CLI; one undo step each.
+#[test]
+fn place_and_unplace() {
+    let e = Env::new();
+    let before = e.text();
+    let v = e.ok(&["block", "place", "results/0", "--at", "600,400"]);
+    let id = v["target"].as_str().unwrap().to_string();
+    assert!(e.text().contains(&format!(
+        "::: {{#{id} .absolute left=600 top=400}}\n- one\n- two\n:::"
+    )));
+    e.ok(&["box", "move", &id, "--by", "10,-5"]);
+    assert!(e.text().contains("left=610 top=395"));
+    e.ok(&["block", "unplace", &id]);
+    assert_eq!(
+        e.text(),
+        before,
+        "unplace takes off exactly what place wrote"
+    );
+    for _ in 0..3 {
+        e.ok(&["undo"]);
+    }
+    assert_eq!(e.text(), before);
+    e.ok(&[
+        "block",
+        "place",
+        "results/0",
+        "--at",
+        "1,2",
+        "--size",
+        "300,200",
+    ]);
+    assert!(e.text().contains("left=1 top=2 width=300 height=200}"));
+    e.ok(&["undo"]);
+    e.err(
+        &["block", "place", "conclusion/1", "--at", "1,2"],
+        "E_INVALID_ARG",
+        1,
+    );
+    e.err(&["block", "unplace", "intro/0"], "E_INVALID_ARG", 1);
+}
+
+/// Spec 009 US3: save a slide as a layout (the deck's or yours), list it,
+/// add a slide from it, rename and remove it; built-in ones stay.
+#[test]
+fn own_layouts() {
+    let e = Env::new();
+    let bad = |a: &[&str], code| e.err(a, code, 1);
+    let v = e.ok(&[
+        "layout",
+        "save",
+        "results",
+        "results-plot",
+        "--at",
+        "results/0=60,300,400,150",
+    ]);
+    assert_eq!(v["path"], "_layouts/results-plot.md");
+    let saved = fs::read_to_string(e.dir.path().join("_layouts/results-plot.md")).unwrap();
+    assert!(
+        saved.contains("ph=text left=60 top=300 width=400 height=150"),
+        "{saved}"
+    );
+    assert!(
+        saved.contains("ph=image left=20 top=10 width=300 height=200"),
+        "{saved}"
+    );
+    let from = |v: &Value, n: &str| {
+        v["layouts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["name"] == n)
+            .map(|l| l["from"].clone())
+    };
+    assert_eq!(
+        from(&e.ok(&["layouts"]), "results-plot"),
+        Some(json!("deck"))
+    );
+    bad(&["layout", "save", "results", "results-plot"], "E_CONFLICT");
+    e.ok(&["layout", "save", "results", "results-plot", "--replace"]);
+    bad(&["layout", "save", "results", "Bad Name"], "E_INVALID_ARG");
+
+    let before = e.text();
+    let v = e.ok(&[
+        "add",
+        "--layout",
+        "results-plot",
+        "--after",
+        "intro",
+        "--title",
+        "Plot",
+    ]);
+    assert_eq!(v["placeholders"].as_array().unwrap().len(), 2);
+    e.ok(&["undo"]);
+    assert_eq!(e.text(), before, "saving a layout never touches the deck");
+
+    e.ok(&["layout", "save", "intro", "mine-1", "--mine"]);
+    assert!(e.dir.path().join(".config/layouts/mine-1.md").exists());
+    e.ok(&["layout", "rename", "mine-1", "mine-2", "--mine"]);
+    assert_eq!(from(&e.ok(&["layouts"]), "mine-2"), Some(json!("mine")));
+    e.ok(&["layout", "rm", "mine-2", "--mine"]);
+    assert_eq!(from(&e.ok(&["layouts"]), "mine-2"), None);
+    bad(&["layout", "rm", "two-columns"], "E_INVALID_ARG");
+    bad(&["layout", "rename", "two-columns", "x"], "E_INVALID_ARG");
+}
+
+/// Spec 009 US5: `qd box front|back|forward|backward`, one undo step each.
+#[test]
+fn box_stacking() {
+    let e = Env::with(
+        "---\nformat: revealjs\n---\n\n## A {#a}\n\n::: {#b-1 .absolute left=1 top=1 width=9 height=9}\nOne\n:::\n\n::: {#b-2 .absolute left=5 top=5 width=9 height=9}\nTwo\n:::\n",
+    );
+    let before = e.text();
+    let v = e.ok(&["box", "front", "b-1"]);
+    assert_eq!(v["target"], "a/1");
+    assert!(e.text().find("Two").unwrap() < e.text().find("One").unwrap());
+    e.ok(&["undo"]);
+    assert_eq!(e.text(), before);
+    e.ok(&["box", "back", "b-2"]);
+    assert!(e.text().find("Two").unwrap() < e.text().find("One").unwrap());
+    e.err(&["box", "forward", "b-1"], "E_INVALID_ARG", 1);
+}

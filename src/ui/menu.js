@@ -24,6 +24,7 @@ function build(items) {
     if (it.shortcut) li.append(Object.assign(document.createElement('kbd'), { textContent: it.shortcut }));
     if (it.aria) li.setAttribute('aria-keyshortcuts', it.aria);
     if (it.disabled) li.setAttribute('aria-disabled', 'true');
+    if (it.title) li.title = it.title;
     if (it.items) {
       li.setAttribute('aria-haspopup', 'menu');
       li.append(build(it.items));

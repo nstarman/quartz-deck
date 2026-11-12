@@ -218,6 +218,16 @@ enum Cmd {
         /// Heading class (repeatable)
         #[arg(long = "class")]
         classes: Vec<String>,
+        /// Start from a layout (see `qd layouts`); returns its placeholders' refs
+        #[arg(long, conflicts_with_all = ["md", "file"])]
+        layout: Option<String>,
+    },
+    /// Slide layouts to start a new slide from: built-in, yours and the deck's
+    Layouts,
+    /// Save a slide as a layout, or rename or remove a saved one
+    Layout {
+        #[command(subcommand)]
+        action: LayoutCmd,
     },
     /// Duplicate a slide (new ids)
     Dup {
@@ -403,6 +413,26 @@ enum BoxCmd {
         #[arg(id = "box", value_name = "BOX")]
         bx: String,
     },
+    /// Bring a box to the front (on top of every other box)
+    Front {
+        #[arg(id = "box", value_name = "BOX")]
+        bx: String,
+    },
+    /// Send a box to the back
+    Back {
+        #[arg(id = "box", value_name = "BOX")]
+        bx: String,
+    },
+    /// Bring a box forward, above the next box
+    Forward {
+        #[arg(id = "box", value_name = "BOX")]
+        bx: String,
+    },
+    /// Send a box backward, below the previous box
+    Backward {
+        #[arg(id = "box", value_name = "BOX")]
+        bx: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -423,6 +453,56 @@ enum ImageCmd {
         #[arg(long, requires = "slide")]
         end: bool,
     },
+}
+
+#[derive(Subcommand)]
+enum LayoutCmd {
+    /// Save a slide's structure as a layout (the deck's `_layouts/`, or yours with --mine)
+    Save {
+        slide: String,
+        name: String,
+        /// Keep it in your own layouts (qd's config folder), not the deck's
+        #[arg(long)]
+        mine: bool,
+        /// Overwrite a layout of that name
+        #[arg(long)]
+        replace: bool,
+        /// Where a flow element shows: REF=LEFT,TOP,WIDTH,HEIGHT in px (repeatable)
+        #[arg(long, value_parser = parse_at)]
+        at: Vec<(String, [f64; 4])>,
+    },
+    /// Remove a saved layout
+    Rm {
+        name: String,
+        #[arg(long)]
+        mine: bool,
+    },
+    /// Rename a saved layout
+    Rename {
+        from: String,
+        to: String,
+        #[arg(long)]
+        mine: bool,
+    },
+}
+
+/// `REF=LEFT,TOP,WIDTH,HEIGHT`.
+fn parse_at(s: &str) -> std::result::Result<(String, [f64; 4]), String> {
+    let (r, nums) = s
+        .split_once('=')
+        .ok_or("expected REF=LEFT,TOP,WIDTH,HEIGHT")?;
+    let v: Vec<f64> = nums
+        .split(',')
+        .map(|n| {
+            n.trim()
+                .parse()
+                .map_err(|_| format!("'{n}' is not a number"))
+        })
+        .collect::<std::result::Result<_, _>>()?;
+    let r4: [f64; 4] = v
+        .try_into()
+        .map_err(|_| "expected four numbers".to_string())?;
+    Ok((r.to_string(), r4))
 }
 
 #[derive(Subcommand)]
@@ -455,6 +535,21 @@ enum BlockCmd {
         #[arg(long)]
         remove: Vec<String>,
     },
+    /// Take an element out of the flow and place it at LEFT,TOP (px)
+    Place {
+        element: String,
+        /// LEFT,TOP in px
+        #[arg(long, value_parser = parse_pair, allow_hyphen_values = true)]
+        at: (f64, f64),
+        /// W,H in px (default: the element's natural size)
+        #[arg(long, value_parser = parse_pair, conflicts_with = "width")]
+        size: Option<(f64, f64)>,
+        /// Width in px, keeping the natural height
+        #[arg(long)]
+        width: Option<f64>,
+    },
+    /// Put a placed element back in the flow
+    Unplace { element: String },
 }
 
 #[derive(Args)]
@@ -545,6 +640,9 @@ fn output_of(cmd: &str) -> &'static str {
         }
         "schema" => r#"{"commands":[...],"errors":[...]}"#,
         "images" => r#"{"images":[{"path","kind","size","modified"}]}"#,
+        "layouts" => {
+            r#"{"layouts":[{"name","description","from":"built-in|mine|deck","placeholders":[{"kind","purpose"}],"boxes":[{"kind","left","top","width","height"}]}]}"#
+        }
         "image" => r#"{"path"} (with --slide: the edit, as block add, plus "path")"#,
         "skill" => r#"{"skill":"<markdown>"} or {"ok","path"} with --install"#,
         "undo" | "redo" => r#"{"ok","op","undone|redone","version"}"#,
@@ -775,6 +873,10 @@ fn block_json(d: &Deck, b: &Block) -> Value {
     let text = d.slice(b.span);
     let mut v = json!({"id": b.id, "explicit": b.id_explicit, "kind": b.kind, "text": text,
         "hash": crate::deck::version_of(text.as_bytes()), "lines": d.lines(b.span), "attrs": attrs_json(b.attrs.as_ref())});
+    // a layout's empty box (spec 009): what it is waiting for
+    if let Some(a) = b.attrs.as_ref().filter(|a| a.has_class("qd-ph")) {
+        v["placeholder"] = json!(a.get("ph").unwrap_or("text"));
+    }
     if matches!(b.kind, BlockKind::Cell | BlockKind::Code) {
         // ```{python} (kind "cell", executable) or ```python (kind "code", shown) → "python"
         let info = text
@@ -807,22 +909,22 @@ fn block_json(d: &Deck, b: &Block) -> Value {
 }
 
 fn summary(d: &Deck, s: &Slide) -> String {
-    let first = s.blocks.iter().find(|b| {
-        !matches!(
-            b.kind,
-            BlockKind::Notes | BlockKind::Pause | BlockKind::Html
-        )
-    });
-    let line = first
-        .map(|b| {
-            d.slice(b.span)
-                .lines()
-                .next()
-                .unwrap_or("")
-                .trim()
-                .to_string()
+    // the first line of content: not a div's fence (a box, a layout's empty
+    // placeholder, spec 009), not notes or markup
+    let line = s
+        .blocks
+        .iter()
+        .filter(|b| {
+            !matches!(
+                b.kind,
+                BlockKind::Notes | BlockKind::Pause | BlockKind::Html
+            )
         })
-        .unwrap_or_default();
+        .flat_map(|b| d.slice(b.span).lines())
+        .map(str::trim)
+        .find(|l| !l.is_empty() && !l.starts_with(":::"))
+        .unwrap_or_default()
+        .to_string();
     if line.chars().count() > 80 {
         line.chars().take(79).collect::<String>() + "…"
     } else {
@@ -966,11 +1068,17 @@ const API_OPS: &[&str] = &[
     "box move",
     "box resize",
     "box rm",
+    "box front",
+    "box back",
+    "box forward",
+    "box backward",
     "replace",
     "block add",
     "block move",
     "block rm",
     "block dup",
+    "block place",
+    "block unplace",
     "block class",
     "slides",
     "show",
@@ -1389,9 +1497,74 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             after,
             before,
             title,
+            layout: Some(name),
+            ..
+        } => {
+            let store = ctx.store()?;
+            let dir = store.path.parent().unwrap_or(Path::new("."));
+            let l = crate::layouts::find(name, dir, &crate::store::config_root())?;
+            let mut found = Vec::new();
+            let mut v = ctx.edit(|d| {
+                let (p, f) = ops::add_layout(d, &l, title.as_deref(), at(after, before))?;
+                found = f;
+                Ok(p)
+            })?;
+            let slide = v["target"].as_str().unwrap_or_default().to_string();
+            let mut ph = Vec::new();
+            if title.is_none() {
+                ph.push(json!({"ref": slide, "kind": "title", "purpose": "the slide's title (qd title)"}));
+            }
+            ph.extend(found.into_iter().map(|f| {
+                json!({"ref": format!("{slide}/{}", f["index"]), "id": f["id"], "kind": f["kind"], "purpose": f["purpose"]})
+            }));
+            v["placeholders"] = json!(ph);
+            Ok(v)
+        }
+        Cmd::Layout { action } => {
+            let store = ctx.store()?;
+            let d = store.read()?;
+            let dir = store.path.parent().unwrap_or(Path::new("."));
+            let place = |mine: bool| if mine { "mine" } else { "deck" };
+            let (op, req) = match action {
+                LayoutCmd::Save {
+                    slide,
+                    name,
+                    mine,
+                    replace,
+                    at,
+                } => (
+                    "layout save",
+                    json!({"save": {
+                    "slide": slide, "name": name, "where": place(*mine), "replace": replace,
+                    "at": at.iter().cloned().collect::<std::collections::HashMap<_, _>>()}}),
+                ),
+                LayoutCmd::Rm { name, mine } => (
+                    "layout rm",
+                    json!({"rm": {"name": name, "where": place(*mine)}}),
+                ),
+                LayoutCmd::Rename { from, to, mine } => (
+                    "layout rename",
+                    json!({"rename": {"from": from, "to": to, "where": place(*mine)}}),
+                ),
+            };
+            let p = crate::layouts::change(&d, dir, &crate::store::config_root(), &req)?;
+            let shown = p.strip_prefix(dir).unwrap_or(&p);
+            Ok(json!({"ok": true, "op": op, "path": shown}))
+        }
+        Cmd::Layouts => {
+            let store = ctx.store()?;
+            let d = store.read()?;
+            let dir = store.path.parent().unwrap_or(Path::new("."));
+            Ok(crate::layouts::json_for(dir, d.width, d.height))
+        }
+        Cmd::Add {
+            after,
+            before,
+            title,
             input,
             attrs,
             classes,
+            layout: None,
         } => {
             let spec = SlideSpec {
                 title: title.clone(),
@@ -1463,6 +1636,10 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                 ctx.edit(|d| ops::box_resize(d, bx, size.unwrap(), *at))
             }
             BoxCmd::Rm { bx } => ctx.edit(|d| ops::box_rm(d, bx)),
+            BoxCmd::Front { bx } => ctx.edit(|d| ops::box_order(d, bx, "front")),
+            BoxCmd::Back { bx } => ctx.edit(|d| ops::box_order(d, bx, "back")),
+            BoxCmd::Forward { bx } => ctx.edit(|d| ops::box_order(d, bx, "forward")),
+            BoxCmd::Backward { bx } => ctx.edit(|d| ops::box_order(d, bx, "backward")),
         },
         Cmd::Replace {
             old,
@@ -1528,6 +1705,16 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                 add,
                 remove,
             } => ctx.edit(|d| ops::block_class(d, element, add, remove)),
+            BlockCmd::Place {
+                element,
+                at,
+                size,
+                width,
+            } => ctx.edit(|d| {
+                let (w, h) = size.map_or((*width, None), |(w, h)| (Some(w), Some(h)));
+                ops::block_place(d, element, *at, w, h)
+            }),
+            BlockCmd::Unplace { element } => ctx.edit(|d| ops::block_unplace(d, element)),
         },
         Cmd::Undo => {
             let (v, op) = ctx.store()?.undo()?;

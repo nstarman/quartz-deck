@@ -130,11 +130,19 @@ impl Events {
             "GET {path} HTTP/1.1\r\nHost: localhost\r\nAccept: text/event-stream\r\n\r\n"
         )
         .unwrap();
-        s.set_read_timeout(Some(Duration::from_millis(200)))
-            .unwrap();
-        Events {
-            r: BufReader::new(s),
+        s.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
+        let mut r = BufReader::new(s);
+        // the server subscribes before it answers: past the headers, no event is missed
+        let mut line = String::new();
+        while line != "\r\n" {
+            line.clear();
+            let n = r.read_line(&mut line).expect("no answer from the server");
+            assert!(n > 0, "{path} closed before its headers");
         }
+        r.get_ref()
+            .set_read_timeout(Some(Duration::from_millis(200)))
+            .unwrap();
+        Events { r }
     }
 
     fn wait(&mut self, want: &str, timeout: Duration) -> Option<String> {
@@ -939,7 +947,7 @@ fn settings_over_http() {
     let read = || -> Value { serde_json::from_str(&get(p, "/api/settings").1).unwrap() };
     let v = read();
     assert_eq!(v["values"]["source.side"], "left");
-    assert_eq!(v["defs"].as_array().unwrap().len(), 6);
+    assert_eq!(v["defs"].as_array().unwrap().len(), 7);
 
     let body = r#"{"source.side": "right"}"#;
     assert_eq!(
@@ -1034,5 +1042,94 @@ fn images_over_http() {
     assert!(
         listed.iter().any(|i| i["path"] == "images/chart-1.png"),
         "{v}"
+    );
+}
+
+/// Spec 009 SC-002: every built-in layout, added and left unfilled, renders
+/// with Quarto and shows no placeholder words; `GET /api/layouts` lists them.
+#[test]
+fn layouts_render_unfilled() {
+    if !have("quarto") {
+        return;
+    }
+    let (_tmp, dir) = setup();
+    let (ok, v) = qd_json(&dir, &["layouts"]);
+    assert!(ok, "{v}");
+    for l in v["layouts"].as_array().unwrap() {
+        let (ok, r) = qd_json(&dir, &["add", "--layout", l["name"].as_str().unwrap()]);
+        assert!(ok, "{l}: {r}");
+    }
+    let (ok, r) = qd_json(&dir, &["render"]);
+    assert!(ok, "{r}");
+    let html = std::fs::read_to_string(dir.join("deck.html")).unwrap();
+    for words in [
+        "Click to add",
+        "Drop an image",
+        "left column",
+        "the image",
+        "what to say",
+    ] {
+        assert!(!html.contains(words), "{words:?} in the output");
+    }
+    let server = start(&dir);
+    let (_, body) = get(server.port, "/api/layouts");
+    let v: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(v["layouts"].as_array().unwrap().len(), 12);
+}
+
+/// Spec 009 US3: saving, renaming and removing a layout over HTTP needs the
+/// token and same origin; a taken name is 409; the reply is the new list.
+#[test]
+fn layouts_over_http() {
+    if !have("quarto") {
+        return;
+    }
+    let (_tmp, dir) = setup();
+    let server = start(&dir);
+    let p = server.port;
+    let anon = format!("Host: 127.0.0.1:{p}\r\nContent-Type: application/json\r\n");
+    let tok = format!("{anon}X-QD-Token: {}\r\n", server.token);
+    let save = json!({"save": {"slide": "results", "name": "plot", "where": "deck", "at": {"results/0": [60, 300, 400, 150]}}}).to_string();
+    let send = |h: &str, body: &str| post_bytes(p, "/api/layouts", h, body.as_bytes());
+
+    assert_eq!(send(&anon, &save).0, 403, "no token");
+    assert_eq!(
+        send(&format!("{tok}Origin: http://evil.example\r\n"), &save).0,
+        403,
+        "another origin"
+    );
+    assert!(!dir.join("_layouts").exists());
+
+    let call = |body: &str, want: u16| {
+        let (s, b) = send(&tok, body);
+        assert_eq!(s, want, "{body}: {b}");
+        b
+    };
+    let v: Value = serde_json::from_str(&call(&save, 200)).unwrap();
+    assert!(
+        v["layouts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l["name"] == "plot" && l["from"] == "deck")
+    );
+    call(&save, 409);
+    call(
+        &json!({"save": {"slide": "results", "name": "../x", "where": "deck"}}).to_string(),
+        400,
+    );
+    call(
+        &json!({"rename": {"from": "plot", "to": "plot-2", "where": "deck"}}).to_string(),
+        200,
+    );
+    assert!(dir.join("_layouts/plot-2.md").exists());
+    call(
+        &json!({"rm": {"name": "plot-2", "where": "deck"}}).to_string(),
+        200,
+    );
+    assert!(!dir.join("_layouts/plot-2.md").exists());
+    call(
+        &json!({"rm": {"name": "two-columns", "where": "deck"}}).to_string(),
+        400,
     );
 }

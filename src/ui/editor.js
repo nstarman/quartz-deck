@@ -12,7 +12,7 @@ import { makeList } from '/ui/list.js';
 import * as pane from '/ui/pane.js';
 import * as run from '/ui/run.js';
 import * as focus from '/ui/focus.js';
-import { ask } from '/ui/sheet.js';
+import { ask, confirmSheet } from '/ui/sheet.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const frame = $('#preview');
@@ -157,9 +157,12 @@ async function op(name, args = {}, { fileExpect = true } = {}) {
 function load(path, version = null) {
   state.loading = version;
   // Reveal may ignore the initial URL hash (e.g. when it starts in scroll view),
-  // so remember where to go and steer it once it reports ready (see hookFrame).
-  state.want = state.goAfterRender || state.anchor || location.hash.replace(/^#\//, '') || null;
+  // so it is steered once it reports ready (see hookFrame): to the slide an op
+  // chose, else to the one shown then (the person may move on while it loads)
+  state.want = state.goAfterRender;
   state.goAfterRender = null;
+  // until the new render is hooked up, clicks and keys land on the old one
+  frame.setAttribute('aria-busy', 'true');
   frame.src = path + '?v=' + Date.now();
 }
 
@@ -176,6 +179,12 @@ const PREVIEW_CSS = `html:not(.qd-present) {
   .slide-menu-button { display: none !important; }
   /* an untitled slide (spec 008 US1): a placeholder on the canvas only, never in the file */
   .reveal .slides section > h2:empty::before { content: 'Click to add title'; color: #9a9aa0; font-weight: 400; }
+  /* a layout's empty boxes (spec 009): what goes there, on the canvas only */
+  .qd-ph:not(:has(*)) { display: flex !important; align-items: center; justify-content: center; outline: 2px dashed #b9b9bf;
+    outline-offset: -2px; border-radius: 6px; cursor: text; }
+  .qd-ph:not(:has(*))::before { content: 'Click to add text'; color: #9a9aa0; font-size: .6em; }
+  .qd-ph[data-ph=image]:not(:has(*))::before { content: 'Drop an image'; }
+  .qd-ph[data-ph=image]:not(:has(*)) { cursor: copy; }
   [data-qd]:hover { outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; }
   .qd-sel, .qd-sel:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 2px; }
   .qd-editing, .qd-editing:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 4px; cursor: text; }
@@ -185,6 +194,8 @@ const PREVIEW_CSS = `html:not(.qd-present) {
     box-shadow: inset 3px 0 0 rgba(42, 91, 215, .35); }
   section > h1:hover, section > h2:hover, section > h3:hover, #title-slide :is(.title, .subtitle, .date):hover {
     outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; cursor: text; }
+  .qd-off { outline: 2px dashed #b3261e; outline-offset: 2px; }
+  .qd-guide { position: absolute; z-index: 1001; pointer-events: none; background: #d6249f; }
   .qd-overlay { position: absolute; box-sizing: border-box; border: 2px solid #2a5bd7; cursor: move;
     touch-action: none; z-index: 1000; }
   /* a 10 px square to see, a 24 px target to hit (spec 008 US7: at least 20) */
@@ -206,9 +217,133 @@ function highlight() {
     const els = doc.querySelectorAll(`[data-qd="${CSS.escape(state.sel)}"]`);
     els.forEach((el) => el.classList.add('qd-sel'));
     const box = [...els].find((el) => el.classList.contains('absolute'));
+    if (els.length) state.selBox = !!box; // kept while a new render swaps in (the arrow keys)
     if (box) attachOverlay(box);
   }
   placeElbar();
+}
+
+// ---------- placing an element freely (spec 009 US2) ----------
+
+const revealScale = () => frameWin()?.Reveal?.getScale?.() || 1;
+
+/** Where `el` shows on its slide now, [left, top, width, height] in slide px. */
+function slideRect(el) {
+  const s = revealScale();
+  const sec = el.closest('section').getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  return [r.left - sec.left, r.top - sec.top, r.width, r.height].map((v) => Math.round(v / s));
+}
+
+/** `block place` args for target `t`: where its element shows on the slide now, in slide px. */
+function placement(t) {
+  const s = revealScale();
+  const r = t.el.getBoundingClientRect();
+  // a block is as wide as the slide; the box is as wide as its text (a little more, so it doesn't rewrap)
+  let right = 0;
+  const doc = t.el.ownerDocument;
+  const walk = doc.createTreeWalker(t.el, NodeFilter.SHOW_TEXT);
+  const range = doc.createRange();
+  while (walk.nextNode()) {
+    if (!walk.currentNode.data.trim()) continue;
+    range.selectNodeContents(walk.currentNode);
+    right = Math.max(right, range.getBoundingClientRect().right);
+  }
+  const w = right ? Math.min(r.width, right - r.left + 8 * s) : r.width;
+  const [l, top] = slideRect(t.el);
+  return { element: t.ref, at: `${l},${top}`, width: Math.round(w / s) };
+}
+
+/** ⌥-drag on an element in the flow: it follows the pointer, and the drop places it there. */
+let placeDragged = false; // the click ending the drag is not an ⌥-click (source)
+function placeDrag(e) {
+  const el = e.target.closest('[data-qd]');
+  if (!e.altKey || e.button !== 0 || !el || el.classList.contains('absolute') || state.session || presenting()) return;
+  e.preventDefault(); // no text selection
+  const doc = el.ownerDocument;
+  const s = revealScale();
+  const [x0, y0] = [e.clientX, e.clientY];
+  let moved = false;
+  const onMove = (ev) => {
+    const [dx, dy] = [ev.clientX - x0, ev.clientY - y0];
+    if (!moved && Math.hypot(dx, dy) < 4) return;
+    moved = true;
+    Object.assign(el.style, { transform: `translate(${dx / s}px, ${dy / s}px)`, opacity: '.6' });
+  };
+  const onUp = async () => {
+    doc.removeEventListener('pointermove', onMove);
+    doc.removeEventListener('pointerup', onUp);
+    if (!moved) return;
+    placeDragged = true;
+    setTimeout(() => { placeDragged = false; }, 300); // in case no click follows
+    const t = await elementTarget(el.dataset.qd);
+    const why = t && actions.why('place', t);
+    if (why) say(why, true);
+    if (!t || why || !(await actions.run('place', t))) Object.assign(el.style, { transform: '', opacity: '' });
+  };
+  doc.addEventListener('pointermove', onMove);
+  doc.addEventListener('pointerup', onUp);
+}
+
+/** A placed element outside the slide doesn't show when presenting: outline it. */
+function markOffSlide(w) {
+  const { width, height } = w.Reveal.getConfig();
+  for (const b of w.document.querySelectorAll('.absolute[data-qd]')) {
+    const r = rectOf(b);
+    const off = r.l < 0 || r.t < 0 || r.l + r.w > width || r.t + r.h > height;
+    b.classList.toggle('qd-off', off);
+    b.title = off ? 'Outside the slide: it won’t show when presenting' : '';
+  }
+}
+
+// ---------- guides and snapping (spec 009 US4) ----------
+
+const SNAP_PX = 6; // screen px
+
+/**
+ * The lines a box dragged on `sec` can snap to, in slide px: the slide's edges and
+ * centre and every other element's, measured once when the drag starts.
+ */
+function guideLines(sec, box) {
+  const { width, height } = frameWin().Reveal.getConfig();
+  const xs = [0, width / 2, width];
+  const ys = [0, height / 2, height];
+  for (const el of sec.querySelectorAll(':scope > [data-qd]')) {
+    if (el === box) continue;
+    const [l, t, w, h] = slideRect(el);
+    xs.push(l, l + w / 2, l + w);
+    ys.push(t, t + h / 2, t + h);
+  }
+  return { xs, ys, width, height };
+}
+
+/** The nearest line to any of `edges` within `reach`: [shift, line], or null. */
+function nearest(edges, lines, reach) {
+  let best = null;
+  for (const e of edges) for (const x of lines) if (Math.abs(x - e) <= reach && (!best || Math.abs(x - e) < Math.abs(best[0]))) best = [x - e, x];
+  return best;
+}
+
+const clearGuides = (sec) => sec.querySelectorAll('.qd-guide').forEach((g) => g.remove());
+
+/** Snap rectangle `r` (moved, or resized from `dir`) to `lines`, drawing the guides it meets on `sec`. */
+function snap(r, dir, lines, sec, reach) {
+  const x = nearest(!dir ? [r.l, r.l + r.w / 2, r.l + r.w] : dir.includes('w') ? [r.l] : dir.includes('e') ? [r.l + r.w] : [], lines.xs, reach);
+  const y = nearest(!dir ? [r.t, r.t + r.h / 2, r.t + r.h] : dir.includes('n') ? [r.t] : dir.includes('s') ? [r.t + r.h] : [], lines.ys, reach);
+  if (x) {
+    if (!dir) r.l += x[0]; else if (dir.includes('w')) { r.l += x[0]; r.w -= x[0]; } else r.w += x[0];
+  }
+  if (y) {
+    if (!dir) r.t += y[0]; else if (dir.includes('n')) { r.t += y[0]; r.h -= y[0]; } else r.h += y[0];
+  }
+  for (const [hit, vertical] of [[x, true], [y, false]]) {
+    if (!hit) continue;
+    const g = sec.ownerDocument.createElement('div');
+    g.className = 'qd-guide';
+    const thin = reach / SNAP_PX + 'px'; // 1 screen px on the scaled slide
+    Object.assign(g.style, vertical ? { left: hit[1] + 'px', top: 0, width: thin, height: lines.height + 'px' } : { top: hit[1] + 'px', left: 0, height: thin, width: lines.width + 'px' });
+    sec.append(g);
+  }
 }
 
 // ---------- drag / resize positioned boxes (US4) ----------
@@ -231,7 +366,7 @@ function attachOverlay(box) {
   ov.className = 'qd-overlay';
   ov.title = 'Drag to move';
   // the slide is drawn scaled: size the handles in screen pixels
-  ov.style.setProperty('--px', String(1 / (frameWin().Reveal?.getScale?.() || 1)));
+  ov.style.setProperty('--px', String(1 / (revealScale())));
   for (const [name, [x, y]] of Object.entries(HANDLES)) {
     const h = doc.createElement('div');
     h.className = 'qd-handle';
@@ -246,12 +381,14 @@ function attachOverlay(box) {
     e.preventDefault();
     e.stopPropagation();
     const dir = e.target.dataset.dir || null;
-    const scale = frameWin().Reveal?.getScale?.() || 1;
+    const scale = revealScale();
     const start = rectOf(box);
     const x0 = e.clientX;
     const y0 = e.clientY;
     let cur = start;
     ov.setPointerCapture(e.pointerId);
+    const sec = box.closest('section');
+    const lines = settings.get('placement.snap') && guideLines(sec, box);
     const onMove = (ev) => {
       const dx = (ev.clientX - x0) / scale;
       const dy = (ev.clientY - y0) / scale;
@@ -267,14 +404,18 @@ function attachOverlay(box) {
           if (dir.includes('n')) r.t = start.t + start.h - r.h;
           if (dir.includes('w')) r.l = start.l + start.w - r.w;
         }
-        r.w = Math.max(1, r.w);
-        r.h = Math.max(1, r.h);
       }
+      clearGuides(sec);
+      // ⌘/Ctrl held: placed freely, this drag only; a ⇧ resize keeps its proportions instead
+      if (lines && !ev.metaKey && !ev.ctrlKey && !(dir && ev.shiftKey)) snap(r, dir, lines, sec, SNAP_PX / scale);
+      r.w = Math.max(1, r.w);
+      r.h = Math.max(1, r.h);
       cur = { l: Math.round(r.l), t: Math.round(r.t), w: Math.round(r.w), h: Math.round(r.h) };
       place(box, cur);
       place(ov, cur);
     };
     const onUp = async () => {
+      clearGuides(sec);
       ov.removeEventListener('pointermove', onMove);
       ov.removeEventListener('pointerup', onUp);
       ov.removeEventListener('pointercancel', onUp);
@@ -329,6 +470,8 @@ function hookFrame() {
 
   doc.addEventListener('click', (e) => {
     if (presenting()) return;
+    if (placeDragged) { placeDragged = false; e.preventDefault(); e.stopPropagation(); return; }
+    if (e.target.closest('.qd-overlay')) return; // the end of a box drag keeps the box selected
     if (state.session) {
       if (state.session.root.contains(e.target)) return; // caret moves inside the edit
       saveSession(); // clicking elsewhere ends the edit
@@ -351,6 +494,7 @@ function hookFrame() {
       if (el.classList.contains('absolute')) select(el.dataset.qd); else beginSource(el);
     });
   }, true);
+  doc.addEventListener('pointerdown', placeDrag, true);
   doc.addEventListener('dblclick', (e) => {
     if (state.session || presenting()) return;
     const el = e.target.closest('[data-qd]') || doc.querySelector(`[data-qd="${CSS.escape(state.sel || '')}"]`);
@@ -401,7 +545,8 @@ function hookFrame() {
     w.dispatchEvent(new Event('resize'));
     // synchronously: a hash change lands a task later, and onSlide() below would
     // meanwhile report the first slide (hiding the slide bar under a click)
-    const want = state.want && frame.contentDocument.getElementById(state.want);
+    const id = state.want || state.anchor || location.hash.replace(/^#\//, '');
+    const want = id && frame.contentDocument.getElementById(id);
     if (want && w.Reveal.getCurrentSlide() !== want) {
       const { h, v } = w.Reveal.getIndices(want);
       w.Reveal.slide(h, v);
@@ -416,8 +561,10 @@ function hookFrame() {
     // show other text at that ref, and the edit would not open
     if (state.editAfterRender?.version === state.loading) openInserted(state.editAfterRender);
     slideList.refresh();
+    markOffSlide(w);
     w.MathJax?.startup?.promise?.then(() => slideList.refresh()); // math typesets after ready
     onSlide();
+    frame.removeAttribute('aria-busy');
   };
   const onSlide = () => {
     const id = w.Reveal?.getCurrentSlide()?.id;
@@ -446,8 +593,71 @@ frame.addEventListener('load', () => {
 
 // ---------- slide list (spec 008 US1: list.js) ----------
 
+// ---------- saved layouts (spec 009 US3) ----------
+
+const LAYOUT_NAME = (x) => (/^[a-z0-9-]{1,40}$/.test(x) ? '' : 'Lowercase letters, digits and - (up to 40)');
+
+/** `POST /api/layouts`: the new list, 'taken' for a name in use, or null (said). */
+async function layoutChange(change) {
+  const res = await fetch('/api/layouts', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-QD-Token': run.token }, body: JSON.stringify(change) });
+  const body = await res.json().catch(() => ({}));
+  if (res.status === 409) return 'taken';
+  if (!res.ok) { say(res.status === 403 ? 'Saving layouts needs the editor link from `qd serve` or `qd url`' : body.error?.message || res.statusText, true); return null; }
+  return body;
+}
+
+/** Slide ▸ Save slide as layout…: a name, where to keep it, and where each element shows now. */
+async function saveLayout(t) {
+  const v = await ask({
+    title: 'Save slide as layout', ok: 'Save',
+    fields: [
+      { name: 'name', kind: 'text', label: 'Name', placeholder: 'e.g. chart-and-notes', validate: LAYOUT_NAME },
+      { name: 'where', kind: 'choice', label: 'Keep it', value: 'deck', options: [['deck', 'With this deck'], ['mine', 'In my layouts, for every deck']] },
+    ],
+  });
+  if (!v) return;
+  const at = {};
+  t.full.blocks.forEach((b, i) => {
+    // where each element shows now: flow elements, and boxes without a full px place
+    const el = elOf(`${t.slideId}/${i}`);
+    const r = el && slideRect(el);
+    if (r?.[2] > 0 && r[3] > 0) at[`${t.slideId}/${i}`] = r; // a slide not on screen measures 0: stacked instead
+  });
+  const save = { slide: t.slideId, name: v.name, where: v.where, at };
+  let r = await layoutChange({ save });
+  if (r === 'taken' && (await confirmSheet('Replace layout?', `There is already a layout named “${v.name}” there.`, 'Replace'))) r = await layoutChange({ save: { ...save, replace: true } });
+  if (r && r !== 'taken') say(`Saved layout “${v.name}”`);
+}
+
+/** The gallery's rename and delete, for saved layouts. */
+const manageLayouts = {
+  rename: async (o) => {
+    const v = await ask({ title: `Rename “${o.name}”`, ok: 'Rename', fields: [{ name: 'to', kind: 'text', label: 'New name', validate: LAYOUT_NAME }] });
+    if (!v) return null;
+    const r = await layoutChange({ rename: { from: o.name, to: v.to, where: o.from } });
+    if (r === 'taken') say(`There is already a layout named “${v.to}”`, true);
+    return r && r !== 'taken' ? v.to : null;
+  },
+  remove: async (o) => (await confirmSheet('Delete layout?', `“${o.name}” will be deleted. Slides made from it stay as they are.`, 'Delete'))
+    && !!(await layoutChange({ rm: { name: o.name, where: o.from } })),
+};
+
+/** A new slide `where` (`{after}`/`{before}`), from a layout picked in the gallery (spec 009). */
+async function addSlide(where, anchor) {
+  const { layouts } = await fetch('/api/layouts').then((r) => r.json());
+  const v = await ask({
+    title: 'New slide', ok: 'Add slide', anchor,
+    fields: [{ name: 'layout', kind: 'gallery', label: 'Layout', options: layouts, value: settings.get('ui.last_layout'), size: [state.deck.width, state.deck.height], manage: manageLayouts }],
+  });
+  if (!v?.layout) return null;
+  settings.set({ 'ui.last_layout': v.layout });
+  const r = await op('add', { ...where, layout: v.layout });
+  if (r) { state.goAfterRender = r.target; state.sel = null; await fetchDeck(); }
+  return r;
+}
+
 const slideList = makeList({
-  state, frame, go, op, fetchDeck, openMenu,
+  state, frame, go, op, fetchDeck, openMenu, addSlide,
   slideMenu: async (id) => actions.slide(await slideTarget(id)),
 });
 
@@ -805,7 +1015,8 @@ function pendingBadge(on) {
 /** What a click on `node` would edit: a block, a slide title, or a title-slide field. */
 function editTarget(node) {
   const el = node.closest?.('[data-qd]');
-  if (el) return el.classList.contains('absolute') ? null : { kind: 'block', root: el };
+  // a positioned box selects for dragging, but a layout's empty text box is for typing into
+  if (el) return el.classList.contains('absolute') && !el.matches('.qd-ph[data-ph=text]') ? null : { kind: 'block', root: el };
   const sec = node.closest?.('section');
   if (!sec) return null;
   if (sec.id === 'title-slide') {
@@ -868,6 +1079,12 @@ function beginSession(s, point) {
   const doc = s.root.ownerDocument;
   openSession(s);
   s.root.contentEditable = 'true';
+  // an empty box (a layout's placeholder) gets a paragraph to type into: the
+  // browser would put the text straight into the box, which isn't markdown
+  if (s.kind === 'block' && !s.root.children.length && !s.root.textContent.trim()) {
+    s.root.innerHTML = '<p><br></p>';
+    point = null;
+  }
   doc.execCommand('styleWithCSS', false, false);
   doc.execCommand('defaultParagraphSeparator', false, 'p');
   frame.focus(); // keyboard input must reach the iframe (e.g. after a menu in the page had focus)
@@ -1154,7 +1371,7 @@ async function elementTarget(ref) {
   const block = slide?.blocks[index];
   if (!block) return null;
   const el = elOf(ref);
-  return { ref, block, slideId, index, count: slide.blocks.length, el };
+  return { ref, block, slideId, index, count: slide.blocks.length, kinds: slide.blocks.map((b) => b.kind), el };
 }
 
 /** … or a slide. */
@@ -1166,6 +1383,7 @@ async function slideTarget(slideId) {
 
 const actions = makeActions({
   runCells: run.runCells,
+  addSlide,
   op: async (name, args) => {
     if (name === 'rm') {
       const many = slideList.selected(args.slide); // the picked slides, if this is one (spec 008 US9)
@@ -1177,15 +1395,17 @@ const actions = makeActions({
     }
     const r = await op(name, args);
     if (!r) return null;
-    if (name === 'add' || name === 'dup') state.goAfterRender = r.target;
-    if (name === 'dup') copiedFrom.set(r.target, slideById(args.slide)?.anchor);
-    if (name.startsWith('block') && name !== 'block rm' && r.target?.includes('/')) state.sel = r.target;
+    if (name === 'dup') { state.goAfterRender = r.target; copiedFrom.set(r.target, slideById(args.slide)?.anchor); }
+    if (/^(block|box) /.test(name) && name !== 'block rm' && r.target?.includes('/')) state.sel = r.target; // the element at its new place
     if (name === 'block rm' || name === 'rm') state.sel = null;
+    if (name === 'block place') state.sel = args.element; // the box is where the element was
     await fetchDeck();
     await renderPanel();
     renderSlidebar();
     return r;
   },
+  placement,
+  saveLayout,
   beginEditRef: (t) => t.el && beginEdit({ kind: 'block', root: t.el }, null).then((ok) => ok || beginSource(t.el)),
   beginSourceEl: (t) => t.el && beginSource(t.el),
   beginSlideSource: (t) => beginSlideSource(frame.contentDocument?.getElementById(t.anchor)),
@@ -1530,7 +1750,12 @@ async function dropImage(file, on, y) {
     body: file,
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) return say(`${file.name}: ${body.error?.message || res.statusText}`, true);
+  if (!res.ok) return say(res.status === 403 ? 'Adding images needs the editor link from `qd serve` or `qd url`' : `${file.name}: ${body.error?.message || res.statusText}`, true);
+  // a layout's image placeholder takes the image in its place
+  if (on?.matches('.qd-ph[data-ph=image]')) {
+    if (await op('edit', { element: on.dataset.qd, md: `![](${body.path}){width="100%"}` })) await fetchDeck();
+    return;
+  }
   const r = on?.getBoundingClientRect();
   const where = on ? { [y > r.top + r.height / 2 ? 'after' : 'before']: on.dataset.qd } : { end: true };
   await insertBlock(slide.id, where, { md: `![](${body.path})` });
@@ -1689,8 +1914,8 @@ $('#present-more').addEventListener('click', (e) => {
 keys.on('undo', () => undoRedo('undo'));
 keys.on('redo', () => undoRedo('redo'));
 // element and slide actions: the right-click menus' own (actions.js), on what is selected / shown
-const ELEMENT = ['edit', 'source', 'cut', 'copy', 'paste', 'dup', 'delete', 'up', 'down', 'fragment', 'class-smaller', 'class-incremental', 'class-custom'];
-const SLIDE = ['slide-before', 'slide-after', 'slide-dup', 'slide-cut', 'slide-copy', 'slide-paste', 'slide-hide', 'slide-rm', 'slide-bg', 'slide-bgimg', 'slide-notes', 'slide-source', 'slide-link'];
+const ELEMENT = ['edit', 'source', 'cut', 'copy', 'paste', 'dup', 'delete', 'up', 'down', 'fragment', 'class-smaller', 'class-incremental', 'class-custom', 'place', 'unplace', 'box-front', 'box-forward', 'box-backward', 'box-back'];
+const SLIDE = ['slide-before', 'slide-after', 'slide-dup', 'slide-cut', 'slide-copy', 'slide-paste', 'slide-hide', 'slide-rm', 'slide-bg', 'slide-bgimg', 'slide-notes', 'slide-source', 'slide-link', 'layout-save'];
 for (const [ids, on, table] of [[ELEMENT, 'el', 'element'], [SLIDE, 'slide', 'slide']]) {
   for (const id of ids) {
     keys.on(id, {
@@ -1698,9 +1923,22 @@ for (const [ids, on, table] of [[ELEMENT, 'el', 'element'], [SLIDE, 'slide', 'sl
       // Paste reads the system clipboard on a key press; from a menu it needs our own copy
       enabled: (ctx) => !!ctx[on] && actions.can(id, ctx[on], table) && (!id.endsWith('paste') || !!ctx.e || !!state.clip),
       checked: (ctx) => ctx[on] && actions.checked(id, ctx[on], table),
+      why: (ctx) => ctx[on] && actions.tip(id, ctx[on], table),
       run: (ctx) => actions.run(id, ctx[on], table),
     });
   }
+}
+// arrow keys nudge a placed element (spec 009 US2), ⇧ by 10; otherwise they stay reveal.js's
+const boxSelected = () => !!state.sel && !!state.selBox;
+for (const [dir, dx, dy] of [['left', -1, 0], ['right', 1, 0], ['up', 0, -1], ['down', 0, 1]]) {
+  keys.on(`box-nudge-${dir}`, {
+    key: boxSelected,
+    enabled: (ctx) => ctx.el?.block.kind === 'box',
+    run: async (ctx) => {
+      const n = ctx.e?.shiftKey ? 10 : 1;
+      if (await op('box move', { box: ctx.el.ref, by: `${dx * n},${dy * n}` })) { await fetchDeck(); await renderPanel(); }
+    },
+  });
 }
 const inSlide = (e) => e.target.ownerDocument === frame.contentDocument && !!frameWin()?.Reveal?.getCurrentSlide()?.querySelector('[data-qd]');
 keys.on('next-element', { key: inSlide, enabled: (ctx) => !!ctx.slide, run: () => stepSelection(false) });
@@ -1732,6 +1970,7 @@ const toggle = (cls, set) => ({ checked: () => mainEl.classList.contains(cls), r
 keys.on('toggle-source', { checked: () => !srcpane.hidden, run: () => setSource(srcpane.hidden) });
 keys.on('source-full', toggle('source-full', setFull));
 keys.on('form-panel', toggle('panel-open', setPanel));
+keys.on('snap', { checked: () => settings.get('placement.snap'), run: () => settings.set({ 'placement.snap': !settings.get('placement.snap') }) });
 keys.on('about', () => ask({ title: 'About quartz-deck', message: 'A slide editor for Quarto reveal.js decks. Alpha software, not licensed for use by others (see LICENSE).', cancel: null }));
 keys.on('settings', settings.open);
 

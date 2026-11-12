@@ -8,7 +8,7 @@ const BACKGROUNDS = ['#ffffff', '#fdf6e3', '#f4f6fb', '#eaf4ec', '#fff4e5', '#fd
 const previewUrl = (path) => '/preview/' + path.split('/').map(encodeURIComponent).join('/');
 
 /**
- * Ask: `fields` are `{name, label, kind: 'text'|'swatches'|'files', value,
+ * Ask: `fields` are `{name, label, kind: 'text'|'swatches'|'files'|'choice'|'gallery', value,
  * validate?(value) → message, placeholder?}`; `anchor` is the element (or rect) it
  * opens beside. Resolves to `{name: value}` on OK, `null` otherwise.
  */
@@ -41,7 +41,7 @@ export function ask({ title, message = '', fields = [], ok = 'OK', cancel = 'Can
     d.style.left = Math.max(8, Math.min(r.left, innerWidth - d.offsetWidth - 8)) + 'px';
     d.style.top = Math.max(8, r.bottom + 4 + d.offsetHeight > innerHeight ? r.top - d.offsetHeight - 4 : r.bottom + 4) + 'px';
   }
-  (form.querySelector('input:not([type=color])') || okB).focus();
+  (form.querySelector('.is-gallery input:checked') || form.querySelector('input[type=text]') || okB).focus();
   // a task later: the dialog puts focus back where it was first, so a caller can then move it
   return new Promise((done) => d.addEventListener('close', () => setTimeout(() => {
     done(d.returnValue === 'ok' ? Object.fromEntries(Object.entries(values).map(([k, get]) => [k, get()])) : null);
@@ -55,6 +55,18 @@ export const confirmSheet = async (title, message, ok, anchor) => !!(await ask({
 function field(f, values, checks, submit) {
   const wrap = el('div', { className: `field is-${f.kind}` });
   const err = el('span', { className: 'error', role: 'alert' });
+  if (f.kind === 'gallery') return gallery(f, wrap, values, submit);
+  if (f.kind === 'choice') { // one of `f.options`, [[value, label], …]
+    const group = el('div', { className: 'choice', role: 'radiogroup', ariaLabel: f.label });
+    for (const [value, text] of f.options) {
+      const l = el('label');
+      l.append(el('input', { type: 'radio', name: f.name, value, checked: value === f.value }), ` ${text}`);
+      group.append(l);
+    }
+    wrap.append(el('span', { className: 'label', textContent: f.label }), group);
+    values[f.name] = () => group.querySelector('input:checked')?.value;
+    return wrap;
+  }
   if (f.kind === 'swatches') {
     let value = f.value ?? '';
     const group = el('div', { className: 'swatches', role: 'radiogroup', ariaLabel: f.label });
@@ -113,5 +125,68 @@ function field(f, values, checks, submit) {
     input.setAttribute('aria-invalid', String(touched && !!msg));
     return !!msg;
   });
+  return wrap;
+}
+
+const FROM = { deck: 'This deck’s', mine: 'Yours', 'built-in': 'Built in' };
+
+/**
+ * Layouts to pick from (spec 009): `f.options` as `qd layouts` lists them, `f.size`
+ * the deck's [width, height]. Each preview is drawn from the layout's own boxes;
+ * arrows move between them (radio buttons), Enter or a double click picks.
+ */
+function gallery(f, wrap, values, submit) {
+  const [w, h] = f.size;
+  const headed = f.options.some((x) => x.from !== 'built-in'); // headings only when there's more than the built-in ones
+  let from = null;
+  let grid = null;
+  for (const o of f.options) {
+    if (o.from !== from) {
+      from = o.from;
+      const name = FROM[from] || from;
+      grid = el('div', { className: 'gallery', role: 'radiogroup', ariaLabel: name });
+      if (headed) wrap.append(el('h3', { textContent: name }));
+      wrap.append(grid);
+    }
+    const label = el('label', { title: o.description });
+    label.dataset.layout = o.name;
+    const radio = el('input', { type: 'radio', name: f.name, value: o.name, checked: o.name === f.value });
+    const preview = el('span', { className: 'preview' });
+    preview.append(el('span', { className: 'bar' }));
+    for (const b of o.boxes) {
+      const box = el('span', { className: `box ${b.kind}` });
+      Object.assign(box.style, { left: `${(100 * b.left) / w}%`, top: `${(100 * b.top) / h}%`, width: `${(100 * b.width) / w}%`, height: `${(100 * b.height) / h}%` });
+      preview.append(box);
+    }
+    const name = el('span', { className: 'name', textContent: o.name.replace(/-/g, ' ') });
+    label.append(radio, preview, name);
+    label.addEventListener('dblclick', submit);
+    // saved layouts (US3): rename and delete in place; `f.manage` does the asking and saving
+    if (f.manage && o.from !== 'built-in') {
+      const tool = (cls, text, run) => {
+        const b = el('button', { type: 'button', className: cls, textContent: text, title: `${text} “${o.name}”` });
+        b.addEventListener('click', (e) => { e.preventDefault(); run(); });
+        return b;
+      };
+      const tools = el('span', { className: 'tools' });
+      tools.append(
+        tool('rename', 'Rename', async () => {
+          const to = await f.manage.rename(o);
+          if (!to) return;
+          o.name = label.dataset.layout = radio.value = to;
+          name.textContent = to.replace(/-/g, ' ');
+        }),
+        tool('delete', 'Delete', async () => {
+          if (!(await f.manage.remove(o))) return;
+          label.remove();
+          if (!wrap.querySelector('input:checked')) wrap.querySelector('input').checked = true;
+        }),
+      );
+      label.append(tools);
+    }
+    grid.append(label);
+  }
+  if (!wrap.querySelector('input:checked')) wrap.querySelector('input').checked = true;
+  values[f.name] = () => wrap.querySelector('input:checked')?.value;
   return wrap;
 }
