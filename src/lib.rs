@@ -9,6 +9,7 @@ pub mod error;
 pub mod export;
 pub mod focus;
 pub mod formats;
+pub mod history;
 pub mod images;
 pub mod inline;
 pub mod kernel;

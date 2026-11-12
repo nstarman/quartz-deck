@@ -42,6 +42,15 @@ pub enum QdError {
     Usage(String),
     #[error("no browser available: {0}")]
     NoBrowser(String),
+    /// History (spec 012) needs the `git` command.
+    #[error("git not found on PATH")]
+    NoGit,
+    /// The deck is not in a git repository (spec 012).
+    #[error("the deck is not in a git repository")]
+    NoRepo,
+    /// git refused (its message).
+    #[error("git: {0}")]
+    Git(String),
     /// A format needs TeX (`beamer`, `pdf`) and none was found.
     #[error("{0} needs TeX, and none was found")]
     NoTex(String),
@@ -91,6 +100,9 @@ impl QdError {
             Self::Usage(_) => "E_USAGE",
             Self::NoBrowser(_) => "E_NO_BROWSER",
             Self::NoTex(_) => "E_NO_TEX",
+            Self::NoGit => "E_NO_GIT",
+            Self::NoRepo => "E_NO_REPO",
+            Self::Git(_) => "E_GIT",
             Self::Download(_) => "E_DOWNLOAD",
             Self::Offline(_) => "E_OFFLINE",
             Self::OfflineIncompatible(_) => "E_OFFLINE_INCOMPATIBLE",
@@ -141,6 +153,9 @@ impl QdError {
                 "install Google Chrome, set QD_CHROME to a Chrome/Chromium binary, or allow qd to download one (drop --no-download / QD_NO_DOWNLOAD)"
             }
             Self::NoTex(_) => "install TeX: quarto install tinytex",
+            Self::NoGit => "install git",
+            Self::NoRepo => "start a history with `qd history --init`",
+            Self::Git(_) => "see git's message",
             Self::Download(_) => {
                 "check the network connection and retry; a file that fails its checksum is never used"
             }

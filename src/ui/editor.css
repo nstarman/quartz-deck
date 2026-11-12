@@ -274,13 +274,30 @@ aside .status.fail { color: var(--danger); }
 
 /* ---------- spec 003 P2: menus, bars, Source panel ---------- */
 #stage { display: flex; flex-direction: column; gap: 6px; }
-#preview { flex: 1; min-height: 0; }
+#stage .previews { flex: 1; min-height: 0; display: flex; gap: 8px; }
+#preview { flex: 1; min-height: 0; min-width: 0; }
+/* History (spec 012): the versions, and one of them beside the current deck */
+#history { width: 240px; flex: none; overflow: auto; border-right: 1px solid var(--line); background: var(--panel); padding: 8px; }
+#history h2 { margin: 4px 4px 8px; font-size: 13px; }
+#history .status { margin: 0 4px 8px; color: var(--muted); font-size: 12px; }
+#history ol { list-style: none; margin: 0; padding: 0; }
+#history li button { all: unset; box-sizing: border-box; display: block; width: 100%; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+#history li button:hover, #history li button[aria-pressed=true] { background: var(--hover, rgba(127,127,127,.15)); }
+#history li button:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+#history .msg { display: block; font-size: 13px; }
+#history .meta { display: block; font-size: 11px; color: var(--muted); }
+#history .qd { font-size: 10px; border: 1px solid var(--line); border-radius: 4px; padding: 0 3px; margin-left: 4px; }
+#then { flex: 1; min-width: 0; margin: 0; display: flex; flex-direction: column; }
+#then[hidden] { display: none; }
+#then figcaption { font-size: 12px; color: var(--muted); padding: 0 0 4px; }
+#then iframe { flex: 1; width: 100%; border: 1px dashed var(--line); border-radius: 8px; background: #fff; }
+nav li.changed::after { content: '●'; position: absolute; top: 4px; right: 6px; color: var(--accent); font-size: 10px; }
 #slidebar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; }
 /* one height for every control (spec 008 US7) */
 #slidebar button, #slidebar select { height: 28px; }
 #slidebar .chip { display: inline-block; width: 14px; height: 14px; border: 1px solid var(--line); border-radius: 3px;
   vertical-align: -2px; background: repeating-linear-gradient(45deg, transparent 0 3px, var(--line) 3px 4px); }
-main:not(.panel-open) > aside { display: none; }
+main:not(.panel-open) > #panel { display: none; }
 
 #ctxmenu { position: fixed; z-index: 30; }
 #ctxmenu ul { list-style: none; margin: 0; padding: 4px; min-width: 210px; background: var(--panel); color: var(--text);

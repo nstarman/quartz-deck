@@ -119,6 +119,7 @@
   {"id": "toggle-source", "label": "Source pane", "menu": ["View"], "toggle": true, "where": ["anywhere"]},
   {"id": "source-full", "label": "Source full width", "menu": ["View"], "toggle": true, "where": ["anywhere"]},
   {"id": "form-panel", "label": "Properties panel", "menu": ["View"], "toggle": true, "where": ["anywhere"]},
+  {"id": "history", "label": "History", "menu": ["View"], "toggle": true, "key": "Alt+Mod+H", "where": ["anywhere"], "qd": "qd history"},
   {"id": "snap", "label": "Snap to guides", "menu": ["View"], "toggle": true, "where": ["anywhere"]},
   {"id": "present", "label": "Present from this slide", "menu": ["View"], "key": "Alt+Mod+P", "where": ["anywhere"]},
   {"id": "present-start", "label": "Present from the beginning", "menu": ["View"], "key": "Alt+Mod+Shift+P", "where": ["anywhere"]},

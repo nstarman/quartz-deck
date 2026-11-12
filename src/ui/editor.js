@@ -7,6 +7,7 @@ import { makeActions, INSERTS, TRANSITIONS } from '/ui/actions.js';
 import * as keys from '/ui/keys.js';
 import * as settings from '/ui/settings.js';
 import { submenu } from '/ui/menubar.js';
+import * as hist from '/ui/history.js';
 import { openMenu, closeMenu, menuOpen } from '/ui/menu.js';
 import { makeList } from '/ui/list.js';
 import * as pane from '/ui/pane.js';
@@ -561,6 +562,7 @@ function hookFrame() {
     // show other text at that ref, and the edit would not open
     if (state.editAfterRender?.version === state.loading) openInserted(state.editAfterRender);
     slideList.refresh();
+    hist.mark();
     markOffSlide(w);
     w.MathJax?.startup?.promise?.then(() => slideList.refresh()); // math typesets after ready
     onSlide();
@@ -571,6 +573,7 @@ function hookFrame() {
     if (!id || id === state.anchor) return;
     state.anchor = id;
     history.replaceState(null, '', '#/' + id);
+    hist.follow(id);
     const s = slideByAnchor(id);
     if (state.sel && s && !state.sel.startsWith(s.id + '/')) state.sel = null;
     // a slide change that followed the focus isn't a new one (keeps the source pane's)
@@ -2062,6 +2065,7 @@ const toggle = (cls, set) => ({ checked: () => mainEl.classList.contains(cls), r
 keys.on('toggle-source', { checked: () => !srcpane.hidden, run: () => setSource(srcpane.hidden) });
 keys.on('source-full', toggle('source-full', setFull));
 keys.on('form-panel', toggle('panel-open', setPanel));
+keys.on('history', { checked: hist.isOpen, run: () => hist.toggle() });
 keys.on('snap', { checked: () => settings.get('placement.snap'), run: () => settings.set({ 'placement.snap': !settings.get('placement.snap') }) });
 keys.on('about', () => ask({ title: 'About quartz-deck', message: 'A slide editor for Quarto reveal.js decks. Alpha software, not licensed for use by others (see LICENSE).', cancel: null }));
 keys.on('settings', settings.open);
