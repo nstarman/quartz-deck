@@ -939,7 +939,7 @@ fn settings_over_http() {
     let read = || -> Value { serde_json::from_str(&get(p, "/api/settings").1).unwrap() };
     let v = read();
     assert_eq!(v["values"]["source.side"], "left");
-    assert_eq!(v["defs"].as_array().unwrap().len(), 6);
+    assert_eq!(v["defs"].as_array().unwrap().len(), 7);
 
     let body = r#"{"source.side": "right"}"#;
     assert_eq!(

@@ -192,6 +192,7 @@ const PREVIEW_CSS = `html:not(.qd-present) {
   section > h1:hover, section > h2:hover, section > h3:hover, #title-slide :is(.title, .subtitle, .date):hover {
     outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; cursor: text; }
   .qd-off { outline: 2px dashed #b3261e; outline-offset: 2px; }
+  .qd-guide { position: absolute; z-index: 1001; pointer-events: none; background: #d6249f; }
   .qd-overlay { position: absolute; box-sizing: border-box; border: 2px solid #2a5bd7; cursor: move;
     touch-action: none; z-index: 1000; }
   /* a 10 px square to see, a 24 px target to hit (spec 008 US7: at least 20) */
@@ -292,6 +293,56 @@ function markOffSlide(w) {
   }
 }
 
+// ---------- guides and snapping (spec 009 US4) ----------
+
+const SNAP_PX = 6; // screen px
+
+/**
+ * The lines a box dragged on `sec` can snap to, in slide px: the slide's edges and
+ * centre and every other element's, measured once when the drag starts.
+ */
+function guideLines(sec, box) {
+  const { width, height } = frameWin().Reveal.getConfig();
+  const xs = [0, width / 2, width];
+  const ys = [0, height / 2, height];
+  for (const el of sec.querySelectorAll(':scope > [data-qd]')) {
+    if (el === box) continue;
+    const [l, t, w, h] = slideRect(el);
+    xs.push(l, l + w / 2, l + w);
+    ys.push(t, t + h / 2, t + h);
+  }
+  return { xs, ys, width, height };
+}
+
+/** The nearest line to any of `edges` within `reach`: [shift, line], or null. */
+function nearest(edges, lines, reach) {
+  let best = null;
+  for (const e of edges) for (const x of lines) if (Math.abs(x - e) <= reach && (!best || Math.abs(x - e) < Math.abs(best[0]))) best = [x - e, x];
+  return best;
+}
+
+const clearGuides = (sec) => sec.querySelectorAll('.qd-guide').forEach((g) => g.remove());
+
+/** Snap rectangle `r` (moved, or resized from `dir`) to `lines`, drawing the guides it meets on `sec`. */
+function snap(r, dir, lines, sec, reach) {
+  const x = nearest(!dir ? [r.l, r.l + r.w / 2, r.l + r.w] : dir.includes('w') ? [r.l] : dir.includes('e') ? [r.l + r.w] : [], lines.xs, reach);
+  const y = nearest(!dir ? [r.t, r.t + r.h / 2, r.t + r.h] : dir.includes('n') ? [r.t] : dir.includes('s') ? [r.t + r.h] : [], lines.ys, reach);
+  if (x) {
+    if (!dir) r.l += x[0]; else if (dir.includes('w')) { r.l += x[0]; r.w -= x[0]; } else r.w += x[0];
+  }
+  if (y) {
+    if (!dir) r.t += y[0]; else if (dir.includes('n')) { r.t += y[0]; r.h -= y[0]; } else r.h += y[0];
+  }
+  for (const [hit, vertical] of [[x, true], [y, false]]) {
+    if (!hit) continue;
+    const g = sec.ownerDocument.createElement('div');
+    g.className = 'qd-guide';
+    const thin = reach / SNAP_PX + 'px'; // 1 screen px on the scaled slide
+    Object.assign(g.style, vertical ? { left: hit[1] + 'px', top: 0, width: thin, height: lines.height + 'px' } : { top: hit[1] + 'px', left: 0, height: thin, width: lines.width + 'px' });
+    sec.append(g);
+  }
+}
+
 // ---------- drag / resize positioned boxes (US4) ----------
 
 const HANDLES = { nw: [0, 0], n: [0.5, 0], ne: [1, 0], e: [1, 0.5], se: [1, 1], s: [0.5, 1], sw: [0, 1], w: [0, 0.5] };
@@ -333,6 +384,8 @@ function attachOverlay(box) {
     const y0 = e.clientY;
     let cur = start;
     ov.setPointerCapture(e.pointerId);
+    const sec = box.closest('section');
+    const lines = settings.get('placement.snap') && guideLines(sec, box);
     const onMove = (ev) => {
       const dx = (ev.clientX - x0) / scale;
       const dy = (ev.clientY - y0) / scale;
@@ -348,14 +401,18 @@ function attachOverlay(box) {
           if (dir.includes('n')) r.t = start.t + start.h - r.h;
           if (dir.includes('w')) r.l = start.l + start.w - r.w;
         }
-        r.w = Math.max(1, r.w);
-        r.h = Math.max(1, r.h);
       }
+      clearGuides(sec);
+      // ⌘/Ctrl held: placed freely, this drag only; a ⇧ resize keeps its proportions instead
+      if (lines && !ev.metaKey && !ev.ctrlKey && !(dir && ev.shiftKey)) snap(r, dir, lines, sec, SNAP_PX / scale);
+      r.w = Math.max(1, r.w);
+      r.h = Math.max(1, r.h);
       cur = { l: Math.round(r.l), t: Math.round(r.t), w: Math.round(r.w), h: Math.round(r.h) };
       place(box, cur);
       place(ov, cur);
     };
     const onUp = async () => {
+      clearGuides(sec);
       ov.removeEventListener('pointermove', onMove);
       ov.removeEventListener('pointerup', onUp);
       ov.removeEventListener('pointercancel', onUp);
@@ -1907,6 +1964,7 @@ const toggle = (cls, set) => ({ checked: () => mainEl.classList.contains(cls), r
 keys.on('toggle-source', { checked: () => !srcpane.hidden, run: () => setSource(srcpane.hidden) });
 keys.on('source-full', toggle('source-full', setFull));
 keys.on('form-panel', toggle('panel-open', setPanel));
+keys.on('snap', { checked: () => settings.get('placement.snap'), run: () => settings.set({ 'placement.snap': !settings.get('placement.snap') }) });
 keys.on('about', () => ask({ title: 'About quartz-deck', message: 'A slide editor for Quarto reveal.js decks. Alpha software, not licensed for use by others (see LICENSE).', cancel: null }));
 keys.on('settings', settings.open);
 
