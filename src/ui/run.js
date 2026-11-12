@@ -50,14 +50,14 @@ export async function runCells(cells) {
   if (cells.some(inPage)) api.reload?.();
   cells = cells.filter((c) => !inPage(c));
   if (!cells.length) return null;
-  if (cells.length) focus = cells[cells.length - 1];
+  focus = cells.at(-1);
   return post('/api/run', { cells });
 }
 const runAll = async (fresh = false) => { await api.flush(); return post('/api/run', { all: true, fresh }); };
 export const stopRun = () => post('/api/run/interrupt');
 
 /** A cell that can run here (spec 013: the slide's ▶). */
-export const runnable = (ref) => order.some((c) => c.cell === ref && (c.runnable || c.ojs));
+export const runnable = (ref) => order.some((c) => c.cell === ref && c.runnable);
 /** `running`, `stale`, `error`, `stopped` or '' (done, or never run). */
 export const cellState = (ref) => (running.has(ref) ? 'running' : outs[ref]?.stale ? 'stale'
   : { error: 'error', stopped: 'stopped' }[outs[ref]?.status] || '');
@@ -85,7 +85,7 @@ function drawGutter() {
     const b = el('button', { type: 'button' });
     b.dataset.cell = c.cell;
     b.style.top = pad + (c.lines[0] - 1) * lh + 'px';
-    b.disabled = !c.runnable && !c.ojs;
+    b.disabled = !c.runnable;
     b.textContent = running.has(c.cell) ? '…' : o ? `▶ ${o.counter ?? ''}` : '▶';
     b.className = [o?.status === 'error' && 'err', o?.stale && 'stale', running.has(c.cell) && 'busy'].filter(Boolean).join(' ');
     b.title = c.runnable ? `Run this cell (⇧Enter)${o?.stale ? ' — output is stale' : ''}` : 'Not runnable here (eval: false or not Python)';

@@ -1735,7 +1735,7 @@ const runExternal = framed.get('run') === 'external';
 document.documentElement.classList.toggle('run-external', runExternal);
 if (!runExternal) {
   const selected = () => (state.session ? null : state.sel);
-  run.initRun({ say, flush: pane.save, selected, changed: runslide.mark, reload: () => frame.contentWindow?.location.reload() });
+  run.initRun({ say, flush: pane.save, selected, changed: runslide.mark, reload: () => frameWin()?.location.reload() });
   runslide.initRunSlide({ elOf, frame, pageRect, selected }, es);
 }
 if (keys.framed) {
