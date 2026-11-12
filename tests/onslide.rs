@@ -3875,7 +3875,7 @@ async fn history_compare() {
         .await;
     ed.wait("!!document.querySelector('#history button[data-rev]:not([data-rev=\"\"])')")
         .await;
-    ed.click_js("(() => { const b = document.querySelector('#history button[data-rev]:not([data-rev=\"\"])'); const r = b.getBoundingClientRect(); return [r.left + 10, r.top + 10]; })()")
+    ed.click_editor("#history button[data-rev]:not([data-rev=\"\"])")
         .await;
     ed.wait_secs("!document.querySelector('#then').hidden", 120)
         .await;
@@ -3884,8 +3884,7 @@ async fn history_compare() {
     let rows = "[...document.querySelectorAll('#history .changes button')].map((b) => b.textContent).join('|')";
     ed.wait(&format!("{rows} === 'changed · B|added · C'"))
         .await;
-    ed.click_js("(() => { const b = document.querySelector('#history .changes button'); const r = b.getBoundingClientRect(); return [r.left + 10, r.top + 5]; })()")
-        .await;
+    ed.click_editor("#history .changes button").await;
     ed.wait("!!document.querySelector('#history pre.diff .del')?.textContent.includes('OLDTEXT') && !!document.querySelector('#history pre.diff .add')?.textContent.includes('NEWTEXT')")
         .await;
     ed.wait("location.hash === '#/b' && document.querySelector('#then iframe').contentWindow.location.hash === '#/b'")

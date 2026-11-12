@@ -185,7 +185,8 @@ pub fn log(repo: &Repo, limit: usize, skip: usize) -> Result<(Vec<Version>, bool
 }
 
 /// The slide in `d` that is `target` (by id, then a title unique in both,
-/// then position: research R7).
+/// then position: research R7). One slide at a time; `diff` pairs whole
+/// decks one-to-one by the same rule.
 pub fn match_slide<'a>(d: &'a Deck, target: &Slide, unique_title: bool) -> Option<&'a Slide> {
     if let Some(s) = d.slides.iter().find(|s| s.id == target.id) {
         return Some(s);
@@ -201,20 +202,15 @@ pub fn match_slide<'a>(d: &'a Deck, target: &Slide, unique_title: bool) -> Optio
     d.slides.get(target.index)
 }
 
-/// The current deck's slides that differ from `old` (or aren't in it), by
-/// id: what the editor marks while a version is open (US1).
-pub fn changed_since(current: &Deck, old: &Deck) -> Vec<String> {
-    diff(old, current)
+/// The current deck's slides that differ from the deck at `rev` (or aren't
+/// in it), by id: what the editor marks while a version is open (US1).
+pub fn changed_at(deck_path: &Path, current: &Deck, rev: &str) -> Result<Vec<String>> {
+    let repo = repo(deck_path)?.ok_or(QdError::NoRepo)?;
+    Ok(diff(&deck_at(&repo, rev)?.1, current)
         .into_iter()
         .filter(|c| matches!(c.kind, "changed" | "added"))
         .map(|c| c.id)
-        .collect()
-}
-
-/// `changed_since` against the deck at `rev`.
-pub fn changed_at(deck_path: &Path, current: &Deck, rev: &str) -> Result<Vec<String>> {
-    let repo = repo(deck_path)?.ok_or(QdError::NoRepo)?;
-    Ok(changed_since(current, &deck_at(&repo, rev)?.1))
+        .collect())
 }
 
 /// The deck at `rev` (resolved), parsed from the path it had then.
@@ -628,9 +624,10 @@ mod tests {
         let new = Deck::parse(
             "## D {#d}\n\nw\n\n## A {#a}\n\nx\n\n## Bee\n\nY2\n\n## C {#c}\n\nz\n\n## Same\n\n1\n\n## Same\n\n2b\n\n## New {#new}\n\nn\n".into(),
         );
-        let got: Vec<(String, String, Option<usize>, Option<usize>)> = diff(&old, &new)
+        let changes = diff(&old, &new);
+        let got: Vec<_> = changes
             .iter()
-            .map(|c| (c.kind.into(), c.id.clone(), c.from, c.to))
+            .map(|c| (c.kind, c.id.as_str(), c.from, c.to))
             .collect();
         let want = [
             ("moved", "d", Some(4), Some(1)),
@@ -640,12 +637,8 @@ mod tests {
             ("added", "new", None, Some(7)),
             ("removed", "gone", Some(5), None),
         ];
-        let want: Vec<_> = want
-            .iter()
-            .map(|(k, i, f, t)| (k.to_string(), i.to_string(), *f, *t))
-            .collect();
         assert_eq!(got, want);
-        let bee = &diff(&old, &new)[1];
+        let bee = &changes[1];
         assert!(
             bee.diff.contains("-y\n") && bee.diff.contains("+Y2\n"),
             "{}",

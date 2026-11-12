@@ -115,10 +115,8 @@ export async function compare() {
   const n = body.slides.length;
   say(n ? `${n} slide${n > 1 ? 's' : ''} changed since ${open.short}:` : `No slide changed since ${open.short}.`);
   for (const c of body.slides) {
-    const b = el('button', { type: 'button', textContent: `${c.kind} · ${c.title || c.id}` });
-    b.addEventListener('click', () => showChange(c));
-    const li = el('li', {});
-    li.append(b);
+    const li = el('li');
+    li.append(el('button', { type: 'button', textContent: `${c.kind} · ${c.title || c.id}`, onclick: () => showChange(c) }));
     changes.append(li);
   }
 }
@@ -129,7 +127,7 @@ function showChange(c) {
     el('span', { className: { '+': 'add', '-': 'del' }[l[0]] || '', textContent: l + '\n' })));
   diffView.hidden = !c.diff;
   // the version beside follows the current deck (follow); a removed slide is only there
-  if (c.kind === 'removed') thenFrame.contentWindow.location.hash = '#/' + c.id;
+  if (c.kind === 'removed') follow(c.id);
   else $('#preview').contentWindow.location.hash = '#/' + c.id;
 }
 
