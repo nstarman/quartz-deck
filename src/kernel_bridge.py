@@ -46,7 +46,7 @@ def bundle(data):
     return {"kind": "text", "text": data.get("text/plain", "")}
 
 
-def execute(kc, code):
+def execute(kc, km, code, stop):
     msg_id = kc.execute(code, store_history=True)
     outputs, status, counter = [], "ok", None
     while True:
@@ -69,6 +69,9 @@ def execute(kc, code):
             )
         elif kind == "execute_input":
             counter = c.get("execution_count")
+            # an interrupt sent before the cell started fell on an idle kernel, which ignores it
+            if stop.is_set():
+                km.interrupt_kernel()
         elif kind == "status" and c["execution_state"] == "idle":
             break
     for o in outputs:
@@ -86,20 +89,28 @@ def main():
     say({"ready": True})
 
     requests = queue.Queue()
+    running, stop = threading.Event(), threading.Event()  # a cell is asked for / to stop
 
     def read():
         for line in sys.stdin:
             req = json.loads(line)
             if req["op"] == "interrupt":
+                if running.is_set():
+                    stop.set()
                 km.interrupt_kernel()  # at once, even while a cell runs
             else:
+                if req["op"] == "execute":
+                    running.set()  # from here: it may wait in the queue
                 requests.put(req)
         requests.put(None)
 
     threading.Thread(target=read, daemon=True).start()
     while (req := requests.get()) is not None:
         if req["op"] == "execute":
-            say(execute(kc, req["code"]))
+            out = execute(kc, km, req["code"], stop)
+            running.clear()  # before the reply: the next cell may follow at once
+            stop.clear()
+            say(out)
         elif req["op"] == "restart":
             km.restart_kernel(now=True)
             kc.wait_for_ready(timeout=120)
