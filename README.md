@@ -27,8 +27,10 @@ Status: specs [001](specs/001-core-editor/spec.md) (editor),
 [005](specs/005-shared-focus/spec.md) (shared focus),
 [006](specs/006-vscode/spec.md) (VS Code),
 [007](specs/007-app-shell/spec.md) (menus, settings, shortcuts) and
-[008](specs/008-usability/spec.md) (usability) and
-[010](specs/010-one-file-deck/spec.md) (one-file deck) implemented; what
+[008](specs/008-usability/spec.md) (usability),
+[009](specs/009-layouts-and-placement/spec.md) (layouts and placement),
+[010](specs/010-one-file-deck/spec.md) (one-file deck) and
+[011](specs/011-export-formats/spec.md) (export formats) implemented; what
 comes next is in [`specs/ROADMAP.md`](specs/ROADMAP.md). See also the
 [constitution](.specify/memory/constitution.md).
 
@@ -231,6 +233,28 @@ recompressed to 200 dpi JPEG. A deck's Makefile needs only these commands. `qd b
 the References slide's list from a Zotero collection, as an ordinary edit.
 The deck and `_quarto.yml` are never modified. The first export needs the network
 once (MathJax; Chrome for Testing if no Chrome is installed).
+
+### Other formats (spec [011](specs/011-export-formats/spec.md))
+
+```bash
+qd export --list            # every format, and whether it is ready (Beamer and PDF need TeX)
+qd export --to pptx         # export/<deck>.pptx: slides, notes in the notes, backgrounds
+qd export --to beamer       # export/<deck>.pdf through LaTeX: pauses become overlays
+qd export --to docx         # a handout: one section per slide, notes under "Speaker notes"
+qd export --to gfm          # Markdown, figures in export/<deck>_files/
+qd export --to rst          # any other Pandoc writer: Quarto to Markdown, then Pandoc
+qd --dry-run export --to pptx   # what won't carry over, without rendering
+```
+
+Each export renders a copy of the deck with Quarto, so code runs and callouts,
+cross-references and figures are kept; the deck is never changed. The result
+lists what a format can't keep, slide by slide: placed boxes go back in the
+flow, pauses and fragments are shown all at once, background images are kept
+only in PowerPoint, interactive figures only in the HTML page and the
+notebook. Code stays hidden, as on the slides, unless the deck sets `echo`.
+In the editor, **Export ▾** (or File ▸ Export) has every format; a format
+whose tool is missing is greyed out and says what to install. TeX comes from
+`quarto install tinytex`; Typst comes with Quarto.
 
 The editor and the CLI can be used at the same time; edits carry a version
 (`--expect`, or per element `--expect-text`) and are refused rather than lost

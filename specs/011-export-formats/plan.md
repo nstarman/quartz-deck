@@ -182,3 +182,14 @@ and pdf, so the result can link the file.
 - US4 (P3): the Pandoc route and "Other format…".
 - Polish: README, ROADMAP, action inventory, quickstart run, concision
   audit.
+
+## Final re-check (2026-11-12, after US4 and polish)
+
+Principles I–VII still hold as built. The deck is never written: every export
+test compares its hash before and after. The CLI came first: every editor
+action is a `qd export` call through `/api/op`. There are no new crates; the
+Pandoc writer list is read once from Quarto. `render`, `export` and `pdf` now
+need the session token. Changes from the design: the result offers a
+download link instead of "Show in Finder" (no `/api/reveal`), the output path
+is set with `--out` only, and `<name>_files/` is merged next to Markdown and
+HTML-page outputs (tasks.md notes).
