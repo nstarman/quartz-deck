@@ -25,7 +25,7 @@ const badge = pane.querySelector('.kernel');
 let engine = 'Python'; // the deck's engine, as the badge names it (spec 013)
 let needsEnv = false; // code cells and no environment yet: Set up Python… is offered
 
-let api = null; // { say, flush, selected?(), changed?() }
+let api = null; // { say, flush, selected?(), changed?(), reload?() }
 let order = []; // [{cell, lines, runnable}]
 let outs = {}; // cell → stored record
 let focus = null; // cell shown in the dock
@@ -40,9 +40,16 @@ async function post(path, body = {}) {
   return r.ok ? v : null;
 }
 
-/** Run cells by ref (after saving the source pane, so the file has the latest text). */
+/** An Observable JS cell: it runs in the page, on every load of the preview (013 US4). */
+export const inPage = (ref) => order.some((c) => c.cell === ref && c.ojs);
+
+/** Run cells by ref (after saving the source pane, so the file has the latest text).
+ *  Observable JS cells run in the page: the preview loads again (013 research R9). */
 export async function runCells(cells) {
   await api.flush();
+  if (cells.some(inPage)) api.reload?.();
+  cells = cells.filter((c) => !inPage(c));
+  if (!cells.length) return null;
   if (cells.length) focus = cells[cells.length - 1];
   return post('/api/run', { cells });
 }
@@ -50,7 +57,7 @@ const runAll = async (fresh = false) => { await api.flush(); return post('/api/r
 export const stopRun = () => post('/api/run/interrupt');
 
 /** A cell that can run here (spec 013: the slide's ▶). */
-export const runnable = (ref) => order.some((c) => c.cell === ref && c.runnable);
+export const runnable = (ref) => order.some((c) => c.cell === ref && (c.runnable || c.ojs));
 /** `running`, `stale`, `error`, `stopped` or '' (done, or never run). */
 export const cellState = (ref) => (running.has(ref) ? 'running' : outs[ref]?.stale ? 'stale'
   : { error: 'error', stopped: 'stopped' }[outs[ref]?.status] || '');
@@ -78,7 +85,7 @@ function drawGutter() {
     const b = el('button', { type: 'button' });
     b.dataset.cell = c.cell;
     b.style.top = pad + (c.lines[0] - 1) * lh + 'px';
-    b.disabled = !c.runnable;
+    b.disabled = !c.runnable && !c.ojs;
     b.textContent = running.has(c.cell) ? '…' : o ? `▶ ${o.counter ?? ''}` : '▶';
     b.className = [o?.status === 'error' && 'err', o?.stale && 'stale', running.has(c.cell) && 'busy'].filter(Boolean).join(' ');
     b.title = c.runnable ? `Run this cell (⇧Enter)${o?.stale ? ' — output is stale' : ''}` : 'Not runnable here (eval: false or not Python)';

@@ -1688,6 +1688,40 @@ async fn run_knitr_from_slide() {
         .await;
 }
 
+/// 013 US4 (T012): an Observable JS cell has a ▶ too, and runs in the page:
+/// after a pop-up edit and ⇧Enter, the cell that depends on it shows the new
+/// value, and no request went to /api/run.
+#[tokio::test]
+async fn run_ojs_from_slide() {
+    let deck = "---\ntitle: O\nformat: revealjs\n---\n\n## One {#one}\n\n```{ojs}\nx = 1\n```\n\n```{ojs}\nx * 2\n```\n";
+    let Some(ed) = Ed::open(deck).await else {
+        return;
+    };
+    ed.go("one").await;
+    let cell = "[data-qd='one/0']";
+    // the dependent cell's output (its code `x * 2` holds a 2 too)
+    let dependent = format!(
+        "{FRAME}.querySelector(\"[data-qd='one/1'] .cell-output-display\")?.textContent.trim()"
+    );
+    ed.wait_secs(&format!("{dependent} === '2'"), 30).await;
+    ed.hover_slide(cell).await;
+    ed.wait("document.querySelector('#runbtn').getAttribute('aria-label') === 'Run cell one/0'")
+        .await;
+    ed.popup(cell).await;
+    ed.popup_run("```{ojs}\nx = 5\n```").await;
+    ed.wait_file(|f| f.contains("x = 5"), "the edit saved")
+        .await;
+    ed.wait_secs(&format!("{dependent} === '10'"), 60).await;
+    assert_eq!(
+        ed.eval(
+            "performance.getEntriesByType('resource').some((e) => e.name.includes('/api/run'))"
+        )
+        .await,
+        false,
+        "no kernel run"
+    );
+}
+
 /// 013 FR-008: without the session token (another tab, or the presented
 /// deck) no cell shows a ▶.
 #[tokio::test]

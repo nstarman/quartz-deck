@@ -36,6 +36,7 @@ engine (`R · idle`, `Julia · busy`).
 
 ## Observable JS (US4)
 
-`{ojs}` cells get the same ▶ and states. Running one evaluates it again in the
-page, together with the cells that depend on it. No token is needed: they
-already run on load.
+`{ojs}` cells get the same ▶. Running one loads the preview again, on the
+same slide, which evaluates every OJS cell. In the pop-up, Run saves the
+edit, and the re-render shows the result. Nothing goes to `/api/run`.
+(research R9: the runtime can't redefine one cell safely.)
