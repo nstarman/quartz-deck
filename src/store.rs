@@ -23,6 +23,9 @@ struct Entry {
     /// editor, `agent` from a CLI process; entries written before 012 have none.
     #[serde(default = "agent")]
     by: String,
+    /// What the edit changed (`one`, `one/2`), for commit messages.
+    #[serde(default)]
+    target: String,
 }
 
 fn agent() -> String {
@@ -46,6 +49,7 @@ pub struct Edit {
     pub ts: u64,
     pub op: String,
     pub by: String,
+    pub target: String,
 }
 
 #[derive(Clone)]
@@ -244,7 +248,7 @@ impl Store {
     }
 
     /// Write an edit made against `before`; journals it for undo and clears redo.
-    pub fn write(&self, before: &Deck, text: &str, op: &str) -> Result<String> {
+    pub fn write(&self, before: &Deck, text: &str, op: &str, target: &str) -> Result<String> {
         let _lock = self.lock()?;
         let version = self.replace(&before.version, text)?;
         let entry = Entry {
@@ -262,6 +266,7 @@ impl Store {
                 "agent"
             }
             .into(),
+            target: target.into(),
         };
         self.push("undo", &entry)?;
         let _ = fs::remove_file(self.journal("redo"));
@@ -307,6 +312,7 @@ impl Store {
                 ts: e.ts,
                 op: e.op,
                 by: e.by,
+                target: e.target,
             })
             .collect()
     }
@@ -371,11 +377,11 @@ mod tests {
         );
 
         // a qd edit lands in the overlay (journaled), the file is untouched
-        let v2 = st.write(&d, "## A\n\nedited\n", "edit").unwrap();
+        let v2 = st.write(&d, "## A\n\nedited\n", "edit", "").unwrap();
         assert_eq!(st.read().unwrap().text, "## A\n\nedited\n");
         assert_eq!(disk(), "## A\n\nold\n");
         assert!(
-            st.write(&d, "x", "edit").is_err(),
+            st.write(&d, "x", "edit", "").is_err(),
             "CAS on the overlay's version"
         );
 
@@ -408,12 +414,15 @@ mod tests {
     fn edits_record_who_made_them() {
         let (_d, s) = setup("a\n");
         let d = s.read().unwrap();
-        s.write(&d, "b\n", "edit one").unwrap();
+        s.write(&d, "b\n", "edit", "one").unwrap();
         let d = s.read().unwrap();
-        as_person(|| s.write(&d, "c\n", "title one")).unwrap();
+        as_person(|| s.write(&d, "c\n", "title", "one")).unwrap();
         let e = s.edits_since(0);
-        let got: Vec<(&str, &str)> = e.iter().map(|e| (e.op.as_str(), e.by.as_str())).collect();
-        assert_eq!(got, [("edit one", "agent"), ("title one", "person")]);
+        let got: Vec<_> = e
+            .iter()
+            .map(|e| (e.op.as_str(), e.target.as_str(), e.by.as_str()))
+            .collect();
+        assert_eq!(got, [("edit", "one", "agent"), ("title", "one", "person")]);
         assert!(s.edits_since(u64::MAX).is_empty());
         // entries written before 012 have no `by`: an agent's
         let old: Entry = serde_json::from_str(
@@ -427,7 +436,7 @@ mod tests {
     fn write_then_undo_redo() {
         let (_d, s) = setup("## A\n");
         let d0 = s.read().unwrap();
-        let v1 = s.write(&d0, "## B\n", "title").unwrap();
+        let v1 = s.write(&d0, "## B\n", "title", "").unwrap();
         assert_eq!(fs::read_to_string(&s.path).unwrap(), "## B\n");
         assert_eq!(v1, version_of(b"## B\n"));
         let (v0, op) = s.undo().unwrap();
@@ -445,7 +454,7 @@ mod tests {
         let d0 = s.read().unwrap();
         fs::write(&s.path, "## A\nexternal\n").unwrap();
         assert_eq!(
-            s.write(&d0, "## B\n", "x").unwrap_err().code(),
+            s.write(&d0, "## B\n", "x", "").unwrap_err().code(),
             "E_CONFLICT"
         );
         assert_eq!(fs::read_to_string(&s.path).unwrap(), "## A\nexternal\n");
@@ -455,7 +464,7 @@ mod tests {
     fn undo_refused_after_external_change_and_kept() {
         let (_d, s) = setup("## A\n");
         let d0 = s.read().unwrap();
-        s.write(&d0, "## B\n", "x").unwrap();
+        s.write(&d0, "## B\n", "x", "").unwrap();
         fs::write(&s.path, "## C\n").unwrap();
         assert_eq!(s.undo().unwrap_err().code(), "E_NO_UNDO");
         fs::write(&s.path, "## B\n").unwrap();
@@ -467,10 +476,10 @@ mod tests {
     fn new_edit_clears_redo() {
         let (_d, s) = setup("## A\n");
         let d0 = s.read().unwrap();
-        s.write(&d0, "## B\n", "x").unwrap();
+        s.write(&d0, "## B\n", "x", "").unwrap();
         s.undo().unwrap();
         let d = s.read().unwrap();
-        s.write(&d, "## C\n", "y").unwrap();
+        s.write(&d, "## C\n", "y", "").unwrap();
         assert_eq!(s.redo().unwrap_err().code(), "E_NO_UNDO");
     }
 
@@ -478,7 +487,7 @@ mod tests {
     fn no_temp_files_left() {
         let (d, s) = setup("## A\n");
         let d0 = s.read().unwrap();
-        s.write(&d0, "## B\n", "x").unwrap();
+        s.write(&d0, "## B\n", "x", "").unwrap();
         let names: Vec<_> = fs::read_dir(d.path())
             .unwrap()
             .map(|e| e.unwrap().file_name())
