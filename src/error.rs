@@ -64,6 +64,8 @@ pub enum QdError {
     /// A cell raised or was stopped; the run's result is printed on stdout.
     #[error("{0} did not finish")]
     Run(String),
+    #[error("Zotero's local API is not reachable: {0}")]
+    Zotero(String),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -95,6 +97,7 @@ impl QdError {
             Self::NotCode(_) => "E_NOT_CODE",
             Self::Engine(_) => "E_ENGINE",
             Self::Run(_) => "E_RUN",
+            Self::Zotero(_) => "E_ZOTERO",
             Self::Io(_) => "E_IO",
         }
     }
@@ -157,6 +160,9 @@ impl QdError {
             }
             Self::Run(_) => {
                 "the outputs in the result on stdout show why; fix the cell (`qd replace`) and run it again"
+            }
+            Self::Zotero(_) => {
+                "start Zotero 7 and tick Settings > Advanced > \"Allow other applications on this computer to communicate with Zotero\""
             }
             Self::Io(_) => "check the path and permissions",
         }

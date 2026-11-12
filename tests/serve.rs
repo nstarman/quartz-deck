@@ -451,6 +451,15 @@ fn api_op_over_http() {
         .success();
     if browser {
         std::fs::write(dir.join("deck.qmd"), BASIC).unwrap();
+        // the deck's image: the check reports any missing file (spec 010)
+        std::fs::copy(
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/fixtures/offline/figures/dot.png"
+            ),
+            dir.join("plot.png"),
+        )
+        .unwrap();
         let (status, out) = post(
             server.port,
             "/api/op",

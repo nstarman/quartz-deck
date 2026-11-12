@@ -114,12 +114,21 @@ left as separate files). On a connected machine it *looks* fine, so check it:
 
 1. `qd check --offline` — renders the deck and opens it in headless Chrome with
    the network blocked; each problem has a `code`, the `slide`, and a `hint`.
-2. `qd export` — writes `export/<deck>.html` (one self-contained file) plus any
-   files that cannot be inlined (background video/iframe), with the offline
-   setup applied to a copy (your `.qmd` and `_quarto.yml` are never changed),
-   and runs the check on the result. `--pdf` adds `export/<deck>.pdf`
-   (one page per fragment step; `--per-slide`, `--notes` for speaker notes).
-3. `qd pdf` — re-print the latest export (`--notes`, `--per-slide`).
+2. `qd export` — writes `export/<deck>.html`, one self-contained file: apps
+   (`<iframe data-app="apps/x.html">` — use `data-app`, not `src`, for apps —
+   and `background-iframe`) go inside it gzipped, `<object>` and SVG `<image>`
+   files as `data:` URIs, a repeated image once; only background videos ship
+   beside it. The offline setup is applied to a copy (your `.qmd` and
+   `_quarto.yml` are never changed) and the check runs on the result.
+   `--pdf` adds `export/<deck>.pdf` (one page per fragment step;
+   `--per-slide`; `--notes` writes `<deck>-notes.pdf`). `--strip-notes` makes
+   a copy to share; `--out DIR` picks the folder (e.g. `_output`).
+3. `qd pdf` — re-print the latest export (`--notes`, `--per-slide`); with
+   ghostscript installed the PDF's images are recompressed (`compressed`).
+
+The check report also has `size.largest` (where the file's megabytes go,
+apps named by path). A deck needs no build scripts of its own: its Makefile
+calls `qd export` and `qd pdf`.
 
 If the check fails, the export is **not** replaced (exit 1, `E_OFFLINE`, the
 report is still on stdout with `"ok": false`). Fix the reported problem and
@@ -128,15 +137,27 @@ export again:
 | problem | fix |
 |---|---|
 | `P_NETWORK` | something loads from the web; `qd export` bundles MathJax/plotly.js, otherwise remove or download the resource |
-| `P_MISSING_FILE` | the background video/iframe/parallax file isn't at that path next to the deck: add it or fix the path (`qd set <slide> --attr background-video=...`) |
+| `P_MISSING_FILE` | a file the deck or an app loads (background video/iframe, parallax, `data-app`, `<object>`, SVG `<image>`) isn't at that path next to the deck: add it or fix the path (`qd set <slide> --attr background-video=...`) |
 | `P_RAW_TEX` | math not typeset offline (KaTeX, or the web MathJax); `qd export` uses local MathJax |
 | `P_PAGE_ERROR` | a script on the page failed (`{=html}` blocks, embedded apps) |
 | `P_OFFLINE_INCOMPATIBLE` | multiplex (needs a server); chalkboard cannot be one file (`E_OFFLINE_INCOMPATIBLE` from `qd export`) |
+| `P_OVERFLOW` (warning) | an element sticks out of the slide (all fragments shown); move or shrink it, or give it class `overflow-ok` if that is on purpose |
 | `P_NOTES_VISIBLE` (warning) | `show-notes` in the YAML shows notes to the audience: `qd meta unset show-notes` if it's top-level |
 
 The first export downloads MathJax 3.2.2 (and Chrome for Testing if no
 Chrome/Chromium is installed; `qd browser` shows which is used), verified by
 SHA-256; later exports work offline. `--no-download` forbids downloads.
+
+## References from Zotero
+
+`qd bib --zotero KEY` (KEY: the 8-character collection key) rewrites the
+lines between `<!-- bibliography:start -->` and `<!-- bibliography:end -->`
+(on the References slide) as one `- {{< paper url= who= year= title= >}}`
+line per item of the collection, read from the running Zotero 7's local API
+(Settings > Advanced > "Allow other applications on this computer to
+communicate with Zotero"). It is an edit like any other (`--dry-run`,
+`--expect`, `qd undo`); `warnings` lists items with no DOI or URL.
+`E_ZOTERO`: Zotero is not running or the API is off.
 
 ## Errors and what to do
 
@@ -154,6 +175,7 @@ SHA-256; later exports work offline. `--no-download` forbids downloads.
 | `E_NO_QUARTO` | Quarto missing (preview/render only) | install Quarto; edits still work |
 | `E_OFFLINE` | the deck would not work offline | read `problems` in the stdout report; fix; re-run |
 | `E_OFFLINE_INCOMPATIBLE` | chalkboard/multiplex can't be one offline file | remove the feature for the export |
+| `E_ZOTERO` | `qd bib` cannot reach Zotero's local API | start Zotero 7 and allow other applications to talk to it (Settings > Advanced) |
 | `E_NO_ENV` | deck has code cells but no environment | `qd env init`, then `qd env add <pkgs>` |
 | `E_LOCK_STALE` | manifest edited, lock out of date | `qd env sync` |
 | `E_ENV_TOOL` / `E_ENV` | uv/pixi missing, or it failed | install per the hint / read `details` |
