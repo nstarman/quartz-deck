@@ -117,7 +117,7 @@ and moves both previews to it.
 
 **Independent Test**: spec US4; quickstart §4.
 
-- [ ] T014 [P] [US4] Write failing tests:
+- [X] T014 [P] [US4] Write failing tests:
   - **`src/history.rs` units for `restore(current, old, what)`**:
     - a slide present in both is replaced, and no byte outside it changes (SC-003);
     - a deleted slide is inserted after its nearest earlier surviving neighbour;
@@ -133,7 +133,18 @@ and moves both previews to it.
     - with a version open, the slide's right-click menu has **Restore slide from this version**, and using it changes the slide;
     - ⌘Z takes it back;
     - **Restore this version…** asks first.
-- [ ] T015 [US4] Implement `restore` in `src/history.rs` and `qd restore` in `src/cli.rs` (in `API_OPS`, op name `restore … from <short>`). Add the menu entries and actions `history-restore`, `history-restore-slide` and `history-restore-element` in `src/ui/history.js` and `actions.json`. T014 passes.
+- [X] T015 [US4] Implement `restore` in `src/history.rs` and `qd restore` in `src/cli.rs` (in `API_OPS`, op name `restore … from <short>`). Add the menu entries and actions `history-restore`, `history-restore-slide` and `history-restore-element` in `src/ui/history.js` and `actions.json`. T014 passes.
+
+As built: restore pairs slides with the same one-to-one matching as `diff`
+(`history::pairs`). A restored slide keeps the current gap to the next
+slide, so no byte outside it changes. An element is the one with the same
+explicit id, or else at the same place in the paired slide. The edit's `op`
+is the whole description (`restore slide one from a1b2c3d`) with an empty
+`target`, so the commit message reads the same. In the editor, **Restore
+slide from this version** (slide menus) and **Restore from this version**
+(element menus) show only while a version is open; **Restore this
+version…** (View) asks first. A slide that is gone now is restored with
+`qd restore REV --slide REF`; the editor has no menu for it yet.
 
 ---
 

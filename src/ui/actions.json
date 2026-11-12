@@ -26,6 +26,7 @@
   {"id": "redo", "label": "Redo", "menu": ["Edit"], "key": "Mod+Shift+Z", "where": ["slides", "slide", "element"], "qd": "qd redo"},
   {"separator": true, "menu": ["Edit"]},
   {"id": "cut", "label": "Cut", "menu": ["Edit"], "key": "Mod+X", "where": ["element"], "qd": "qd block rm <ref>"},
+  {"id": "history-restore-element", "label": "Restore from this version", "menu": ["Edit"], "where": ["element"], "qd": "qd restore <rev> --element <ref>"},
   {"id": "copy", "label": "Copy", "menu": ["Edit"], "key": "Mod+C", "where": ["element"]},
   {"id": "paste", "label": "Paste after", "menu": ["Edit"], "key": "Mod+V", "where": ["element"], "qd": "qd block add <slide> --after <ref> --md -"},
   {"id": "dup", "label": "Duplicate", "menu": ["Edit"], "key": "Mod+D", "where": ["element"], "qd": "qd block dup <ref>"},
@@ -81,6 +82,7 @@
 
   {"id": "slide-dup", "label": "Duplicate slide", "menu": ["Slide"], "key": "Mod+Shift+D", "vscode_key": null, "where": ["slides", "slide", "element"], "qd": "qd dup <slide>"},
   {"id": "slide-cut", "label": "Cut slide", "menu": ["Slide"], "key": "Mod+X", "where": ["slides"], "qd": "qd rm <slide>"},
+  {"id": "history-restore-slide", "label": "Restore slide from this version", "menu": ["Slide"], "where": ["slides", "slide"], "qd": "qd restore <rev> --slide <slide>"},
   {"id": "slide-copy", "label": "Copy slide", "menu": ["Slide"], "key": "Mod+C", "where": ["slides"]},
   {"id": "slide-paste", "label": "Paste slides after", "menu": ["Slide"], "key": "Mod+V", "where": ["slides", "slide"], "qd": "qd paste --after <slide> --md -"},
   {"id": "slide-move-up", "label": "Move slide up", "menu": ["Slide"], "key": "Alt+ArrowUp", "where": ["slides"], "qd": "qd move <slide> --before <prev>"},
@@ -120,6 +122,7 @@
   {"id": "source-full", "label": "Source full width", "menu": ["View"], "toggle": true, "where": ["anywhere"]},
   {"id": "form-panel", "label": "Properties panel", "menu": ["View"], "toggle": true, "where": ["anywhere"]},
   {"id": "history", "label": "History", "menu": ["View"], "toggle": true, "key": "Alt+Mod+H", "where": ["anywhere"], "qd": "qd history"},
+  {"id": "history-restore", "label": "Restore this version…", "menu": ["View"], "where": ["anywhere"], "qd": "qd restore <rev>"},
   {"id": "history-compare", "label": "Compare this version with now", "menu": ["View"], "where": ["anywhere"], "qd": "qd diff <rev>"},
   {"id": "snap", "label": "Snap to guides", "menu": ["View"], "toggle": true, "where": ["anywhere"]},
   {"id": "present", "label": "Present from this slide", "menu": ["View"], "key": "Alt+Mod+P", "where": ["anywhere"]},

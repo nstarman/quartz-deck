@@ -104,6 +104,7 @@ export function follow(anchor) {
 }
 
 export const versionOpen = () => !!open;
+export const version = () => open;
 
 /** Compare the open version with the deck now: the slides that changed (US3). */
 export async function compare() {
