@@ -2,7 +2,7 @@
 //! the versions that changed the deck, the deck at any of them, an old
 //! version rendered from a snapshot of its folder, and `qd history --init`.
 
-use crate::deck::{Deck, Slide, Span};
+use crate::deck::{Block, Deck, Slide, Span};
 use crate::error::{QdError, Result};
 use crate::ops::Patch;
 use crate::store::{Edit, Store};
@@ -205,11 +205,7 @@ pub fn match_slide<'a>(d: &'a Deck, target: &Slide, unique_title: bool) -> Optio
 
 /// The block of `s` that is `b` of `of` (the same slide in another version):
 /// by explicit id, else at the same place.
-fn block_in<'a>(
-    s: &'a Slide,
-    of: &Slide,
-    b: &crate::deck::Block,
-) -> Option<&'a crate::deck::Block> {
+fn block_in<'a>(s: &'a Slide, of: &Slide, b: &Block) -> Option<&'a Block> {
     if b.id_explicit {
         return s.blocks.iter().find(|x| x.id_explicit && x.id == b.id);
     }

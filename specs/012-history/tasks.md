@@ -157,7 +157,7 @@ version…** (View) asks first. A slide that is gone now is restored with
   - the 007 action inventory: "Added by 012".
 - [X] T017 Run quickstart §1–§5 in the browser pane and record it in `specs/012-history/checklists/quickstart-run.md`.
 - [X] T018 Final constitution re-check in `plan.md`; fmt, clippy, `cargo test --no-fail-fast` and `node --test vscode/test/*.test.js` green.
-- [ ] T019 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
+- [X] T019 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
 
 ---
 

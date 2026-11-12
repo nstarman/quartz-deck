@@ -137,13 +137,14 @@ let tick;
 export function saving(secs) {
   clearInterval(tick);
   const line = $('.saving', panel);
-  const end = Date.now() + (secs ?? 0) * 1000;
+  if (secs == null) return void (line.textContent = '');
+  const end = Date.now() + secs * 1000;
   const show = () => {
     const s = Math.ceil((end - Date.now()) / 1000);
-    line.textContent = secs == null ? '' : s > 0 ? `Saving a version in ${s} s` : 'Saving a version…';
+    line.textContent = s > 0 ? `Saving a version in ${s} s` : 'Saving a version…';
   };
   show();
-  if (secs != null) tick = setInterval(show, 1000);
+  tick = setInterval(show, 1000);
 }
 
 export const isOpen = () => !panel.hidden;
