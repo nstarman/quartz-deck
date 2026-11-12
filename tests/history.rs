@@ -132,16 +132,8 @@ fn history_outside_git() {
     let (ok, v) = run_init(t.path());
     assert!(ok, "{v}");
     assert!(t.path().join("talks/.git").is_dir());
-    let files = std::process::Command::new("git")
-        .args(["-C", "talks", "ls-files"])
-        .current_dir(t.path())
-        .output()
-        .unwrap();
-    assert_eq!(
-        String::from_utf8_lossy(&files.stdout),
-        "deck.qmd\n",
-        "the deck alone"
-    );
+    let files = quartz_deck::history::git(&t.path().join("talks"), &["ls-files"]).unwrap();
+    assert_eq!(files, "deck.qmd\n", "the deck alone");
     let (ok, v) = run(t.path(), &["history", "--init"]);
     assert!(!ok);
     assert_eq!(v["error"]["code"], "E_INVALID_ARG");

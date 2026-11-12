@@ -41,13 +41,16 @@ pub struct Repo {
     pub path: String,
 }
 
-/// The repository the deck at `deck` is in, or `None` outside git.
-pub fn repo(deck: &Path) -> Result<Option<Repo>> {
-    let dir = deck
-        .parent()
+/// The deck's folder (`.` for a bare file name).
+fn folder(deck: &Path) -> &Path {
+    deck.parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."))
-        .to_path_buf();
+}
+
+/// The repository the deck at `deck` is in, or `None` outside git.
+pub fn repo(deck: &Path) -> Result<Option<Repo>> {
+    let dir = folder(deck).to_path_buf();
     let out = match git(&dir, &["rev-parse", "--show-prefix", "--absolute-git-dir"]) {
         Ok(o) => o,
         Err(QdError::Git(_)) => return Ok(None),
@@ -88,19 +91,18 @@ impl Repo {
     pub fn uncommitted(&self) -> bool {
         git(
             &self.dir,
-            &["diff", "--quiet", "HEAD", "--", &format!(":/{}", self.path)],
+            &["status", "--porcelain", "--", &format!(":/{}", self.path)],
         )
-        .is_err()
-            || git(
-                &self.dir,
-                &[
-                    "ls-files",
-                    "--error-unmatch",
-                    "--",
-                    &format!(":/{}", self.path),
-                ],
-            )
-            .is_err()
+        .is_ok_and(|o| !o.trim().is_empty())
+    }
+
+    /// The deck's path at `rev` (it may have been renamed since).
+    pub fn path_at(&self, rev: &str) -> Result<String> {
+        Ok(log(self, ALL, 0)?
+            .0
+            .into_iter()
+            .find(|v| v.rev.as_deref() == Some(rev))
+            .map_or(self.path.clone(), |v| v.path))
     }
 
     /// A revision as a full commit hash (`E_NOT_FOUND` if git doesn't know it).
@@ -254,17 +256,16 @@ pub fn history(
             path: repo.path.clone(),
         });
     }
-    let more;
-    match slide {
+    let more = match slide {
         None => {
-            let (v, m) = log(&repo, limit, skip)?;
+            let (v, more) = log(&repo, limit, skip)?;
             out.extend(v);
-            more = m;
+            more
         }
         Some(r) => {
             // walk every version, keep the ones where the slide's text changed
-            // (trailing blank lines aside: a slide moved to the end has none)
-            // from the version before it (oldest last); ponytail: a parse per
+            // from the version before it (oldest last; trailing blank lines
+            // aside: a slide moved to the end has none); ponytail: a parse per
             // commit, fine for hundreds; --limit bounds what is returned
             let target = current.slide(r)?;
             let (all, _) = log(&repo, ALL, 0)?;
@@ -284,10 +285,11 @@ pub fn history(
                 .filter(|(i, _)| texts.get(i + 1) != Some(&texts[*i]))
                 .map(|(_, v)| v.clone())
                 .collect();
-            more = changed.len() > skip + limit;
+            let more = changed.len() > skip + limit;
             out.extend(changed.into_iter().skip(skip).take(limit));
+            more
         }
-    }
+    };
     Ok(serde_json::json!({"kind": "history", "path": repo.path, "versions": out, "more": more}))
 }
 
@@ -299,10 +301,7 @@ pub fn init(deck_path: &Path) -> Result<serde_json::Value> {
             "the deck is already in a git repository".into(),
         ));
     }
-    let dir = deck_path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
+    let dir = folder(deck_path);
     git(dir, &["init", "-q"])?;
     let repo = repo(deck_path)?.ok_or(QdError::NoRepo)?;
     let name = deck_path.file_name().unwrap_or_default().to_string_lossy();
@@ -336,13 +335,7 @@ pub fn render_version(deck_path: &Path, cache: &Path, rev: &str) -> Result<PathB
     if html.is_file() {
         return Ok(html);
     }
-    // the deck's path then (renames), relative to its folder
-    let (versions, _) = log(&repo, ALL, 0)?;
-    let path = versions
-        .iter()
-        .find(|v| v.rev.as_deref() == Some(rev.as_str()))
-        .map_or(repo.path.clone(), |v| v.path.clone());
-    let text = repo.text_at(&rev, &path)?;
+    let text = repo.text_at(&rev, &repo.path_at(&rev)?)?;
     let snap = root.join("snapshot");
     let _ = std::fs::remove_dir_all(&snap);
     std::fs::create_dir_all(&snap)?;
@@ -365,8 +358,7 @@ pub fn render_version(deck_path: &Path, cache: &Path, rev: &str) -> Result<PathB
     let _ = std::fs::remove_file(&zip);
     // rendered under today's name, next to the snapshot's files
     let snap_deck = snap.join(format!("{name}.qmd"));
-    let made = crate::render::render(&snap_deck, &text, "hist", &out, true)?;
-    Ok(made)
+    crate::render::render(&snap_deck, &text, "hist", &out, true)
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@
 // of them rendered beside the current deck, with the slides that changed
 // since then marked in the slide list.
 
-import { token } from '/ui/run.js';
+import { token, el } from '/ui/run.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const panel = $('#history');
@@ -39,12 +39,12 @@ async function load() {
   if (!res.ok) {
     if (body.error?.code !== 'E_NO_REPO') return say(body.error?.message || res.statusText);
     say('This deck isn’t in git yet, so it has no history.');
-    const b = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Start a history here', className: 'start' });
+    const b = el('button', { type: 'button', textContent: 'Start a history here', className: 'start' });
     b.addEventListener('click', async () => {
       const r = await post('/api/history/init', {});
       if (r.ok) load(); else say((await r.json().catch(() => ({}))).error?.message || 'Could not start a history');
     });
-    return list.append(Object.assign(document.createElement('li'), {}), b);
+    return list.append(b);
   }
   say(body.versions.length ? '' : 'No versions yet.');
   for (const v of body.versions) {
@@ -53,9 +53,9 @@ async function load() {
     b.type = 'button';
     b.dataset.rev = v.rev || '';
     b.setAttribute('aria-pressed', String(!!open && open.rev === v.rev));
-    const msg = Object.assign(document.createElement('span'), { className: 'msg', textContent: v.message });
-    if (v.qd) msg.append(Object.assign(document.createElement('span'), { className: 'qd', textContent: 'qd' }));
-    const meta = Object.assign(document.createElement('span'), { className: 'meta', textContent: v.rev ? `${v.author} · ${ago(v.time)} · ${v.short}` : 'the deck as it is now' });
+    const msg = el('span', { className: 'msg', textContent: v.message });
+    if (v.qd) msg.append(el('span', { className: 'qd', textContent: 'qd' }));
+    const meta = el('span', { className: 'meta', textContent: v.rev ? `${v.author} · ${ago(v.time)} · ${v.short}` : 'the deck as it is now' });
     b.append(msg, meta);
     if (v.rev) b.addEventListener('click', () => (open?.rev === v.rev ? close() : show(v)));
     else b.disabled = true;

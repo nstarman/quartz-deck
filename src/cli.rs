@@ -189,7 +189,7 @@ enum Cmd {
         #[arg(long, default_value_t = 0)]
         skip: usize,
         /// Start a history: a git repository in the deck's folder, the deck committed
-        #[arg(long, conflicts_with_all = ["slide"])]
+        #[arg(long, conflicts_with = "slide")]
         init: bool,
     },
     /// Render the deck with Quarto (as `quarto render`) and report the output

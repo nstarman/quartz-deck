@@ -520,20 +520,16 @@ async fn api_history(
 ) -> Response {
     let num = |k: &str, d: usize| q.get(k).and_then(|v| v.parse().ok()).unwrap_or(d);
     let (limit, skip, slide) = (num("limit", 50), num("skip", 0), q.get("slide").cloned());
-    let res = tokio::task::spawn_blocking(move || {
+    blocking(move || {
         let d = app.store.read()?;
         crate::history::history(&app.store.path, &d, slide.as_deref(), limit, skip)
     })
-    .await;
-    match res {
-        Ok(Ok(v)) => Json(v).into_response(),
-        Ok(Err(e)) => err_response(e),
-        Err(e) => err_response(QdError::Io(std::io::Error::other(e))),
-    }
+    .await
 }
 
 /// `POST /api/history/render {"rev"}` (token: it runs Quarto, no code): the
-/// deck as it was, rendered once into the cache and served under `/history/`.
+/// deck as it was, rendered once into the cache and served under `/history/`,
+/// with the current slides that differ from it (`changed`).
 async fn api_history_render(
     State(app): State<Shared>,
     headers: HeaderMap,
@@ -545,27 +541,19 @@ async fn api_history_render(
     let Some(rev) = req["rev"].as_str().map(String::from) else {
         return err_response(QdError::InvalidArg("rev is required".into()));
     };
-    let a = app.clone();
-    let res = tokio::task::spawn_blocking(move || {
-        let html = crate::history::render_version(&a.store.path, a.store.cache_dir(), &rev)?;
-        let changed = crate::history::changed_at(&a.store.path, &a.store.read()?, &rev)?;
-        Ok::<_, QdError>((html, changed))
+    blocking(move || {
+        let (path, cache) = (&app.store.path, app.store.cache_dir());
+        let html = crate::history::render_version(path, cache, &rev)?;
+        let changed = crate::history::changed_at(path, &app.store.read()?, &rev)?;
+        let rel: Vec<String> = html
+            .strip_prefix(cache.join("history"))
+            .unwrap_or(&html)
+            .iter()
+            .map(|p| url_encode(&p.to_string_lossy()))
+            .collect();
+        Ok(json!({"href": format!("/history/{}", rel.join("/")), "changed": changed}))
     })
-    .await;
-    match res {
-        Ok(Ok((html, changed))) => {
-            let rel = html
-                .strip_prefix(app.store.cache_dir().join("history"))
-                .unwrap_or(&html)
-                .iter()
-                .map(|p| url_encode(&p.to_string_lossy()))
-                .collect::<Vec<_>>()
-                .join("/");
-            Json(json!({"href": format!("/history/{rel}"), "changed": changed})).into_response()
-        }
-        Ok(Err(e)) => err_response(e),
-        Err(e) => err_response(QdError::Io(std::io::Error::other(e))),
-    }
+    .await
 }
 
 /// `POST /api/history/init` (token: it creates a repository beside the deck).
@@ -573,12 +561,7 @@ async fn api_history_init(State(app): State<Shared>, headers: HeaderMap) -> Resp
     if !authorized(&app, &headers) {
         return forbidden();
     }
-    let a = app.clone();
-    match tokio::task::spawn_blocking(move || crate::history::init(&a.store.path)).await {
-        Ok(Ok(v)) => Json(v).into_response(),
-        Ok(Err(e)) => err_response(e),
-        Err(e) => err_response(QdError::Io(std::io::Error::other(e))),
-    }
+    blocking(move || crate::history::init(&app.store.path)).await
 }
 
 /// `POST /api/layouts` (token, same origin): save, rename or remove a saved
