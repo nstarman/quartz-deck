@@ -130,19 +130,18 @@ impl Events {
             "GET {path} HTTP/1.1\r\nHost: localhost\r\nAccept: text/event-stream\r\n\r\n"
         )
         .unwrap();
-        s.set_read_timeout(Some(Duration::from_millis(200)))
-            .unwrap();
+        s.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
         let mut r = BufReader::new(s);
         // the server subscribes before it answers: past the headers, no event is missed
-        let end = Instant::now() + Duration::from_secs(30);
         let mut line = String::new();
         while line != "\r\n" {
-            assert!(Instant::now() < end, "no answer from {path}");
-            if line.ends_with('\n') {
-                line.clear(); // (a read that timed out keeps its part of a line)
-            }
-            let _ = r.read_line(&mut line);
+            line.clear();
+            let n = r.read_line(&mut line).expect("no answer from the server");
+            assert!(n > 0, "{path} closed before its headers");
         }
+        r.get_ref()
+            .set_read_timeout(Some(Duration::from_millis(200)))
+            .unwrap();
         Events { r }
     }
 
