@@ -3452,3 +3452,90 @@ async fn place_freely() {
     assert!(place[1].as_str().unwrap().contains("div"), "{place}");
     ed.close_menu().await;
 }
+
+/// Spec 009 US3: Slide ▸ Save slide as layout… keeps the slide's structure with
+/// the deck; the gallery lists it under "This deck’s", renames and deletes it,
+/// and a slide from it has the placeholders where the elements were.
+#[tokio::test(flavor = "multi_thread")]
+async fn save_a_layout() {
+    let Some(ed) = Ed::open(P2).await else {
+        return;
+    };
+    let top = "dialog.sheet[open]:last-of-type";
+    let file = |n: &str| ed.dir.path().join(format!("_layouts/{n}.md"));
+    ed.settle().await;
+    ed.go("a").await;
+    ed.menu("Slide", "Save slide as layout…").await;
+    ed.wait(&format!(
+        "document.activeElement === document.querySelector('{top} input[type=text]')"
+    ))
+    .await;
+    ed.type_text("my-list").await;
+    ed.click_editor(&format!("{top} button[value=ok]")).await;
+    let start = Instant::now();
+    while !file("my-list").exists() {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "layout never saved"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let saved = std::fs::read_to_string(file("my-list")).unwrap();
+    assert_eq!(saved.matches("ph=text").count(), 3, "{saved}");
+    assert!(
+        !saved.contains("First para") && !saved.contains("top=170 width=930"),
+        "measured, not stacked: {saved}"
+    );
+
+    // the gallery lists it under the deck's heading; rename it there
+    let open_gallery = async || {
+        ed.settle().await;
+        ed.click_editor("#slides li[data-id=b] .add-here").await;
+        ed.wait(&format!(
+            "!!document.querySelector('{top} label[data-layout]')"
+        ))
+        .await;
+    };
+    open_gallery().await;
+    assert_eq!(
+        ed.eval(&format!(
+            "document.querySelector('{top} .is-gallery h3').textContent"
+        ))
+        .await,
+        "This deck’s"
+    );
+    ed.click_editor(&format!("{top} label[data-layout=my-list] button.rename"))
+        .await;
+    ed.wait(&format!(
+        "document.activeElement === document.querySelector('{top} input[type=text]')"
+    ))
+    .await;
+    ed.type_text("corner").await;
+    ed.click_editor(&format!("{top} button[value=ok]")).await;
+    ed.wait(&format!(
+        "!!document.querySelector('{top} label[data-layout=corner]')"
+    ))
+    .await;
+    assert!(file("corner").exists() && !file("my-list").exists());
+
+    // a slide from it: the placeholders where the elements were
+    ed.click_editor(&format!("{top} label[data-layout=corner]"))
+        .await;
+    let before = ed.file();
+    ed.click_editor(&format!("{top} button[value=ok]")).await;
+    ed.wait_file(
+        |f| f.matches("qd-ph ph=text").count() == 3,
+        "slide from the saved layout",
+    )
+    .await;
+    ed.undo_to(&before).await;
+
+    // and delete it from the gallery
+    open_gallery().await;
+    ed.click_editor(&format!("{top} label[data-layout=corner] button.delete"))
+        .await;
+    ed.click_editor(&format!("{top} button[value=ok]")).await; // "Delete layout?"
+    ed.wait("document.querySelectorAll('dialog.sheet[open]').length === 1 && !document.querySelector('dialog.sheet[open] label[data-layout=corner]')").await;
+    assert!(!file("corner").exists());
+    ed.key("Escape", "Escape", 27, 0).await;
+}

@@ -12,13 +12,12 @@ by the node test.
 | front / back / forward / backward | Bring to front … | Arrange, right-click | ⌥⇧⌘F / ⌥⇧⌘B, ⌥⌘F / ⌥⌘B | element | `qd box front <ref>` … |
 | box-nudge-left/right/up/down | Nudge | — (keys only, listed in the reference) | ←→↑↓, ⇧ for 10 (plain arrows are free on a selected element; ⌥↑/⌥↓ stay Move up/down) | element (a box) | `qd box move <ref> --by` |
 | layout-save | Save slide as layout… | Slide | — | slides, slide | `qd layout save` |
-| layouts-manage | Layouts… | Slide | — | anywhere | — (the gallery with rename/delete) |
 | snap | Snap to guides | View | — | anywhere | setting `placement.snap` |
 
 **Gallery** (a sheet, 008): a grid of previews with names, the last used
 preselected; arrows move, Enter adds, Esc cancels; the person's and the deck's
-layouts follow the built-in ones under their own headings, with rename and
-delete on each.
+layouts come first under their own headings, with rename and delete on each
+(the gallery is where saved layouts are managed: no separate Layouts… action).
 
 **Canvas**:
 - ⌥-drag an element in the flow: a translucent copy follows the pointer and

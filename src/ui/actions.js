@@ -101,6 +101,7 @@ export function makeActions(api) {
     '-',
     { id: 'slide-notes', label: 'Speaker notes…', run: api.editNotes },
     { id: 'slide-source', label: 'Edit slide source', run: (t) => api.beginSlideSource(t) },
+    { id: 'layout-save', label: 'Save slide as layout…', run: (t) => api.saveLayout(t) },
     { id: 'slide-link', label: 'Copy link to slide', run: (t) => navigator.clipboard?.writeText(api.slideUrl(t.anchor)).then(() => api.say('Link copied')) },
   ];
   const emptyArea = [...slide, '-', { id: 'insert-end', label: 'Insert', items: (t) => insertMenu(t, { end: true }) }];

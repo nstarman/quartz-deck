@@ -86,6 +86,7 @@
   {"separator": true, "menu": ["Slide"]},
   {"id": "slide-notes", "label": "Speaker notes…", "menu": ["Slide"], "where": ["slides", "slide", "element"], "qd": "qd block add <slide> --end --md '::: notes'"},
   {"id": "slide-source", "label": "Edit slide source", "menu": ["Slide"], "where": ["slides", "slide", "element"], "qd": "qd body <slide>"},
+  {"id": "layout-save", "label": "Save slide as layout…", "menu": ["Slide"], "where": ["slides", "slide", "element"], "qd": "qd layout save <slide> <name>"},
   {"id": "slide-link", "label": "Copy link to slide", "menu": ["Slide"], "where": ["slides", "slide", "element"], "qd": "qd url --slide <slide>"},
 
   {"id": "place", "label": "Place freely (or ⌥-drag it)", "menu": ["Arrange"], "where": ["element"], "qd": "qd block place <ref> --at <x>,<y> --width <w>"},
