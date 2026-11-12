@@ -1,5 +1,6 @@
 pub mod assets;
 pub mod attrs;
+pub mod bib;
 pub mod browser;
 pub mod cli;
 pub mod deck;
@@ -8,6 +9,7 @@ pub mod error;
 pub mod export;
 pub mod focus;
 pub mod images;
+pub mod inline;
 pub mod kernel;
 pub mod layouts;
 pub mod offline;
