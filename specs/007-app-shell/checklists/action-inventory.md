@@ -152,3 +152,23 @@ Added by spec 008 US7 (T030), Insert menu: Code cell `insert-code`, Callout `ins
 | Save slide as layout… | — | `layout-save` |
 | Snap to guides | — | `snap` |
 | Slide after… / before… (the gallery) | ⇧⌘N | `slide-after` `slide-before` |
+
+## Added by 011 (export formats)
+
+The header's **Export ▾** shows File ▸ Export's items. `export` and
+`export-pdf` keep their ids (they moved into the submenu).
+
+| Control | Key | Id |
+|---|---|---|
+| PowerPoint… | — | `export-pptx` |
+| Beamer PDF… | — | `export-beamer` |
+| Word… | — | `export-docx` |
+| HTML page… | — | `export-html` |
+| PDF (LaTeX)… | — | `export-latex` |
+| PDF (Typst)… | — | `export-typst` |
+| Markdown (GitHub)… | — | `export-gfm` |
+| Markdown (CommonMark)… | — | `export-commonmark` |
+| Jupyter notebook… | — | `export-ipynb` |
+| OpenDocument… | — | `export-odt` |
+| EPUB… | — | `export-epub` |
+| Other format… | — | `export-other` |

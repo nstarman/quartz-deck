@@ -1977,6 +1977,20 @@ for (const a of keys.ACTIONS.filter((a) => a.qd?.startsWith('qd export --to ')))
     run: () => exportTo(name, formats.get(name)?.label || name),
   });
 }
+// any other writer Quarto's Pandoc has, by name (US4)
+keys.on('export-other', {
+  enabled: () => !busy.export,
+  run: async () => {
+    const others = [...formats.values()].filter((f) => f.group === 'other').map((f) => f.name);
+    const v = await ask({
+      title: 'Export in another format',
+      message: 'Any format Quarto can write, such as rst, org, latex or asciidoc.',
+      fields: [{ name: 'format', label: 'Format', suggestions: others, validate: (x) => (others.includes(x) ? '' : 'Not a format Quarto can write') }],
+      ok: 'Next',
+    });
+    if (v) await exportTo(v.format, v.format);
+  },
+});
 keys.on('preview', () => window.open('/present/', '_blank', 'noopener'));
 keys.on('present', () => present(false));
 keys.on('present-start', () => present(true));

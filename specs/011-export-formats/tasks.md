@@ -112,20 +112,20 @@ page. File ▸ Export is now a submenu with every format (one action each:
 
 **Independent Test**: spec US4; quickstart §5.
 
-- [ ] T015 [P] [US4] Write failing tests:
-  - **`src/formats.rs` units:** a writer from Pandoc's list that isn't in `FORMATS` gets group `other`, route `pandoc` and an ext from the map (`rst`, `org`, `latex→tex`, `asciidoc→adoc`, default `txt`).
-  - **`tests/export_formats.rs` `other_writers`:** `--to rst` and `--to org` write files that hold every slide title, `route: "pandoc"`, and the note "Quarto-only features may be simplified". `--to nosuch` fails with `E_INVALID_ARG`.
+- [X] T015 [P] [US4] Write failing tests:
+  - **`src/formats.rs` units:** a writer from Pandoc's list that isn't in `FORMATS` gets group `other` and an ext from the map (`rst`, `org`, `latex→tex`, `asciidoc→adoc`, default `txt`).
+  - **`tests/export_formats.rs` `other_writers`:** `--to rst` and `--to org` write files that hold every slide title and the labelled notes; rst's plot is in `export/carry_files/` and listed in `files`. `--to nosuch` fails with `E_INVALID_ARG`.
   - **Browser test `export_other_format`:** Export ▾ ▸ Other format… opens a filterable list; picking `rst` exports it.
-- [ ] T016 [US4] Read the writer list once per process (`quarto pandoc --list-output-formats`), implement the Pandoc route (Quarto to `md` with the filter, then `quarto pandoc -t`), and build the "Other format…" sheet in the editor. T015 passes.
+- [X] T016 [US4] Read the writer list once per process (`quarto pandoc --list-output-formats`), accept any of them by name through the same Quarto render as the menu formats (research R3, revised 2026-11-12: the two-step Markdown → Pandoc route was built, then dropped), move `<name>_files/` for any text output, and build the "Other format…" sheet in the editor. T015 passes.
 
 ---
 
 ## Phase 7: Polish & cross-cutting
 
-- [ ] T017 [P] Docs: README export section, the qd skill (`qd export --to`, `--list`, losses, `E_NO_TEX`), `specs/ROADMAP.md` 011 status, and the 007 action inventory ("Added by 011").
-- [ ] T018 Run quickstart §1–§7 in the browser pane and record it in `specs/011-export-formats/checklists/quickstart-run.md`.
-- [ ] T019 Final constitution re-check in `plan.md`; fmt, clippy, `cargo test --no-fail-fast` and `node --test vscode/test/*.test.js` green.
-- [ ] T020 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
+- [X] T017 [P] Docs: README export section, the qd skill (`qd export --to`, `--list`, losses, `E_NO_TEX`), `specs/ROADMAP.md` 011 status, and the 007 action inventory ("Added by 011").
+- [X] T018 Run quickstart §1–§7 in the browser pane and record it in `specs/011-export-formats/checklists/quickstart-run.md`.
+- [X] T019 Final constitution re-check in `plan.md`; fmt, clippy, `cargo test --no-fail-fast` and `node --test vscode/test/*.test.js` green.
+- [X] T020 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
 
 ---
 

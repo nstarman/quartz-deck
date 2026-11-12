@@ -8,6 +8,15 @@
 
 **Input**: User description: "Export formats (roadmap 011; PR #43 is 010 one-file-deck): an Export ▾ drop-down in the editor (and File ▸ Export) and `qd export --to <format> [--out PATH]` for agents with a JSON result, for every format Quarto/Pandoc can write. Default route: `quarto render --to <format>` on an export copy (as in 002), so code still runs and Quarto features (callouts, cross-references, layouts, themes) are kept; formats Quarto has no profile for go through `quarto pandoc` on the rendered markdown instead, with a note that Quarto-specific features may be simplified. Slide formats first (P1): offline reveal.js (002, unchanged), PDF of the slides (002), PowerPoint (pptx), Beamer PDF. Then documents (P2): Word, HTML page, PDF via LaTeX or Typst, Markdown (GFM/CommonMark), Jupyter notebook, ODT, EPUB; and (P3) the rest of Pandoc's writers. Per format the spec says what carries over (positioned boxes, fragments, speaker notes, backgrounds, interactive figures, columns, math, code output) and the result reports losses instead of silently dropping content; PDF/LaTeX/Typst formats need a TeX or Typst install, checked and reported like the browser in 002. The .qmd is never changed by an export."
 
+## Clarifications
+
+### Session 2026-11-12
+
+- Q: Writers with no menu entry (US4): convert Quarto's Markdown with Pandoc,
+  or render to them with Quarto? → A: render with Quarto, like every other
+  format. Easy routing to every format is why qd builds on Quarto; the
+  first plan's two-step route is dropped.
+
 ## Context
 
 A deck written in qd is a Quarto reveal.js deck. Today qd exports it two
@@ -139,22 +148,23 @@ that the result's losses match what the file shows.
 
 An agent or a person who knows Pandoc asks for a format that has no menu
 entry, such as reStructuredText, Org, JATS or AsciiDoc. qd renders the deck
-to plain Markdown with Quarto (so the code runs) and converts that with
-Pandoc. The result says that Quarto-only features (callouts,
-cross-references, layouts) may be simplified in this format.
+with Quarto to that writer, the same way as every other format: Quarto runs
+the code and handles callouts, cross-references and figures, then hands the
+result to its Pandoc. This is why qd uses Quarto: one route covers every
+format.
 
-**Why this priority**: These formats are rare for slides. They come almost
-for free once the other routes exist.
+**Why this priority**: These formats are rare for slides. They come for free,
+because Quarto accepts any writer its Pandoc has.
 
 **Independent Test**: Run `qd export --to rst` and `qd export --to org` on
-the fixture deck. Each must produce a file that has every slide title, and
-a result with the "may be simplified" note.
+the fixture deck. Each must produce a file that has every slide title, the
+notes under their label, and the plot as an image file beside it.
 
 **Acceptance Scenarios**:
 
-1. **Given** a writer name Pandoc lists but Quarto has no format for,
-   **When** it is requested, **Then** qd writes the file and the result
-   notes the simpler route.
+1. **Given** a writer name Pandoc lists that has no menu entry, **When** it
+   is requested, **Then** qd writes the file, with the same losses report as
+   a document format.
 2. **Given** a name Pandoc does not know, **When** it is requested, **Then**
    qd fails with the list of names it does know (or `qd export --list`).
 3. **Given** the editor, **When** the person opens Export ▾ ▸ Other
@@ -206,12 +216,12 @@ a result with the "may be simplified" note.
   export succeeds or fails.
 - **FR-004**: Exports MUST run the deck's code cells in the deck's own
   environment (as rendering does, spec 004), so code output is fresh.
-- **FR-005**: Where Quarto has a format of that name, the export MUST use
-  Quarto's own rendering for it, so callouts, cross-references, figure
-  layouts and columns are kept as Quarto keeps them.
-- **FR-006**: For a Pandoc writer that Quarto has no format for, the export
-  MUST render the deck to Markdown with Quarto first and convert that, and
-  the result MUST note that Quarto-only features may be simplified.
+- **FR-005**: Every export MUST be one Quarto render to the chosen format
+  (`quarto render --to <name>`), so callouts, cross-references, figure
+  layouts and columns are kept as Quarto keeps them, and code runs as in any
+  render.
+- **FR-006**: Any writer that Quarto's Pandoc lists MUST be accepted by name,
+  through the same route (FR-005). qd keeps no conversion steps of its own.
 - **FR-007**: The default output path MUST be `export/<deck name>.<ext>`
   next to the deck. `--out` sets another path; in the editor the person
   can change the path in the export dialog.
@@ -286,9 +296,8 @@ a result with the "may be simplified" note.
 **Result and editor**
 
 - **FR-018**: `qd export --to` MUST print one JSON result with: whether it
-  succeeded, the format, the route taken (Quarto's format or Markdown then
-  Pandoc), the output path, extra files, the losses (FR-013), notes (such
-  as FR-006's), and on failure the error and the slide it concerns.
+  succeeded, the format, the output path, extra files, the losses
+  (FR-013), notes, and on failure the error and the slide it concerns.
 - **FR-019**: In the editor, an export MUST show progress while it runs,
   let the person keep editing, and end with the result: the file (with a
   button to show it in the file manager), and the losses grouped by slide,
@@ -303,11 +312,10 @@ a result with the "may be simplified" note.
 ### Key Entities
 
 - **Format**: a name used on the command line, a label, a group (Slides,
-  Documents, Other), a file extension, the route (Quarto's own format, or
-  Markdown then Pandoc), the tool it needs, and its column of the
-  carry-over table.
-- **Export result**: success, format, route, output path, extra files,
-  losses, notes, and an error with its slide on failure.
+  Documents, Other), a file extension, the tool it needs, and its column
+  of the carry-over table.
+- **Export result**: success, format, output path, extra files, losses,
+  notes, and an error with its slide on failure.
 - **Loss**: a deck feature, the slides where the deck uses it, and what
   happened to it there (in the flow, a still image, or not in the file).
 
