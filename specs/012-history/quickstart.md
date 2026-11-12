@@ -21,7 +21,8 @@ with code shows its cells' code, and none of it runs.
 ## 2. Save as git commit (US2)
 
 ```bash
-qd settings set history.commit true history.pause 5
+qd settings set history.commit true
+qd settings set history.pause 5
 ```
 
 With `qd serve` running, make three edits within a few seconds and wait

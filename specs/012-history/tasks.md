@@ -150,13 +150,13 @@ version…** (View) asks first. A slide that is gone now is restored with
 
 ## Phase 7: Polish & cross-cutting
 
-- [ ] T016 [P] Docs:
+- [X] T016 [P] Docs:
   - README: a History section;
   - the qd skill: `qd history`/`diff`/`restore`, the setting, and the errors `E_NO_REPO`, `E_NO_GIT`, `E_GIT`, `E_REPO_BUSY`;
   - `specs/ROADMAP.md`: 012's status;
   - the 007 action inventory: "Added by 012".
-- [ ] T017 Run quickstart §1–§5 in the browser pane and record it in `specs/012-history/checklists/quickstart-run.md`.
-- [ ] T018 Final constitution re-check in `plan.md`; fmt, clippy, `cargo test --no-fail-fast` and `node --test vscode/test/*.test.js` green.
+- [X] T017 Run quickstart §1–§5 in the browser pane and record it in `specs/012-history/checklists/quickstart-run.md`.
+- [X] T018 Final constitution re-check in `plan.md`; fmt, clippy, `cargo test --no-fail-fast` and `node --test vscode/test/*.test.js` green.
 - [ ] T019 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
 
 ---

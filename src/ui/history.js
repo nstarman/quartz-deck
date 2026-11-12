@@ -132,6 +132,20 @@ function showChange(c) {
   else $('#preview').contentWindow.location.hash = '#/' + c.id;
 }
 
+let tick;
+/** The top line while edits wait to be saved as a version: a countdown from `secs` (null clears it). */
+export function saving(secs) {
+  clearInterval(tick);
+  const line = $('.saving', panel);
+  const end = Date.now() + (secs ?? 0) * 1000;
+  const show = () => {
+    const s = Math.ceil((end - Date.now()) / 1000);
+    line.textContent = secs == null ? '' : s > 0 ? `Saving a version in ${s} s` : 'Saving a version…';
+  };
+  show();
+  if (secs != null) tick = setInterval(show, 1000);
+}
+
 export const isOpen = () => !panel.hidden;
 
 export function toggle(on = panel.hidden) {

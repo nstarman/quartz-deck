@@ -3968,10 +3968,17 @@ async fn history_commit_notice() {
     git(&["commit", "-qm", "first"]);
     common::settings(dir, json!({"history.commit": true, "history.pause": 5}));
     let notice = "document.querySelector('#notice').textContent";
+    // the History panel's top line counts down to the commit
+    ed.eval("import('/ui/keys.js').then((k) => k.run('history'))")
+        .await;
+    let saving = "document.querySelector('#history .saving').textContent";
     qd(dir).args(["title", "a", "Two"]).output().unwrap();
     ed.wait(&format!("{notice} === 'Saving a version…'")).await;
+    ed.wait(&format!("/^Saving a version in [1-5] s$/.test({saving})"))
+        .await;
     ed.wait_secs(&format!("{notice} === 'Saved as a version'"), 20)
         .await;
+    ed.wait(&format!("{saving} === ''")).await;
     assert_eq!(
         git(&["log", "-1", "--format=%s"]).trim(),
         "qd: title a (agent)"
