@@ -3862,12 +3862,7 @@ async fn history_commit_notice() {
     let git = common::git_repo(dir);
     git(&["add", "deck.qmd"]);
     git(&["commit", "-qm", "first"]);
-    std::fs::create_dir_all(dir.join(".config")).unwrap();
-    std::fs::write(
-        dir.join(".config/settings.json"),
-        r#"{"history.commit": true, "history.pause": 5}"#,
-    )
-    .unwrap();
+    common::settings(dir, json!({"history.commit": true, "history.pause": 5}));
     let notice = "document.querySelector('#notice').textContent";
     qd(dir).args(["title", "a", "Two"]).output().unwrap();
     ed.wait(&format!("{notice} === 'Saving a version…'")).await;
@@ -3878,10 +3873,7 @@ async fn history_commit_notice() {
         "qd: title a (agent)"
     );
 
-    let hook = dir.join(".git/hooks/pre-commit");
-    std::fs::write(&hook, "#!/bin/sh\necho 'no commits today' >&2\nexit 1\n").unwrap();
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    common::hook(dir, "echo 'no commits today' >&2; exit 1");
     qd(dir).args(["title", "a", "Three"]).output().unwrap();
     ed.wait_secs(&format!("{notice}.includes('no commits today')"), 20)
         .await;

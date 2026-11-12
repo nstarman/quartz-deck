@@ -95,9 +95,6 @@ export function follow(anchor) {
 
 export const isOpen = () => !panel.hidden;
 
-/** A new commit (Save as git commit): list it if the panel is open. */
-export function refresh() { if (!panel.hidden) load(); }
-
 export function toggle(on = panel.hidden) {
   panel.hidden = !on;
   if (on) load(); else close();

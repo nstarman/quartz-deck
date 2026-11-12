@@ -52,3 +52,17 @@ pub fn git_repo(dir: &Path) -> impl Fn(&[&str]) -> String + '_ {
     }
     git
 }
+
+/// The person's settings for `qd(dir)` (its `QD_CONFIG_DIR`).
+pub fn settings(dir: &Path, v: serde_json::Value) {
+    std::fs::create_dir_all(dir.join(".config")).unwrap();
+    std::fs::write(dir.join(".config/settings.json"), v.to_string()).unwrap();
+}
+
+/// A `pre-commit` hook running `script` in the repository at `dir`.
+pub fn hook(dir: &Path, script: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    let hook = dir.join(".git/hooks/pre-commit");
+    std::fs::write(&hook, format!("#!/bin/sh\n{script}\n")).unwrap();
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+}

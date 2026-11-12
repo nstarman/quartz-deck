@@ -2,7 +2,7 @@
 //! locally; tests/common `git_repo`). Rendering old versions needs Quarto.
 
 mod common;
-use common::{git_repo, have, qd};
+use common::{git_repo, have, hook, qd, settings};
 use serde_json::Value;
 use std::path::Path;
 
@@ -213,9 +213,10 @@ fn render_old_version() {
 
 // ---------- US2: save as git commit ----------
 
-fn commit(dir: &Path) -> quartz_deck::error::Result<Option<String>> {
-    let deck = dir.join("talks/deck.qmd");
-    let repo = quartz_deck::history::repo(&deck).unwrap().unwrap();
+fn commit(dir: &Path, deck: &str) -> quartz_deck::error::Result<Option<String>> {
+    let repo = quartz_deck::history::repo(&dir.join(deck))
+        .unwrap()
+        .unwrap();
     quartz_deck::history::commit_deck(&repo, "qd: edit (agent)")
 }
 
@@ -235,12 +236,16 @@ fn commit_only_the_deck() {
     let t = tempfile::tempdir().unwrap();
     let dir = t.path();
     let git = one_commit(dir);
-    assert_eq!(commit(dir).unwrap(), None, "the deck equals HEAD");
+    assert_eq!(
+        commit(dir, "talks/deck.qmd").unwrap(),
+        None,
+        "the deck equals HEAD"
+    );
     std::fs::write(dir.join("other.txt"), "2\n").unwrap();
     git(&["add", "other.txt"]);
     std::fs::write(dir.join("other.txt"), "3\n").unwrap();
     std::fs::write(dir.join("talks/deck.qmd"), "## One {#one}\n\nB\n").unwrap();
-    let rev = commit(dir).unwrap().unwrap();
+    let rev = commit(dir, "talks/deck.qmd").unwrap().unwrap();
     assert_eq!(git(&["rev-parse", "HEAD"]).trim(), rev);
     assert_eq!(
         git(&["show", "--name-only", "--format=", "HEAD"]).trim(),
@@ -249,12 +254,7 @@ fn commit_only_the_deck() {
     assert_eq!(git(&["status", "--porcelain"]), "MM other.txt\n");
     // an untracked deck is added and committed
     std::fs::write(dir.join("talks/new.qmd"), "## New\n").unwrap();
-    let repo = quartz_deck::history::repo(&dir.join("talks/new.qmd"))
-        .unwrap()
-        .unwrap();
-    quartz_deck::history::commit_deck(&repo, "qd: new")
-        .unwrap()
-        .unwrap();
+    commit(dir, "talks/new.qmd").unwrap().unwrap();
     assert_eq!(
         git(&["show", "--name-only", "--format=", "HEAD"]).trim(),
         "talks/new.qmd"
@@ -267,17 +267,14 @@ fn commit_follows_git_config() {
     let t = tempfile::tempdir().unwrap();
     let dir = t.path();
     let git = one_commit(dir);
-    let hook = dir.join(".git/hooks/pre-commit");
     let marker = dir.join("hook-ran");
-    std::fs::write(&hook, format!("#!/bin/sh\ntouch {:?}\n", marker)).unwrap();
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    hook(dir, &format!("touch {marker:?}"));
     std::fs::write(dir.join("talks/deck.qmd"), "## One {#one}\n\nB\n").unwrap();
-    commit(dir).unwrap().unwrap();
+    commit(dir, "talks/deck.qmd").unwrap().unwrap();
     assert!(marker.exists(), "the person's hook ran");
-    std::fs::write(&hook, "#!/bin/sh\necho 'no commits today' >&2\nexit 1\n").unwrap();
+    hook(dir, "echo 'no commits today' >&2; exit 1");
     std::fs::write(dir.join("talks/deck.qmd"), "## One {#one}\n\nC\n").unwrap();
-    let e = commit(dir).unwrap_err();
+    let e = commit(dir, "talks/deck.qmd").unwrap_err();
     assert_eq!(e.code(), "E_GIT");
     assert!(e.to_string().contains("no commits today"), "{e}");
     assert!(
@@ -302,14 +299,9 @@ fn no_commit_when_busy() {
     git(&["commit", "-qam", "main"]);
     assert!(quartz_deck::history::git(dir, &["merge", "-q", "side"]).is_err());
     std::fs::write(dir.join("talks/deck.qmd"), "## One {#one}\n\nB\n").unwrap();
-    let e = commit(dir).unwrap_err();
+    let e = commit(dir, "talks/deck.qmd").unwrap_err();
     assert_eq!(e.code(), "E_REPO_BUSY");
     assert_eq!(git(&["log", "-1", "--format=%s"]).trim(), "main");
-}
-
-fn settings(dir: &Path, v: Value) {
-    std::fs::create_dir_all(dir.join(".config")).unwrap();
-    std::fs::write(dir.join(".config/settings.json"), v.to_string()).unwrap();
 }
 
 #[test]

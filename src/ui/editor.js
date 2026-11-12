@@ -1056,7 +1056,7 @@ es.addEventListener('rendered', (e) => {
 es.addEventListener('history', (e) => {
   const d = JSON.parse(e.data);
   if (d.state === 'pending') { say('Saving a version…'); clearTimeout(say.t); }
-  else if (d.state === 'committed') { say('Saved as a version'); hist.refresh(); }
+  else if (d.state === 'committed') { say('Saved as a version'); if (hist.isOpen()) hist.toggle(true); }
   else if (d.state === 'unchanged') say('');
   else say(`Not saved as a version: ${d.reason}`, true);
 });

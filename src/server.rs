@@ -143,16 +143,13 @@ impl App {
         let data = match crate::history::commit_edits(&self.store) {
             Ok(Some(rev)) => json!({"state": "committed", "rev": rev}),
             Ok(None) => json!({"state": "unchanged"}),
-            Err(QdError::NoRepo) => {
-                json!({"state": "skipped", "reason": QdError::NoRepo.to_string()})
-            }
             Err(e) => {
-                self.pending.store(true, Ordering::SeqCst);
-                let state = if matches!(e, QdError::RepoBusy(_)) {
-                    "skipped"
-                } else {
-                    "failed"
-                };
+                // no repository: nothing to try again
+                if !matches!(e, QdError::NoRepo) {
+                    self.pending.store(true, Ordering::SeqCst);
+                }
+                let skipped = matches!(e, QdError::NoRepo | QdError::RepoBusy(_));
+                let state = if skipped { "skipped" } else { "failed" };
                 json!({"state": state, "reason": e.to_string()})
             }
         };
@@ -189,7 +186,6 @@ fn err_response(e: QdError) -> Response {
         QdError::Conflict(_)
         | QdError::StaleElement { .. }
         | QdError::NoUndo(_)
-        | QdError::RepoBusy(_)
         | QdError::Taken(_) => StatusCode::CONFLICT,
         QdError::UnsafeEdit(_) | QdError::OfflineIncompatible(_) => {
             StatusCode::UNPROCESSABLE_ENTITY

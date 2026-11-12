@@ -379,19 +379,7 @@ pub fn commit_deck(repo: &Repo, message: &str) -> Result<Option<String>> {
 /// commit. `E_NO_REPO` outside git.
 pub fn commit_edits(store: &Store) -> Result<Option<String>> {
     let repo = repo(&store.path)?.ok_or(QdError::NoRepo)?;
-    let last: u64 = git(
-        &repo.dir,
-        &[
-            "log",
-            "-1",
-            "--format=%ct",
-            "--",
-            &format!(":/{}", repo.path),
-        ],
-    )?
-    .trim()
-    .parse()
-    .unwrap_or(0);
+    let last = log(&repo, 1, 0)?.0.first().map_or(0, |v| v.time);
     // ponytail: the journal keeps seconds, so an edit in the same second as
     // the last commit is named again; millisecond stamps if that matters
     commit_deck(&repo, &message(&store.edits_since(last.saturating_sub(1))))
