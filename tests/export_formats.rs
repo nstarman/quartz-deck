@@ -83,7 +83,6 @@ fn pptx_and_beamer() {
     let out = t.path().join("export/carry.pptx");
     assert_eq!(v["kind"], "export-format");
     assert_eq!(v["format"], "pptx");
-    assert_eq!(v["route"], "quarto");
     assert_eq!(
         Path::new(v["out"].as_str().unwrap())
             .canonicalize()
@@ -198,6 +197,7 @@ fn list_and_no_tex() {
         .as_array()
         .unwrap()
         .iter()
+        .filter(|f| f["group"] != "other")
         .map(|f| f["name"].as_str().unwrap())
         .collect();
     assert_eq!(
@@ -331,6 +331,58 @@ fn documents() {
             .any(|c| c["cell_type"] == "code"),
         "code cells stay code cells"
     );
+    assert_eq!(
+        std::fs::read(&deck).unwrap(),
+        before,
+        "the deck is unchanged"
+    );
+    assert!(leftovers(t.path()).is_empty(), "{:?}", leftovers(t.path()));
+}
+
+#[test]
+fn other_writers() {
+    if !ready() {
+        return;
+    }
+    let (t, deck) = fixture();
+    let before = std::fs::read(&deck).unwrap();
+    for (to, file) in [("rst", "carry.rst"), ("org", "carry.org")] {
+        let (ok, v, err) = export(t.path(), &["--to", to]);
+        assert!(ok, "{to}: {err}");
+        let text = std::fs::read_to_string(t.path().join("export").join(file)).unwrap();
+        for title in [
+            "Columns",
+            "Placed",
+            "Fragments",
+            "Background",
+            "Math",
+            "Plot",
+            "Callout",
+        ] {
+            assert!(text.contains(title), "{to} lost the slide {title}");
+        }
+        assert!(
+            text.contains("NOTESCOLS") && !text.contains(". . ."),
+            "{to}"
+        );
+        assert!(text.contains("Speaker notes"), "{to}: notes labelled");
+        if to == "rst" {
+            // the plot beside it, as for Markdown (FR-009)
+            assert!(text.contains("carry_files/figure-rst/"), "{text}");
+            assert!(t.path().join("export/carry_files/figure-rst").is_dir());
+            assert_eq!(v["files"].as_array().unwrap().len(), 1, "{v}");
+        }
+    }
+    let (ok, v, _) = export(t.path(), &["--list"]);
+    assert!(ok);
+    let rst = v["formats"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["name"] == "rst")
+        .expect("rst listed");
+    assert_eq!(rst["group"], "other");
+    assert_eq!(rst["ext"], "rst");
     assert_eq!(
         std::fs::read(&deck).unwrap(),
         before,

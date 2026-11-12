@@ -3753,3 +3753,32 @@ fn which_quarto() -> Option<std::path::PathBuf> {
         .canonicalize()
         .ok()
 }
+
+/// Spec 011 US4 (T015): File ▸ Export ▸ Other format… takes any writer Pandoc
+/// knows, by name, and exports it.
+#[tokio::test]
+async fn export_other_format() {
+    let Some(ed) = Ed::open(EXPORTS).await else {
+        return;
+    };
+    ed.settle().await;
+    ed.click_editor("#export-menu").await;
+    ed.click_menu("Other format…").await;
+    let sheet = "document.querySelector('dialog.sheet[open]')";
+    ed.wait(&format!(
+        "!!{sheet}?.querySelector('datalist option[value=rst]')"
+    ))
+    .await;
+    ed.click_editor("dialog.sheet input[name=format]").await;
+    ed.type_text("rst").await;
+    ed.click_editor("dialog.sheet button[value=ok]").await;
+    // then the usual sheet: what changes, Export
+    ed.wait(&format!("{sheet}?.innerText.includes('Export rst?')"))
+        .await;
+    ed.click_editor("dialog.sheet button[value=ok]").await;
+    ed.wait_secs(
+        "document.querySelector('#panel')?.innerText.includes('Exported rst: deck.rst')",
+        120,
+    )
+    .await;
+}

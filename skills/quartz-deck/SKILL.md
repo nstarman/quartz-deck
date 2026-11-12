@@ -148,6 +148,28 @@ The first export downloads MathJax 3.2.2 (and Chrome for Testing if no
 Chrome/Chromium is installed; `qd browser` shows which is used), verified by
 SHA-256; later exports work offline. `--no-download` forbids downloads.
 
+## Other formats (PowerPoint, Beamer, Word, Markdown, …)
+
+`qd export --to <format>` writes `export/<deck>.<ext>` (`--out FILE` for
+another path); `qd export --list` lists every format with `ready` and, if not,
+a `hint`. Menu formats: `pptx`, `beamer`, `docx`, `html`, `pdf` (LaTeX),
+`typst`, `gfm`, `commonmark`, `ipynb`, `odt`, `epub`, and any other writer
+Quarto's Pandoc has (`rst`, `org`, `latex`, `asciidoc`, …). Each is one
+Quarto render of a copy, so code runs and Quarto's features are kept; the
+deck is never changed.
+
+Read `losses` in the result before telling the person an export is done:
+each is `{feature, keep, what, slides}`, e.g. `placed` boxes in the `flow`,
+`pause`/`fragment` `all-shown`, `notes` `hidden` in Beamer,
+`background-image` or `interactive` `lost`. Only features the deck uses are
+listed. `qd --dry-run export --to X` reports them without rendering, which
+is the way to pick a format. Documents get one section per slide with notes
+under "Speaker notes"; text formats (Markdown, the HTML page, rst, LaTeX, …)
+put figures and libraries in `export/<deck>_files/` (listed in `files`).
+
+`E_NO_TEX` (Beamer, `pdf`): install TeX with `quarto install tinytex`, or use
+`typst`, which needs nothing extra.
+
 ## References from Zotero
 
 `qd bib --zotero KEY` (KEY: the 8-character collection key) rewrites the
@@ -175,6 +197,7 @@ communicate with Zotero"). It is an edit like any other (`--dry-run`,
 | `E_NO_QUARTO` | Quarto missing (preview/render only) | install Quarto; edits still work |
 | `E_OFFLINE` | the deck would not work offline | read `problems` in the stdout report; fix; re-run |
 | `E_OFFLINE_INCOMPATIBLE` | chalkboard/multiplex can't be one offline file | remove the feature for the export |
+| `E_NO_TEX` | `qd export --to beamer`/`pdf` without TeX | `quarto install tinytex`, or `--to typst` |
 | `E_ZOTERO` | `qd bib` cannot reach Zotero's local API | start Zotero 7 and allow other applications to talk to it (Settings > Advanced) |
 | `E_NO_ENV` | deck has code cells but no environment | `qd env init`, then `qd env add <pkgs>` |
 | `E_LOCK_STALE` | manifest edited, lock out of date | `qd env sync` |

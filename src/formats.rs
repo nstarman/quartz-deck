@@ -251,6 +251,57 @@ fn tex_here() -> bool {
     )
 }
 
+/// Pandoc's writers (`quarto pandoc --list-output-formats`), read once.
+fn writers() -> &'static [String] {
+    static W: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    W.get_or_init(|| {
+        crate::render::quarto()
+            .ok()
+            .and_then(|q| {
+                std::process::Command::new(q)
+                    .args(["pandoc", "--list-output-formats"])
+                    .output()
+                    .ok()
+            })
+            .map(|o| {
+                String::from_utf8_lossy(&o.stdout)
+                    .split_whitespace()
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default()
+    })
+}
+
+/// A writer with no menu entry (US4): its name and file extension.
+fn other<'a>(name: &'a str, writers: &[String]) -> Option<&'a str> {
+    if FORMATS.iter().any(|f| f.name == name) || !writers.iter().any(|w| w == name) {
+        return None;
+    }
+    let ext = match name {
+        "latex" | "context" => "tex",
+        "rst" | "org" | "rtf" | "ms" | "opml" | "icml" | "fb2" | "textile" | "native" => name,
+        "texinfo" => "texi",
+        "html4" | "html5" | "dzslides" | "s5" | "slideous" | "slidy" => "html",
+        "epub2" | "epub3" => "epub",
+        "chunkedhtml" => "zip",
+        "json" | "csljson" => "json",
+        "bibtex" | "biblatex" => "bib",
+        "man" => "1",
+        n if n.starts_with("asciidoc") => "adoc",
+        n if n.starts_with("markdown") || n == "commonmark_x" => "md",
+        n if n.starts_with("docbook")
+            || n.starts_with("jats")
+            || n == "tei"
+            || n == "opendocument" =>
+        {
+            "xml"
+        }
+        _ => "txt",
+    };
+    Some(ext)
+}
+
 /// `qd export --list` (FR-011).
 pub fn list() -> Value {
     let tex = tex_here();
@@ -265,6 +316,11 @@ pub fn list() -> Value {
             }
             v
         })
+        .chain(writers().iter().filter_map(|w| {
+            other(w, writers()).map(|ext| {
+                json!({"name": w, "label": w, "group": "other", "ext": ext, "needs": null, "ready": true})
+            })
+        }))
         .collect();
     json!({"kind": "export-formats", "formats": formats})
 }
@@ -295,10 +351,15 @@ pub fn run(
     out: Option<PathBuf>,
     dry_run: bool,
 ) -> Result<Value> {
-    let fmt = find(name)?;
-    if fmt.needs == Some(Tool::Tex) && !tex_here() {
-        return Err(QdError::NoTex(fmt.label.into()));
-    }
+    // a menu format, or any other writer Quarto's Pandoc has (US4): the same
+    // Quarto render either way (research R3)
+    let ext = match find(name) {
+        Ok(f) if f.needs == Some(Tool::Tex) && !tex_here() => {
+            return Err(QdError::NoTex(f.label.into()));
+        }
+        Ok(f) => f.ext,
+        Err(e) => other(name, writers()).ok_or(e)?,
+    };
     let d = store.read()?;
     let deck_dir = store.path.parent().unwrap_or(Path::new(".")).to_path_buf();
     let stem = store
@@ -307,16 +368,16 @@ pub fn run(
         .unwrap_or_default()
         .to_string_lossy()
         .into_owned();
-    let out = out.unwrap_or_else(|| deck_dir.join("export").join(format!("{stem}.{}", fmt.ext)));
+    let out = out.unwrap_or_else(|| deck_dir.join("export").join(format!("{stem}.{ext}")));
     let out = std::path::absolute(&out)?;
-    let mut v = json!({"ok": true, "kind": "export-format", "format": fmt.name, "route": "quarto",
-        "out": out, "files": [], "losses": losses(&d, fmt.name), "notes": [], "changed_during": false});
+    let mut v = json!({"ok": true, "kind": "export-format", "format": name, "out": out,
+        "files": [], "losses": losses(&d, name), "notes": [], "changed_during": false});
     if dry_run {
         v["dry_run"] = json!(true);
         return Ok(v);
     }
 
-    let tag = format!("export-{}", fmt.name);
+    let tag = format!("export-{name}");
     let filter = deck_dir.join(format!(".{stem}.qd-{tag}.lua"));
     let meta = deck_dir.join(format!(".{stem}.qd-{tag}.yml"));
     let parent = out.parent().unwrap_or(Path::new(".")).to_path_buf();
@@ -338,27 +399,32 @@ pub fn run(
         &d.text,
         &tag,
         &staging,
-        fmt.name,
-        fmt.ext,
+        name,
+        ext,
         &["--metadata-file", &meta_s],
         true,
     )?;
-    // Markdown and the html page keep figures and libraries in `<name>_files/`
-    // beside them (FR-009): it moves with the file, under the file's own name
-    let name = made
+    // a text output (Markdown, the html page, rst, LaTeX, …) refers to figures
+    // and libraries in `<name>_files/` (FR-009): it moves with the file, under
+    // the file's own name; a PDF's own `_files/` holds intermediate figures only
+    let made_name = made
         .file_stem()
         .unwrap_or_default()
         .to_string_lossy()
         .into_owned();
-    let made_files = staging.join(format!("{name}_files"));
-    // (a PDF's own `_files/` holds intermediate figures only: it stays behind)
-    if made_files.is_dir() && matches!(fmt.ext, "md" | "html") {
+    let made_files = staging.join(format!("{made_name}_files"));
+    let text = std::fs::read_to_string(&made)
+        .ok()
+        .filter(|t| made_files.is_dir() && t.contains(&format!("{made_name}_files/")));
+    if let Some(text) = text {
         let out_stem = out.file_stem().unwrap_or_default().to_string_lossy();
         let files = parent.join(format!("{out_stem}_files"));
-        let text = std::fs::read_to_string(&made)?;
         std::fs::write(
             &made,
-            text.replace(&format!("{name}_files/"), &format!("{out_stem}_files/")),
+            text.replace(
+                &format!("{made_name}_files/"),
+                &format!("{out_stem}_files/"),
+            ),
         )?;
         // merged, not replaced: the html page and Markdown of one deck share it
         // (`libs/` and `figure-html/` beside `figure-commonmark/`)
@@ -378,9 +444,9 @@ pub fn run(
     })?;
     if store.read().is_ok_and(|now| now.version != d.version) {
         v["changed_during"] = json!(true);
-        v["notes"] = json!([
+        v["notes"].as_array_mut().unwrap().push(json!(
             "the deck changed while exporting; this file is the version from when the export started"
-        ]);
+        ));
     }
     Ok(v)
 }
@@ -476,6 +542,23 @@ mod tests {
             let live = matches!(d, "html" | "ipynb");
             assert_eq!(keeps(d, Interactive), if live { Kept } else { Lost }, "{d}");
         }
+    }
+
+    #[test]
+    fn other_writers_are_accepted_by_name() {
+        let writers = ["rst", "org", "latex", "asciidoc", "pptx", "plain"].map(String::from);
+        assert_eq!(other("rst", &writers), Some("rst"));
+        assert_eq!(other("latex", &writers), Some("tex"));
+        assert_eq!(other("asciidoc", &writers), Some("adoc"));
+        assert_eq!(other("plain", &writers), Some("txt"));
+        assert!(
+            other("pptx", &writers).is_none(),
+            "a menu format, not an other"
+        );
+        assert!(other("nosuch", &writers).is_none());
+        // the document columns of the table apply to them too
+        assert_eq!(keeps("rst", Feature::Notes), Keep::Kept);
+        assert_eq!(keeps("rst", Feature::Columns), Keep::Flow);
     }
 
     #[test]

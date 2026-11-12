@@ -16,6 +16,8 @@
   {"id": "export-ipynb", "label": "Jupyter notebook…", "menu": ["File", "Export"], "where": ["anywhere"], "qd": "qd export --to ipynb"},
   {"id": "export-odt", "label": "OpenDocument…", "menu": ["File", "Export"], "where": ["anywhere"], "qd": "qd export --to odt"},
   {"id": "export-epub", "label": "EPUB…", "menu": ["File", "Export"], "where": ["anywhere"], "qd": "qd export --to epub"},
+  {"separator": true, "menu": ["File", "Export"]},
+  {"id": "export-other", "label": "Other format…", "menu": ["File", "Export"], "where": ["anywhere"], "qd": "qd export --list"},
   {"separator": true, "menu": ["File"]},
   {"id": "preview", "label": "Open in browser tab ↗", "menu": ["File"], "where": ["anywhere"], "qd": "qd url"},
   {"id": "source-save", "label": "Save source now", "menu": ["File"], "key": "Mod+S", "vscode_key": null, "where": ["source"]},
