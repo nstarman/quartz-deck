@@ -100,6 +100,9 @@ when the current directory has exactly one `.qmd`.
 | what the person is looking at / has selected | `qd focus` → `slide`, `elements`, `selection.text`, `age` (`{"open": false}` without an editor) |
 | show the person something | `qd focus --set results/1` → their editor goes there and flashes it; `deferred` means they were typing at the editor's last report, so it is offered to them instead; `no_editor` without one |
 | undo / redo | `qd undo` / `qd redo` |
+| the deck's versions (git) | `qd history` (`--slide REF` or `--element REF` for the versions that changed it; `--limit`, `--skip`); `uncommitted` comes first when the file differs from the last commit |
+| what changed | `qd diff HEAD~3` (against the file) or `qd diff REV REV` → `slides: [{kind: added|removed|moved|changed, id, title, from, to, diff}]` |
+| put something back | `qd restore REV --slide REF` (or `--element REF`, or nothing for the whole deck); REF is as named in that version; an edit like any other (`--expect`, `--dry-run`, `qd undo`) |
 | new deck | `qd new talk.qmd --title "My talk"` |
 | all commands + output shapes | `qd schema` |
 
@@ -170,6 +173,22 @@ put figures and libraries in `export/<deck>_files/` (listed in `files`).
 `E_NO_TEX` (Beamer, `pdf`): install TeX with `quarto install tinytex`, or use
 `typst`, which needs nothing extra.
 
+## History (git)
+
+`qd history`, `qd diff` and `qd restore` read the person's own git
+repository, so they see the person's commits as well as qd's. REV is
+anything git accepts (`a1b2c3d`, `HEAD~2`, a tag). To find "the slide as it
+was before the agent changed it", run `qd history --slide REF`, then `qd diff`
+against a version, then `qd restore`. Restore never rewrites history.
+
+**Save as git commit** is the person's setting (`history.commit`, off by
+default; leave it alone unless they ask). With it on, an edit made while no
+`qd serve` is running commits the deck at once, and the edit's result has
+`"commit": {"rev"}` or `{"error"}`. A commit error doesn't undo the edit:
+tell the person what git said (a hook, signing). With a server running, it
+commits after `history.pause` seconds. Outside a repository, `qd history
+--init` starts one, but only when the person asks for it.
+
 ## References from Zotero
 
 `qd bib --zotero KEY` (KEY: the 8-character collection key) rewrites the
@@ -204,6 +223,9 @@ communicate with Zotero"). It is an edit like any other (`--dry-run`,
 | `E_ENV_TOOL` / `E_ENV` | uv/pixi missing, or it failed | install per the hint / read `details` |
 | `E_RUN` | a cell raised or was stopped (`qd run`) | read the error output in the stdout result; fix the cell; run again |
 | `E_NOT_CODE` / `E_ENGINE` | not an executable cell / not Python | run only ```` ```{python} ```` cells; `qd render` still runs others |
+| `E_NO_REPO` | the deck is not in a git repository | `qd history --init`, if the person wants a history |
+| `E_NO_GIT` / `E_GIT` | git missing, or git refused (its message) | install git / read the message |
+| `E_REPO_BUSY` | a merge, rebase, cherry-pick or bisect, or a detached HEAD, so no commit is made | only in `commit.error`; the edit is kept and committed after the person finishes |
 | `E_NO_BROWSER` / `E_DOWNLOAD` | no Chrome, or a download failed its checksum | install Chrome, or allow the download; retry |
 
 ## Worked examples

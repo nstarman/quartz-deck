@@ -177,6 +177,42 @@ enum Cmd {
         #[command(subcommand)]
         action: Option<EnvCmd>,
     },
+    /// The deck's versions from git, newest first (spec 012)
+    History {
+        /// Only the versions in which this slide changed
+        #[arg(long, conflicts_with = "element")]
+        slide: Option<String>,
+        /// Only the versions in which this element changed
+        #[arg(long)]
+        element: Option<String>,
+        /// At most this many versions
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        /// Skip this many (paging)
+        #[arg(long, default_value_t = 0)]
+        skip: usize,
+        /// Start a history: a git repository in the deck's folder, the deck committed
+        #[arg(long, conflicts_with_all = ["slide", "element"])]
+        init: bool,
+    },
+    /// The slides that changed between two versions, or a version and the file (spec 012)
+    Diff {
+        /// The older version (anything git accepts: a hash, HEAD~2, a tag)
+        from: String,
+        /// The newer version (default: the current file)
+        to: Option<String>,
+    },
+    /// Put back the whole deck, one slide or one element as it was at a version (spec 012)
+    Restore {
+        /// The version (anything git accepts: a hash, HEAD~2, a tag)
+        rev: String,
+        /// Only this slide (as it is named in that version)
+        #[arg(long, conflicts_with = "element")]
+        slide: Option<String>,
+        /// Only this element (as it is named in that version)
+        #[arg(long)]
+        element: Option<String>,
+    },
     /// Render the deck with Quarto (as `quarto render`) and report the output
     Render {
         /// Output format (default: the deck's own, usually revealjs)
@@ -635,6 +671,12 @@ fn output_of(cmd: &str) -> &'static str {
         "serve" => r#"{"url","port","pid"} (one line, then serves until stopped)"#,
         "url" => r#"{"url"}"#,
         "pdf" => r#"{"path","pages","per_slide","notes","compressed"}"#,
+        "history" => {
+            r#"{"kind":"history","path","versions":[{"rev"|null,"short","time","author","message","qd","path"}],"more"}; with --init: {"ok","repo","rev"}"#
+        }
+        "diff" => {
+            r#"{"kind":"diff","from","to"|"uncommitted","slides":[{"kind":"added|removed|moved|changed","id","title","from"|null,"to"|null,"diff"?}]}"#
+        }
         "export" => {
             r#"{"kind":"export","ok"…} (offline); with --to: {"ok","kind":"export-format","format","route","out","files":[...],"losses":[{"feature","keep","what","slides":[...]}],"notes":[...],"changed_during","dry_run"?}; with --list: {"kind":"export-formats","formats":[{"name","label","group","ext","needs","ready","hint"?}]} — offline: {"kind":"export","ok","out","html","files":[...],"check":{offline_check},"assets":[{"name","version","sha256","source","path"}],"pdf"?:{"path","pages","per_slide","notes","compressed"},"staging"? (when ok is false)}"#
         }
@@ -666,10 +708,12 @@ fn output_of(cmd: &str) -> &'static str {
         "skill" => r#"{"skill":"<markdown>"} or {"ok","path"} with --install"#,
         "undo" | "redo" => r#"{"ok","op","undone|redone","version"}"#,
         "box" => {
-            r#"{"ok","op","version","diff","assigned_ids","target":"<box id>","converted_units"?}"#
+            r#"{"ok","op","version","diff","assigned_ids","target":"<box id>","converted_units"?,"commit"?:{"rev"}|{"error"}}"#
         }
         "new" => r#"{"ok","op":"new","path","version","target"}"#,
-        _ => r#"{"ok","op","version","diff","assigned_ids","target","dry_run"?}"#,
+        _ => {
+            r#"{"ok","op","version","diff","assigned_ids","target","dry_run"?,"commit"?:{"rev"}|{"error"}}"#
+        }
     }
 }
 
@@ -1075,10 +1119,27 @@ impl Ctx<'_> {
             v["version"] = json!(if after == d.text {
                 d.version.clone()
             } else {
-                store.write(&d, &after, &p.op)?
+                store.write(&d, &after, &p.op, &p.target)?
             });
+            if let Some(c) = self.commit(&store).filter(|_| after != d.text) {
+                v["commit"] = c;
+            }
         }
         Ok(v)
+    }
+
+    /// Save as git commit (spec 012 US2) for a CLI edit with no server
+    /// running; a server commits after its pause instead. Silent outside git.
+    fn commit(&self, store: &Store) -> Option<Value> {
+        let on = crate::settings::load(&crate::settings::path()).0["history.commit"] == true;
+        if !on || self.store.is_some() || crate::server::running(store).is_ok() {
+            return None;
+        }
+        match crate::history::commit_edits(store) {
+            Err(QdError::NoRepo) => None,
+            Ok(rev) => Some(json!({ "rev": rev })),
+            Err(e) => Some(json!({ "error": e.to_json()["error"] })),
+        }
     }
 }
 
@@ -1121,6 +1182,7 @@ const API_OPS: &[&str] = &[
     "edit",
     "undo",
     "redo",
+    "restore",
 ];
 
 /// Run a CLI command given as `{op, args}` (the body of `POST /api/op`).
@@ -1497,6 +1559,36 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                 })
                 .collect();
             Ok(json!({ "outputs": list }))
+        }
+        Cmd::History { init: true, .. } => crate::history::init(&ctx.store()?.path),
+        Cmd::History {
+            slide,
+            element,
+            limit,
+            skip,
+            ..
+        } => {
+            let (s, d) = read()?;
+            let (slide, element) = (slide.as_deref(), element.as_deref());
+            crate::history::history(&s.path, &d, slide, element, *limit, *skip)
+        }
+        Cmd::Diff { from, to } => {
+            let (s, d) = read()?;
+            crate::history::compare(&s.path, &d, from, to.as_deref())
+        }
+        Cmd::Restore {
+            rev,
+            slide,
+            element,
+        } => {
+            use crate::history::Restore;
+            let (short, old) = crate::history::version(&ctx.store()?.path, rev)?;
+            let what = match (slide, element) {
+                (Some(s), _) => Restore::Slide(s),
+                (_, Some(e)) => Restore::Element(e),
+                _ => Restore::Deck,
+            };
+            ctx.edit(|d| crate::history::restore(d, &old, &short, what))
         }
         Cmd::Render { to } => {
             let s = ctx.store()?;

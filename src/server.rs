@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::{Notify, broadcast};
@@ -47,6 +47,7 @@ const UI_MODULES: &[(&str, &str)] = &[
     ("list.js", include_str!("ui/list.js")),
     ("settings.js", include_str!("ui/settings.js")),
     ("sheet.js", include_str!("ui/sheet.js")),
+    ("history.js", include_str!("ui/history.js")),
     ("action-list.js", ACTION_LIST_JS),
 ];
 
@@ -106,6 +107,10 @@ struct App {
     rendering: Mutex<bool>,
     /// The person's settings file (spec 007), shared by every qd.
     settings: PathBuf,
+    /// Save as git commit (spec 012 US2): the deck changed since the last
+    /// commit; `touched` restarts the pause.
+    pending: AtomicBool,
+    touched: Notify,
 }
 
 impl App {
@@ -124,13 +129,56 @@ impl App {
     fn state(&self, s: &str) {
         self.emit("kernel", json!({ "state": s }));
     }
+
+    fn setting(&self, key: &str) -> Value {
+        crate::settings::load(&self.settings).0[key].clone()
+    }
+
+    /// Commit what is pending (spec 012 US2) and tell the editor. A failure
+    /// keeps it pending, for the next pause or the server's stop.
+    fn commit(&self) {
+        if !self.pending.swap(false, Ordering::SeqCst) {
+            return;
+        }
+        let data = match crate::history::commit_edits(&self.store) {
+            Ok(Some(rev)) => json!({"state": "committed", "rev": rev}),
+            Ok(None) => json!({"state": "unchanged"}),
+            Err(e) => {
+                // no repository: nothing to try again
+                if !matches!(e, QdError::NoRepo) {
+                    self.pending.store(true, Ordering::SeqCst);
+                }
+                let skipped = matches!(e, QdError::NoRepo | QdError::RepoBusy(_));
+                let state = if skipped { "skipped" } else { "failed" };
+                json!({"state": state, "reason": e.to_string()})
+            }
+        };
+        self.emit("history", data);
+    }
+}
+
+/// Save as git commit (spec 012 US2): `history.pause` seconds after the last
+/// change, the deck is committed; a burst of edits becomes one commit.
+async fn commit_loop(app: Shared) {
+    loop {
+        app.touched.notified().await;
+        loop {
+            let pause = app.setting("history.pause").as_u64().unwrap_or(30);
+            tokio::select! {
+                _ = app.touched.notified() => {}
+                _ = tokio::time::sleep(Duration::from_secs(pause)) => break,
+            }
+        }
+        let a = app.clone();
+        let _ = tokio::task::spawn_blocking(move || a.commit()).await;
+    }
 }
 
 type Shared = Arc<App>;
 
 fn err_response(e: QdError) -> Response {
     let status = match e {
-        QdError::NotFound(_) => StatusCode::NOT_FOUND,
+        QdError::NotFound(_) | QdError::NoRepo => StatusCode::NOT_FOUND,
         QdError::Ambiguous(_)
         | QdError::InvalidArg(_)
         | QdError::InvalidSetting(_)
@@ -290,7 +338,8 @@ async fn api_op(
     }
     let store = app.store.clone();
     let res = tokio::task::spawn_blocking(move || {
-        run_op(&store, &body.op, &body.args, body.expect.as_deref())
+        // the editor's edits are the person's (spec 012 commit messages)
+        crate::store::as_person(|| run_op(&store, &body.op, &body.args, body.expect.as_deref()))
     })
     .await;
     match res {
@@ -509,6 +558,74 @@ async fn api_layouts(State(app): State<Shared>) -> Response {
         Ok(d) => Json(crate::layouts::json_for(&app.dir(), d.width, d.height)).into_response(),
         Err(e) => err_response(e),
     }
+}
+
+/// `GET /api/history?slide=&element=&limit=&skip=` (spec 012): `qd history`.
+async fn api_history(
+    State(app): State<Shared>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
+    let num = |k: &str, d: usize| q.get(k).and_then(|v| v.parse().ok()).unwrap_or(d);
+    let (limit, skip) = (num("limit", 50), num("skip", 0));
+    let (slide, element) = (q.get("slide").cloned(), q.get("element").cloned());
+    blocking(move || {
+        let d = app.store.read()?;
+        let (slide, element) = (slide.as_deref(), element.as_deref());
+        crate::history::history(&app.store.path, &d, slide, element, limit, skip)
+    })
+    .await
+}
+
+/// `GET /api/history/diff?from=&to=` (spec 012 US3): `qd diff`; no `to`
+/// means the current file.
+async fn api_history_diff(
+    State(app): State<Shared>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
+    let from = q.get("from").cloned().unwrap_or_default();
+    let to = q.get("to").filter(|t| !t.is_empty()).cloned();
+    blocking(move || {
+        let d = app.store.read()?;
+        crate::history::compare(&app.store.path, &d, &from, to.as_deref())
+    })
+    .await
+}
+
+/// `POST /api/history/render {"rev"}` (token: it runs Quarto, no code): the
+/// deck as it was, rendered once into the cache and served under `/history/`,
+/// with the current slides that differ from it (`changed`).
+async fn api_history_render(
+    State(app): State<Shared>,
+    headers: HeaderMap,
+    Json(req): Json<Value>,
+) -> Response {
+    if !authorized(&app, &headers) {
+        return forbidden();
+    }
+    let Some(rev) = req["rev"].as_str().map(String::from) else {
+        return err_response(QdError::InvalidArg("rev is required".into()));
+    };
+    blocking(move || {
+        let (path, cache) = (&app.store.path, app.store.cache_dir());
+        let html = crate::history::render_version(path, cache, &rev)?;
+        let changed = crate::history::changed_at(path, &app.store.read()?, &rev)?;
+        let rel: Vec<String> = html
+            .strip_prefix(cache.join("history"))
+            .unwrap_or(&html)
+            .iter()
+            .map(|p| url_encode(&p.to_string_lossy()))
+            .collect();
+        Ok(json!({"href": format!("/history/{}", rel.join("/")), "changed": changed}))
+    })
+    .await
+}
+
+/// `POST /api/history/init` (token: it creates a repository beside the deck).
+async fn api_history_init(State(app): State<Shared>, headers: HeaderMap) -> Response {
+    if !authorized(&app, &headers) {
+        return forbidden();
+    }
+    blocking(move || crate::history::init(&app.store.path)).await
 }
 
 /// `POST /api/layouts` (token, same origin): save, rename or remove a saved
@@ -973,6 +1090,12 @@ fn watch(app: Shared) -> Result<notify::RecommendedWatcher> {
             st.version = v.clone();
             drop(st);
             let _ = a.tx.send(Ev::Changed(v));
+            if a.setting("history.commit") == true {
+                a.pending.store(true, Ordering::SeqCst);
+                a.touched.notify_one();
+                let pause = a.setting("history.pause");
+                a.emit("history", json!({"state": "pending", "pause": pause}));
+            }
             let a = a.clone();
             rt.spawn(async move { a.kick.notify_one() });
         }
@@ -1038,6 +1161,8 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
                 std::fs::create_dir_all(dir)?;
                 dir.canonicalize()?.join("settings.json")
             },
+            pending: AtomicBool::new(false),
+            touched: Notify::new(),
             store,
         });
         // an image upload: the images module refuses over 20 MB itself
@@ -1072,6 +1197,14 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
                 get(api_images).post(api_image_add).layer(limit),
             )
             .route("/api/layouts", get(api_layouts).post(api_layouts_change))
+            .route("/api/history", get(api_history))
+            .route("/api/history/diff", get(api_history_diff))
+            .route("/api/history/render", post(api_history_render))
+            .route("/api/history/init", post(api_history_init))
+            .nest_service(
+                "/history",
+                ServeDir::new(app.store.cache_dir().join("history")),
+            )
             .nest_service(
                 "/preview",
                 ServeDir::new(&out).fallback(ServeDir::new(&deck_dir)),
@@ -1099,6 +1232,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
         )?;
         let _watcher = watch(app.clone())?;
         tokio::spawn(render_loop(app.clone()));
+        tokio::spawn(commit_loop(app.clone()));
         app.kick.notify_one();
         on_ready(&session);
         let stopping = Arc::new(Notify::new());
@@ -1123,6 +1257,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
         };
         *app.rendering.lock().unwrap_or_else(|e| e.into_inner()) = true; // waits for a render in progress
         app.store.detach(); // the file is whatever VS Code last saved
+        app.commit(); // nothing pending is left behind
         app.kernel.lock().unwrap().take(); // shuts the kernel down
         let _ = std::fs::remove_file(&session_file);
         res.map_err(QdError::Io)

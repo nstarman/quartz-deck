@@ -36,3 +36,33 @@ pub fn leftovers(dir: &Path) -> Vec<String> {
         .filter(|n| n.contains(".qd-") && n != ".qd-export")
         .collect()
 }
+
+/// A git repository in `dir` with a local user and signing off (so the
+/// person's own signing never prompts during tests); returns a runner of
+/// `git -C dir args…` that panics on failure and gives stdout.
+pub fn git_repo(dir: &Path) -> impl Fn(&[&str]) -> String + '_ {
+    let git = move |args: &[&str]| quartz_deck::history::git(dir, args).unwrap();
+    git(&["init", "-q", "-b", "main"]);
+    for (k, v) in [
+        ("user.name", "Tester"),
+        ("user.email", "tester@example.com"),
+        ("commit.gpgsign", "false"),
+    ] {
+        git(&["config", k, v]);
+    }
+    git
+}
+
+/// The person's settings for `qd(dir)` (its `QD_CONFIG_DIR`).
+pub fn settings(dir: &Path, v: serde_json::Value) {
+    std::fs::create_dir_all(dir.join(".config")).unwrap();
+    std::fs::write(dir.join(".config/settings.json"), v.to_string()).unwrap();
+}
+
+/// A `pre-commit` hook running `script` in the repository at `dir`.
+pub fn hook(dir: &Path, script: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    let hook = dir.join(".git/hooks/pre-commit");
+    std::fs::write(&hook, format!("#!/bin/sh\n{script}\n")).unwrap();
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+}

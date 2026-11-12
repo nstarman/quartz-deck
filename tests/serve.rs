@@ -591,6 +591,21 @@ fn run_cells_over_http() {
         200,
         "run_op refuses run"
     );
+    // 012 FR-019: rendering an old version and starting a history need the token
+    for path in ["/api/history/render", "/api/history/init"] {
+        assert_eq!(
+            post(
+                p,
+                path,
+                "127.0.0.1",
+                "application/json",
+                r#"{"rev":"HEAD"}"#
+            )
+            .0,
+            403,
+            "{path} without the token"
+        );
+    }
     // 011 FR-021: render, export and pdf run code, so they need the token too
     for op in ["render", "export", "pdf"] {
         let body = format!(r#"{{"op":"{op}","args":{{"dry_run":true}}}}"#);
@@ -974,7 +989,7 @@ fn settings_over_http() {
     let read = || -> Value { serde_json::from_str(&get(p, "/api/settings").1).unwrap() };
     let v = read();
     assert_eq!(v["values"]["source.side"], "left");
-    assert_eq!(v["defs"].as_array().unwrap().len(), 7);
+    assert_eq!(v["defs"].as_array().unwrap().len(), 9);
 
     let body = r#"{"source.side": "right"}"#;
     assert_eq!(

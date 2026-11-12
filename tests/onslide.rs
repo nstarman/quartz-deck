@@ -2074,7 +2074,8 @@ async fn settings_apply_live_and_stick() {
     // Reset to defaults asks first, then everything is back (theme follows the system)
     ed.key(",", "Comma", 188, 2).await;
     ed.wait("document.querySelector('#settings').open").await;
-    ed.click_js("(r => [r.left + r.width / 2, r.top + r.height / 2])([...document.querySelectorAll('#settings button')].find((b) => b.textContent.startsWith('Reset')).getBoundingClientRect())").await;
+    // the window scrolls when it is taller than the test's 800×600 window
+    ed.click_js("(b => (b.scrollIntoView(), (r => [r.left + r.width / 2, r.top + r.height / 2])(b.getBoundingClientRect())))([...document.querySelectorAll('#settings button')].find((b) => b.textContent.startsWith('Reset')))").await;
     ed.wait("document.querySelector('dialog.sheet[open]')?.textContent.includes('default')")
         .await;
     ed.click_editor("dialog.sheet button[value=ok]").await;
@@ -3781,4 +3782,215 @@ async fn export_other_format() {
         120,
     )
     .await;
+}
+
+/// Spec 012 US1 (T006): View ▸ History lists the deck's versions; one of them
+/// opens beside the current deck, rendered without running code, with the
+/// slides changed since then marked. Outside git, the panel offers to start
+/// a history (not clicked here: it commits with the machine's own git config).
+#[tokio::test]
+async fn history_panel() {
+    let v1 = "---\ntitle: T\n---\n\n## A {#a}\n\nOLDTEXT\n\n## B {#b}\n\nSame\n";
+    let Some(ed) = Ed::open(v1).await else {
+        return;
+    };
+    ed.settle().await;
+    let toggle = "import('/ui/keys.js').then((k) => k.run('history'))";
+    ed.eval(toggle).await;
+    ed.wait("!!document.querySelector('#history button.start')")
+        .await;
+    ed.eval(toggle).await; // closed
+
+    let dir = ed.dir.path();
+    let git = common::git_repo(dir);
+    git(&["add", "deck.qmd"]);
+    git(&["commit", "-qm", "first draft"]);
+    std::fs::write(dir.join("deck.qmd"), v1.replace("OLDTEXT", "NEWTEXT")).unwrap();
+    git(&["commit", "-qam", "qd: edit a/0 (person)"]);
+    ed.wait_file(|f| f.contains("NEWTEXT"), "the new text")
+        .await;
+    ed.settle().await;
+
+    ed.eval(toggle).await;
+    let list =
+        "[...document.querySelectorAll('#history .msg')].map((m) => m.firstChild.textContent)";
+    ed.wait(&format!(
+        "{list}.join('|') === 'qd: edit a/0 (person)|first draft'"
+    ))
+    .await;
+    assert_eq!(
+        ed.eval("document.querySelectorAll('#history .qd').length")
+            .await,
+        1,
+        "the qd badge"
+    );
+    ed.click_js("(() => { const b = [...document.querySelectorAll('#history button[data-rev]')].at(-1); b.scrollIntoView(); const r = b.getBoundingClientRect(); return [r.left + 10, r.top + 10]; })()")
+        .await;
+    ed.wait_secs(
+        "!document.querySelector('#then').hidden && !!document.querySelector('#then iframe').contentDocument?.body?.innerText.includes('OLDTEXT')",
+        120,
+    )
+    .await;
+    assert!(
+        ed.eval("document.querySelector('#then figcaption').textContent")
+            .await
+            .as_str()
+            .unwrap()
+            .starts_with("first draft"),
+    );
+    // slide a changed since then, b didn't
+    ed.wait("document.querySelector('#slides li[data-id=a]')?.classList.contains('changed') && !document.querySelector('#slides li[data-id=b]').classList.contains('changed')")
+        .await;
+    // closing the panel closes the version beside
+    ed.eval(toggle).await;
+    ed.wait(
+        "document.querySelector('#then').hidden && !document.querySelector('#slides li.changed')",
+    )
+    .await;
+}
+
+/// 012 US3 (T012): with a version open, Compare lists the changed slides;
+/// opening one shows its source diff with the changed lines marked, and both
+/// previews go to that slide.
+#[tokio::test]
+async fn history_compare() {
+    let v1 = "---\ntitle: T\n---\n\n## A {#a}\n\nSame\n\n## B {#b}\n\nOLDTEXT\n";
+    let Some(ed) = Ed::open(v1).await else {
+        return;
+    };
+    ed.settle().await;
+    let dir = ed.dir.path();
+    let git = common::git_repo(dir);
+    git(&["add", "deck.qmd"]);
+    git(&["commit", "-qm", "first draft"]);
+    std::fs::write(
+        dir.join("deck.qmd"),
+        v1.replace("OLDTEXT", "NEWTEXT") + "\n## C {#c}\n\nAdded\n",
+    )
+    .unwrap();
+    ed.wait_file(|f| f.contains("NEWTEXT"), "the new text")
+        .await;
+    ed.settle().await;
+    ed.eval("import('/ui/keys.js').then((k) => k.run('history'))")
+        .await;
+    ed.wait("!!document.querySelector('#history button[data-rev]:not([data-rev=\"\"])')")
+        .await;
+    ed.click_editor("#history button[data-rev]:not([data-rev=\"\"])")
+        .await;
+    ed.wait_secs("!document.querySelector('#then').hidden", 120)
+        .await;
+    ed.eval("import('/ui/keys.js').then((k) => k.run('history-compare'))")
+        .await;
+    let rows = "[...document.querySelectorAll('#history .changes button')].map((b) => b.textContent).join('|')";
+    ed.wait(&format!("{rows} === 'changed · B|added · C'"))
+        .await;
+    ed.click_editor("#history .changes button").await;
+    ed.wait("!!document.querySelector('#history pre.diff .del')?.textContent.includes('OLDTEXT') && !!document.querySelector('#history pre.diff .add')?.textContent.includes('NEWTEXT')")
+        .await;
+    ed.wait("location.hash === '#/b' && document.querySelector('#then iframe').contentWindow.location.hash === '#/b'")
+        .await;
+}
+
+/// 012 US4 (T014): with a version open, a slide's right-click menu restores
+/// it from that version, and undo takes it back; restoring the whole version
+/// asks first.
+#[tokio::test]
+async fn history_restore() {
+    let v1 = "---\ntitle: T\n---\n\n## A {#a}\n\nOLDTEXT\n\n## B {#b}\n\nOLDB\n";
+    let Some(ed) = Ed::open(v1).await else {
+        return;
+    };
+    ed.settle().await;
+    let dir = ed.dir.path();
+    let git = common::git_repo(dir);
+    git(&["add", "deck.qmd"]);
+    git(&["commit", "-qm", "first draft"]);
+    let v2 = v1.replace("OLDTEXT", "NEWTEXT").replace("OLDB", "NEWB");
+    std::fs::write(dir.join("deck.qmd"), &v2).unwrap();
+    ed.wait_file(|f| f.contains("NEWTEXT"), "the new text")
+        .await;
+    ed.settle().await;
+    // not awaited: Restore this version… waits on its sheet
+    let keys = |id: &str| format!("import('/ui/keys.js').then((k) => {{ k.run('{id}'); }})");
+    ed.eval(&keys("history")).await;
+    ed.wait("!!document.querySelector('#history button[data-rev]:not([data-rev=\"\"])')")
+        .await;
+    // without a version open, the menu has no restore
+    ed.right_click(ed.editor_point("#slides li[data-id=a]", Some(20.0)).await)
+        .await;
+    assert!(
+        !ed.menu_labels()
+            .await
+            .iter()
+            .any(|l| l.starts_with("Restore"))
+    );
+    ed.close_menu().await;
+    ed.click_editor("#history button[data-rev]:not([data-rev=\"\"])")
+        .await;
+    ed.wait_secs("!document.querySelector('#then').hidden", 120)
+        .await;
+    ed.right_click(ed.editor_point("#slides li[data-id=a]", Some(20.0)).await)
+        .await;
+    ed.click_menu("Restore slide from this version").await;
+    ed.wait_file(
+        |f| f.contains("OLDTEXT") && f.contains("NEWB"),
+        "slide a restored",
+    )
+    .await;
+    ed.settle().await;
+    ed.undo_to(&v2).await;
+    // the whole version: asks first; cancel leaves the file alone
+    ed.eval(&keys("history-restore")).await;
+    ed.wait("document.querySelector('dialog.sheet[open]')?.textContent.includes('first draft')")
+        .await;
+    ed.click_editor("dialog.sheet button[value=cancel]").await;
+    ed.wait("!document.querySelector('dialog.sheet[open]')")
+        .await;
+    assert_eq!(std::fs::read_to_string(dir.join("deck.qmd")).unwrap(), v2);
+    ed.eval(&keys("history-restore")).await;
+    ed.click_editor("dialog.sheet button[value=ok]").await;
+    ed.wait_file(|f| f == v1, "the whole version restored")
+        .await;
+}
+
+/// 012 US2 (T010): with Save as git commit on, an edit shows "Saving a
+/// version…" until the pause ends, then "Saved as a version"; a hook that
+/// refuses shows its message, and the edit stays in the file.
+#[tokio::test]
+async fn history_commit_notice() {
+    let Some(ed) = Ed::open("---\ntitle: T\n---\n\n## A {#a}\n\nOne\n").await else {
+        return;
+    };
+    ed.settle().await;
+    let dir = ed.dir.path();
+    let git = common::git_repo(dir);
+    git(&["add", "deck.qmd"]);
+    git(&["commit", "-qm", "first"]);
+    common::settings(dir, json!({"history.commit": true, "history.pause": 5}));
+    let notice = "document.querySelector('#notice').textContent";
+    // the History panel's top line counts down to the commit
+    ed.eval("import('/ui/keys.js').then((k) => k.run('history'))")
+        .await;
+    let saving = "document.querySelector('#history .saving').textContent";
+    qd(dir).args(["title", "a", "Two"]).output().unwrap();
+    ed.wait(&format!("{notice} === 'Saving a version…'")).await;
+    ed.wait(&format!("/^Saving a version in [1-5] s$/.test({saving})"))
+        .await;
+    ed.wait_secs(&format!("{notice} === 'Saved as a version'"), 20)
+        .await;
+    ed.wait(&format!("{saving} === ''")).await;
+    assert_eq!(
+        git(&["log", "-1", "--format=%s"]).trim(),
+        "qd: title a (agent)"
+    );
+
+    common::hook(dir, "echo 'no commits today' >&2; exit 1");
+    qd(dir).args(["title", "a", "Three"]).output().unwrap();
+    ed.wait_secs(&format!("{notice}.includes('no commits today')"), 20)
+        .await;
+    assert!(
+        std::fs::read_to_string(dir.join("deck.qmd"))
+            .unwrap()
+            .contains("Three")
+    );
 }
