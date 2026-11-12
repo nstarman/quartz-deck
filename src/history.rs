@@ -2,7 +2,7 @@
 //! the versions that changed the deck, the deck at any of them, an old
 //! version rendered from a snapshot of its folder, and `qd history --init`.
 
-use crate::deck::{Deck, Slide, Span};
+use crate::deck::{Block, Deck, Slide, Span};
 use crate::error::{QdError, Result};
 use crate::ops::Patch;
 use crate::store::{Edit, Store};
@@ -203,6 +203,16 @@ pub fn match_slide<'a>(d: &'a Deck, target: &Slide, unique_title: bool) -> Optio
     d.slides.get(target.index)
 }
 
+/// The block of `s` that is `b` of `of` (the same slide in another version):
+/// by explicit id, else at the same place.
+fn block_in<'a>(s: &'a Slide, of: &Slide, b: &Block) -> Option<&'a Block> {
+    if b.id_explicit {
+        return s.blocks.iter().find(|x| x.id_explicit && x.id == b.id);
+    }
+    s.blocks
+        .get(of.blocks.iter().position(|x| x.span == b.span)?)
+}
+
 /// The current deck's slides that differ from the deck at `rev` (or aren't
 /// in it), by id: what the editor marks while a version is open (US1).
 pub fn changed_at(deck_path: &Path, current: &Deck, rev: &str) -> Result<Vec<String>> {
@@ -276,7 +286,8 @@ pub fn diff(old: &Deck, new: &Deck) -> Vec<SlideChange> {
     let (o, n) = (&old.slides, &new.slides);
     let pair = pairs(old, new);
 
-    let text = |d: &Deck, s: &Slide| d.slice(s.span).trim_end().to_string();
+    // ending in one newline, so the diff has no "No newline at end of file"
+    let text = |d: &Deck, s: &Slide| format!("{}\n", d.slice(s.span).trim_end());
     let same = |j: usize| pair[j].is_some_and(|i| text(old, &o[i]) == text(new, &n[j]));
     // unchanged slides in new order, as old indices; out of the longest
     // in-order run (Myers) means moved
@@ -406,13 +417,8 @@ pub fn restore(current: &Deck, old: &Deck, short: &str, what: Restore) -> Result
                     os.id
                 )));
             };
-            let cs = &current.slides[j];
-            let k = os.blocks.iter().position(|b| b.id == ob.id).unwrap_or(0);
-            let cb = match ob.id_explicit {
-                true => cs.blocks.iter().find(|b| b.id_explicit && b.id == ob.id),
-                false => cs.blocks.get(k),
-            }
-            .ok_or_else(|| QdError::NotFound(format!("element {r} in the current deck")))?;
+            let cb = block_in(&current.slides[j], os, ob)
+                .ok_or_else(|| QdError::NotFound(format!("element {r} in the current deck")))?;
             Ok(patch(
                 format!("element {r}"),
                 cb.span,
@@ -442,12 +448,13 @@ pub fn compare(
     Ok(serde_json::json!({"kind": "diff", "from": from, "to": to, "slides": slides}))
 }
 
-/// `qd history`: the versions, the uncommitted state first; with `slide`,
-/// only those in which that slide's text changed (FR-002).
+/// `qd history`: the versions, the uncommitted state first; with `slide` or
+/// `element`, only those in which its text changed (FR-002, FR-017).
 pub fn history(
     deck_path: &Path,
     current: &Deck,
     slide: Option<&str>,
+    element: Option<&str>,
     limit: usize,
     skip: usize,
 ) -> Result<serde_json::Value> {
@@ -469,26 +476,37 @@ pub fn history(
             path: repo.path.clone(),
         });
     }
-    let more = match slide {
+    // the slide (and element in it) whose versions are listed
+    let target = match (slide, element) {
+        (_, Some(r)) => Some(current.element(r).map(|(s, b)| (s, Some(b)))?),
+        (Some(r), None) => Some((current.slide(r)?, None)),
+        (None, None) => None,
+    };
+    let more = match target {
         None => {
             let (v, more) = log(&repo, limit, skip)?;
             out.extend(v);
             more
         }
-        Some(r) => {
-            // walk every version, keep the ones where the slide's text changed
-            // from the version before it (oldest last; trailing blank lines
-            // aside: a slide moved to the end has none); ponytail: a parse per
+        Some((ts, tb)) => {
+            // walk every version, keep the ones where the text changed from
+            // the version before it (oldest last; trailing blank lines aside:
+            // a slide moved to the end has none); ponytail: a parse per
             // commit, fine for hundreds; --limit bounds what is returned
-            let target = current.slide(r)?;
+            let text_in = |d: &Deck| -> Option<String> {
+                let s = match_slide(d, ts, true)?;
+                let span = match tb {
+                    Some(b) => block_in(s, ts, b)?.span,
+                    None => s.span,
+                };
+                Some(d.slice(span).trim_end().to_string())
+            };
             let (all, _) = log(&repo, ALL, 0)?;
             let text_of = |v: &Version| -> Option<String> {
-                let t = repo.text_at(v.rev.as_deref()?, &v.path).ok()?;
-                let d = Deck::parse(t);
-                match_slide(&d, target, true).map(|s| d.slice(s.span).trim_end().to_string())
+                text_in(&Deck::parse(repo.text_at(v.rev.as_deref()?, &v.path).ok()?))
             };
             let texts: Vec<Option<String>> = all.iter().map(text_of).collect();
-            let now = Some(current.slice(target.span).trim_end().to_string());
+            let now = text_in(current);
             if uncommitted && skip == 0 && texts.first() == Some(&now) {
                 out.clear(); // the slide is the same as committed
             }
@@ -745,7 +763,9 @@ mod tests {
         assert_eq!(got, want);
         let bee = &changes[1];
         assert!(
-            bee.diff.contains("-y\n") && bee.diff.contains("+Y2\n"),
+            bee.diff.contains("-y\n")
+                && bee.diff.contains("+Y2\n")
+                && !bee.diff.contains("No newline"),
             "{}",
             bee.diff
         );

@@ -560,16 +560,18 @@ async fn api_layouts(State(app): State<Shared>) -> Response {
     }
 }
 
-/// `GET /api/history?slide=&limit=&skip=` (spec 012): `qd history`.
+/// `GET /api/history?slide=&element=&limit=&skip=` (spec 012): `qd history`.
 async fn api_history(
     State(app): State<Shared>,
     Query(q): Query<HashMap<String, String>>,
 ) -> Response {
     let num = |k: &str, d: usize| q.get(k).and_then(|v| v.parse().ok()).unwrap_or(d);
-    let (limit, skip, slide) = (num("limit", 50), num("skip", 0), q.get("slide").cloned());
+    let (limit, skip) = (num("limit", 50), num("skip", 0));
+    let (slide, element) = (q.get("slide").cloned(), q.get("element").cloned());
     blocking(move || {
         let d = app.store.read()?;
-        crate::history::history(&app.store.path, &d, slide.as_deref(), limit, skip)
+        let (slide, element) = (slide.as_deref(), element.as_deref());
+        crate::history::history(&app.store.path, &d, slide, element, limit, skip)
     })
     .await
 }
@@ -1091,7 +1093,8 @@ fn watch(app: Shared) -> Result<notify::RecommendedWatcher> {
             if a.setting("history.commit") == true {
                 a.pending.store(true, Ordering::SeqCst);
                 a.touched.notify_one();
-                a.emit("history", json!({"state": "pending"}));
+                let pause = a.setting("history.pause");
+                a.emit("history", json!({"state": "pending", "pause": pause}));
             }
             let a = a.clone();
             rt.spawn(async move { a.kick.notify_one() });

@@ -1055,6 +1055,7 @@ es.addEventListener('rendered', (e) => {
 // Save as git commit (spec 012 US2)
 es.addEventListener('history', (e) => {
   const d = JSON.parse(e.data);
+  hist.saving(d.state === 'pending' ? d.pause : null);
   if (d.state === 'pending') { say('Saving a version…'); clearTimeout(say.t); }
   else if (d.state === 'committed') { say('Saved as a version'); if (hist.isOpen()) hist.toggle(true); }
   else if (d.state === 'unchanged') say('');

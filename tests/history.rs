@@ -198,6 +198,31 @@ fn history_per_slide() {
     assert_eq!(messages(&v), ["qd: edit two (agent)", "first"]);
 }
 
+/// FR-017: `qd history --element REF` lists the versions in which that
+/// element changed, not those that changed only its slide's title.
+#[test]
+fn history_per_element() {
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path();
+    let git = git_repo(dir);
+    std::fs::create_dir_all(dir.join("talks")).unwrap();
+    let write = |s: &str| std::fs::write(dir.join("talks/deck.qmd"), s).unwrap();
+    write("## One {#one}\n\nA\n\nB\n");
+    git(&["add", "."]);
+    git(&["commit", "-qm", "first"]);
+    write("## Uno {#one}\n\nA\n\nB\n");
+    git(&["commit", "-qam", "retitle"]);
+    write("## Uno {#one}\n\nA\n\nB2\n");
+    git(&["commit", "-qam", "edit B"]);
+    let (ok, v) = run(dir, &["history", "--element", "one/0"]);
+    assert!(ok, "{v}");
+    assert_eq!(messages(&v), ["first"]);
+    let (_, v) = run(dir, &["history", "--element", "one/1"]);
+    assert_eq!(messages(&v), ["edit B", "first"]);
+    let (_, v) = run(dir, &["history", "--slide", "one"]);
+    assert_eq!(messages(&v), ["edit B", "retitle", "first"]);
+}
+
 #[test]
 fn history_outside_git() {
     let t = tempfile::tempdir().unwrap();
