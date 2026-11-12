@@ -275,9 +275,10 @@ untouched, one undo removes the restore, and git's log has gained one commit
 - **FR-018**: History, compare and restore MUST be actions in the 007 action
   list, with a History panel in the View menu and restore on the slide and
   element right-click menus when a version is open.
-- **FR-019**: Server endpoints that read history MUST be same-origin.
-  Endpoints that restore, or that render an old version, MUST require the
-  session token, as other writing and rendering endpoints do.
+- **FR-019**: Reading history and restoring MUST be same-origin, like every
+  other read and edit. Creating a repository and rendering an old version
+  write outside the deck file or run Quarto, so they MUST also require the
+  session token.
 
 ### Key Entities
 
