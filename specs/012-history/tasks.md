@@ -95,11 +95,21 @@ version beside follows its slide (by id), so no keys of its own were needed.
 
 **Independent Test**: spec US3; quickstart §3.
 
-- [ ] T012 [P] [US3] Write failing tests:
+- [X] T012 [P] [US3] Write failing tests:
   - **`src/history.rs` units for `diff(a, b)`**: matching by id, then unique title, then position; kinds `added`, `removed`, `moved` (same text, new place), `changed` (with a unified diff); unchanged slides are not listed.
   - **`tests/history.rs` `diff_versions`**: `qd diff HEAD~2` against the file, and `qd diff HEAD~2 HEAD`, list exactly the slides changed in the fixture's history, with positions.
   - **Browser test `history_compare`**: Compare lists the changed slides; opening one shows its source diff, with changed lines marked, and both renders.
-- [ ] T013 [US3] Implement `diff` in `src/history.rs`, `qd diff` in `src/cli.rs` and `GET /api/history/diff` in `src/server.rs`; build the compare view and the `history-compare` action in `src/ui/history.js` and `actions.json`. T012 passes.
+- [X] T013 [US3] Implement `diff` in `src/history.rs`, `qd diff` in `src/cli.rs` and `GET /api/history/diff` in `src/server.rs`; build the compare view and the `history-compare` action in `src/ui/history.js` and `actions.json`. T012 passes.
+
+As built: position matching pairs only slides without an explicit id, so a
+slide whose id is gone is `removed` and a new id is `added`. `moved` means
+same text and off the longest run of unchanged slides kept in order (Myers,
+`similar`), so a slide inserted earlier doesn't make every later one
+"moved", and in a swap where one slide also changed, only that one is
+listed. `changed_since` (the US1 marks) now uses `diff`. Compare is the
+`history-compare` action (View menu) while a version is open: the panel
+lists the changed slides; choosing one shows its source diff under the list
+and moves both previews to it.
 
 ---
 

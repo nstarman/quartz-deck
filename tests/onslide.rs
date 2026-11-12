@@ -3849,6 +3849,48 @@ async fn history_panel() {
     .await;
 }
 
+/// 012 US3 (T012): with a version open, Compare lists the changed slides;
+/// opening one shows its source diff with the changed lines marked, and both
+/// previews go to that slide.
+#[tokio::test]
+async fn history_compare() {
+    let v1 = "---\ntitle: T\n---\n\n## A {#a}\n\nSame\n\n## B {#b}\n\nOLDTEXT\n";
+    let Some(ed) = Ed::open(v1).await else {
+        return;
+    };
+    ed.settle().await;
+    let dir = ed.dir.path();
+    let git = common::git_repo(dir);
+    git(&["add", "deck.qmd"]);
+    git(&["commit", "-qm", "first draft"]);
+    std::fs::write(
+        dir.join("deck.qmd"),
+        v1.replace("OLDTEXT", "NEWTEXT") + "\n## C {#c}\n\nAdded\n",
+    )
+    .unwrap();
+    ed.wait_file(|f| f.contains("NEWTEXT"), "the new text")
+        .await;
+    ed.settle().await;
+    ed.eval("import('/ui/keys.js').then((k) => k.run('history'))")
+        .await;
+    ed.wait("!!document.querySelector('#history button[data-rev]:not([data-rev=\"\"])')")
+        .await;
+    ed.click_editor("#history button[data-rev]:not([data-rev=\"\"])")
+        .await;
+    ed.wait_secs("!document.querySelector('#then').hidden", 120)
+        .await;
+    ed.eval("import('/ui/keys.js').then((k) => k.run('history-compare'))")
+        .await;
+    let rows = "[...document.querySelectorAll('#history .changes button')].map((b) => b.textContent).join('|')";
+    ed.wait(&format!("{rows} === 'changed · B|added · C'"))
+        .await;
+    ed.click_editor("#history .changes button").await;
+    ed.wait("!!document.querySelector('#history pre.diff .del')?.textContent.includes('OLDTEXT') && !!document.querySelector('#history pre.diff .add')?.textContent.includes('NEWTEXT')")
+        .await;
+    ed.wait("location.hash === '#/b' && document.querySelector('#then iframe').contentWindow.location.hash === '#/b'")
+        .await;
+}
+
 /// 012 US2 (T010): with Save as git commit on, an edit shows "Saving a
 /// version…" until the pause ends, then "Saved as a version"; a hook that
 /// refuses shows its message, and the edit stays in the file.

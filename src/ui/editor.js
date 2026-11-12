@@ -2074,6 +2074,7 @@ keys.on('toggle-source', { checked: () => !srcpane.hidden, run: () => setSource(
 keys.on('source-full', toggle('source-full', setFull));
 keys.on('form-panel', toggle('panel-open', setPanel));
 keys.on('history', { checked: hist.isOpen, run: () => hist.toggle() });
+keys.on('history-compare', { enabled: hist.versionOpen, run: hist.compare });
 keys.on('snap', { checked: () => settings.get('placement.snap'), run: () => settings.set({ 'placement.snap': !settings.get('placement.snap') }) });
 keys.on('about', () => ask({ title: 'About quartz-deck', message: 'A slide editor for Quarto reveal.js decks. Alpha software, not licensed for use by others (see LICENSE).', cancel: null }));
 keys.on('settings', settings.open);

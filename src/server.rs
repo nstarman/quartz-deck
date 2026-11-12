@@ -574,6 +574,21 @@ async fn api_history(
     .await
 }
 
+/// `GET /api/history/diff?from=&to=` (spec 012 US3): `qd diff`; no `to`
+/// means the current file.
+async fn api_history_diff(
+    State(app): State<Shared>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
+    let from = q.get("from").cloned().unwrap_or_default();
+    let to = q.get("to").filter(|t| !t.is_empty()).cloned();
+    blocking(move || {
+        let d = app.store.read()?;
+        crate::history::compare(&app.store.path, &d, &from, to.as_deref())
+    })
+    .await
+}
+
 /// `POST /api/history/render {"rev"}` (token: it runs Quarto, no code): the
 /// deck as it was, rendered once into the cache and served under `/history/`,
 /// with the current slides that differ from it (`changed`).
@@ -1180,6 +1195,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             )
             .route("/api/layouts", get(api_layouts).post(api_layouts_change))
             .route("/api/history", get(api_history))
+            .route("/api/history/diff", get(api_history_diff))
             .route("/api/history/render", post(api_history_render))
             .route("/api/history/init", post(api_history_init))
             .nest_service(
