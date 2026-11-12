@@ -1182,3 +1182,44 @@ fn layouts_list_and_add() {
     assert_eq!(e.text(), before, "the add is one undo step");
     e.err(&["add", "--layout", "nope"], "E_NOT_FOUND", 1);
 }
+
+/// Spec 009 US2: place, move, unplace from the CLI; one undo step each.
+#[test]
+fn place_and_unplace() {
+    let e = Env::new();
+    let before = e.text();
+    let v = e.ok(&["block", "place", "results/0", "--at", "600,400"]);
+    let id = v["target"].as_str().unwrap().to_string();
+    assert!(e.text().contains(&format!(
+        "::: {{#{id} .absolute left=600 top=400}}\n- one\n- two\n:::"
+    )));
+    e.ok(&["box", "move", &id, "--by", "10,-5"]);
+    assert!(e.text().contains("left=610 top=395"));
+    e.ok(&["block", "unplace", &id]);
+    assert_eq!(
+        e.text(),
+        before,
+        "unplace takes off exactly what place wrote"
+    );
+    for _ in 0..3 {
+        e.ok(&["undo"]);
+    }
+    assert_eq!(e.text(), before);
+    e.ok(&[
+        "block",
+        "place",
+        "results/0",
+        "--at",
+        "1,2",
+        "--size",
+        "300,200",
+    ]);
+    assert!(e.text().contains("left=1 top=2 width=300 height=200}"));
+    e.ok(&["undo"]);
+    e.err(
+        &["block", "place", "conclusion/1", "--at", "1,2"],
+        "E_INVALID_ARG",
+        1,
+    );
+    e.err(&["block", "unplace", "intro/0"], "E_INVALID_ARG", 1);
+}

@@ -28,6 +28,13 @@ export const INSERTS = [
  * `api` is the editor: op, runCells(refs), refresh, beginEditRef, beginSourceEl, beginSlideSource,
  * insert(slide, where, kind), copy(t), paste(t), copySlide(t), pasteSlides(t), say, slideUrl(anchor).
  */
+// what can't be placed freely, and why (spec 009 FR-012; `qd block place` says the same)
+const UNPLACEABLE = {
+  div: 'A div (columns, callout…) can’t be placed: place the elements inside it',
+  notes: 'Speaker notes aren’t on the slide',
+  pause: 'A pause has nothing to show',
+};
+
 export function makeActions(api) {
   const classesOf = (t) => t.block.attrs?.classes || [];
   const toggleClass = (t, c) => api.op('block class', { element: t.ref, [classesOf(t).includes(c) ? 'remove' : 'add']: c });
@@ -60,6 +67,9 @@ export function makeActions(api) {
     '-',
     { id: 'fragment', label: 'Appears on click', checked: (t) => classesOf(t).includes('fragment'), run: (t) => toggleClass(t, 'fragment') },
     { id: 'appearance', label: 'Appearance', items: (t) => resolve(classes, t) },
+    '-',
+    { id: 'place', label: 'Place freely', visible: (t) => t.block.kind !== 'box', why: (t) => UNPLACEABLE[t.block.kind], enabled: (t) => !UNPLACEABLE[t.block.kind], run: (t) => api.op('block place', api.placement(t)) },
+    { id: 'unplace', label: 'Put back in the flow', visible: (t) => t.block.kind === 'box', run: (t) => api.op('block unplace', { element: t.ref }) },
   ];
 
   const kv = (t) => t.full?.attrs?.kv || {};
@@ -103,6 +113,7 @@ export function makeActions(api) {
     shortcut: keys.shortcut(a.id), // keys come from the action list (spec 007)
     checked: typeof a.checked === 'function' ? a.checked(t) : undefined,
     disabled: a.enabled ? !a.enabled(t) : false,
+    title: a.why?.(t),
     items: a.items ? a.items(t) : undefined,
     run: a.run && (() => a.run(t)),
   }));
@@ -121,5 +132,7 @@ export function makeActions(api) {
     /** Whether action `id` applies to `t` now, and its checkmark (the menu bar). */
     can,
     checked: (id, t, table = 'element') => find(id, table)?.checked?.(t),
+    /** Why action `id` can't act on `t` (a disabled item's tooltip). */
+    why: (id, t, table = 'element') => find(id, table)?.why?.(t),
   };
 }

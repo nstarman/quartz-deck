@@ -88,6 +88,14 @@
   {"id": "slide-source", "label": "Edit slide source", "menu": ["Slide"], "where": ["slides", "slide", "element"], "qd": "qd body <slide>"},
   {"id": "slide-link", "label": "Copy link to slide", "menu": ["Slide"], "where": ["slides", "slide", "element"], "qd": "qd url --slide <slide>"},
 
+  {"id": "place", "label": "Place freely (or ⌥-drag it)", "menu": ["Arrange"], "where": ["element"], "qd": "qd block place <ref> --at <x>,<y> --width <w>"},
+  {"id": "unplace", "label": "Put back in the flow", "menu": ["Arrange"], "where": ["element"], "qd": "qd block unplace <ref>"},
+  {"separator": true, "menu": ["Arrange"]},
+  {"id": "box-nudge-left", "label": "Nudge left (⇧ 10 px)", "menu": ["Arrange"], "key": ["ArrowLeft", "Shift+ArrowLeft"], "where": ["element"], "qd": "qd box move <ref> --by -1,0"},
+  {"id": "box-nudge-right", "label": "Nudge right (⇧ 10 px)", "menu": ["Arrange"], "key": ["ArrowRight", "Shift+ArrowRight"], "where": ["element"], "qd": "qd box move <ref> --by 1,0"},
+  {"id": "box-nudge-up", "label": "Nudge up (⇧ 10 px)", "menu": ["Arrange"], "key": ["ArrowUp", "Shift+ArrowUp"], "where": ["element"], "qd": "qd box move <ref> --by 0,-1"},
+  {"id": "box-nudge-down", "label": "Nudge down (⇧ 10 px)", "menu": ["Arrange"], "key": ["ArrowDown", "Shift+ArrowDown"], "where": ["element"], "qd": "qd box move <ref> --by 0,1"},
+
   {"id": "toggle-source", "label": "Source pane", "menu": ["View"], "toggle": true, "where": ["anywhere"]},
   {"id": "source-full", "label": "Source full width", "menu": ["View"], "toggle": true, "where": ["anywhere"]},
   {"id": "form-panel", "label": "Properties panel", "menu": ["View"], "toggle": true, "where": ["anywhere"]},

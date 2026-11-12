@@ -42,6 +42,7 @@ function resolve(items, ctx) {
       aria: k && keys.aria(k),
       checked: it.toggle ? !!h?.checked?.(ctx) : undefined,
       disabled: !h || h.enabled?.(ctx) === false,
+      title: h?.why?.(ctx),
       run: () => { back(); return keys.run(it.id); },
     });
   }
