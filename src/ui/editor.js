@@ -157,9 +157,12 @@ async function op(name, args = {}, { fileExpect = true } = {}) {
 function load(path, version = null) {
   state.loading = version;
   // Reveal may ignore the initial URL hash (e.g. when it starts in scroll view),
-  // so remember where to go and steer it once it reports ready (see hookFrame).
-  state.want = state.goAfterRender || state.anchor || location.hash.replace(/^#\//, '') || null;
+  // so it is steered once it reports ready (see hookFrame): to the slide an op
+  // chose, else to the one shown then (the person may move on while it loads)
+  state.want = state.goAfterRender;
   state.goAfterRender = null;
+  // until the new render is hooked up, clicks and keys land on the old one
+  frame.setAttribute('aria-busy', 'true');
   frame.src = path + '?v=' + Date.now();
 }
 
@@ -542,7 +545,8 @@ function hookFrame() {
     w.dispatchEvent(new Event('resize'));
     // synchronously: a hash change lands a task later, and onSlide() below would
     // meanwhile report the first slide (hiding the slide bar under a click)
-    const want = state.want && frame.contentDocument.getElementById(state.want);
+    const id = state.want || state.anchor || location.hash.replace(/^#\//, '');
+    const want = id && frame.contentDocument.getElementById(id);
     if (want && w.Reveal.getCurrentSlide() !== want) {
       const { h, v } = w.Reveal.getIndices(want);
       w.Reveal.slide(h, v);
@@ -560,6 +564,7 @@ function hookFrame() {
     markOffSlide(w);
     w.MathJax?.startup?.promise?.then(() => slideList.refresh()); // math typesets after ready
     onSlide();
+    frame.removeAttribute('aria-busy');
   };
   const onSlide = () => {
     const id = w.Reveal?.getCurrentSlide()?.id;

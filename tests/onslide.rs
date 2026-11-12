@@ -6,6 +6,7 @@ use chromiumoxide::cdp::browser_protocol::input::{
     DispatchKeyEventParams, DispatchKeyEventType, DispatchMouseEventParams, DispatchMouseEventType,
     InsertTextParams, MouseButton,
 };
+use chromiumoxide::cdp::browser_protocol::page::NavigateParams;
 use chromiumoxide::cdp::js_protocol::runtime::EvaluateParams;
 use chromiumoxide::layout::Point;
 use chromiumoxide::{Browser, BrowserConfig, Page};
@@ -213,6 +214,15 @@ impl Ed {
         }
     }
 
+    /// Open `url` in this tab and wait for the editor there. Not `goto`: it waits
+    /// for the page's load event, which waits for every asset of the preview too.
+    async fn visit(&self, url: &str) {
+        self.eval("window.__left = true").await;
+        self.page.execute(NavigateParams::new(url)).await.unwrap();
+        self.wait_secs(&format!("!window.__left && {READY}"), 60)
+            .await;
+    }
+
     /// Press at `from` and move to `to` in steps, the button still down.
     async fn press_and_move(&self, from: (f64, f64), to: (f64, f64)) {
         self.press_and_move_with(from, to, 0).await;
@@ -415,10 +425,11 @@ impl Ed {
         .await;
     }
 
-    /// Wait until the preview shows the file as it is now (render caught up, no edit open).
+    /// Wait until the preview shows the file as it is now (render caught up and
+    /// swapped in, no edit open): until then clicks and keys land on the old render.
     async fn settle(&self) {
         self.wait_secs(
-            "(async () => { const v = (await fetch('/api/deck').then((r) => r.json())).version; const st = document.querySelector('#status'); const f = document.querySelector('#preview').contentWindow; return window.qdSession() === null && st.textContent === 'Up to date' && st.title.endsWith(v.slice(0, 7)) && !!f.Reveal?.isReady?.(); })()",
+            "(async () => { const v = (await fetch('/api/deck').then((r) => r.json())).version; const st = document.querySelector('#status'); const f = document.querySelector('#preview'); return window.qdSession() === null && st.textContent === 'Up to date' && st.title.endsWith(v.slice(0, 7)) && !f.hasAttribute('aria-busy') && !!f.contentWindow.Reveal?.isReady?.(); })()",
             60,
         )
         .await;
@@ -1450,8 +1461,7 @@ async fn outputs_persist_across_restarts_and_go_stale() {
     // a new server (new port, new token), as when the deck is reopened
     ed.cli(&["stop"]);
     let info = ed.cli(&["serve", "--detach"]);
-    ed.page.goto(info["url"].as_str().unwrap()).await.unwrap();
-    ed.wait_secs(READY, 60).await;
+    ed.visit(info["url"].as_str().unwrap()).await;
     ed.go("print").await;
     let frame = "document.querySelector('#preview').contentDocument";
     ed.wait_secs(
@@ -1747,8 +1757,7 @@ async fn framed_editor_takes_theme_and_messages() {
     let theme = "document.documentElement.dataset.theme";
     let bg = "getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()";
 
-    ed.page.goto(framed("theme=dark").as_str()).await.unwrap();
-    ed.wait_secs(READY, 60).await;
+    ed.visit(&framed("theme=dark")).await;
     assert_eq!(ed.eval(theme).await, "dark");
     assert_eq!(ed.eval(bg).await, "#18181a");
 
@@ -1836,11 +1845,7 @@ async fn framed_editor_takes_theme_and_messages() {
     ed.wait(&format!("{focus_text} === 1")).await;
 
     // the Quarto extension runs cells: no Run bar, no gutter
-    ed.page
-        .goto(framed("theme=light&run=external").as_str())
-        .await
-        .unwrap();
-    ed.wait_secs(READY, 60).await;
+    ed.visit(&framed("theme=light&run=external")).await;
     ed.open_source().await;
     assert_eq!(
         ed.eval("['.runbar', '.gutter'].map((s) => getComputedStyle(document.querySelector('#srcpane ' + s)).display)").await,
@@ -2051,8 +2056,7 @@ async fn settings_apply_live_and_stick() {
     let deck = other.join("talk.qmd");
     std::fs::write(&deck, P2).unwrap();
     let info = ed.cli(&["--deck", deck.to_str().unwrap(), "serve", "--detach"]);
-    ed.page.goto(info["url"].as_str().unwrap()).await.unwrap();
-    ed.wait_secs(READY, 60).await;
+    ed.visit(info["url"].as_str().unwrap()).await;
     ed.wait(&format!(
         "!document.querySelector('#srcpane').hidden && {main}.contains('source-right') && {theme} === 'light'"
     ))
@@ -2410,14 +2414,8 @@ async fn audit_measures() {
     let mut failures = vec![];
     for theme in ["light", "dark", "hc"] {
         // through the link: settings (which opening the source pane writes) don't override it
-        ed.page
-            .goto(
-                link.replace("/#t=", &format!("/?theme={theme}#t="))
-                    .as_str(),
-            )
-            .await
-            .unwrap();
-        ed.wait_secs(READY, 60).await;
+        ed.visit(&link.replace("/#t=", &format!("/?theme={theme}#t=")))
+            .await;
         ed.go("highlights").await;
         for source in [false, true] {
             if source {
@@ -2897,11 +2895,7 @@ async fn one_top_bar_in_plain_words() {
 
     // VS Code's panel: ☰ in that same row
     let link = ed.cli(&["url"])["url"].as_str().unwrap().to_string();
-    ed.page
-        .goto(link.replace("/#t=", "/?host=vscode#t=").as_str())
-        .await
-        .unwrap();
-    ed.wait_secs(READY, 60).await;
+    ed.visit(&link.replace("/#t=", "/?host=vscode#t=")).await;
     ed.wait("document.querySelector('#menubar').classList.contains('folded')")
         .await;
     assert_eq!(ed.eval(&row("#menubar")).await, true);
