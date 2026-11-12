@@ -123,8 +123,8 @@ As built:
 
 **Independent Test**: spec US3; quickstart §3.
 
-- [ ] T008 [US3] CI: add R to `.github/workflows/ci.yml` (`r-lib/actions/setup-r@v2`, then `install.packages(c("knitr", "rmarkdown"))`). Probe research R4 there: run a scratch `kernel_bridge.R` in a workflow step that prints the start time, a plot's pixel size at `fig-width` 10 × 5 and 96 dpi, a variable carried between two `execute`s, and the reply to SIGINT during `Sys.sleep(30)`. Record the results in research.md R4.
-- [ ] T009 [P] [US3] Write failing tests:
+- [X] T008 [US3] CI: add R to `.github/workflows/ci.yml` (`r-lib/actions/setup-r@v2`, then `install.packages(c("knitr", "rmarkdown"))`). Probe research R4 there: run a scratch `kernel_bridge.R` in a workflow step that prints the start time, a plot's pixel size at `fig-width` 10 × 5 and 96 dpi, a variable carried between two `execute`s, and the reply to SIGINT during `Sys.sleep(30)`. Record the results in research.md R4.
+- [X] T009 [P] [US3] Write failing tests:
   - **`src/engine.rs` units**:
     - parse `quarto inspect` JSON into `Engine` (`knitr`, `jupyter`, `markdown` → `ojs` or `none`), with `fig` from `formats.revealjs.execute`;
     - the kernel name from `jupyter: NAME` and from `jupyter: {kernelspec: {name}}`;
@@ -138,7 +138,7 @@ As built:
       - `--timeout 2` on `Sys.sleep(30)` gives `stopped`.
     - **`no_r`**: with `PATH` lacking R, an `{r}` deck's `qd run` is `E_ENGINE`, and the hint says to install R.
   - **`tests/onslide.rs` `run_knitr_from_slide`** (skips without R): the ▶ on an `{r}` cell shows its plot on the slide, and the badge reads `R · idle`.
-- [ ] T010 [US3] Implement:
+- [X] T010 [US3] Implement:
   - **`src/engine.rs`**: `Engine`, `detect(deck_path, deck)` through `quarto inspect`, cached under `<cache>/engine/`, and `command(engine, env)`, the session process for each engine:
     - Python: the deck's environment, as 004;
     - other Jupyter decks: `uv run --no-project --with jupyter_client python -I`;
@@ -157,6 +157,20 @@ As built:
   T009 passes.
 
 **Checkpoint**: Jupyter kernels and knitr run from the slide, the source pane and `qd run`.
+
+As built:
+- **When qd asks Quarto.** A deck of Python cells with no `engine:` or
+  `knitr:` key runs as in 004 without calling `quarto inspect`, so Python
+  decks stay as fast as before and `qd run` on them needs no Quarto. A
+  `jupyter:` key with Python cells is read from the front matter directly.
+  Every other deck asks Quarto once per front matter and set of languages
+  (cached).
+- **A missing kernel.** For a named kernel that isn't installed, the bridge
+  reports it with the kernels it found. A deck that went through `quarto
+  inspect` gets Quarto's own message instead.
+- **The R probe.** It was the `knitr_cells` test running in CI, plus a step
+  that prints its timing. There was no separate scratch script. The results
+  are in research R4.
 
 ---
 

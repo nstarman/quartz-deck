@@ -8,22 +8,18 @@ use common::have;
 use serde_json::{Value, json};
 use std::path::Path;
 
-/// `qd <args>` in `dir` with extra environment: (exit ok, stdout or stderr JSON).
+/// `qd <args>` in `dir` with extra environment: (exit ok, the result on stdout,
+/// else the error on stderr: a cell that fails or stops has both).
 fn qd(dir: &Path, env: &[(&str, &Path)], args: &[&str]) -> (bool, Value) {
     let mut c = common::qd(dir);
     for (k, v) in env {
         c.env(k, v);
     }
     let out = c.args(args).output().unwrap();
-    let text = if out.status.success() {
-        &out.stdout
-    } else {
-        &out.stderr
-    };
-    (
-        out.status.success(),
-        serde_json::from_slice(text).unwrap_or(Value::Null),
-    )
+    let json = serde_json::from_slice(&out.stdout)
+        .or_else(|_| serde_json::from_slice(&out.stderr))
+        .unwrap_or(Value::Null);
+    (out.status.success(), json)
 }
 
 fn deck(dir: &Path, text: &str) {

@@ -105,10 +105,13 @@ runs in `R --no-echo --no-restore --no-save` started in the deck's folder.
 knitr engine needs both knitr and rmarkdown, so wherever `quarto render`
 runs R, the bridge's packages are there.
 
-Not probed here, because R isn't installed. US3's first task installs R in
-CI (`r-lib/actions/setup-r`, with knitr and rmarkdown) and checks four
-things there: the start time, a plot's size, state between cells, and
-SIGINT.
+Not probed here, because R isn't installed. US3's first task installed R in
+CI (`r-lib/actions/setup-r`, with knitr and rmarkdown), and `knitr_cells`
+checked it there (Ubuntu runner, 2026-11-12):
+- `quarto inspect`, starting R and running three cells took 1.4 s in all;
+- `x <- 20` in one cell was there for `x + 22` in the next;
+- `plot(1:10)` came out as a 960 × 480 PNG, the deck's 10 × 5 in at 96 dpi;
+- `--timeout 2` on `Sys.sleep(30)` ended the run without killing R.
 
 Rationale: `evaluate` is what knitr itself uses to run a chunk, so outputs
 split and plots are recorded the way a render does them. An R kernel for
