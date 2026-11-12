@@ -100,6 +100,14 @@ and Arrange menu.
 
 Post-design re-check: PASS.
 
+Final re-check after US1–US5 (polish, 2026-11-12): PASS.
+- **II:** layouts, placement and stacking write only Quarto (`.absolute` boxes, source order). Unplace restores the bytes exactly, and nothing is stored beside the deck except saved layouts the person chose to keep.
+- **III:** every action is a `qd` command first.
+- **V:** every edit is one patch through the store.
+- **VI:** each story's tests were seen failing first.
+- **VII:** no new dependency.
+- **Constraint 1.2.1:** `POST /api/layouts` is token-guarded and folder-bound, with a mutation check.
+
 ## Project Structure
 
 ### Documentation (this feature)

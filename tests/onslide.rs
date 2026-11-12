@@ -3564,11 +3564,17 @@ async fn guides_and_snapping() {
     // drag box b-1's overlay by (dx, dy) slide px, with modifier keys held
     let drag = async |dx: f64, dy: f64, mods: i64| -> bool {
         ed.settle().await;
-        ed.click_in_slide("#b-1").await;
-        ed.wait(
-            "!!document.querySelector('#preview').contentDocument.querySelector('.qd-overlay')",
-        )
-        .await;
+        // a click landing while a new render swaps in is lost: click again until the box is selected
+        let selected =
+            "!!document.querySelector('#preview').contentDocument.querySelector('.qd-overlay')";
+        for _ in 0..5 {
+            ed.click_in_slide("#b-1").await;
+            tokio::time::sleep(Duration::from_millis(400)).await;
+            if ed.eval(selected).await == true {
+                break;
+            }
+        }
+        ed.wait(selected).await;
         let from = ed.slide_point(".qd-overlay").await;
         let to = (from.0 + dx * scale, from.1 + dy * scale);
         ed.press_and_move_with(from, to, mods).await;

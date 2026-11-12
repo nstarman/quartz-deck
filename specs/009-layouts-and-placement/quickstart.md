@@ -9,8 +9,8 @@ Prerequisites: `cargo build --release`, Quarto, a copy of
    text in both. The file holds the heading and two positioned boxes with
    that text, no `.qd-ph`. ⌘Z removes the slide in one step.
 2. **CLI (US1).** `qd layouts` lists 12 built-in layouts with placeholders.
-   `qd add --layout image-text --after growth --title "Chart"` returns three
-   placeholder refs; `qd edit <text ref> --md "Users doubled."` fills one.
+   `qd add --layout image-text --after growth --title "Chart"` returns two
+   placeholder refs (three without `--title`); `qd edit <text ref> --md "Users doubled."` fills one.
    `quarto render talk.qmd`: no placeholder words in the output.
 3. **Place freely (US2).** ⌥-drag the bullet list on "Highlights" to the
    lower right: it stays there; the title stays where it was. Drag a corner

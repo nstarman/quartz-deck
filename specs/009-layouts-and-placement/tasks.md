@@ -127,10 +127,10 @@ written first and seen failing.
 
 ## Phase 8: Polish & cross-cutting
 
-- [ ] T022 [P] Docs: README (layouts, placing, own layouts), the skill (`qd layouts`, `qd add --layout`, filling placeholders, `qd block place/unplace`, `qd box front…`), `specs/ROADMAP.md` 009 status, the 007 action inventory.
-- [ ] T023 Run quickstart §1–§7 in the browser pane and record it in `specs/009-layouts-and-placement/checklists/quickstart-run.md`.
-- [ ] T024 Final constitution re-check in `plan.md`; fmt, clippy, `cargo test` (with `audit_measures` at 0 failures, the gallery and Arrange menu included) and `node --test vscode/test/*.test.js` green.
-- [ ] T025 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
+- [X] T022 [P] Docs: README (layouts, placing, own layouts), the skill (`qd layouts`, `qd add --layout`, filling placeholders, `qd block place/unplace`, `qd box front…`), `specs/ROADMAP.md` 009 status, the 007 action inventory.
+- [X] T023 Run quickstart §1–§7 in the browser pane and record it in `specs/009-layouts-and-placement/checklists/quickstart-run.md`.
+- [X] T024 Final constitution re-check in `plan.md`; fmt, clippy, `cargo test` (with `audit_measures` at 0 failures, the gallery and Arrange menu included) and `node --test vscode/test/*.test.js` green.
+- [X] T025 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
 
 ---
 

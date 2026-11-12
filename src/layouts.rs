@@ -504,6 +504,19 @@ mod tests {
         }
     }
 
+    /// A placed element keeps its natural height (no `height=`): its place is
+    /// where it shows (`at`), not the stacked fallback.
+    #[test]
+    fn a_placed_box_without_a_height_uses_where_it_shows() {
+        let d = Deck::parse(
+            "---\nformat: revealjs\n---\n\n## L {#l}\n\n::: {#b-1 .absolute left=560 top=450 width=450}\n- a\n:::\n".into(),
+        );
+        let at =
+            std::collections::HashMap::from([("l/0".to_string(), [560.0, 450.0, 450.0, 200.0])]);
+        let l = Layout::parse(&from_slide(&d, "l", "corner", &at).unwrap(), "deck").unwrap();
+        assert_eq!(l.placeholders()[0].rect, [560.0, 450.0, 450.0, 200.0]);
+    }
+
     #[test]
     fn save_rm_rename() {
         let d = tempfile::tempdir().unwrap();
