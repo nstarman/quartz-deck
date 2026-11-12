@@ -3642,3 +3642,54 @@ async fn front_and_back() {
     ed.key("b", "KeyB", 66, 1 | 4 | 8).await; // ⌥⇧⌘B
     ed.wait_file(|f| f == before, "sent to the back").await;
 }
+
+const EXPORTS: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## A {#a}\n\nText\n\n::: notes\nSaid aloud\n:::\n\n## P {#p}\n\n::: {#b-1 .absolute left=100 top=100 width=200 height=100}\nBox\n:::\n";
+
+/// Spec 011 US1 (T007): Export ▾ ▸ PowerPoint shows what will change, exports,
+/// and the result links the file and each slide; the deck is unchanged.
+#[tokio::test]
+async fn export_menu_pptx() {
+    let Some(ed) = Ed::open(EXPORTS).await else {
+        return;
+    };
+    let before = ed.file();
+    ed.settle().await;
+    ed.click_editor("#export-menu").await;
+    let labels = ed.menu_labels().await;
+    for l in [
+        "Export web page (works offline)",
+        "Export web page and PDF",
+        "Export PowerPoint…",
+        "Export Beamer PDF…",
+    ] {
+        assert!(labels.iter().any(|x| x == l), "{l} in {labels:?}");
+    }
+    ed.click_menu("Export PowerPoint…").await;
+    let sheet = "document.querySelector('dialog.sheet[open]')";
+    ed.wait(&format!(
+        "{sheet}?.innerText.includes('Placed boxes are in the flow, without their position (p)')"
+    ))
+    .await;
+    ed.click_editor("dialog.sheet button[value=ok]").await;
+    ed.wait_secs(
+        "document.querySelector('#panel')?.innerText.includes('Exported PowerPoint: deck.pptx')",
+        120,
+    )
+    .await;
+    let href = ed
+        .eval("document.querySelector('#panel .links a')?.getAttribute('href')")
+        .await;
+    assert!(
+        href.as_str()
+            .is_some_and(|h| h.starts_with("/preview/export/deck.pptx")),
+        "{href}"
+    );
+    // the panel may be below the fold in the test window
+    ed.eval("document.querySelector('#panel .slide-link').click()")
+        .await;
+    ed.wait(
+        "document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide()?.id === 'p'",
+    )
+    .await;
+    assert_eq!(ed.file(), before, "the deck is unchanged");
+}

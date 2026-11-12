@@ -62,7 +62,7 @@ main.source-right aside { order: 4; }
 dialog.sheet { padding: 14px 16px; width: min(380px, calc(100vw - 32px)); box-shadow: 0 8px 28px rgba(0, 0, 0, .25); }
 dialog.sheet::backdrop { background: rgba(0, 0, 0, .15); }
 dialog.sheet h2 { margin: 0 0 8px; font-size: 15px; }
-dialog.sheet p { margin: 0 0 10px; }
+dialog.sheet p { margin: 0 0 10px; white-space: pre-line; }
 dialog.sheet .field { display: grid; gap: 4px; margin-bottom: 10px; }
 dialog.sheet label { display: grid; gap: 4px; font-size: 13px; }
 dialog.sheet input[type=text] { height: 28px; padding: 0 8px; }
@@ -125,7 +125,8 @@ header #status { color: var(--muted); font-size: 13px; }
 header a { color: var(--accent); }
 /* Present (spec 008 US4): one button and its ▾, joined */
 header .split { flex: none; display: flex; }
-header .split button { height: 28px; }
+#export-menu { flex: none; }
+header .split button, #export-menu { height: 28px; }
 header .split button:first-child { border-radius: 6px 0 0 6px; }
 header .split button + button { border-radius: 0 6px 6px 0; border-left: 0; padding: 0; width: 24px; }
 #banner { display: flex; gap: 8px; align-items: flex-start; padding: 8px 8px 8px 16px; background: var(--error-bg); color: var(--error);
@@ -201,6 +202,7 @@ aside ul.problems button { all: unset; box-sizing: border-box; display: block; w
   border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
 aside ul.problems button:hover { border-color: var(--muted); }
 aside ul.problems button:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+aside ul.problems .slide-link { display: inline; width: auto; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; }
 aside ul.problems .code { font: 11px ui-monospace, monospace; color: var(--danger); }
 aside ul.problems .warn .code { color: var(--muted); }
 aside ul.problems .phint { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }

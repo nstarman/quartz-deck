@@ -3,32 +3,24 @@
 //! matplotlib and plotly (`QUARTO_PYTHON` or `python3`); skips otherwise.
 //! Beamer also needs TeX.
 
+mod common;
+use common::{have, leftovers, qd};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const FIX: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/export");
 
-fn qd(dir: &Path) -> Command {
-    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("qd"));
-    c.current_dir(dir).env_remove("QD_DECK");
-    c
-}
-
 fn ready() -> bool {
-    let quarto = Command::new("quarto")
-        .arg("--version")
-        .output()
-        .is_ok_and(|o| o.status.success());
     let py = std::env::var("QUARTO_PYTHON").unwrap_or_else(|_| "python3".into());
     let python = Command::new(py)
         .args(["-c", "import jupyter_core, matplotlib, plotly"])
         .output()
         .is_ok_and(|o| o.status.success());
-    if !(quarto && python) {
-        eprintln!("skipping: quarto={quarto} python(jupyter, matplotlib, plotly)={python}");
+    if !python {
+        eprintln!("skipping: no Python with jupyter, matplotlib and plotly");
     }
-    quarto && python
+    have("quarto") && python
 }
 
 fn fixture() -> (tempfile::TempDir, PathBuf) {
@@ -53,8 +45,8 @@ fn export(dir: &Path, args: &[&str]) -> (bool, Value, String) {
     (o.status.success(), v, err)
 }
 
-/// Every `.xml` member of an Office file, joined.
-fn office_xml(p: &Path, prefix: &str) -> String {
+/// Every `.xml` member of an Office file under `prefix`, joined, and how many there are.
+fn office_xml(p: &Path, prefix: &str) -> (String, usize) {
     let mut z = zip::ZipArchive::new(std::fs::File::open(p).unwrap()).unwrap();
     let names: Vec<String> = z
         .file_names()
@@ -62,23 +54,20 @@ fn office_xml(p: &Path, prefix: &str) -> String {
         .filter(|n| n.starts_with(prefix) && n.ends_with(".xml"))
         .map(|n| n.to_string())
         .collect();
-    names
+    let text = names
         .iter()
         .map(|n| std::io::read_to_string(z.by_name(n).unwrap()).unwrap())
-        .collect()
+        .collect();
+    (text, names.len())
 }
 
-fn leftovers(dir: &Path) -> Vec<String> {
-    let mut v = vec![];
-    for d in [dir.to_path_buf(), dir.join("export")] {
-        for e in std::fs::read_dir(d).into_iter().flatten().flatten() {
-            let n = e.file_name().to_string_lossy().to_string();
-            if n.contains(".qd-") {
-                v.push(n);
-            }
-        }
-    }
-    v
+fn features(v: &Value) -> Vec<&str> {
+    v["losses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["feature"].as_str().unwrap())
+        .collect()
 }
 
 #[test]
@@ -101,19 +90,9 @@ fn pptx_and_beamer() {
             .unwrap(),
         out.canonicalize().unwrap()
     );
-    let losses: Vec<&str> = v["losses"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|l| l["feature"].as_str().unwrap())
-        .collect();
-    assert_eq!(losses, ["placed", "pause", "fragment", "interactive"]);
-    let slides = office_xml(&out, "ppt/slides/slide");
-    let notes = office_xml(&out, "ppt/notesSlides/");
-    let mut z = zip::ZipArchive::new(std::fs::File::open(&out).unwrap()).unwrap();
-    let n = (1..20)
-        .filter(|i| z.by_name(&format!("ppt/slides/slide{i}.xml")).is_ok())
-        .count();
+    assert_eq!(features(&v), ["placed", "pause", "fragment", "interactive"]);
+    let (slides, n) = office_xml(&out, "ppt/slides/slide");
+    let (notes, _) = office_xml(&out, "ppt/notesSlides/");
     assert_eq!(n, 9, "title + 8 slides");
     assert!(notes.contains("NOTESCOLS"), "notes in the slide notes");
     assert!(slides.contains("<p:bg>"), "the background image is kept");
@@ -133,14 +112,8 @@ fn pptx_and_beamer() {
         let pdf = t.path().join("export/carry.pdf");
         let head = std::fs::read(&pdf).unwrap();
         assert!(head.starts_with(b"%PDF"));
-        let feats: Vec<&str> = v["losses"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|l| l["feature"].as_str().unwrap())
-            .collect();
         assert_eq!(
-            feats,
+            features(&v),
             [
                 "notes",
                 "placed",

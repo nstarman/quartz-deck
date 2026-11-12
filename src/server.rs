@@ -308,6 +308,7 @@ async fn api_op(
             };
             for (key, from) in [
                 ("href", v["output"].clone()),
+                ("href", v["out"].clone()), // qd export --to (spec 011)
                 ("html_href", v["html"].clone()),
                 ("pdf_href", v["pdf"]["path"].clone()),
             ] {

@@ -27,17 +27,17 @@ research R8).
 
 ## Phase 1: Setup
 
-- [ ] T001 Once #43 is merged, rebase `011-export-formats` onto `origin/main` and push with `--force-with-lease`; if the push is refused, stop and ask. Add `src/formats.rs` (empty, `pub mod formats;` in `src/lib.rs`) and `src/formats.lua` holding the filter from research R2, with the `FORMAT == "beamer"` exception for pauses and the pptx/beamer exception for notes.
-- [ ] T002 [P] CI: add TeX for the Quarto-backed tests in `.github/workflows/*.yml` (`quarto install tinytex --no-prompt`, cached), so Beamer and LaTeX PDF exports run on CI rather than being skipped. The fixture deck needs jupyter, matplotlib and plotly in the test environment (set up as the `run` fixtures do).
+- [X] T001 Once #43 is merged, rebase `011-export-formats` onto `origin/main` and push with `--force-with-lease`; if the push is refused, stop and ask. Add `src/formats.rs` (empty, `pub mod formats;` in `src/lib.rs`) and `src/formats.lua` holding the filter from research R2, with the `FORMAT == "beamer"` exception for pauses and the pptx/beamer exception for notes.
+- [X] T002 [P] CI: add TeX for the Quarto-backed tests in `.github/workflows/*.yml` (`quarto install tinytex --no-prompt`, cached), so Beamer and LaTeX PDF exports run on CI rather than being skipped. The fixture deck needs jupyter, matplotlib and plotly in the test environment (set up as the `run` fixtures do).
 
 ---
 
 ## Phase 2: Foundational (blocks every story)
 
-- [ ] T003 Write failing tests:
+- [X] T003 Write failing tests:
   - **`tests/serve.rs` `code_ops_need_the_token`:** `/api/op` with `render`, `export` or `pdf` and no `X-QD-Token` → 403. With the token → not 403. `show` without the token still works.
   - **`src/formats.rs` units:** run the filter through `quarto pandoc -L src/formats.lua` on a small Markdown sample (when Quarto is present): pauses go except in beamer; notes become a quote headed "Speaker notes" except in pptx/beamer; `.fragment` and `.absolute` divs are unwrapped.
-- [ ] T004 Make `render::quarto_cmd`, `run_quarto`, `failed` and `clean_log` `pub(crate)` in `src/render.rs`. Add `QdError::NoTex` → `E_NO_TEX` with hint `install TeX: quarto install tinytex` in `src/error.rs`. In `src/server.rs` `api_op`, require `authorized()` for `render`, `export` and `pdf`. In `src/ui/editor.js` `op()`, send `X-QD-Token: run.token`. T003 passes, and the existing browser tests still pass.
+- [X] T004 Make `render::quarto_cmd`, `run_quarto`, `failed` and `clean_log` `pub(crate)` in `src/render.rs`. Add `QdError::NoTex` → `E_NO_TEX` with hint `install TeX: quarto install tinytex` in `src/error.rs`. In `src/server.rs` `api_op`, require `authorized()` for `render`, `export` and `pdf`. In `src/ui/editor.js` `op()`, send `X-QD-Token: run.token`. T003 passes, and the existing browser tests still pass.
 
 **Checkpoint**: code-running ops are token-checked; the filter works on its own.
 
@@ -47,22 +47,28 @@ research R8).
 
 **Independent Test**: spec US1; quickstart §2–§3.
 
-- [ ] T005 [P] [US1] Write failing tests:
+- [X] T005 [P] [US1] Write failing tests:
   - **`src/formats.rs` units for `losses(d, fmt)`**, on `tests/fixtures/export/carry.qmd` parsed in memory: for pptx it lists exactly `placed` [#placed], `pause` and `fragment` [#frags], `interactive` [#plotly], `theme` only when the deck sets one. For beamer: `notes` as `hidden` [#cols], `pause` absent, `fragment` [#frags], `background-image` [#bg], `placed`, `interactive`. A deck without notes reports no `notes` loss (FR-013).
   - **`src/formats.rs` units:** `Format` lookup by name; an unknown name is `E_INVALID_ARG` whose hint names `qd export --list`; the default output is `export/<stem>.<ext>`; `echo: false` goes in the metadata only when the deck sets no `echo`.
   - **`tests/export_formats.rs` (new, Quarto-backed, as other render tests) `pptx_and_beamer`:** on a temp copy of the fixture folder, `qd export --to pptx` writes `export/carry.pptx` with 9 slides, the NOTESCOLS note in slide 2's notes, a `<p:bg>` on the Background slide and no ". . ." text. The JSON matches data-model "Export result". `qd export --to beamer` writes a 10-page PDF. The deck's SHA-256 is the same before and after both runs (SC-005).
   - **`tests/export_formats.rs` `failed_export_leaves_nothing`:** a deck whose cell raises → `E_RENDER` naming the slide; a file already at `--out` is untouched; no `.qd-export-*` files are left in the folder.
   - **`tests/cli.rs` `plain_export_unchanged`:** `qd export` with no `--to` gives the same result shape as before; `--to revealjs` is the same as no `--to`; `--pdf` together with `--to pptx` is a usage error.
-- [ ] T006 [US1] Implement in `src/formats.rs`: the `FORMATS` table for revealjs, revealjs-pdf, pptx and beamer (data-model "Format", spec FR-012 columns); `Feature`/`Keep`; `losses`; `run(store, name, out, dry_run)` per plan "Route and run" (copy, filter and metadata with a Drop guard, the Quarto route, a temp output renamed on success, `changed_during`). `revealjs`/`revealjs-pdf` call `export::run`. In `src/cli.rs` add `Export --to` / `--out` (with the conflicts in contracts/cli.md) and the `export-format` shape in `qd schema`. T005 passes.
-- [ ] T007 [P] [US1] Write failing browser test `export_menu_pptx` in `tests/onslide.rs`:
+- [X] T006 [US1] Implement in `src/formats.rs`: the `FORMATS` table for revealjs, revealjs-pdf, pptx and beamer (data-model "Format", spec FR-012 columns); `Feature`/`Keep`; `losses`; `run(store, name, out, dry_run)` per plan "Route and run" (copy, filter and metadata with a Drop guard, the Quarto route, a temp output renamed on success, `changed_during`). `revealjs`/`revealjs-pdf` call `export::run`. In `src/cli.rs` add `Export --to` / `--out` (with the conflicts in contracts/cli.md) and the `export-format` shape in `qd schema`. T005 passes.
+- [X] T007 [P] [US1] Write failing browser test `export_menu_pptx` in `tests/onslide.rs`:
   - Export ▾ in the header lists Slides (web page, slides PDF, PowerPoint, Beamer PDF);
   - picking PowerPoint opens the sheet with the losses from the dry run before export;
   - Export runs, the status says "Exporting PowerPoint…", and the result sheet links `export/carry.pptx`;
   - the losses are grouped by slide, and clicking "#placed" selects that slide;
   - File ▸ Export shows the same entries, and `export`/`export-pdf` keep their ids and keys.
-- [ ] T008 [US1] Editor: the Export ▾ header button and menu (`src/ui/editor.js`, `src/ui/menubar.js`), `export-to-<name>` actions plus the File ▸ Export submenu in `src/ui/actions.json`, the export sheet and the result sheet with the loss list (`src/ui/sheet.js`, `src/ui/editor.css`). Add the notes warning before a Beamer export (FR-014). In `src/server.rs` `api_op`, set `href` for outputs of any extension inside the deck folder. "Show in Finder": reuse an existing reveal helper if there is one, else add `POST /api/reveal` (token, deck folder only; contracts/http.md). T007 passes.
+- [X] T008 [US1] Editor: the Export ▾ header button and menu (`src/ui/editor.js`, `src/ui/menubar.js`), `export-to-<name>` actions plus the File ▸ Export submenu in `src/ui/actions.json`, the export sheet and the result sheet with the loss list (`src/ui/sheet.js`, `src/ui/editor.css`). Add the notes warning before a Beamer export (FR-014). In `src/server.rs` `api_op`, set `href` for outputs of any extension inside the deck folder. "Show in Finder": reuse an existing reveal helper if there is one, else add `POST /api/reveal` (token, deck folder only; contracts/http.md). T007 passes.
 
 **Checkpoint**: US1 works alone (MVP): PowerPoint and Beamer from the editor and from `qd`, with losses.
+
+As built (MVP PR): the result links the file for download instead of a
+"Show in Finder" button (no `/api/reveal`); the output path is changed with
+`qd export --out`, not in the sheet; File ▸ Export is the same four entries
+in the File menu, not a submenu. Unit tests live in `src/formats.rs`, CLI
+tests in `tests/export_formats.rs` (T009's CLI tests are there too).
 
 ---
 
@@ -70,11 +76,11 @@ research R8).
 
 **Independent Test**: spec US2; quickstart §1, §3 (TeX hidden).
 
-- [ ] T009 [P] [US2] Write failing tests:
+- [X] T009 [P] [US2] Write failing tests:
   - **`src/formats.rs` units for `tex_found(path_env, home)`:** found through `xelatex`/`lualatex`/`pdflatex` on PATH, through TinyTeX's bin folder, or not at all.
   - **`tests/cli.rs` `export_list`:** `qd export --list` returns every format in data-model "Format list" order, with `ready` and `hint`; `--list` with `--to` is a usage error.
   - **`tests/cli.rs` `no_tex_fails_fast`:** with `PATH` reduced to Quarto's folder and `/usr/bin:/bin` and `HOME` set to a temp dir, `--to beamer` and `--to pdf` fail with `E_NO_TEX` in under 2 s, write no file, and run no code. `--to typst` still gets past the check.
-- [ ] T010 [US2] Implement `tex_found`, the check at the start of `run` (FR-015), `list()` with `ready`/`needs`/`hint`, and `--list` in `src/cli.rs` (plus the `export-formats` shape in `qd schema`). T009 passes.
+- [X] T010 [US2] Implement `tex_found`, the check at the start of `run` (FR-015), `list()` with `ready`/`needs`/`hint`, and `--list` in `src/cli.rs` (plus the `export-formats` shape in `qd schema`). T009 passes.
 - [ ] T011 [P] [US2] Write a failing browser test `export_menu_disables_missing_tools` in `tests/onslide.rs`: the server is started with TeX hidden; Beamer PDF and PDF (LaTeX) are disabled, with "install TeX: quarto install tinytex" as the tooltip; PowerPoint and PDF (Typst) stay enabled.
 - [ ] T012 [US2] The menu reads `qd export --list` through `/api/op` each time it opens and disables formats that aren't ready, with the hint as the tooltip (through `actions.js` `why()`). T011 passes.
 

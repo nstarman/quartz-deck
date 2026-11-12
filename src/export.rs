@@ -52,7 +52,7 @@ pub fn is_plotly_cell(d: &Deck, b: &crate::deck::Block) -> bool {
 }
 
 /// A Quarto option set on the deck: top level or under `format: revealjs:`.
-fn opt<'a>(meta: &'a Yaml, key: &str) -> Option<&'a Yaml> {
+pub(crate) fn opt<'a>(meta: &'a Yaml, key: &str) -> Option<&'a Yaml> {
     meta.get(key)
         .or_else(|| meta.get("format")?.get("revealjs")?.get(key))
         .filter(|v| !v.is_null())
@@ -225,7 +225,7 @@ fn header_html(mathjax: &Path, plotly: Option<&Path>) -> String {
     )
 }
 
-fn nanos() -> u128 {
+pub(crate) fn nanos() -> u128 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos())

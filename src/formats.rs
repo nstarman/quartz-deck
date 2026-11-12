@@ -11,12 +11,14 @@ use std::path::{Path, PathBuf};
 /// The filter that adapts slides for other formats (research R2).
 const FILTER: &str = include_str!("formats.lua");
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Tool {
     Tex,
     Browser,
 }
 
+#[derive(serde::Serialize)]
 pub struct Format {
     pub name: &'static str,
     pub label: &'static str,
@@ -71,7 +73,8 @@ pub fn find(name: &str) -> Result<&'static Format> {
 }
 
 /// A deck feature that a format may not keep (data-model "Feature").
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Feature {
     Notes,
     Pause,
@@ -85,19 +88,6 @@ pub enum Feature {
 }
 
 impl Feature {
-    fn name(self) -> &'static str {
-        match self {
-            Self::Notes => "notes",
-            Self::Pause => "pause",
-            Self::Fragment => "fragment",
-            Self::Columns => "columns",
-            Self::Placed => "placed",
-            Self::BackgroundImage => "background-image",
-            Self::BackgroundMedia => "background-media",
-            Self::Interactive => "interactive",
-            Self::Theme => "theme",
-        }
-    }
     fn noun(self) -> &'static str {
         match self {
             Self::Notes => "speaker notes",
@@ -114,7 +104,8 @@ impl Feature {
 }
 
 /// What a format does with a feature: one cell of the spec's FR-012 table.
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Keep {
     Kept,
     Flow,
@@ -124,15 +115,6 @@ pub enum Keep {
 }
 
 impl Keep {
-    fn name(self) -> &'static str {
-        match self {
-            Self::Kept => "kept",
-            Self::Flow => "flow",
-            Self::AllShown => "all-shown",
-            Self::Hidden => "hidden",
-            Self::Lost => "lost",
-        }
-    }
     fn says(self) -> &'static str {
         match self {
             Self::Kept => "are kept",
@@ -175,8 +157,7 @@ fn slide_features(d: &Deck, s: &Slide) -> Vec<Feature> {
     let text = d.slice(s.span);
     let attr = |k: &str| s.attrs.as_ref().and_then(|a| a.get(k)).is_some();
     let kind = |k: BlockKind| s.blocks.iter().any(|b| b.kind == k);
-    let mut out = vec![];
-    for (f, on) in [
+    [
         (Notes, kind(BlockKind::Notes)),
         (Pause, kind(BlockKind::Pause)),
         (Fragment, has_class_marker(text, "fragment")),
@@ -191,21 +172,10 @@ fn slide_features(d: &Deck, s: &Slide) -> Vec<Feature> {
             Interactive,
             s.blocks.iter().any(|b| crate::export::is_plotly_cell(d, b)),
         ),
-    ] {
-        if on {
-            out.push(f);
-        }
-    }
-    out
-}
-
-fn theme(d: &Deck) -> bool {
-    d.meta.get("theme").is_some()
-        || d.meta
-            .get("format")
-            .and_then(|f| f.get("revealjs"))
-            .and_then(|r| r.get("theme"))
-            .is_some()
+    ]
+    .into_iter()
+    .filter_map(|(f, on)| on.then_some(f))
+    .collect()
 }
 
 /// Every feature the deck uses that `format` does not keep (FR-013), with
@@ -220,14 +190,14 @@ pub fn losses(d: &Deck, format: &str) -> Vec<Value> {
             }
         }
     }
-    if theme(d) {
+    if crate::export::opt(&d.meta, "theme").is_some() {
         by.push((Feature::Theme, vec![]));
     }
     by.into_iter()
         .filter_map(|(f, slides)| {
             let k = keeps(format, f);
             (k != Keep::Kept).then(|| {
-                json!({"feature": f.name(), "keep": k.name(),
+                json!({"feature": f, "keep": k,
                        "what": format!("{} {}", f.noun(), k.says()), "slides": slides})
             })
         })
@@ -267,10 +237,10 @@ pub fn list() -> Value {
         .iter()
         .map(|f| {
             let ready = f.needs != Some(Tool::Tex) || tex;
-            let mut v = json!({"name": f.name, "label": f.label, "group": f.group, "ext": f.ext,
-                "needs": f.needs.map(|t| if t == Tool::Tex { "tex" } else { "browser" }), "ready": ready});
+            let mut v = serde_json::to_value(f).unwrap_or_default();
+            v["ready"] = json!(ready);
             if !ready {
-                v["hint"] = json!("install TeX: quarto install tinytex");
+                v["hint"] = json!(QdError::NoTex(String::new()).hint());
             }
             v
         })
@@ -281,18 +251,10 @@ pub fn list() -> Value {
 /// The deck's own `echo` (top level, `execute:` or `format: revealjs:`), else
 /// false: the slides hide code, so the export does too (research R1).
 fn echo(d: &Deck) -> bool {
-    let m = &d.meta;
-    [
-        m.get("echo"),
-        m.get("execute").and_then(|e| e.get("echo")),
-        m.get("format")
-            .and_then(|f| f.get("revealjs"))
-            .and_then(|r| r.get("echo")),
-    ]
-    .into_iter()
-    .flatten()
-    .find_map(|v| v.as_bool())
-    .unwrap_or(false)
+    crate::export::opt(&d.meta, "echo")
+        .or_else(|| d.meta.get("execute")?.get("echo"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
 }
 
 /// Removes the files it holds when dropped (the export's temp files).
@@ -300,11 +262,7 @@ struct Cleanup(Vec<PathBuf>);
 impl Drop for Cleanup {
     fn drop(&mut self) {
         for p in &self.0 {
-            let _ = if p.is_dir() {
-                std::fs::remove_dir_all(p)
-            } else {
-                std::fs::remove_file(p)
-            };
+            let _ = std::fs::remove_dir_all(p).or_else(|_| std::fs::remove_file(p));
         }
     }
 }
@@ -342,7 +300,7 @@ pub fn run(
     let meta = deck_dir.join(format!(".{stem}.qd-{tag}.yml"));
     let parent = out.parent().unwrap_or(Path::new(".")).to_path_buf();
     std::fs::create_dir_all(&parent)?;
-    let staging = parent.join(format!(".{stem}.qd-staging-{}", nanos()));
+    let staging = parent.join(format!(".{stem}.qd-staging-{}", crate::export::nanos()));
     let _cleanup = Cleanup(vec![filter.clone(), meta.clone(), staging.clone()]);
     std::fs::write(&filter, FILTER)?;
     std::fs::write(
@@ -370,24 +328,13 @@ pub fn run(
             out.display()
         )))
     })?;
-    if store
-        .read()
-        .map(|now| now.version != d.version)
-        .unwrap_or(false)
-    {
+    if store.read().is_ok_and(|now| now.version != d.version) {
         v["changed_during"] = json!(true);
         v["notes"] = json!([
             "the deck changed while exporting; this file is the version from when the export started"
         ]);
     }
     Ok(v)
-}
-
-fn nanos() -> u128 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0)
 }
 
 #[cfg(test)]

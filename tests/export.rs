@@ -2,6 +2,8 @@
 //! Needs Quarto, a browser, and MathJax (cached or downloadable); skips
 //! otherwise. Browser downloads are disabled; the MathJax cache is shared.
 
+mod common;
+use common::leftovers;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -80,14 +82,6 @@ fn problem_codes(v: &Value) -> Vec<String> {
         .unwrap()
         .iter()
         .map(|p| p["code"].as_str().unwrap().to_string())
-        .collect()
-}
-
-fn leftovers(dir: &Path) -> Vec<String> {
-    std::fs::read_dir(dir)
-        .unwrap()
-        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-        .filter(|n| n.contains(".qd-"))
         .collect()
 }
 

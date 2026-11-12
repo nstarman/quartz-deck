@@ -4,6 +4,8 @@
   {"id": "render", "label": "Render with Quarto", "menu": ["File"], "where": ["anywhere"], "qd": "qd render"},
   {"id": "export", "label": "Export web page (works offline)", "menu": ["File"], "where": ["anywhere"], "qd": "qd export"},
   {"id": "export-pdf", "label": "Export web page and PDF", "menu": ["File"], "where": ["anywhere"], "qd": "qd export --pdf"},
+  {"id": "export-pptx", "label": "Export PowerPoint…", "menu": ["File"], "where": ["anywhere"], "qd": "qd export --to pptx"},
+  {"id": "export-beamer", "label": "Export Beamer PDF…", "menu": ["File"], "where": ["anywhere"], "qd": "qd export --to beamer"},
   {"separator": true, "menu": ["File"]},
   {"id": "preview", "label": "Open in browser tab ↗", "menu": ["File"], "where": ["anywhere"], "qd": "qd url"},
   {"id": "source-save", "label": "Save source now", "menu": ["File"], "key": "Mod+S", "vscode_key": null, "where": ["source"]},

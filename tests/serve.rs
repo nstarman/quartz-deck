@@ -604,6 +604,10 @@ fn run_cells_over_http() {
     let (code, body) = post(p, "/api/op", "127.0.0.1", &auth, dry);
     assert_eq!(code, 200, "{body}");
     assert!(body.contains(r#""kind":"export-format""#), "{body}");
+    assert!(
+        body.contains(r#""href":"/preview/export/"#),
+        "the result links the file: {body}"
+    );
     assert_eq!(run(r#"{"cells":["plain/0"]}"#, &auth), 400, "E_NOT_CODE");
     assert_eq!(run(r#"{"cells":["r/0"]}"#, &auth), 400, "E_ENGINE");
 
