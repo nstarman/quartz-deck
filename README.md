@@ -27,7 +27,8 @@ Status: specs [001](specs/001-core-editor/spec.md) (editor),
 [005](specs/005-shared-focus/spec.md) (shared focus),
 [006](specs/006-vscode/spec.md) (VS Code),
 [007](specs/007-app-shell/spec.md) (menus, settings, shortcuts) and
-[008](specs/008-usability/spec.md) (usability) implemented; what
+[008](specs/008-usability/spec.md) (usability) and
+[010](specs/010-one-file-deck/spec.md) (one-file deck) implemented; what
 comes next is in [`specs/ROADMAP.md`](specs/ROADMAP.md). See also the
 [constitution](.specify/memory/constitution.md).
 
@@ -208,19 +209,26 @@ plain Quarto: a layout's areas and a placed element are Quarto's own
   serve` prints / `qd url` returns, never in the page. No other web page or
   link can make it run anything.
 
-### Offline export (spec [002](specs/002-offline-export/spec.md))
+### Offline export (specs [002](specs/002-offline-export/spec.md), [010](specs/010-one-file-deck/spec.md))
 
 ```bash
 qd check --offline        # will it work with no network? problems per slide, with hints
-qd export --pdf           # export/<deck>.html (self-contained) + .pdf, checked offline
-qd pdf --notes            # re-print with speaker notes on separate pages
+qd export --pdf           # export/<deck>.html (one file) + .pdf, checked offline
+qd export --strip-notes --out share   # a copy to share, without speaker notes
+qd pdf --notes            # export/<deck>-notes.pdf: speaker notes on separate pages
 qd browser                # which Chrome is used (qd can download a pinned one)
 ```
 
 Export renders a copy of the deck with MathJax (and plotly.js) loaded from
-local, SHA-256-verified copies, ships background videos/iframes beside the
-HTML, and only replaces the previous export if the offline check passes. The
-deck and `_quarto.yml` are never modified. The first export needs the network
+local, SHA-256-verified copies, puts its apps (`<iframe data-app="…">`,
+background iframes), `<object>` files and SVG `<image>` files inside the one
+HTML file, stores a repeated image once, ships only background videos beside
+it, and only replaces the previous export if the offline check passes. The
+check blocks the network for the deck and its apps, visits every slide and
+step, and also lists missing files, elements outside the slide (warnings) and
+the largest parts of the file. With ghostscript (`gs`) installed, PDFs are
+recompressed to 200 dpi JPEG. A deck's Makefile needs only these commands.
+The deck and `_quarto.yml` are never modified. The first export needs the network
 once (MathJax; Chrome for Testing if no Chrome is installed).
 
 The editor and the CLI can be used at the same time; edits carry a version

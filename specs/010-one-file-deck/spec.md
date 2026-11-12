@@ -54,8 +54,8 @@ the repeated image is stored once, and Quarto's copied resources are gone.
 
 **Independent Test**: export the fixture deck `tests/fixtures/offline/onefile.qmd`;
 the export folder lists only `deck.html` (and qd's marker); the check finds no
-network request, no missing file and no raw TeX, and the >2 MB app runs on its
-slide (it reports itself by throwing a known error).
+missing file and no raw TeX, and the only network request is the one the
+>2 MB app makes on purpose when it runs, which proves it ran from its `blob:` URL.
 
 **Acceptance Scenarios**:
 
@@ -136,7 +136,8 @@ true and the page count is unchanged; with `--notes` the file is
   check MUST be `P_MISSING_FILE`.
 - **FR-007**: The check MUST report `P_OVERFLOW` (warning) for each visible
   element outside the slide box (2 px tolerance, slide coordinates, all
-  fragments shown), skipping speaker notes, SVG and MathJax internals,
+  fragments shown), skipping speaker notes, anything inside `.overflow-ok`
+  (a deck's own footer that bleeds off the edge on purpose), SVG and MathJax internals,
   elements inside a clipping container, and invisible or empty elements.
 - **FR-008**: The check report MUST include `size`: the file's bytes and its
   8 largest embedded parts (`data:` URIs and scripts over 20 000 characters;
@@ -145,7 +146,7 @@ true and the page count is unchanged; with `--notes` the file is
   q 88, RGB) and the result MUST say `compressed: true`.
 - **FR-010**: `qd pdf --notes` without `--out` MUST write `<stem>-notes.pdf`;
   `qd export --pdf --notes` likewise.
-- **FR-011**: The CLI, `qd schema`, the editor API (`strip_notes`) and the
+- **FR-011**: The CLI, `qd schema`, the editor API (`strip-notes`) and the
   Skill MUST describe the new flag and fields.
 
 ## Out of scope
@@ -154,6 +155,10 @@ true and the page count is unchanged; with `--notes` the file is
 - Running the Python scripts' standalone `--root`/`-o` modes on an arbitrary
   HTML file: `qd export` builds the one file from the deck itself.
 - Failing the build on overflow: it is a warning, listed in the report.
+- Errors thrown inside an app's own iframe: Chrome runs such an iframe as
+  its own target, and chromiumoxide 0.9 cannot enable exception events on
+  it. Its network requests and missing files are caught (the interception
+  moved to the browser level for this).
 
 ## Success Criteria *(mandatory)*
 

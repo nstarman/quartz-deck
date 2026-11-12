@@ -129,7 +129,14 @@ impl OfflinePage {
             BrowserConfig::builder()
                 .chrome_executable(&chrome.path)
                 .user_data_dir(&profile)
-                .window_size(1280, 800)
+                // the size check_overflow.py measures at (not chromiumoxide's 800x600):
+                // a deck sized from the viewport (a full-width footer) fits as on a 16:9 screen
+                .window_size(1600, 900)
+                .viewport(chromiumoxide::handler::viewport::Viewport {
+                    width: 1600,
+                    height: 900,
+                    ..Default::default()
+                })
                 // the 20 s default is too short on a loaded machine (CI runs Quarto alongside)
                 .launch_timeout(std::time::Duration::from_secs(60))
                 .build()
@@ -352,13 +359,14 @@ const CONFIG_JS: &str = r#"(() => { const c = Reveal.getConfig();
 
 /// Elements outside the current slide (port of the quarto-revealjs skill's
 /// `check_overflow.py`), in slide coordinates with 2 px of slack. Not counted
-/// (false alarms there): speaker notes, SVG and MathJax internals, anything
+/// (false alarms there): speaker notes, anything marked `.overflow-ok` (a
+/// footer meant to bleed off the edge), SVG and MathJax internals, anything
 /// inside a clipping container, invisible or empty elements.
 const OVERFLOW_JS: &str = r#"(() => {
   const tol = 2, box = document.querySelector('.reveal .slides').getBoundingClientRect();
   const s = Reveal.getScale(), W = Reveal.getConfig().width, H = Reveal.getConfig().height;
   const slide = Reveal.getCurrentSlide(), out = [];
-  const skip = (e) => e.closest('aside.notes, .notes, svg *, mjx-container *');
+  const skip = (e) => e.closest('aside.notes, .notes, .overflow-ok, svg *, mjx-container *');
   const clipped = (e) => {
     for (let a = e.parentElement; a && a !== slide; a = a.parentElement) {
       const o = getComputedStyle(a);

@@ -16,9 +16,10 @@ open questions each spec must settle.
 | 007 | app-shell | done (PRs #20–#24 and the polish PR) | Desktop-app conventions: menu bar (File, Edit, Insert, Slide, View, Run, Help) with every action and shortcut; Settings window; shortcut reference; consistent selection, clipboard, undo, Escape/Enter |
 | 008 | usability | done (PRs #27–#35 and the wrap-up PR) | A full, detailed **design and usability audit** of every surface, against Apple's Human Interface Guidelines as the reference, then the fixes: adding slides anywhere, slide-list drag handles and a clear drop marker, and the rest of the fine-tuning the audit finds |
 | 009 | layouts-and-placement | done (PRs #37–#42 and the polish PR) | **Slide layouts** (title, title + content, two columns, image + text, section, big number, blank, and the person's own saved ones) to start a slide from, then drag **any** element anywhere on it, resize it, or put it back in the flow; all stored as plain Quarto (columns, absolute positioning) |
-| 010 | export-formats | planned | An **Export ▾** drop-down (and `qd export --to <format>`) for every format Quarto/Pandoc can write: PowerPoint, PDF (Beamer/LaTeX or Typst), Word, HTML, Markdown, Jupyter notebook, and more |
-| 011 | history | planned | Optional **save = git commit** (a setting), a **History** side panel to scroll back through versions with a side-by-side preview of the deck as it was, diff any version against now (source and rendered slides), and restore a whole version or just one slide/element |
-| 012 | run-on-slide | planned | A **Run ▶ button on the code shown on the slide** itself (the reveal.js side, not only the source pane), with the output updating in place; running through Quarto's own engines (Jupyter, knitr, Julia) so every language Quarto runs works, not only Python |
+| 010 | one-file-deck | done (this PR) | The quarto-revealjs skill's per-deck build scripts move into qd: `qd export` puts apps (`data-app`, background iframes), `<object>` and SVG `<image>` files inside the one HTML file, stores repeated images once, prunes Quarto's copies, `--strip-notes`; the check sees apps' requests, missing files, overflow and file size; PDFs recompressed with ghostscript |
+| 011 | export-formats | planned | An **Export ▾** drop-down (and `qd export --to <format>`) for every format Quarto/Pandoc can write: PowerPoint, PDF (Beamer/LaTeX or Typst), Word, HTML, Markdown, Jupyter notebook, and more |
+| 012 | history | planned | Optional **save = git commit** (a setting), a **History** side panel to scroll back through versions with a side-by-side preview of the deck as it was, diff any version against now (source and rendered slides), and restore a whole version or just one slide/element |
+| 013 | run-on-slide | planned | A **Run ▶ button on the code shown on the slide** itself (the reveal.js side, not only the source pane), with the output updating in place; running through Quarto's own engines (Jupyter, knitr, Julia) so every language Quarto runs works, not only Python |
 
 Every PR — spec or small — passes a concision audit (`/pr-audit`,
 constitution 1.1.0) before it is marked ready.
@@ -102,7 +103,7 @@ rather than replacing it.
 ### 007 app-shell
 
 As before: menu bar, Settings window, shortcut reference, consistent
-paradigms. The Run menu (004) and the Export ▾ menu (010) live here.
+paradigms. The Run menu (004) and the Export ▾ menu (011) live here.
 
 ### 008 usability
 
@@ -199,7 +200,7 @@ anything anywhere on it, while the `.qmd` stays plain Quarto.
   shows in the source pane and in VS Code's text (005/006 follow); and
   whether an element placed freely still appears on click (fragments).
 
-### 010 export-formats
+### 011 export-formats
 
 - **Export ▾** drop-down in the editor (and File → Export in 007) listing the
   formats below; `qd export --to <format> [--out]` for agents, JSON result.
@@ -217,7 +218,7 @@ anything anywhere on it, while the `.qmd` stays plain Quarto.
   formats need a TeX or Typst install, checked and reported like the browser
   in 002.
 
-### 011 history
+### 012 history
 
 Goal: never lose work, and be able to look back — built on git, visible in
 the editor.
@@ -246,7 +247,7 @@ the editor.
   in qd's cache); rendering old versions (render on demand into the cache,
   with the code-execution rules of 004).
 
-### 012 run-on-slide
+### 013 run-on-slide
 
 Goal: run code where you see it, on the slide, with whatever engine Quarto
 uses for the deck.

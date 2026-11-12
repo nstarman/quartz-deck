@@ -320,7 +320,7 @@ pub fn largest(text: &str, n: usize) -> Vec<Part> {
             context,
         });
     }
-    items.sort_by(|a, b| b.bytes.cmp(&a.bytes));
+    items.sort_by_key(|p| std::cmp::Reverse(p.bytes));
     items.truncate(n);
     items
 }
