@@ -14,7 +14,7 @@ deck file or runs Quarto needs the session token as well.
 
 ## Events (SSE `/events`)
 
-`history` (Save as git commit): `{"state": "pending"}` on each change,
+`history` (Save as git commit): `{"state": "pending", "pause"}` on each change (the panel counts down from `pause` seconds),
 then after the pause `{"state": "committed", "rev"}`, `{"state":
 "unchanged"}` (the deck equals HEAD), `{"state": "failed", "reason"}` (git's
 message: a hook, signing), or `{"state": "skipped", "reason"}` (no

@@ -47,6 +47,23 @@ dependencies.
 
 No Complexity Tracking entries.
 
+### Re-check after building (T018)
+
+| Principle | As built |
+|---|---|
+| I. Clean room | Only git's documented commands (`log --follow`, `show`, `archive`, `commit --only`, `rev-parse`, `status`). Pass. |
+| II. `.qmd` is the truth | No second history. Restores change only the bytes they name (unit tests check SC-003). A commit never writes the deck. Pass. |
+| III. CLI first | `qd history [--slide \| --element]`, `qd diff`, `qd restore`, `qd history --init`, all JSON, all in `qd schema`. The editor uses the same functions over HTTP. Pass. |
+| IV. Live preview | The current preview is untouched. A version renders once into the cache, under `/history/`. Pass. |
+| V. Safe concurrent edits | Restore is an ordinary edit (`--expect`, one undo step). Commits only read the file, and qd skips them during a merge, rebase or detached HEAD (`E_REPO_BUSY`). Pass. |
+| VI. Test first | Every story's tests were seen failing first: units (pairing, diff, restore, messages), real repositories (`tests/history.rs`, 12 tests), browser tests (`history_panel`, `history_commit_notice`, `history_compare`, `history_restore`). Pass. |
+| VII. Simplicity | The `git` command, with no library. `diff` and `restore` share one pairing (`pairs`); history and restore share one element matcher (`block_in`); restore reuses `ops::place` and `ops::patch`. Pass. |
+| Constraints: code runs only on an explicit action | Old versions render without executing code. Running an old version's cells isn't built (spec US1-3's offer); the person can restore the cell and run it. Pass. |
+
+Gaps found and closed in the polish PR: `qd history --element` (FR-017) was
+missing, and is now built and tested. The quickstart's settings command and
+the "No newline" marker in slide diffs are fixed (checklists/quickstart-run.md).
+
 ## Project Structure
 
 ### Documentation (this feature)

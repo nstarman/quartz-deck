@@ -279,6 +279,8 @@ aside .status.fail { color: var(--danger); }
 /* History (spec 012): the versions, and one of them beside the current deck */
 #history { width: 240px; flex: none; overflow: auto; border-right: 1px solid var(--line); background: var(--panel); padding: 8px; }
 #history h2 { margin: 4px 4px 8px; font-size: 13px; }
+#history .saving { margin: 0 4px 8px; font-size: 12px; }
+#history .saving:empty { display: none; }
 #history .status { margin: 0 4px 8px; color: var(--muted); font-size: 12px; }
 #history ol { list-style: none; margin: 0; padding: 0; }
 #history li button { all: unset; box-sizing: border-box; display: block; width: 100%; padding: 6px 8px; border-radius: 6px; cursor: pointer; }

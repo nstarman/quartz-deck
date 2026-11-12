@@ -172,3 +172,13 @@ The header's **Export ▾** shows File ▸ Export's items. `export` and
 | OpenDocument… | — | `export-odt` |
 | EPUB… | — | `export-epub` |
 | Other format… | — | `export-other` |
+
+## Added by 012 (history)
+
+| Control | Key | Id |
+|---|---|---|
+| View ▸ History | ⌥⌘H | `history` |
+| View ▸ Compare this version with now | — | `history-compare` |
+| View ▸ Restore this version… | — | `history-restore` |
+| Slide menus ▸ Restore slide from this version (a version open) | — | `history-restore-slide` |
+| Element menus ▸ Restore from this version (a version open) | — | `history-restore-element` |

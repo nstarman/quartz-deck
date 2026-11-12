@@ -266,6 +266,35 @@ The editor and the CLI can be used at the same time; edits carry a version
 (`--expect`, or per element `--expect-text`) and are refused rather than lost
 if the file changed underneath.
 
+### History (spec [012](specs/012-history/spec.md))
+
+```bash
+qd history                    # the versions that changed the deck, newest first
+qd history --slide methods    # only the versions in which that slide changed (or --element REF)
+qd diff HEAD~3                # the slides changed since then: added, removed, moved, changed
+qd diff a1b2c3d HEAD          # between two versions
+qd restore HEAD~3 --slide methods   # put one slide back (--element REF, or the whole deck)
+qd history --init             # start a history: a git repository beside the deck
+```
+
+History reads the deck's versions from git, so the person's own commits show
+up next to qd's. In the editor, **View ▸ History** (⌥⌘H) lists them. Choosing
+one renders the deck as it was beside the current one, without running code,
+and marks the slides that changed since. **Compare this version with now**
+lists those slides with their source diffs. **Restore slide from this
+version** (slide menus), **Restore from this version** (element menus) and
+**Restore this version…** (View) put things back as an ordinary edit, so
+undo takes it back again. qd never rewrites history.
+
+**Save as git commit** (Settings, off by default) commits the deck file and
+nothing else after a pause in editing (30 s by default; edits during the
+pause become one commit), with a message such as `qd: title methods ×3
+(agent)`. The History panel counts down to it. A CLI edit with no `qd serve`
+running commits at once. Commits follow your git config, so hooks run and
+commits are signed if you sign. When git refuses (a hook, a locked key) or
+the repository is in a merge or rebase, the edit is kept and qd tries again
+at the next pause. qd never pushes.
+
 ### VS Code (spec [006](specs/006-vscode/spec.md))
 
 A small extension in [`vscode/`](vscode/README.md) shows the editor in a panel

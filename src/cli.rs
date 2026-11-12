@@ -180,8 +180,11 @@ enum Cmd {
     /// The deck's versions from git, newest first (spec 012)
     History {
         /// Only the versions in which this slide changed
-        #[arg(long)]
+        #[arg(long, conflicts_with = "element")]
         slide: Option<String>,
+        /// Only the versions in which this element changed
+        #[arg(long)]
+        element: Option<String>,
         /// At most this many versions
         #[arg(long, default_value_t = 50)]
         limit: usize,
@@ -189,7 +192,7 @@ enum Cmd {
         #[arg(long, default_value_t = 0)]
         skip: usize,
         /// Start a history: a git repository in the deck's folder, the deck committed
-        #[arg(long, conflicts_with = "slide")]
+        #[arg(long, conflicts_with_all = ["slide", "element"])]
         init: bool,
     },
     /// The slides that changed between two versions, or a version and the file (spec 012)
@@ -1559,10 +1562,15 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
         }
         Cmd::History { init: true, .. } => crate::history::init(&ctx.store()?.path),
         Cmd::History {
-            slide, limit, skip, ..
+            slide,
+            element,
+            limit,
+            skip,
+            ..
         } => {
             let (s, d) = read()?;
-            crate::history::history(&s.path, &d, slide.as_deref(), *limit, *skip)
+            let (slide, element) = (slide.as_deref(), element.as_deref());
+            crate::history::history(&s.path, &d, slide, element, *limit, *skip)
         }
         Cmd::Diff { from, to } => {
             let (s, d) = read()?;
