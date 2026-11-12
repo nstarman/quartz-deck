@@ -3891,6 +3891,70 @@ async fn history_compare() {
         .await;
 }
 
+/// 012 US4 (T014): with a version open, a slide's right-click menu restores
+/// it from that version, and undo takes it back; restoring the whole version
+/// asks first.
+#[tokio::test]
+async fn history_restore() {
+    let v1 = "---\ntitle: T\n---\n\n## A {#a}\n\nOLDTEXT\n\n## B {#b}\n\nOLDB\n";
+    let Some(ed) = Ed::open(v1).await else {
+        return;
+    };
+    ed.settle().await;
+    let dir = ed.dir.path();
+    let git = common::git_repo(dir);
+    git(&["add", "deck.qmd"]);
+    git(&["commit", "-qm", "first draft"]);
+    let v2 = v1.replace("OLDTEXT", "NEWTEXT").replace("OLDB", "NEWB");
+    std::fs::write(dir.join("deck.qmd"), &v2).unwrap();
+    ed.wait_file(|f| f.contains("NEWTEXT"), "the new text")
+        .await;
+    ed.settle().await;
+    // not awaited: Restore this version… waits on its sheet
+    let keys = |id: &str| format!("import('/ui/keys.js').then((k) => {{ k.run('{id}'); }})");
+    ed.eval(&keys("history")).await;
+    ed.wait("!!document.querySelector('#history button[data-rev]:not([data-rev=\"\"])')")
+        .await;
+    // without a version open, the menu has no restore
+    ed.right_click(ed.editor_point("#slides li[data-id=a]", Some(20.0)).await)
+        .await;
+    assert!(
+        !ed.menu_labels()
+            .await
+            .iter()
+            .any(|l| l.starts_with("Restore"))
+    );
+    ed.close_menu().await;
+    ed.click_editor("#history button[data-rev]:not([data-rev=\"\"])")
+        .await;
+    ed.wait_secs("!document.querySelector('#then').hidden", 120)
+        .await;
+    ed.right_click(ed.editor_point("#slides li[data-id=a]", Some(20.0)).await)
+        .await;
+    ed.click_menu("Restore slide from this version").await;
+    ed.wait_file(
+        |f| f.contains("OLDTEXT") && f.contains("NEWB"),
+        "slide a restored",
+    )
+    .await;
+    ed.settle().await;
+    ed.eval(&keys("undo")).await;
+    ed.wait_file(|f| f == v2, "undo").await;
+    ed.settle().await;
+    // the whole version: asks first; cancel leaves the file alone
+    ed.eval(&keys("history-restore")).await;
+    ed.wait("document.querySelector('dialog.sheet[open]')?.textContent.includes('first draft')")
+        .await;
+    ed.click_editor("dialog.sheet button[value=cancel]").await;
+    ed.wait("!document.querySelector('dialog.sheet[open]')")
+        .await;
+    assert_eq!(std::fs::read_to_string(dir.join("deck.qmd")).unwrap(), v2);
+    ed.eval(&keys("history-restore")).await;
+    ed.click_editor("dialog.sheet button[value=ok]").await;
+    ed.wait_file(|f| f == v1, "the whole version restored")
+        .await;
+}
+
 /// 012 US2 (T010): with Save as git commit on, an edit shows "Saving a
 /// version…" until the pause ends, then "Saved as a version"; a hook that
 /// refuses shows its message, and the edit stays in the file.

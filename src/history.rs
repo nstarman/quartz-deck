@@ -2,8 +2,9 @@
 //! the versions that changed the deck, the deck at any of them, an old
 //! version rendered from a snapshot of its folder, and `qd history --init`.
 
-use crate::deck::{Deck, Slide};
+use crate::deck::{Deck, Slide, Span};
 use crate::error::{QdError, Result};
+use crate::ops::Patch;
 use crate::store::{Edit, Store};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -234,12 +235,10 @@ pub struct SlideChange {
     pub diff: String,
 }
 
-/// The slides that differ from `old` to `new` (research R7), in the new order
-/// and then the removed ones. Slides match by explicit id, then by a title
-/// unique in both, then by position among the rest (slides without an
-/// explicit id). `moved` is same text out of order: the slides off the
-/// longest run kept in order, so a swap lists one slide, not both.
-pub fn diff(old: &Deck, new: &Deck) -> Vec<SlideChange> {
+/// Each slide of `new` paired with its slide in `old`, one to one (research
+/// R7): by explicit id, then by a title unique in both, then by position
+/// among the rest (slides without an explicit id).
+fn pairs(old: &Deck, new: &Deck) -> Vec<Option<usize>> {
     let (o, n) = (&old.slides, &new.slides);
     let mut pair: Vec<Option<usize>> = vec![None; n.len()]; // new → old
     let mut taken = vec![false; o.len()];
@@ -265,8 +264,17 @@ pub fn diff(old: &Deck, new: &Deck) -> Vec<SlideChange> {
         .filter(|&j| pair[j].is_none() && !n[j].id_explicit)
         .collect();
     for (j, i) in rest_new.into_iter().zip(rest_old) {
-        (pair[j], taken[i]) = (Some(i), true);
+        pair[j] = Some(i);
     }
+    pair
+}
+
+/// The slides that differ from `old` to `new` (`pairs`), in the new order and
+/// then the removed ones. `moved` is same text out of order: the slides off
+/// the longest run kept in order, so a swap lists one slide, not both.
+pub fn diff(old: &Deck, new: &Deck) -> Vec<SlideChange> {
+    let (o, n) = (&old.slides, &new.slides);
+    let pair = pairs(old, new);
 
     let text = |d: &Deck, s: &Slide| d.slice(s.span).trim_end().to_string();
     let same = |j: usize| pair[j].is_some_and(|i| text(old, &o[i]) == text(new, &n[j]));
@@ -311,10 +319,119 @@ pub fn diff(old: &Deck, new: &Deck) -> Vec<SlideChange> {
         .collect();
     out.extend(
         (0..o.len())
-            .filter(|&i| !taken[i])
+            .filter(|&i| !pair.contains(&Some(i)))
             .map(|i| change("removed", &o[i], Some(i), None, String::new())),
     );
     out
+}
+
+/// The deck at `rev` beside `deck_path`, with the revision's short hash.
+pub fn version(deck_path: &Path, rev: &str) -> Result<(String, Deck)> {
+    let repo = repo(deck_path)?.ok_or(QdError::NoRepo)?;
+    let (rev, d) = deck_at(&repo, rev)?;
+    Ok((rev[..7.min(rev.len())].to_string(), d))
+}
+
+/// What `qd restore` puts back.
+pub enum Restore<'a> {
+    Deck,
+    Slide(&'a str),
+    Element(&'a str),
+}
+
+/// `qd restore`: the edit that puts back the whole deck, one slide or one
+/// element as it was in `old` (FR-015). REF resolves in `old`. A slide gone
+/// now goes back after its nearest earlier slide that is still there.
+pub fn restore(current: &Deck, old: &Deck, short: &str, what: Restore) -> Result<Patch> {
+    let patch = |what: String, span: Span, text: String| Patch {
+        op: format!("restore {what} from {short}"),
+        replacements: vec![(span, text)],
+        assigned_ids: vec![],
+        target: String::new(),
+        converted_units: false,
+    };
+    let pair = pairs(old, current);
+    let now = |i: usize| pair.iter().position(|&p| p == Some(i));
+    let at_old = |s: &Slide| {
+        old.slides
+            .iter()
+            .position(|x| x.span == s.span)
+            .unwrap_or(0)
+    };
+    match what {
+        Restore::Deck => Ok(patch(
+            "deck".into(),
+            Span {
+                start: 0,
+                end: current.text.len(),
+            },
+            old.text.clone(),
+        )),
+        Restore::Slide(r) => {
+            let os = old.slide(r)?;
+            let text = old.slice(os.span).trim_end();
+            let oi = at_old(os);
+            if let Some(j) = now(oi) {
+                let span = current.slides[j].span;
+                let cur = current.slice(span);
+                let tail = &cur[cur.trim_end().len()..]; // keeps the gap to the next slide
+                return Ok(patch(
+                    format!("slide {}", os.id),
+                    span,
+                    format!("{text}{tail}"),
+                ));
+            }
+            let nl = current.nl;
+            let at = (0..oi).rev().find_map(now).map_or_else(
+                || {
+                    current
+                        .slides
+                        .first()
+                        .map_or(current.text.len(), |s| s.span.start)
+                },
+                |j| current.slides[j].span.end,
+            );
+            let before = &current.text[..at];
+            let gap = if before.is_empty() || before.ends_with(&format!("{nl}{nl}")) {
+                ""
+            } else if before.ends_with(nl) {
+                nl
+            } else {
+                &format!("{nl}{nl}")
+            };
+            let end = if at < current.text.len() {
+                format!("{nl}{nl}")
+            } else {
+                nl.to_string()
+            };
+            Ok(patch(
+                format!("slide {}", os.id),
+                Span { start: at, end: at },
+                format!("{gap}{text}{end}"),
+            ))
+        }
+        Restore::Element(r) => {
+            let (os, ob) = old.element(r)?;
+            let Some(j) = now(at_old(os)) else {
+                return Err(QdError::InvalidArg(format!(
+                    "slide '{}' of {r} is gone now; restore the slide instead",
+                    os.id
+                )));
+            };
+            let cs = &current.slides[j];
+            let k = os.blocks.iter().position(|b| b.id == ob.id).unwrap_or(0);
+            let cb = match ob.id_explicit {
+                true => cs.blocks.iter().find(|b| b.id_explicit && b.id == ob.id),
+                false => cs.blocks.get(k),
+            }
+            .ok_or_else(|| QdError::NotFound(format!("element {r} in the current deck")))?;
+            Ok(patch(
+                format!("element {r}"),
+                cb.span,
+                old.slice(ob.span).to_string(),
+            ))
+        }
+    }
 }
 
 /// `qd diff FROM [TO]`: the slides that changed from one version to another,
@@ -645,6 +762,53 @@ mod tests {
             bee.diff
         );
         assert!(diff(&old, &old).is_empty());
+    }
+
+    fn restored(cur: &str, old: &str, what: Restore) -> Result<String> {
+        let (cur, old) = (Deck::parse(cur.into()), Deck::parse(old.into()));
+        crate::ops::apply(&cur.text, &restore(&cur, &old, "abc1234", what)?)
+    }
+
+    #[test]
+    fn restore_puts_back_part_of_a_version() {
+        let fm = "---\ntitle: T\n---\n\n";
+        let cur = format!("{fm}## One {{#one}}\n\nNEW\n\nKeep\n\n## Two {{#two}}\n\nB\n");
+        let old = format!(
+            "{fm}## One {{#one}}\n\nOLD\n\nKeep\n\n## Mid {{#mid}}\n\nM\n\n## Two {{#two}}\n\nB\n\n## End {{#end}}\n\nE\n"
+        );
+        // a slide in both: only its bytes change (SC-003)
+        assert_eq!(
+            restored(&cur, &old, Restore::Slide("one")).unwrap(),
+            cur.replace("NEW", "OLD")
+        );
+        // a deleted slide comes back after its nearest earlier surviving neighbour
+        assert_eq!(
+            restored(&cur, &old, Restore::Slide("mid")).unwrap(),
+            cur.replace("## Two", "## Mid {#mid}\n\nM\n\n## Two")
+        );
+        assert_eq!(
+            restored(&cur, &old, Restore::Slide("end")).unwrap(),
+            format!("{cur}\n## End {{#end}}\n\nE\n")
+        );
+        // an element: the one at the same place
+        assert_eq!(
+            restored(&cur, &old, Restore::Element("one/0")).unwrap(),
+            cur.replace("NEW", "OLD")
+        );
+        // an element whose slide is gone now
+        let e = restored(&cur, &old, Restore::Element("mid/0")).unwrap_err();
+        assert_eq!(e.code(), "E_INVALID_ARG");
+        assert!(e.to_string().contains("restore the slide"), "{e}");
+        // the whole deck
+        assert_eq!(restored(&cur, &old, Restore::Deck).unwrap(), old);
+        let p = restore(
+            &Deck::parse(cur.clone()),
+            &Deck::parse(old.clone()),
+            "abc1234",
+            Restore::Slide("one"),
+        )
+        .unwrap();
+        assert_eq!(p.op, "restore slide one from abc1234");
     }
 
     #[test]

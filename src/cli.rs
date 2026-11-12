@@ -199,6 +199,17 @@ enum Cmd {
         /// The newer version (default: the current file)
         to: Option<String>,
     },
+    /// Put back the whole deck, one slide or one element as it was at a version (spec 012)
+    Restore {
+        /// The version (anything git accepts: a hash, HEAD~2, a tag)
+        rev: String,
+        /// Only this slide (as it is named in that version)
+        #[arg(long, conflicts_with = "element")]
+        slide: Option<String>,
+        /// Only this element (as it is named in that version)
+        #[arg(long)]
+        element: Option<String>,
+    },
     /// Render the deck with Quarto (as `quarto render`) and report the output
     Render {
         /// Output format (default: the deck's own, usually revealjs)
@@ -1168,6 +1179,7 @@ const API_OPS: &[&str] = &[
     "edit",
     "undo",
     "redo",
+    "restore",
 ];
 
 /// Run a CLI command given as `{op, args}` (the body of `POST /api/op`).
@@ -1555,6 +1567,20 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
         Cmd::Diff { from, to } => {
             let (s, d) = read()?;
             crate::history::compare(&s.path, &d, from, to.as_deref())
+        }
+        Cmd::Restore {
+            rev,
+            slide,
+            element,
+        } => {
+            use crate::history::Restore;
+            let (short, old) = crate::history::version(&ctx.store()?.path, rev)?;
+            let what = match (slide, element) {
+                (Some(s), _) => Restore::Slide(s),
+                (_, Some(e)) => Restore::Element(e),
+                _ => Restore::Deck,
+            };
+            ctx.edit(|d| crate::history::restore(d, &old, &short, what))
         }
         Cmd::Render { to } => {
             let s = ctx.store()?;

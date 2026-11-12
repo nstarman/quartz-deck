@@ -1486,6 +1486,7 @@ const actions = makeActions({
   pasteSlides,
   say,
   slideUrl: (anchor) => `${location.origin}/#/${anchor}`,
+  versionRev: hist.versionRev,
 });
 
 /** Right-click in the preview: the element's menu, or the slide's (empty area). */
@@ -2017,8 +2018,8 @@ menuButton('#present-more', () => ['present', 'present-start', 'preview'].map((i
 keys.on('undo', () => undoRedo('undo'));
 keys.on('redo', () => undoRedo('redo'));
 // element and slide actions: the right-click menus' own (actions.js), on what is selected / shown
-const ELEMENT = ['edit', 'source', 'cut', 'copy', 'paste', 'dup', 'delete', 'up', 'down', 'fragment', 'class-smaller', 'class-incremental', 'class-custom', 'place', 'unplace', 'box-front', 'box-forward', 'box-backward', 'box-back'];
-const SLIDE = ['slide-before', 'slide-after', 'slide-dup', 'slide-cut', 'slide-copy', 'slide-paste', 'slide-hide', 'slide-rm', 'slide-bg', 'slide-bgimg', 'slide-notes', 'slide-source', 'slide-link', 'layout-save'];
+const ELEMENT = ['edit', 'source', 'cut', 'copy', 'paste', 'dup', 'delete', 'history-restore-element', 'up', 'down', 'fragment', 'class-smaller', 'class-incremental', 'class-custom', 'place', 'unplace', 'box-front', 'box-forward', 'box-backward', 'box-back'];
+const SLIDE = ['slide-before', 'slide-after', 'slide-dup', 'slide-cut', 'slide-copy', 'slide-paste', 'slide-hide', 'slide-rm', 'history-restore-slide', 'slide-bg', 'slide-bgimg', 'slide-notes', 'slide-source', 'slide-link', 'layout-save'];
 for (const [ids, on, table] of [[ELEMENT, 'el', 'element'], [SLIDE, 'slide', 'slide']]) {
   for (const id of ids) {
     keys.on(id, {
@@ -2075,6 +2076,14 @@ keys.on('source-full', toggle('source-full', setFull));
 keys.on('form-panel', toggle('panel-open', setPanel));
 keys.on('history', { checked: hist.isOpen, run: () => hist.toggle() });
 keys.on('history-compare', { enabled: hist.versionOpen, run: hist.compare });
+keys.on('history-restore', {
+  enabled: hist.versionOpen,
+  run: async () => {
+    const v = hist.version();
+    if (!await confirmSheet(`Restore ${v.short}?`, `The whole deck goes back to "${v.message}". Undo brings this one back.`, 'Restore')) return;
+    if (await op('restore', { rev: v.rev })) await fetchDeck();
+  },
+});
 keys.on('snap', { checked: () => settings.get('placement.snap'), run: () => settings.set({ 'placement.snap': !settings.get('placement.snap') }) });
 keys.on('about', () => ask({ title: 'About quartz-deck', message: 'A slide editor for Quarto reveal.js decks. Alpha software, not licensed for use by others (see LICENSE).', cancel: null }));
 keys.on('settings', settings.open);
