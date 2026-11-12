@@ -132,9 +132,18 @@ impl Events {
         .unwrap();
         s.set_read_timeout(Some(Duration::from_millis(200)))
             .unwrap();
-        Events {
-            r: BufReader::new(s),
+        let mut r = BufReader::new(s);
+        // the server subscribes before it answers: past the headers, no event is missed
+        let end = Instant::now() + Duration::from_secs(30);
+        let mut line = String::new();
+        while line != "\r\n" {
+            assert!(Instant::now() < end, "no answer from {path}");
+            if line.ends_with('\n') {
+                line.clear(); // (a read that timed out keeps its part of a line)
+            }
+            let _ = r.read_line(&mut line);
         }
+        Events { r }
     }
 
     fn wait(&mut self, want: &str, timeout: Duration) -> Option<String> {
