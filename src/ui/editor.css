@@ -364,6 +364,7 @@ dialog.sheet .is-gallery { max-height: calc(100vh - 140px); overflow-y: auto; }
 dialog.sheet .gallery .tools { display: flex; justify-content: center; gap: 4px; }
 dialog.sheet .gallery .tools button { font-size: 11px; padding: 1px 6px; }
 dialog.sheet .choice { display: grid; gap: 4px; margin: 4px 0 8px; }
+dialog.sheet .choice label { display: flex; align-items: center; gap: 6px; }
 dialog.sheet:has(.is-gallery) { width: min(620px, calc(100vw - 32px)); }
 dialog.sheet .is-gallery h3 { margin: 6px 0 2px; font-size: 12px; color: var(--muted); font-weight: 600; }
 dialog.sheet .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }

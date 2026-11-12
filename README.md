@@ -48,6 +48,7 @@ qd new talk.qmd --title "My talk"                # or work on an existing deck
 qd add --title "Results" --md $'- one\n- two'    # JSON out; target = "results"
 qd set results --attr background-color=aquamarine
 qd box add results --image figures/plot.png --at 100,150 --size 600,400
+qd add --layout two-columns --after results --title "Before and after"
 qd --human slides
 qd check                                         # --render also runs Quarto
 qd serve --open                                  # browser editor + live preview
@@ -138,6 +139,36 @@ and its fixes:
   contrast and size minimums in light, dark and high contrast.
 - **A narrow window** (under 600 px) swaps the list for a slide picker in the
   top row, and the slide's properties go under ···.
+
+### Layouts and placement (spec [009](specs/009-layouts-and-placement/spec.md))
+
+Start a slide from a layout, then put anything anywhere on it. The deck stays
+plain Quarto: a layout's areas and a placed element are Quarto's own
+`.absolute` boxes.
+
+- **Layouts:** the slide list's **+**, Insert ▸ Slide after… and ⇧⌘N open a
+  gallery of 12 layouts (title + content, two or three columns, image + text,
+  full image, big number, quote, section, blank…), each drawn from its own
+  boxes. The empty areas say "Click to add text" or "Drop an image" on the
+  canvas only; a deck rendered with Quarto shows nothing for them. CLI: `qd
+  layouts`; `qd add --layout NAME` returns the placeholders' refs to fill
+  with `qd edit`.
+- **Place anything freely:** ⌥-drag an element out of the flow, or Arrange ▸
+  Place freely. It keeps its bytes inside a positioned box; drag it, resize
+  it with the handles, nudge it with the arrow keys (⇧ for 10 px). Arrange ▸
+  Put back in the flow leaves the file exactly as it was. Columns, callouts
+  and speaker notes can't be placed, and the menu says why. CLI: `qd block
+  place REF --at X,Y`, `qd block unplace REF`.
+- **Guides:** while you drag or resize a placed box, it snaps to the slide's
+  edges and centre and to other elements, with a guide line. Hold ⌘ to place
+  it freely; View ▸ Snap to guides turns it off.
+- **Front and back:** Arrange ▸ Bring to front (⌥⇧⌘F), Bring forward,
+  Send backward, Send to back (⌥⇧⌘B). Boxes stack in the file's order, so
+  this also changes the order fragments appear in. CLI: `qd box front REF` …
+- **Your own layouts:** Slide ▸ Save slide as layout… keeps the slide's
+  structure (never its text) with the deck in `_layouts/`, or in your own
+  layouts for every deck. They head the gallery, with Rename and Delete.
+  CLI: `qd layout save SLIDE NAME [--mine]`, `qd layout rename`, `qd layout rm`.
 
 ### Shared focus (spec [005](specs/005-shared-focus/spec.md))
 
