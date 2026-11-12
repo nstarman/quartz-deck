@@ -4,6 +4,7 @@
 
 use crate::deck::{Deck, Slide};
 use crate::error::{QdError, Result};
+use crate::store::{Edit, Store};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -322,6 +323,68 @@ pub fn init(deck_path: &Path) -> Result<serde_json::Value> {
     Ok(serde_json::json!({"ok": true, "repo": dir.canonicalize()?, "rev": rev}))
 }
 
+/// A commit message for these edits (data-model "Commit message"): ops in
+/// order, repeats folded, who made them; capped at 72 characters.
+pub fn message(edits: &[Edit]) -> String {
+    if edits.is_empty() {
+        return "qd: edit source (person)".into(); // typing in the source pane
+    }
+    let mut ops: Vec<(String, usize)> = vec![];
+    for e in edits {
+        let op = format!("{} {}", e.op, e.target).trim().to_string();
+        match ops.iter_mut().find(|(o, _)| *o == op) {
+            Some((_, n)) => *n += 1,
+            None => ops.push((op, 1)),
+        }
+    }
+    let items: Vec<String> = ops
+        .into_iter()
+        .map(|(o, n)| if n > 1 { format!("{o} ×{n}") } else { o })
+        .collect();
+    let who: Vec<&str> = ["person", "agent"]
+        .into_iter()
+        .filter(|w| edits.iter().any(|e| e.by == *w))
+        .collect();
+    let tail = format!(" ({})", who.join(", "));
+    let mut k = items.len();
+    let mut subject = format!("qd: {}{tail}", items.join(", "));
+    while subject.chars().count() > 72 && k > 1 {
+        k -= 1;
+        subject = format!("qd: {}, …{tail}", items[..k].join(", "));
+    }
+    subject
+}
+
+/// Commit the deck alone (research R2): other files' staged and unstaged
+/// state is untouched. `None` when the deck equals HEAD. Never during a
+/// merge, rebase or detached head (R3). git's own configuration applies:
+/// signing and hooks; a refusal comes back with git's message.
+pub fn commit_deck(repo: &Repo, message: &str) -> Result<Option<String>> {
+    if let Some(why) = repo.busy() {
+        return Err(QdError::RepoBusy(why.into()));
+    }
+    if !repo.uncommitted() {
+        return Ok(None);
+    }
+    let path = format!(":/{}", repo.path);
+    git(&repo.dir, &["add", "--", &path])?; // an untracked deck
+    git(
+        &repo.dir,
+        &["commit", "-q", "--only", "-m", message, "--", &path],
+    )?;
+    repo.resolve("HEAD").map(Some)
+}
+
+/// Save as git commit (US2): the deck's edits since its last commit, as one
+/// commit. `E_NO_REPO` outside git.
+pub fn commit_edits(store: &Store) -> Result<Option<String>> {
+    let repo = repo(&store.path)?.ok_or(QdError::NoRepo)?;
+    let last = log(&repo, 1, 0)?.0.first().map_or(0, |v| v.time);
+    // ponytail: the journal keeps seconds, so an edit in the same second as
+    // the last commit is named again; millisecond stamps if that matters
+    commit_deck(&repo, &message(&store.edits_since(last.saturating_sub(1))))
+}
+
 /// Render the deck as it was at `rev`, without running code (FR-005), from a
 /// snapshot of its folder at that revision in `cache/history/<rev>/` (research
 /// R6); reused once made. Returns the HTML path.
@@ -409,6 +472,41 @@ mod tests {
         std::fs::remove_file(r.git_dir.join("MERGE_HEAD")).unwrap();
         g(&["checkout", "-q", "--detach"]);
         assert_eq!(r.busy(), Some("HEAD is detached"));
+    }
+
+    fn e(op: &str, target: &str, by: &str) -> Edit {
+        Edit {
+            ts: 0,
+            op: op.into(),
+            target: target.into(),
+            by: by.into(),
+        }
+    }
+
+    #[test]
+    fn commit_messages() {
+        assert_eq!(message(&[]), "qd: edit source (person)");
+        assert_eq!(
+            message(&[e("title", "one", "agent")]),
+            "qd: title one (agent)"
+        );
+        let three = [
+            e("edit", "one/1", "person"),
+            e("title", "two", "agent"),
+            e("edit", "one/1", "person"),
+            e("edit", "one/1", "person"),
+        ];
+        assert_eq!(
+            message(&three),
+            "qd: edit one/1 ×3, title two (person, agent)"
+        );
+        let many: Vec<Edit> = (0..20)
+            .map(|i| e("title", &format!("slide-{i}"), "agent"))
+            .collect();
+        let m = message(&many);
+        assert!(m.chars().count() <= 72, "{m}");
+        assert!(m.starts_with("qd: title slide-0, title slide-1"), "{m}");
+        assert!(m.ends_with(", … (agent)"), "{m}");
     }
 
     #[test]

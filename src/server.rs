@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::{Notify, broadcast};
@@ -107,6 +107,10 @@ struct App {
     rendering: Mutex<bool>,
     /// The person's settings file (spec 007), shared by every qd.
     settings: PathBuf,
+    /// Save as git commit (spec 012 US2): the deck changed since the last
+    /// commit; `touched` restarts the pause.
+    pending: AtomicBool,
+    touched: Notify,
 }
 
 impl App {
@@ -124,6 +128,49 @@ impl App {
 
     fn state(&self, s: &str) {
         self.emit("kernel", json!({ "state": s }));
+    }
+
+    fn setting(&self, key: &str) -> Value {
+        crate::settings::load(&self.settings).0[key].clone()
+    }
+
+    /// Commit what is pending (spec 012 US2) and tell the editor. A failure
+    /// keeps it pending, for the next pause or the server's stop.
+    fn commit(&self) {
+        if !self.pending.swap(false, Ordering::SeqCst) {
+            return;
+        }
+        let data = match crate::history::commit_edits(&self.store) {
+            Ok(Some(rev)) => json!({"state": "committed", "rev": rev}),
+            Ok(None) => json!({"state": "unchanged"}),
+            Err(e) => {
+                // no repository: nothing to try again
+                if !matches!(e, QdError::NoRepo) {
+                    self.pending.store(true, Ordering::SeqCst);
+                }
+                let skipped = matches!(e, QdError::NoRepo | QdError::RepoBusy(_));
+                let state = if skipped { "skipped" } else { "failed" };
+                json!({"state": state, "reason": e.to_string()})
+            }
+        };
+        self.emit("history", data);
+    }
+}
+
+/// Save as git commit (spec 012 US2): `history.pause` seconds after the last
+/// change, the deck is committed; a burst of edits becomes one commit.
+async fn commit_loop(app: Shared) {
+    loop {
+        app.touched.notified().await;
+        loop {
+            let pause = app.setting("history.pause").as_u64().unwrap_or(30);
+            tokio::select! {
+                _ = app.touched.notified() => {}
+                _ = tokio::time::sleep(Duration::from_secs(pause)) => break,
+            }
+        }
+        let a = app.clone();
+        let _ = tokio::task::spawn_blocking(move || a.commit()).await;
     }
 }
 
@@ -1026,6 +1073,11 @@ fn watch(app: Shared) -> Result<notify::RecommendedWatcher> {
             st.version = v.clone();
             drop(st);
             let _ = a.tx.send(Ev::Changed(v));
+            if a.setting("history.commit") == true {
+                a.pending.store(true, Ordering::SeqCst);
+                a.touched.notify_one();
+                a.emit("history", json!({"state": "pending"}));
+            }
             let a = a.clone();
             rt.spawn(async move { a.kick.notify_one() });
         }
@@ -1091,6 +1143,8 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
                 std::fs::create_dir_all(dir)?;
                 dir.canonicalize()?.join("settings.json")
             },
+            pending: AtomicBool::new(false),
+            touched: Notify::new(),
             store,
         });
         // an image upload: the images module refuses over 20 MB itself
@@ -1159,6 +1213,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
         )?;
         let _watcher = watch(app.clone())?;
         tokio::spawn(render_loop(app.clone()));
+        tokio::spawn(commit_loop(app.clone()));
         app.kick.notify_one();
         on_ready(&session);
         let stopping = Arc::new(Notify::new());
@@ -1183,6 +1238,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
         };
         *app.rendering.lock().unwrap_or_else(|e| e.into_inner()) = true; // waits for a render in progress
         app.store.detach(); // the file is whatever VS Code last saved
+        app.commit(); // nothing pending is left behind
         app.kernel.lock().unwrap().take(); // shuts the kernel down
         let _ = std::fs::remove_file(&session_file);
         res.map_err(QdError::Io)

@@ -684,10 +684,12 @@ fn output_of(cmd: &str) -> &'static str {
         "skill" => r#"{"skill":"<markdown>"} or {"ok","path"} with --install"#,
         "undo" | "redo" => r#"{"ok","op","undone|redone","version"}"#,
         "box" => {
-            r#"{"ok","op","version","diff","assigned_ids","target":"<box id>","converted_units"?}"#
+            r#"{"ok","op","version","diff","assigned_ids","target":"<box id>","converted_units"?,"commit"?:{"rev"}|{"error"}}"#
         }
         "new" => r#"{"ok","op":"new","path","version","target"}"#,
-        _ => r#"{"ok","op","version","diff","assigned_ids","target","dry_run"?}"#,
+        _ => {
+            r#"{"ok","op","version","diff","assigned_ids","target","dry_run"?,"commit"?:{"rev"}|{"error"}}"#
+        }
     }
 }
 
@@ -1093,10 +1095,27 @@ impl Ctx<'_> {
             v["version"] = json!(if after == d.text {
                 d.version.clone()
             } else {
-                store.write(&d, &after, &p.op)?
+                store.write(&d, &after, &p.op, &p.target)?
             });
+            if let Some(c) = self.commit(&store).filter(|_| after != d.text) {
+                v["commit"] = c;
+            }
         }
         Ok(v)
+    }
+
+    /// Save as git commit (spec 012 US2) for a CLI edit with no server
+    /// running; a server commits after its pause instead. Silent outside git.
+    fn commit(&self, store: &Store) -> Option<Value> {
+        let on = crate::settings::load(&crate::settings::path()).0["history.commit"] == true;
+        if !on || self.store.is_some() || crate::server::running(store).is_ok() {
+            return None;
+        }
+        match crate::history::commit_edits(store) {
+            Err(QdError::NoRepo) => None,
+            Ok(rev) => Some(json!({ "rev": rev })),
+            Err(e) => Some(json!({ "error": e.to_json()["error"] })),
+        }
     }
 }
 

@@ -3848,3 +3848,38 @@ async fn history_panel() {
     )
     .await;
 }
+
+/// 012 US2 (T010): with Save as git commit on, an edit shows "Saving a
+/// version…" until the pause ends, then "Saved as a version"; a hook that
+/// refuses shows its message, and the edit stays in the file.
+#[tokio::test]
+async fn history_commit_notice() {
+    let Some(ed) = Ed::open("---\ntitle: T\n---\n\n## A {#a}\n\nOne\n").await else {
+        return;
+    };
+    ed.settle().await;
+    let dir = ed.dir.path();
+    let git = common::git_repo(dir);
+    git(&["add", "deck.qmd"]);
+    git(&["commit", "-qm", "first"]);
+    common::settings(dir, json!({"history.commit": true, "history.pause": 5}));
+    let notice = "document.querySelector('#notice').textContent";
+    qd(dir).args(["title", "a", "Two"]).output().unwrap();
+    ed.wait(&format!("{notice} === 'Saving a version…'")).await;
+    ed.wait_secs(&format!("{notice} === 'Saved as a version'"), 20)
+        .await;
+    assert_eq!(
+        git(&["log", "-1", "--format=%s"]).trim(),
+        "qd: title a (agent)"
+    );
+
+    common::hook(dir, "echo 'no commits today' >&2; exit 1");
+    qd(dir).args(["title", "a", "Three"]).output().unwrap();
+    ed.wait_secs(&format!("{notice}.includes('no commits today')"), 20)
+        .await;
+    assert!(
+        std::fs::read_to_string(dir.join("deck.qmd"))
+            .unwrap()
+            .contains("Three")
+    );
+}
