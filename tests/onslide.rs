@@ -1532,6 +1532,7 @@ const bodies = {{
   '/api/buffer': JSON.stringify({{base: '', text: '## Pwned\\n'}}),
   '/api/buffer/close': '{{}}',
   '/api/settings': JSON.stringify({{theme: 'dark', 'source.side': 'right', 'confirm.slide_delete': false}}),
+  '/api/layouts': JSON.stringify({{save: {{slide: 'slow', name: 'evil', where: 'deck'}}}}),
   '/api/images?name=evil.svg': '<svg xmlns="http://www.w3.org/2000/svg"><script>parent.pwned = 1</script></svg>',
 }};
 for (const [path, body] of Object.entries(bodies)) {{
@@ -1558,6 +1559,7 @@ return (await unreadable('/')) && (await unreadable('/api/focus'));
     assert_eq!(ed.file(), RUN_DECK, "no edit landed");
     // spec 008: no file was written beside the deck
     assert!(!ed.dir.path().join("images").exists(), "no image added");
+    assert!(!ed.dir.path().join("_layouts").exists(), "no layout saved");
     // spec 007: the person's settings are unchanged
     let v = &ed.cli(&["settings"])["values"];
     assert_eq!(

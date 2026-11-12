@@ -1068,3 +1068,65 @@ fn layouts_render_unfilled() {
     let v: Value = serde_json::from_str(&body).unwrap();
     assert_eq!(v["layouts"].as_array().unwrap().len(), 12);
 }
+
+/// Spec 009 US3: saving, renaming and removing a layout over HTTP needs the
+/// token and same origin; a taken name is 409; the reply is the new list.
+#[test]
+fn layouts_over_http() {
+    if !have("quarto") {
+        return;
+    }
+    let (_tmp, dir) = setup();
+    let server = start(&dir);
+    let p = server.port;
+    let anon = format!("Host: 127.0.0.1:{p}\r\nContent-Type: application/json\r\n");
+    let tok = format!("{anon}X-QD-Token: {}\r\n", server.token);
+    let save = json!({"save": {"slide": "results", "name": "plot", "where": "deck", "at": {"results/0": [60, 300, 400, 150]}}}).to_string();
+    let send = |h: &str, body: &str| post_bytes(p, "/api/layouts", h, body.as_bytes());
+
+    assert_eq!(send(&anon, &save).0, 403, "no token");
+    assert_eq!(
+        send(&format!("{tok}Origin: http://evil.example\r\n"), &save).0,
+        403,
+        "another origin"
+    );
+    assert!(!dir.join("_layouts").exists());
+
+    let (s, b) = send(&tok, &save);
+    assert_eq!(s, 200, "{b}");
+    let v: Value = serde_json::from_str(&b).unwrap();
+    assert!(
+        v["layouts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l["name"] == "plot" && l["from"] == "deck")
+    );
+    let (s, b) = send(&tok, &save);
+    assert_eq!(s, 409, "{b}");
+    let (s, b) = send(
+        &tok,
+        &json!({"save": {"slide": "results", "name": "../x", "where": "deck"}}).to_string(),
+    );
+    assert_eq!(s, 400, "{b}");
+    let (s, b) = send(
+        &tok,
+        &json!({"rename": {"from": "plot", "to": "plot-2", "where": "deck"}}).to_string(),
+    );
+    assert_eq!(s, 200, "{b}");
+    assert!(dir.join("_layouts/plot-2.md").exists());
+    let (s, b) = send(
+        &tok,
+        &json!({"rm": {"name": "plot-2", "where": "deck"}}).to_string(),
+    );
+    assert_eq!(s, 200, "{b}");
+    assert!(!dir.join("_layouts/plot-2.md").exists());
+    assert_eq!(
+        send(
+            &tok,
+            &json!({"rm": {"name": "two-columns", "where": "deck"}}).to_string()
+        )
+        .0,
+        400
+    );
+}

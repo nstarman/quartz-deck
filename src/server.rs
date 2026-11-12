@@ -135,9 +135,10 @@ fn err_response(e: QdError) -> Response {
         | QdError::InvalidArg(_)
         | QdError::InvalidSetting(_)
         | QdError::Usage(_) => StatusCode::BAD_REQUEST,
-        QdError::Conflict(_) | QdError::StaleElement { .. } | QdError::NoUndo(_) => {
-            StatusCode::CONFLICT
-        }
+        QdError::Conflict(_)
+        | QdError::StaleElement { .. }
+        | QdError::NoUndo(_)
+        | QdError::Taken(_) => StatusCode::CONFLICT,
         QdError::UnsafeEdit(_) | QdError::OfflineIncompatible(_) => {
             StatusCode::UNPROCESSABLE_ENTITY
         }
@@ -511,6 +512,29 @@ async fn api_layouts(State(app): State<Shared>) -> Response {
         Ok(d) => Json(crate::layouts::json_for(&app.dir(), d.width, d.height)).into_response(),
         Err(e) => err_response(e),
     }
+}
+
+/// `POST /api/layouts` (token, same origin): save, rename or remove a saved
+/// layout (`layouts::change`); writes only `_layouts/` beside the deck or
+/// `layouts/` in qd's config folder, with checked names. Replies with the new list.
+async fn api_layouts_change(
+    State(app): State<Shared>,
+    headers: HeaderMap,
+    Json(req): Json<Value>,
+) -> Response {
+    if !authorized(&app, &headers) {
+        return forbidden();
+    }
+    let dir = app.dir();
+    let d = match app.store.read() {
+        Ok(d) => d,
+        Err(e) => return err_response(e),
+    };
+    blocking(move || {
+        crate::layouts::change(&d, &dir, &crate::store::config_root(), &req)?;
+        Ok(crate::layouts::json_for(&dir, d.width, d.height))
+    })
+    .await
 }
 
 /// `GET /api/images`: the images beside the deck (spec 008 US5).
@@ -1050,7 +1074,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
                 "/api/images",
                 get(api_images).post(api_image_add).layer(limit),
             )
-            .route("/api/layouts", get(api_layouts))
+            .route("/api/layouts", get(api_layouts).post(api_layouts_change))
             .nest_service(
                 "/preview",
                 ServeDir::new(&out).fallback(ServeDir::new(&deck_dir)),

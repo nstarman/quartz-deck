@@ -23,6 +23,9 @@ pub enum QdError {
         current_source: String,
         current_hash: String,
     },
+    /// A name already in use (a saved layout).
+    #[error("{0}")]
+    Taken(String),
     #[error("invalid argument: {0}")]
     InvalidArg(String),
     #[error("invalid setting: {0}")]
@@ -73,7 +76,7 @@ impl QdError {
             Self::NotFound(_) => "E_NOT_FOUND",
             Self::Ambiguous(_) => "E_AMBIGUOUS",
             Self::UnsafeEdit(_) => "E_UNSAFE_EDIT",
-            Self::Conflict(_) | Self::StaleElement { .. } => "E_CONFLICT",
+            Self::Conflict(_) | Self::StaleElement { .. } | Self::Taken(_) => "E_CONFLICT",
             Self::InvalidArg(_) => "E_INVALID_ARG",
             Self::InvalidSetting(_) => "E_INVALID_SETTING",
             Self::NoUndo(_) => "E_NO_UNDO",
@@ -115,6 +118,7 @@ impl QdError {
             Self::StaleElement { .. } => {
                 "details hold the current source and hash; re-apply your change to it and retry"
             }
+            Self::Taken(_) => "choose another name, or replace it (--replace)",
             Self::InvalidArg(_) => "see `qd schema` for argument formats",
             Self::InvalidSetting(_) => {
                 "run `qd settings` to see every setting and its allowed values"

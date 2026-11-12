@@ -224,6 +224,11 @@ enum Cmd {
     },
     /// Slide layouts to start a new slide from: built-in, yours and the deck's
     Layouts,
+    /// Save a slide as a layout, or rename or remove a saved one
+    Layout {
+        #[command(subcommand)]
+        action: LayoutCmd,
+    },
     /// Duplicate a slide (new ids)
     Dup {
         slide: String,
@@ -428,6 +433,56 @@ enum ImageCmd {
         #[arg(long, requires = "slide")]
         end: bool,
     },
+}
+
+#[derive(Subcommand)]
+enum LayoutCmd {
+    /// Save a slide's structure as a layout (the deck's `_layouts/`, or yours with --mine)
+    Save {
+        slide: String,
+        name: String,
+        /// Keep it in your own layouts (qd's config folder), not the deck's
+        #[arg(long)]
+        mine: bool,
+        /// Overwrite a layout of that name
+        #[arg(long)]
+        replace: bool,
+        /// Where a flow element shows: REF=LEFT,TOP,WIDTH,HEIGHT in px (repeatable)
+        #[arg(long, value_parser = parse_at)]
+        at: Vec<(String, [f64; 4])>,
+    },
+    /// Remove a saved layout
+    Rm {
+        name: String,
+        #[arg(long)]
+        mine: bool,
+    },
+    /// Rename a saved layout
+    Rename {
+        from: String,
+        to: String,
+        #[arg(long)]
+        mine: bool,
+    },
+}
+
+/// `REF=LEFT,TOP,WIDTH,HEIGHT`.
+fn parse_at(s: &str) -> std::result::Result<(String, [f64; 4]), String> {
+    let (r, nums) = s
+        .split_once('=')
+        .ok_or("expected REF=LEFT,TOP,WIDTH,HEIGHT")?;
+    let v: Vec<f64> = nums
+        .split(',')
+        .map(|n| {
+            n.trim()
+                .parse()
+                .map_err(|_| format!("'{n}' is not a number"))
+        })
+        .collect::<std::result::Result<_, _>>()?;
+    let r4: [f64; 4] = v
+        .try_into()
+        .map_err(|_| "expected four numbers".to_string())?;
+    Ok((r.to_string(), r4))
 }
 
 #[derive(Subcommand)]
@@ -1440,6 +1495,37 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             }));
             v["placeholders"] = json!(ph);
             Ok(v)
+        }
+        Cmd::Layout { action } => {
+            let store = ctx.store()?;
+            let d = store.read()?;
+            let dir = store.path.parent().unwrap_or(Path::new("."));
+            let place = |mine: bool| if mine { "mine" } else { "deck" };
+            let (op, req) = match action {
+                LayoutCmd::Save {
+                    slide,
+                    name,
+                    mine,
+                    replace,
+                    at,
+                } => (
+                    "layout save",
+                    json!({"save": {
+                    "slide": slide, "name": name, "where": place(*mine), "replace": replace,
+                    "at": at.iter().cloned().collect::<std::collections::HashMap<_, _>>()}}),
+                ),
+                LayoutCmd::Rm { name, mine } => (
+                    "layout rm",
+                    json!({"rm": {"name": name, "where": place(*mine)}}),
+                ),
+                LayoutCmd::Rename { from, to, mine } => (
+                    "layout rename",
+                    json!({"rename": {"from": from, "to": to, "where": place(*mine)}}),
+                ),
+            };
+            let p = crate::layouts::change(&d, dir, &crate::store::config_root(), &req)?;
+            let shown = p.strip_prefix(dir).unwrap_or(&p);
+            Ok(json!({"ok": true, "op": op, "path": shown}))
         }
         Cmd::Layouts => {
             let store = ctx.store()?;

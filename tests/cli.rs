@@ -1223,3 +1223,78 @@ fn place_and_unplace() {
     );
     e.err(&["block", "unplace", "intro/0"], "E_INVALID_ARG", 1);
 }
+
+/// Spec 009 US3: save a slide as a layout (the deck's or yours), list it,
+/// add a slide from it, rename and remove it; built-in ones stay.
+#[test]
+fn own_layouts() {
+    let e = Env::new();
+    let v = e.ok(&[
+        "layout",
+        "save",
+        "results",
+        "results-plot",
+        "--at",
+        "results/0=60,300,400,150",
+    ]);
+    assert_eq!(v["path"], "_layouts/results-plot.md");
+    let saved = fs::read_to_string(e.dir.path().join("_layouts/results-plot.md")).unwrap();
+    assert!(
+        saved.contains("ph=text left=60 top=300 width=400 height=150"),
+        "{saved}"
+    );
+    assert!(
+        saved.contains("ph=image left=20 top=10 width=300 height=200"),
+        "{saved}"
+    );
+    let from = |v: &Value, n: &str| {
+        v["layouts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["name"] == n)
+            .map(|l| l["from"].clone())
+    };
+    assert_eq!(
+        from(&e.ok(&["layouts"]), "results-plot"),
+        Some(json!("deck"))
+    );
+    e.err(
+        &["layout", "save", "results", "results-plot"],
+        "E_CONFLICT",
+        1,
+    );
+    e.ok(&["layout", "save", "results", "results-plot", "--replace"]);
+    e.err(
+        &["layout", "save", "results", "Bad Name"],
+        "E_INVALID_ARG",
+        1,
+    );
+
+    let before = e.text();
+    let v = e.ok(&[
+        "add",
+        "--layout",
+        "results-plot",
+        "--after",
+        "intro",
+        "--title",
+        "Plot",
+    ]);
+    assert_eq!(v["placeholders"].as_array().unwrap().len(), 2);
+    e.ok(&["undo"]);
+    assert_eq!(e.text(), before, "saving a layout never touches the deck");
+
+    e.ok(&["layout", "save", "intro", "mine-1", "--mine"]);
+    assert!(e.dir.path().join(".config/layouts/mine-1.md").exists());
+    e.ok(&["layout", "rename", "mine-1", "mine-2", "--mine"]);
+    assert_eq!(from(&e.ok(&["layouts"]), "mine-2"), Some(json!("mine")));
+    e.ok(&["layout", "rm", "mine-2", "--mine"]);
+    assert_eq!(from(&e.ok(&["layouts"]), "mine-2"), None);
+    e.err(&["layout", "rm", "two-columns"], "E_INVALID_ARG", 1);
+    e.err(
+        &["layout", "rename", "two-columns", "x"],
+        "E_INVALID_ARG",
+        1,
+    );
+}

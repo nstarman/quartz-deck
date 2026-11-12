@@ -89,15 +89,15 @@ written first and seen failing.
 
 **Independent Test**: spec US3; quickstart §5.
 
-- [ ] T013 [P] [US3] Write failing tests:
+- [X] T013 [P] [US3] Write failing tests:
   - **`src/layouts.rs` units:** `save` turns a slide into a layout: the title becomes a placeholder; boxes become placeholders at their place; flow blocks become placeholders at the `at` given (or stacked full width); notes stay.
   - **More `src/layouts.rs` units:** name rules; no overwrite without `replace`; `rm`/`rename` refuse built-ins.
   - **`tests/cli.rs` `own_layouts`:** `qd layout save`, `--deck`/`--mine`, `rm`, `rename`.
   - **`tests/serve.rs` `layouts_over_http`:** 403 without the token, 409 on a taken name.
-- [ ] T014 [US3] Implement `layouts::save/rm/rename`, `qd layout …` in `src/cli.rs`, `POST /api/layouts` in `src/server.rs` (`authorized()`; writes only `<config>/layouts/` or `_layouts/`). T013 passes.
+- [X] T014 [US3] Implement `layouts::save/rm/rename`, `qd layout …` in `src/cli.rs`, `POST /api/layouts` in `src/server.rs` (`authorized()`; writes only `<config>/layouts/` or `_layouts/`). T013 passes.
 - [ ] T015 [P] [US3] Write failing browser test `save_a_layout`: Slide ▸ Save slide as layout… asks a name and where (this deck / mine); the gallery lists it under its heading; rename and delete from the gallery; a slide from it has the placeholders in place.
 - [ ] T016 [US3] Editor: the save sheet (measures flow elements' places for `at`), the gallery's sections and rename/delete (`src/ui/sheet.js`, `src/ui/editor.js`, `src/ui/actions.json`). T015 passes.
-- [ ] T017 [US3] Security: add `POST /api/layouts` to `another_origin_cannot_run_code_or_edit` (no file in `_layouts/` afterwards); a note in `specs/009-layouts-and-placement/checklists/security.md` (names, folders, mutation check).
+- [X] T017 [US3] Security: add `POST /api/layouts` to `another_origin_cannot_run_code_or_edit` (no file in `_layouts/` afterwards); a note in `specs/009-layouts-and-placement/checklists/security.md` (names, folders, mutation check).
 
 ---
 
