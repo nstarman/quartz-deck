@@ -413,6 +413,26 @@ enum BoxCmd {
         #[arg(id = "box", value_name = "BOX")]
         bx: String,
     },
+    /// Bring a box to the front (on top of every other box)
+    Front {
+        #[arg(id = "box", value_name = "BOX")]
+        bx: String,
+    },
+    /// Send a box to the back
+    Back {
+        #[arg(id = "box", value_name = "BOX")]
+        bx: String,
+    },
+    /// Bring a box forward, above the next box
+    Forward {
+        #[arg(id = "box", value_name = "BOX")]
+        bx: String,
+    },
+    /// Send a box backward, below the previous box
+    Backward {
+        #[arg(id = "box", value_name = "BOX")]
+        bx: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1048,6 +1068,10 @@ const API_OPS: &[&str] = &[
     "box move",
     "box resize",
     "box rm",
+    "box front",
+    "box back",
+    "box forward",
+    "box backward",
     "replace",
     "block add",
     "block move",
@@ -1612,6 +1636,10 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                 ctx.edit(|d| ops::box_resize(d, bx, size.unwrap(), *at))
             }
             BoxCmd::Rm { bx } => ctx.edit(|d| ops::box_rm(d, bx)),
+            BoxCmd::Front { bx } => ctx.edit(|d| ops::box_order(d, bx, "front")),
+            BoxCmd::Back { bx } => ctx.edit(|d| ops::box_order(d, bx, "back")),
+            BoxCmd::Forward { bx } => ctx.edit(|d| ops::box_order(d, bx, "forward")),
+            BoxCmd::Backward { bx } => ctx.edit(|d| ops::box_order(d, bx, "backward")),
         },
         Cmd::Replace {
             old,

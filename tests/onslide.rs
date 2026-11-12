@@ -3611,3 +3611,34 @@ async fn guides_and_snapping() {
     ed.wait_file(at(424.0, 300.0), "not snapped with the setting off")
         .await;
 }
+
+const STACK: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## A {#a}\n\n::: {#b-1 .absolute left=100 top=100 width=300 height=200}\nLower\n:::\n\n::: {#b-2 .absolute left=250 top=150 width=300 height=200}\nUpper\n:::\n";
+
+/// Spec 009 US5: Arrange ▸ Bring to front puts the lower box on top on the
+/// canvas (and in the file, after the other box); ⌥⇧⌘B sends it back again.
+#[tokio::test(flavor = "multi_thread")]
+async fn front_and_back() {
+    let Some(ed) = Ed::open(STACK).await else {
+        return;
+    };
+    // what is on top where the boxes overlap (under the selection's overlay)
+    let top = "(() => { const f = document.querySelector('#preview'); const d = f.contentDocument; const r = d.querySelector('#b-2').getBoundingClientRect(); return d.elementsFromPoint(r.left + 20, r.top + 20).map((e) => e.closest('[data-qd]')).find(Boolean)?.id; })()";
+    ed.settle().await;
+    ed.go("a").await;
+    assert_eq!(ed.eval(top).await, "b-2");
+    let before = ed.file();
+    ed.click_in_slide("#b-1").await;
+    ed.wait(&format!("{SEL} === 'a/0'")).await;
+    ed.menu("Arrange", "Bring to front").await;
+    ed.wait_file(
+        |f| f.find("Upper").unwrap() < f.find("Lower").unwrap(),
+        "brought to front",
+    )
+    .await;
+    ed.settle().await;
+    ed.wait(&format!("{top} === 'b-1'")).await;
+    // the moved box stays selected: ⌥⇧⌘B sends it to the back again
+    ed.wait(&format!("{SEL} === 'a/1'")).await;
+    ed.key("b", "KeyB", 66, 1 | 4 | 8).await; // ⌥⇧⌘B
+    ed.wait_file(|f| f == before, "sent to the back").await;
+}

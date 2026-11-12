@@ -1365,7 +1365,7 @@ async function elementTarget(ref) {
   const block = slide?.blocks[index];
   if (!block) return null;
   const el = elOf(ref);
-  return { ref, block, slideId, index, count: slide.blocks.length, el };
+  return { ref, block, slideId, index, count: slide.blocks.length, kinds: slide.blocks.map((b) => b.kind), el };
 }
 
 /** … or a slide. */
@@ -1390,7 +1390,7 @@ const actions = makeActions({
     const r = await op(name, args);
     if (!r) return null;
     if (name === 'dup') { state.goAfterRender = r.target; copiedFrom.set(r.target, slideById(args.slide)?.anchor); }
-    if (name.startsWith('block') && name !== 'block rm' && r.target?.includes('/')) state.sel = r.target;
+    if (/^(block|box) /.test(name) && name !== 'block rm' && r.target?.includes('/')) state.sel = r.target; // the element at its new place
     if (name === 'block rm' || name === 'rm') state.sel = null;
     if (name === 'block place') state.sel = args.element; // the box is where the element was
     await fetchDeck();
@@ -1908,7 +1908,7 @@ $('#present-more').addEventListener('click', (e) => {
 keys.on('undo', () => undoRedo('undo'));
 keys.on('redo', () => undoRedo('redo'));
 // element and slide actions: the right-click menus' own (actions.js), on what is selected / shown
-const ELEMENT = ['edit', 'source', 'cut', 'copy', 'paste', 'dup', 'delete', 'up', 'down', 'fragment', 'class-smaller', 'class-incremental', 'class-custom', 'place', 'unplace'];
+const ELEMENT = ['edit', 'source', 'cut', 'copy', 'paste', 'dup', 'delete', 'up', 'down', 'fragment', 'class-smaller', 'class-incremental', 'class-custom', 'place', 'unplace', 'box-front', 'box-forward', 'box-backward', 'box-back'];
 const SLIDE = ['slide-before', 'slide-after', 'slide-dup', 'slide-cut', 'slide-copy', 'slide-paste', 'slide-hide', 'slide-rm', 'slide-bg', 'slide-bgimg', 'slide-notes', 'slide-source', 'slide-link', 'layout-save'];
 for (const [ids, on, table] of [[ELEMENT, 'el', 'element'], [SLIDE, 'slide', 'slide']]) {
   for (const id of ids) {
@@ -1917,7 +1917,7 @@ for (const [ids, on, table] of [[ELEMENT, 'el', 'element'], [SLIDE, 'slide', 'sl
       // Paste reads the system clipboard on a key press; from a menu it needs our own copy
       enabled: (ctx) => !!ctx[on] && actions.can(id, ctx[on], table) && (!id.endsWith('paste') || !!ctx.e || !!state.clip),
       checked: (ctx) => ctx[on] && actions.checked(id, ctx[on], table),
-      why: (ctx) => ctx[on] && actions.why(id, ctx[on], table),
+      why: (ctx) => ctx[on] && actions.tip(id, ctx[on], table),
       run: (ctx) => actions.run(id, ctx[on], table),
     });
   }
