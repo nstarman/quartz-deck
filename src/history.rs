@@ -204,30 +204,141 @@ pub fn match_slide<'a>(d: &'a Deck, target: &Slide, unique_title: bool) -> Optio
 /// The current deck's slides that differ from `old` (or aren't in it), by
 /// id: what the editor marks while a version is open (US1).
 pub fn changed_since(current: &Deck, old: &Deck) -> Vec<String> {
-    current
-        .slides
-        .iter()
-        .filter(|s| {
-            match_slide(old, s, true)
-                .is_none_or(|o| old.slice(o.span).trim_end() != current.slice(s.span).trim_end())
-        })
-        .map(|s| s.id.clone())
+    diff(old, current)
+        .into_iter()
+        .filter(|c| matches!(c.kind, "changed" | "added"))
+        .map(|c| c.id)
         .collect()
 }
 
 /// `changed_since` against the deck at `rev`.
 pub fn changed_at(deck_path: &Path, current: &Deck, rev: &str) -> Result<Vec<String>> {
     let repo = repo(deck_path)?.ok_or(QdError::NoRepo)?;
+    Ok(changed_since(current, &deck_at(&repo, rev)?.1))
+}
+
+/// The deck at `rev` (resolved), parsed from the path it had then.
+fn deck_at(repo: &Repo, rev: &str) -> Result<(String, Deck)> {
     let rev = repo.resolve(rev)?;
-    let (versions, _) = log(&repo, ALL, 0)?;
-    let path = versions
+    let text = repo.text_at(&rev, &repo.path_at(&rev)?)?;
+    Ok((rev, Deck::parse(text)))
+}
+
+/// One slide that differs between two versions (data-model "SlideChange").
+#[derive(Serialize, Debug)]
+pub struct SlideChange {
+    pub kind: &'static str,
+    /// In the newer version (the older for `removed`).
+    pub id: String,
+    pub title: Option<String>,
+    /// 1-based positions.
+    pub from: Option<usize>,
+    pub to: Option<usize>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub diff: String,
+}
+
+/// The slides that differ from `old` to `new` (research R7), in the new order
+/// and then the removed ones. Slides match by explicit id, then by a title
+/// unique in both, then by position among the rest (slides without an
+/// explicit id). `moved` is same text out of order: the slides off the
+/// longest run kept in order, so a swap lists one slide, not both.
+pub fn diff(old: &Deck, new: &Deck) -> Vec<SlideChange> {
+    let (o, n) = (&old.slides, &new.slides);
+    let mut pair: Vec<Option<usize>> = vec![None; n.len()]; // new → old
+    let mut taken = vec![false; o.len()];
+    let unique = |d: &Deck, t: &Option<String>| {
+        t.is_some() && d.slides.iter().filter(|s| &s.title == t).count() == 1
+    };
+    let by_id = |a: &Slide, b: &Slide| a.id_explicit && b.id_explicit && a.id == b.id;
+    let by_title =
+        |a: &Slide, b: &Slide| a.title == b.title && unique(old, &a.title) && unique(new, &b.title);
+    for rule in [&by_id as &dyn Fn(&Slide, &Slide) -> bool, &by_title] {
+        for (j, b) in n.iter().enumerate() {
+            if pair[j].is_none()
+                && let Some(i) = (0..o.len()).find(|&i| !taken[i] && rule(&o[i], b))
+            {
+                (pair[j], taken[i]) = (Some(i), true);
+            }
+        }
+    }
+    let rest_old: Vec<usize> = (0..o.len())
+        .filter(|&i| !taken[i] && !o[i].id_explicit)
+        .collect();
+    let rest_new: Vec<usize> = (0..n.len())
+        .filter(|&j| pair[j].is_none() && !n[j].id_explicit)
+        .collect();
+    for (j, i) in rest_new.into_iter().zip(rest_old) {
+        (pair[j], taken[i]) = (Some(i), true);
+    }
+
+    let text = |d: &Deck, s: &Slide| d.slice(s.span).trim_end().to_string();
+    let same = |j: usize| pair[j].is_some_and(|i| text(old, &o[i]) == text(new, &n[j]));
+    // unchanged slides in new order, as old indices; out of the longest
+    // in-order run (Myers) means moved
+    let kept: Vec<usize> = (0..n.len()).filter(|&j| same(j)).collect();
+    let in_new: Vec<usize> = kept.iter().map(|&j| pair[j].unwrap()).collect();
+    let mut in_old = in_new.clone();
+    in_old.sort_unstable();
+    let mut moved = vec![false; n.len()];
+    for op in similar::capture_diff_slices(similar::Algorithm::Myers, &in_old, &in_new) {
+        if op.tag() != similar::DiffTag::Equal {
+            for k in op.new_range() {
+                moved[kept[k]] = true;
+            }
+        }
+    }
+
+    let change = |kind, s: &Slide, from: Option<usize>, to: Option<usize>, diff| SlideChange {
+        kind,
+        id: s.id.clone(),
+        title: s.title.clone(),
+        from: from.map(|i| i + 1),
+        to: to.map(|j| j + 1),
+        diff,
+    };
+    let mut out: Vec<SlideChange> = n
         .iter()
-        .find(|v| v.rev.as_deref() == Some(rev.as_str()))
-        .map_or(repo.path.clone(), |v| v.path.clone());
-    Ok(changed_since(
-        current,
-        &Deck::parse(repo.text_at(&rev, &path)?),
-    ))
+        .enumerate()
+        .filter_map(|(j, s)| match pair[j] {
+            None => Some(change("added", s, None, Some(j), String::new())),
+            Some(i) if !same(j) => Some(change(
+                "changed",
+                s,
+                Some(i),
+                Some(j),
+                crate::ops::diff(&text(old, &o[i]), &text(new, s)),
+            )),
+            Some(i) if moved[j] => Some(change("moved", s, Some(i), Some(j), String::new())),
+            _ => None,
+        })
+        .collect();
+    out.extend(
+        (0..o.len())
+            .filter(|&i| !taken[i])
+            .map(|i| change("removed", &o[i], Some(i), None, String::new())),
+    );
+    out
+}
+
+/// `qd diff FROM [TO]`: the slides that changed from one version to another,
+/// or to the current file when `to` is `None` (FR-013).
+pub fn compare(
+    deck_path: &Path,
+    current: &Deck,
+    from: &str,
+    to: Option<&str>,
+) -> Result<serde_json::Value> {
+    let repo = repo(deck_path)?.ok_or(QdError::NoRepo)?;
+    let (from, old) = deck_at(&repo, from)?;
+    let (to, slides) = match to {
+        Some(t) => {
+            let (t, new) = deck_at(&repo, t)?;
+            (t, diff(&old, &new))
+        }
+        None => ("uncommitted".into(), diff(&old, current)),
+    };
+    Ok(serde_json::json!({"kind": "diff", "from": from, "to": to, "slides": slides}))
 }
 
 /// `qd history`: the versions, the uncommitted state first; with `slide`,
@@ -507,6 +618,40 @@ mod tests {
         assert!(m.chars().count() <= 72, "{m}");
         assert!(m.starts_with("qd: title slide-0, title slide-1"), "{m}");
         assert!(m.ends_with(", … (agent)"), "{m}");
+    }
+
+    #[test]
+    fn diff_lists_only_changed_slides() {
+        let old = Deck::parse(
+            "## A {#a}\n\nx\n\n## Bee\n\ny\n\n## C {#c}\n\nz\n\n## D {#d}\n\nw\n\n## Gone {#gone}\n\nq\n\n## Same\n\n1\n\n## Same\n\n2\n".into(),
+        );
+        let new = Deck::parse(
+            "## D {#d}\n\nw\n\n## A {#a}\n\nx\n\n## Bee\n\nY2\n\n## C {#c}\n\nz\n\n## Same\n\n1\n\n## Same\n\n2b\n\n## New {#new}\n\nn\n".into(),
+        );
+        let got: Vec<(String, String, Option<usize>, Option<usize>)> = diff(&old, &new)
+            .iter()
+            .map(|c| (c.kind.into(), c.id.clone(), c.from, c.to))
+            .collect();
+        let want = [
+            ("moved", "d", Some(4), Some(1)),
+            ("changed", "bee", Some(2), Some(3)),
+            // two slides titled Same: matched by position among the rest
+            ("changed", new.slides[5].id.as_str(), Some(7), Some(6)),
+            ("added", "new", None, Some(7)),
+            ("removed", "gone", Some(5), None),
+        ];
+        let want: Vec<_> = want
+            .iter()
+            .map(|(k, i, f, t)| (k.to_string(), i.to_string(), *f, *t))
+            .collect();
+        assert_eq!(got, want);
+        let bee = &diff(&old, &new)[1];
+        assert!(
+            bee.diff.contains("-y\n") && bee.diff.contains("+Y2\n"),
+            "{}",
+            bee.diff
+        );
+        assert!(diff(&old, &old).is_empty());
     }
 
     #[test]

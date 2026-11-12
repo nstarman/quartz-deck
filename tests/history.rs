@@ -99,6 +99,55 @@ fn history_lists_versions() {
     assert_eq!(v["versions"][0]["rev"], Value::Null);
 }
 
+/// 012 US3 (T012): `qd diff REV [REV]` lists the slides that changed.
+#[test]
+fn diff_versions() {
+    let t = tempfile::tempdir().unwrap();
+    five_commits(t.path());
+    let kinds = |v: &Value| -> Vec<(String, String, Value, Value)> {
+        v["slides"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| {
+                let s = |k: &str| c[k].as_str().unwrap().to_string();
+                (s("kind"), s("id"), c["from"].clone(), c["to"].clone())
+            })
+            .collect()
+    };
+    // against the file (equal to HEAD): the reorder's text, then two edited
+    let (ok, v) = run(t.path(), &["diff", "HEAD~2"]);
+    assert!(ok, "{v}");
+    assert_eq!(v["kind"], "diff");
+    assert_eq!(v["to"], "uncommitted");
+    assert_eq!(
+        kinds(&v),
+        [("changed".into(), "two".into(), 1.into(), 1.into())]
+    );
+    assert!(v["slides"][0]["diff"].as_str().unwrap().contains("+B2"));
+    // two versions, the older under its old name (renamed since)
+    let (ok, v) = run(t.path(), &["diff", "HEAD~4", "HEAD~1"]);
+    assert!(ok, "{v}");
+    // one changed and moved below two; two kept its text, so it isn't listed
+    // (a swap moves one slide, and the changed one is listed anyway)
+    assert_eq!(
+        kinds(&v),
+        [("changed".into(), "one".into(), 1.into(), 2.into())]
+    );
+    // an uncommitted added slide
+    let deck = t.path().join("talks/deck.qmd");
+    let text = std::fs::read_to_string(&deck).unwrap();
+    std::fs::write(&deck, format!("{text}\n## Three {{#three}}\n\nC\n")).unwrap();
+    let (_, v) = run(t.path(), &["diff", "HEAD"]);
+    assert_eq!(
+        kinds(&v),
+        [("added".into(), "three".into(), Value::Null, 3.into())]
+    );
+    let (ok, v) = run(t.path(), &["diff", "nosuch"]);
+    assert!(!ok);
+    assert_eq!(v["error"]["code"], "E_NOT_FOUND");
+}
+
 #[test]
 fn history_per_slide() {
     let t = tempfile::tempdir().unwrap();
