@@ -17,7 +17,8 @@ fn qd(dir: &Path, args: &[&str]) -> (bool, Value, Value) {
 #[test]
 fn nothing_to_run_needs_no_environment() {
     let d = tempfile::tempdir().unwrap();
-    let text = "---\ntitle: T\n---\n\n## R {#r}\n\n```{r}\n1 + 1\n```\n";
+    // shown code only (an `{r}` cell would run in R since 013)
+    let text = "---\ntitle: T\n---\n\n## R {#r}\n\n```r\n1 + 1\n```\n";
     std::fs::write(d.path().join("deck.qmd"), text).unwrap();
     let (ok, r, e) = qd(d.path(), &["run", "--all"]);
     assert!(

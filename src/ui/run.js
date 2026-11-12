@@ -22,6 +22,7 @@ const ta = pane.querySelector('textarea');
 const gutter = pane.querySelector('.gutter');
 const dock = pane.querySelector('.outdock');
 const badge = pane.querySelector('.kernel');
+let engine = 'Python'; // the deck's engine, as the badge names it (spec 013)
 let needsEnv = false; // code cells and no environment yet: Set up Python… is offered
 
 let api = null; // { say, flush, selected?(), changed?() }
@@ -61,6 +62,7 @@ async function refresh() {
   const r = await fetch('/api/outputs').then((x) => x.json()).catch(() => null);
   if (!r?.order) return;
   ({ order } = r);
+  if (r.engine?.label) engine = r.engine.label;
   outs = r.cells || {};
   drawGutter();
   drawDock();
@@ -120,7 +122,11 @@ async function envStatus() {
 /** SSE events from the server (contracts/http.md). */
 export function listen(es) {
   const on = (name, f) => es.addEventListener(name, (e) => f(JSON.parse(e.data)));
-  on('kernel', ({ state }) => { badge.textContent = `Python · ${state === 'starting' ? 'starting…' : state}`; badge.dataset.state = state; });
+  on('kernel', ({ state, engine: e }) => {
+    if (e) engine = e.label;
+    badge.textContent = `${engine} · ${state === 'starting' ? 'starting…' : state}`;
+    badge.dataset.state = state;
+  });
   on('run_started', ({ cells }) => { cells.forEach((c) => running.add(c)); drawGutter(); api.changed?.(); });
   on('cell_output', (o) => { running.delete(o.cell); outs[o.cell] = { ...o, stale: false }; focus = o.cell; drawGutter(); drawDock(); api.changed?.(); });
   on('run_done', ({ status, error }) => {
