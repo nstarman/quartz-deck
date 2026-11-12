@@ -9,16 +9,14 @@ import { token, el, runCells, stopRun, cellState, runnable } from '/ui/run.js';
 const STATES = ['running', 'error', 'stopped', 'stale'];
 const btn = el('button', { type: 'button', id: 'runbtn', hidden: true });
 document.body.append(btn);
-let api = null; // { doc(), frame, pageRect(el), selected() }
+let api = null; // { elOf(ref), frame, pageRect(el), selected() }
 let hovered = null;
-
-const cellEl = (ref) => api.doc()?.querySelector(`[data-qd="${CSS.escape(ref)}"]`);
 
 /** The ▶ (■ while running) at the top right of the hovered cell, else the selected one. */
 export function place() {
   if (!api) return;
   const ref = [hovered, api.selected()].find((r) => r && runnable(r));
-  const c = token && ref && cellEl(ref);
+  const c = token && ref && api.elOf(ref);
   btn.hidden = !c;
   if (!c) return;
   const busy = cellState(ref) === 'running';
@@ -34,7 +32,7 @@ export function place() {
 /** Each cell's state as a class on it (again after every render), then the ▶. */
 export function mark() {
   if (!api) return;
-  for (const c of api.doc()?.querySelectorAll('[data-qd]') || []) {
+  for (const c of api.frame.contentDocument?.querySelectorAll('[data-qd]') || []) {
     const s = runnable(c.dataset.qd) ? cellState(c.dataset.qd) : '';
     for (const k of STATES) c.classList.toggle(`qd-${k}`, k === s);
   }
@@ -49,13 +47,11 @@ export function hover(node) {
 
 /** A cell ended: its output block, swapped in place (or added) at once. */
 function swap({ cell, html }) {
-  const c = html && cellEl(cell);
+  const c = html && api.elOf(cell);
   if (!c) return;
-  const t = api.doc().createElement('template');
-  t.innerHTML = html;
   const old = c.querySelector('.qd-output');
-  if (old) old.replaceWith(t.content);
-  else c.append(t.content);
+  if (old) old.outerHTML = html;
+  else c.insertAdjacentHTML('beforeend', html);
 }
 
 export function initRunSlide(a, es) {

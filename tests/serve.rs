@@ -691,9 +691,7 @@ fn run_cells_over_http() {
         let o: Value = serde_json::from_str(&ev.wait("cell_output", wait).unwrap()).unwrap();
         seen.push((o["run"].as_u64().unwrap(), o["counter"].as_u64().unwrap()));
     }
-    let mut sorted = seen.clone();
-    sorted.sort();
-    assert_eq!(seen, sorted, "in the order asked");
+    assert!(seen.is_sorted(), "in the order asked: {seen:?}");
     ev.wait("run_done", wait).unwrap();
     std::thread::sleep(Duration::from_millis(300));
     let outputs: Value = serde_json::from_str(&get(p, "/api/outputs").1).unwrap();

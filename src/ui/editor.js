@@ -1730,8 +1730,9 @@ setTheme(framed.get('theme'));
 const runExternal = framed.get('run') === 'external';
 document.documentElement.classList.toggle('run-external', runExternal);
 if (!runExternal) {
-  run.initRun({ say, flush: pane.save, selected: () => (state.session ? null : state.sel), changed: runslide.mark });
-  runslide.initRunSlide({ doc: () => frame.contentDocument, frame, pageRect, selected: () => (state.session ? null : state.sel) }, es);
+  const selected = () => (state.session ? null : state.sel);
+  run.initRun({ say, flush: pane.save, selected, changed: runslide.mark });
+  runslide.initRunSlide({ elOf, frame, pageRect, selected }, es);
 }
 if (keys.framed) {
   // only the panel that framed this page, and only navigation/display — never edits or code

@@ -500,8 +500,7 @@ impl Ed {
     }
     /// Hover a preview element until its + / drag handles show.
     async fn hover(&self, sel: &str) {
-        let (x, y) = self.slide_point(sel).await;
-        self.page.move_mouse(Point { x, y }).await.unwrap();
+        self.hover_slide(sel).await;
         self.wait("!document.querySelector('#hoverbar').hidden")
             .await;
     }
@@ -1461,13 +1460,6 @@ impl Ed {
         let (x, y) = self.slide_point(sel).await;
         self.page.move_mouse(Point { x, y }).await.unwrap();
     }
-    /// The class list of preview element `sel`, as one string.
-    async fn slide_classes(&self, sel: &str) -> String {
-        let v = self
-            .eval(&format!("{FRAME}.querySelector({sel:?})?.className ?? ''"))
-            .await;
-        v.as_str().unwrap_or_default().to_string()
-    }
 }
 
 /// 013 US1 (T004): a ▶ on a cell on the slide runs it; the new output is
@@ -1500,7 +1492,13 @@ async fn run_from_slide() {
         120,
     )
     .await;
-    assert!(!ed.slide_classes(cell).await.contains("qd-running"));
+    assert_eq!(
+        ed.eval(&format!(
+            "{FRAME}.querySelector(\"{cell}\").classList.contains('qd-running')"
+        ))
+        .await,
+        false
+    );
     assert_eq!(
         ed.eval("document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide().id")
             .await,
@@ -1577,8 +1575,7 @@ impl Ed {
     }
     /// Replace the pop-up's text (as typing would) and press ⇧Enter in it.
     async fn popup_run(&self, text: &str) {
-        self.eval(&format!("(() => {{ const t = {SRC}; t.value = {text:?}; t.dispatchEvent(new Event('input')); t.focus(); }})()"))
-            .await;
+        self.set_source(text).await;
         self.key("Enter", "Enter", 13, 8).await;
     }
 }
