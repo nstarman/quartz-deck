@@ -37,19 +37,22 @@ pio.renderers.default = "qd-deck"
 
 /// Does the deck have Python cells that import Plotly?
 pub fn uses_plotly(d: &Deck) -> bool {
-    d.blocks().any(|b| {
-        let t = d.slice(b.span);
-        b.kind == crate::deck::BlockKind::Cell
-            && t.lines().next().is_some_and(|l| l.contains("{python"))
-            && t.lines().any(|l| {
-                let l = l.trim_start();
-                l.starts_with("import plotly") || l.starts_with("from plotly")
-            })
-    })
+    d.blocks().any(|b| is_plotly_cell(d, b))
+}
+
+/// A Python cell that imports Plotly.
+pub fn is_plotly_cell(d: &Deck, b: &crate::deck::Block) -> bool {
+    let t = d.slice(b.span);
+    b.kind == crate::deck::BlockKind::Cell
+        && t.lines().next().is_some_and(|l| l.contains("{python"))
+        && t.lines().any(|l| {
+            let l = l.trim_start();
+            l.starts_with("import plotly") || l.starts_with("from plotly")
+        })
 }
 
 /// A Quarto option set on the deck: top level or under `format: revealjs:`.
-fn opt<'a>(meta: &'a Yaml, key: &str) -> Option<&'a Yaml> {
+pub(crate) fn opt<'a>(meta: &'a Yaml, key: &str) -> Option<&'a Yaml> {
     meta.get(key)
         .or_else(|| meta.get("format")?.get("revealjs")?.get(key))
         .filter(|v| !v.is_null())
@@ -222,7 +225,7 @@ fn header_html(mathjax: &Path, plotly: Option<&Path>) -> String {
     )
 }
 
-fn nanos() -> u128 {
+pub(crate) fn nanos() -> u128 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos())

@@ -127,7 +127,7 @@ async function op(name, args = {}, { fileExpect = true } = {}) {
   status('Saving…', true);
   const res = await fetch('/api/op', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-QD-Token': run.token },
     body: JSON.stringify({ op: name, args, ...(fileExpect ? { expect: state.version } : {}) }),
   });
   const body = await res.json().catch(() => ({}));
@@ -854,6 +854,17 @@ async function renderDeck() {
 }
 // ---------- export (spec 002 US4) ----------
 
+/** An export result in the side panel, opened for it even when the person keeps
+ * the panel closed (008); "Back to slide" puts the panel back as it was. */
+function showResult(view) {
+  $('[data-act=close]', view).addEventListener('click', () => {
+    layout('panel-open', 'ui.form_panel', !!settings.get('ui.form_panel'), false);
+    renderPanel();
+  });
+  layout('panel-open', 'ui.form_panel', true, false);
+  panel.replaceChildren(view);
+}
+
 function renderExportPanel(r) {
   const view = $('#export-panel').content.cloneNode(true);
   const status = $('.status', view);
@@ -892,8 +903,55 @@ function renderExportPanel(r) {
     a.textContent = label;
     links.append(a, ' ');
   }
-  $('[data-act=close]', view).addEventListener('click', () => renderPanel());
-  panel.replaceChildren(view);
+  showResult(view);
+}
+
+/** Another format (spec 011): the losses first, then the export, then what it kept. */
+async function exportTo(to, label) {
+  const dry = await op('export', { to, dry_run: true });
+  if (!dry) return;
+  const lines = dry.losses.map((l) => `• ${cap(l.what)}${l.slides.length ? ` (${l.slides.join(', ')})` : ''}`);
+  const notes = dry.losses.some((l) => l.feature === 'notes');
+  const message = (notes ? 'Speaker notes will not show in this format.\n\n' : '')
+    + (lines.length ? 'What changes:\n' + lines.join('\n') : 'Everything on these slides carries over.');
+  if (!(await confirmSheet(`Export ${label}?`, message, 'Export'))) return;
+  busy.export = true;
+  say(`Exporting ${label}…`);
+  try {
+    const r = await op('export', { to });
+    if (r) renderFormatPanel(r, label);
+  } finally {
+    busy.export = false;
+  }
+}
+const cap = (t) => t[0].toUpperCase() + t.slice(1);
+
+function renderFormatPanel(r, label) {
+  const view = $('#export-panel').content.cloneNode(true);
+  const name = r.out.split(/[\\/]/).pop();
+  $('.status', view).textContent = `Exported ${label}: ${name}` + (r.losses.length ? '. What changed:' : ', with everything kept.');
+  $('.status', view).className = 'status ok';
+  for (const l of r.losses) {
+    const li = document.createElement('li');
+    li.className = 'warn';
+    li.append(cap(l.what) + (l.slides.length ? ': ' : '.'));
+    for (const [i, s] of l.slides.entries()) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'slide-link';
+      b.textContent = s;
+      b.addEventListener('click', () => { state.sel = null; go(s); });
+      li.append(i ? ', ' : '', b);
+    }
+    $('.problems', view).append(li);
+  }
+  for (const n of r.notes) $('.problems', view).append(Object.assign(document.createElement('li'), { textContent: n }));
+  if (r.href) {
+    const a = Object.assign(document.createElement('a'), { href: r.href + '?v=' + Date.now(), download: name, textContent: `Download ${name} ↓`, title: r.out });
+    $('.links', view).append(a);
+  }
+  $('.hint', view).textContent = `Saved as ${r.out}. Slide names go to that slide.`;
+  showResult(view);
 }
 
 async function exportDeck(pdf) {
@@ -1903,14 +1961,19 @@ keys.setContext(async (e) => {
 keys.on('render', { enabled: () => !busy.render, run: renderDeck });
 keys.on('export', { enabled: () => !busy.export, run: () => exportDeck(false) });
 keys.on('export-pdf', { enabled: () => !busy.export, run: () => exportDeck(true) });
+keys.on('export-pptx', { enabled: () => !busy.export, run: () => exportTo('pptx', 'PowerPoint') });
+keys.on('export-beamer', { enabled: () => !busy.export, run: () => exportTo('beamer', 'Beamer PDF') });
 keys.on('preview', () => window.open('/present/', '_blank', 'noopener'));
 keys.on('present', () => present(false));
 keys.on('present-start', () => present(true));
 $('#present').addEventListener('click', () => keys.run('present'));
-$('#present-more').addEventListener('click', (e) => {
+/** A header button that opens a menu of actions. */
+const menuButton = (sel, ids, disabled = () => false) => $(sel).addEventListener('click', (e) => {
   const r = e.currentTarget.getBoundingClientRect();
-  openMenu(['present', 'present-start', 'preview'].map((id) => ({ label: keys.action(id).label, shortcut: keys.shortcut(id), run: () => keys.run(id) })), r.left, r.bottom + 2);
+  openMenu(ids.map((id) => ({ label: keys.action(id).label, shortcut: keys.shortcut(id), disabled: disabled(), run: () => keys.run(id) })), r.left, r.bottom + 2);
 });
+menuButton('#export-menu', ['export', 'export-pdf', 'export-pptx', 'export-beamer'], () => busy.export);
+menuButton('#present-more', ['present', 'present-start', 'preview']);
 keys.on('undo', () => undoRedo('undo'));
 keys.on('redo', () => undoRedo('redo'));
 // element and slide actions: the right-click menus' own (actions.js), on what is selected / shown
