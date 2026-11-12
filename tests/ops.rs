@@ -838,3 +838,55 @@ fn place_refusals() {
             .contains("\n![](plot.png)\n")
     );
 }
+
+/// Spec 009 US5: stacking reorders a box among the slide's boxes only (later is
+/// on top); the flow elements keep their order. One that can't move further says so.
+#[test]
+fn stacking_reorders_only_boxes() {
+    use quartz_deck::deck::BlockKind;
+    use quartz_deck::error::QdError;
+    let bx = |n: u8| format!("::: {{#b-{n} .absolute left=1 top=1 width=9 height=9}}\n{n}\n:::");
+    let src = format!(
+        "---\nformat: revealjs\n---\n\n## A {{#a}}\n\nText.\n\n{}\n\nMore.\n\n{}\n\n{}\n",
+        bx(1),
+        bx(2),
+        bx(3)
+    );
+    let d = Deck::parse(src);
+    let order = |to: &str, r: &str| -> Vec<String> {
+        let p = ops::box_order(&d, r, to).unwrap();
+        assert_eq!(p.op, format!("box {to}"));
+        let a = Deck::parse(ops::apply(&d.text, &p).unwrap());
+        a.slides[0]
+            .blocks
+            .iter()
+            .map(|b| match b.kind {
+                BlockKind::Box => b.id.clone(),
+                _ => a.slice(b.span).to_string(),
+            })
+            .collect()
+    };
+    assert_eq!(
+        order("front", "b-1"),
+        ["Text.", "More.", "b-2", "b-3", "b-1"]
+    );
+    assert_eq!(
+        order("back", "b-3"),
+        ["Text.", "b-3", "b-1", "More.", "b-2"]
+    );
+    assert_eq!(
+        order("forward", "b-1"),
+        ["Text.", "More.", "b-2", "b-1", "b-3"]
+    );
+    assert_eq!(
+        order("backward", "b-3"),
+        ["Text.", "b-1", "More.", "b-3", "b-2"]
+    );
+    let why = |r: Result<Patch, QdError>| match r {
+        Err(QdError::InvalidArg(m)) => m,
+        other => panic!("expected a refusal, got {other:?}"),
+    };
+    assert!(why(ops::box_order(&d, "b-3", "front")).contains("front"));
+    assert!(why(ops::box_order(&d, "b-1", "backward")).contains("back"));
+    assert!(why(ops::box_order(&d, "a/0", "front")).contains("placed"));
+}

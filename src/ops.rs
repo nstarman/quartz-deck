@@ -1446,3 +1446,41 @@ pub fn block_unplace(d: &Deck, r: &str) -> Result<Patch> {
         Vec::new(),
     ))
 }
+
+/// Stack a box (R6): positioned elements stack in source order, later on top.
+/// `front`/`back` move it after the slide's last box or before its first;
+/// `forward`/`backward` past the next or previous box. Flow elements keep their order.
+pub fn box_order(d: &Deck, r: &str, to: &str) -> Result<Patch> {
+    let (s, b) = d.element(r)?;
+    if b.kind != BlockKind::Box {
+        return Err(QdError::InvalidArg(format!(
+            "'{r}' is not placed freely; only placed elements stack"
+        )));
+    }
+    let boxes: Vec<usize> = (0..s.blocks.len())
+        .filter(|&j| s.blocks[j].kind == BlockKind::Box)
+        .collect();
+    let k = boxes
+        .iter()
+        .position(|&j| s.blocks[j].span == b.span)
+        .unwrap();
+    let refuse = |m: &str| Err(QdError::InvalidArg(format!("'{r}' is already {m}")));
+    let (after, j) = match to {
+        "front" | "forward" if k + 1 == boxes.len() => return refuse("in front"),
+        "back" | "backward" if k == 0 => return refuse("at the back"),
+        "front" => (true, boxes[boxes.len() - 1]),
+        "forward" => (true, boxes[k + 1]),
+        "back" => (false, boxes[0]),
+        "backward" => (false, boxes[k - 1]),
+        _ => unreachable!("box order {to}"),
+    };
+    let next = format!("{}/{j}", s.id);
+    let pos = if after {
+        Pos::After(&next)
+    } else {
+        Pos::Before(&next)
+    };
+    let mut p = block_move(d, r, pos)?;
+    p.op = format!("box {to}");
+    Ok(p)
+}
