@@ -8,6 +8,7 @@ pub mod error;
 pub mod export;
 pub mod focus;
 pub mod images;
+pub mod inline;
 pub mod kernel;
 pub mod layouts;
 pub mod offline;

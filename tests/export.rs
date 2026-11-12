@@ -58,6 +58,7 @@ fn deck(name: &str) -> (tempfile::TempDir, PathBuf) {
     std::fs::copy(Path::new(FIX).join(name), d.path().join("deck.qmd")).unwrap();
     copy_dir(&Path::new(FIX).join("media"), &d.path().join("media"));
     copy_dir(&Path::new(FIX).join("apps"), &d.path().join("apps"));
+    copy_dir(&Path::new(FIX).join("figures"), &d.path().join("figures"));
     let p = d.path().to_path_buf();
     (d, p)
 }
@@ -137,20 +138,149 @@ fn ships_files_that_cannot_be_inlined() {
     if !ready() {
         return;
     }
-    for (name, file) in [
-        ("bgvideo.qmd", "media/clip.mp4"),
-        ("bgiframe.qmd", "apps/app.html"),
-    ] {
-        let (_t, dir) = deck(name);
-        let (code, v, err) = run(&dir, &["export"]);
-        assert_eq!(code, 0, "{name}: {v}\n{err}");
-        assert_eq!(v["files"], serde_json::json!([file]), "{name}: {v}");
-        assert!(
-            dir.join("export").join(file).exists(),
-            "{name}: {file} not shipped"
-        );
-        assert!(!problem_codes(&v).contains(&"P_MISSING_FILE".into()), "{v}");
+    let (_t, dir) = deck("bgvideo.qmd");
+    let (code, v, err) = run(&dir, &["export"]);
+    assert_eq!(code, 0, "{v}\n{err}");
+    assert_eq!(v["files"], serde_json::json!(["media/clip.mp4"]), "{v}");
+    assert!(dir.join("export/media/clip.mp4").exists());
+    assert!(!problem_codes(&v).contains(&"P_MISSING_FILE".into()), "{v}");
+
+    // a background iframe is inlined (spec 010), not shipped
+    let (_t, dir) = deck("bgiframe.qmd");
+    let (code, v, err) = run(&dir, &["export"]);
+    assert_eq!(code, 0, "{v}\n{err}");
+    assert_eq!(v["files"], serde_json::json!([]), "{v}");
+    assert!(!dir.join("export/apps").exists());
+    let html = std::fs::read_to_string(dir.join("export/deck.html")).unwrap();
+    assert!(html.contains("id=\"inlined-app-0\""));
+}
+
+/// Spec 010 US1-US4: the one-file deck. The 2.5 MB app asks the web for an
+/// image when it runs, so the blocked request proves it ran from its `blob:`
+/// URL (in its own iframe target); that is the only error the export reports.
+#[test]
+fn one_file_export() {
+    if !ready() {
+        return;
     }
+    let (_t, dir) = deck("onefile.qmd");
+    let mut x = 7u32;
+    let noise: String = (0..1_300_000)
+        .map(|_| {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            format!("{:02x}", x as u8)
+        })
+        .collect();
+    std::fs::write(
+        dir.join("apps/big.html"),
+        format!("<!doctype html><p>big app</p><img src=\"https://qd.invalid/app-ran.png\"><!-- {noise} -->"),
+    )
+    .unwrap();
+    assert!(std::fs::metadata(dir.join("apps/big.html")).unwrap().len() > 2_500_000);
+    // a Quarto project, so Quarto copies the deck's resources into the output folder
+    std::fs::write(dir.join("_quarto.yml"), "project:\n  type: default\n").unwrap();
+
+    let (code, v, err) = run(&dir, &["export"]);
+    assert_eq!(code, 1, "{v}\n{err}");
+    let problems = v["check"]["problems"].as_array().unwrap();
+    let errors: Vec<&Value> = problems
+        .iter()
+        .filter(|p| p["severity"] == "error")
+        .collect();
+    assert_eq!(errors.len(), 1, "{problems:#?}");
+    assert_eq!(errors[0]["code"], "P_NETWORK");
+    assert_eq!(errors[0]["slide"], "app");
+    assert_eq!(errors[0]["url"], "https://qd.invalid/app-ran.png");
+    // the box and its paragraph, as check_overflow.py lists them
+    let overflow: Vec<&Value> = problems
+        .iter()
+        .filter(|p| p["code"] == "P_OVERFLOW")
+        .collect();
+    assert!(
+        !overflow.is_empty() && overflow.iter().all(|p| p["slide"] == "wide"),
+        "{problems:#?}"
+    );
+    let largest = v["check"]["size"]["largest"].as_array().unwrap();
+    assert!(
+        largest
+            .iter()
+            .any(|p| p["kind"] == "app apps/big.html (gzip)"),
+        "{v}"
+    );
+    assert_eq!(v["files"], serde_json::json!([]));
+
+    let staging = PathBuf::from(v["staging"].as_str().unwrap());
+    let mut listed: Vec<String> = std::fs::read_dir(&staging)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    listed.sort();
+    assert_eq!(
+        listed,
+        vec![".qd-export", "deck.html"],
+        "Quarto's copies are pruned"
+    );
+    let html = std::fs::read_to_string(staging.join("deck.html")).unwrap();
+    assert!(html.contains("id=\"inlined-app-0\"") && html.contains("id=\"inlined-app-1\""));
+    assert!(html.contains("<object data=\"data:image/svg+xml;base64,"));
+    assert!(
+        html.contains("href=\"data:image/png;base64,"),
+        "SVG <image> inlined"
+    );
+    assert_eq!(
+        html.matches("data-dup-data-src=\"dup-").count(),
+        2,
+        "photo stored once"
+    );
+    assert!(html.contains("these are the speaker notes"));
+
+    // the PDF of that file: -notes.pdf, recompressed when ghostscript is here
+    let (code, p, err) = run(
+        &dir,
+        &[
+            "pdf",
+            "--notes",
+            "--html",
+            staging.join("deck.html").to_str().unwrap(),
+        ],
+    );
+    assert_eq!(code, 0, "{p}\n{err}");
+    assert!(
+        p["path"].as_str().unwrap().ends_with("deck-notes.pdf"),
+        "{p}"
+    );
+    let gs = Command::new("gs")
+        .arg("--version")
+        .output()
+        .is_ok_and(|o| o.status.success());
+    assert_eq!(p["compressed"], gs, "{p}");
+    assert!(p["pages"].as_u64().unwrap() > 6, "{p}");
+
+    // a copy to share: no notes
+    let (_, v, _) = run(&dir, &["export", "--strip-notes", "--out", "share"]);
+    let html = std::fs::read_to_string(Path::new(v["staging"].as_str().unwrap()).join("deck.html"))
+        .unwrap();
+    assert!(!html.contains("these are the speaker notes"));
+}
+
+#[test]
+fn missing_app_fails_the_export() {
+    if !ready() {
+        return;
+    }
+    let (_t, dir) = deck("onefile.qmd"); // apps/big.html is not written
+    let (code, v, _) = run(&dir, &["export"]);
+    assert_eq!(code, 1, "{v}");
+    let p = v["check"]["problems"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["code"] == "P_MISSING_FILE")
+        .unwrap_or_else(|| panic!("{v}"));
+    assert_eq!(p["url"], "apps/big.html");
+    assert!(!dir.join("export").exists());
 }
 
 #[test]

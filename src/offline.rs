@@ -8,6 +8,8 @@ use chromiumoxide::cdp::browser_protocol::fetch::{
     ContinueRequestParams, EnableParams, EventRequestPaused, FailRequestParams, RequestPattern,
 };
 use chromiumoxide::cdp::browser_protocol::network::ErrorReason;
+use chromiumoxide::cdp::browser_protocol::page::FrameId;
+use chromiumoxide::cdp::browser_protocol::target::GetTargetsParams;
 use chromiumoxide::cdp::js_protocol::runtime::{EvaluateParams, EventExceptionThrown};
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures_util::StreamExt;
@@ -29,7 +31,7 @@ pub struct Problem {
 }
 
 impl Problem {
-    fn error(
+    pub(crate) fn error(
         code: &'static str,
         slide: Option<String>,
         message: String,
@@ -59,6 +61,9 @@ fn hint(code: &str) -> &'static str {
             "math is not typeset offline; use MathJax via `qd export` (KaTeX is never embedded)"
         }
         "P_OFFLINE_INCOMPATIBLE" => "this feature needs a server; remove it for an offline deck",
+        "P_OVERFLOW" => {
+            "this element sticks out of the slide (cut off or over the edge when presented): move or shrink it"
+        }
         "P_NOTES_VISIBLE" => {
             "`show-notes` in the YAML shows speaker notes to the audience; remove it (qd pdf --notes prints notes)"
         }
@@ -75,6 +80,14 @@ pub struct CheckReport {
     pub slides: usize,
     pub steps: usize,
     pub problems: Vec<Problem>,
+    /// Where the file's bytes go (spec 010 FR-008).
+    pub size: Size,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct Size {
+    pub bytes: usize,
+    pub largest: Vec<crate::inline::Part>,
 }
 
 /// Requests that load nothing from the network by design (FR-003).
@@ -93,10 +106,12 @@ type Seen = Arc<Mutex<Vec<(String, Option<String>)>>>;
 
 /// A headless page that cannot reach the network; records what it tried.
 pub(crate) struct OfflinePage {
-    pub browser: Browser,
+    pub browser: Arc<Browser>,
     pub page: Page,
     pub blocked: Seen,
     pub errors: Seen,
+    /// `file:` URLs of files that do not exist.
+    pub missing: Seen,
     /// Slide anchor being shown, for attributing requests/errors.
     pub current: Arc<Mutex<Option<String>>>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
@@ -130,32 +145,50 @@ impl OfflinePage {
         let mut tasks = vec![tokio::spawn(async move {
             while handler.next().await.is_some() {}
         })];
+        let browser = Arc::new(browser);
         let page = browser.new_page("about:blank").await.map_err(other)?;
         let blocked = Arc::new(Mutex::new(Vec::new()));
         let errors = Arc::new(Mutex::new(Vec::new()));
+        let missing: Seen = Arc::new(Mutex::new(Vec::new()));
         let current = Arc::new(Mutex::new(None));
 
-        page.execute(
-            EnableParams::builder()
-                .pattern(RequestPattern::builder().url_pattern("*").build())
-                .build(),
-        )
-        .await
-        .map_err(other)?;
-        let mut paused = page
+        // at the browser level: an app's iframe runs in its own process (target),
+        // which a page-level interception never sees
+        browser
+            .execute(
+                EnableParams::builder()
+                    .pattern(RequestPattern::builder().url_pattern("*").build())
+                    .build(),
+            )
+            .await
+            .map_err(other)?;
+        let mut paused = browser
             .event_listener::<EventRequestPaused>()
             .await
             .map_err(other)?;
-        let (p, b, c) = (page.clone(), blocked.clone(), current.clone());
+        let (p, pg, b, m, c) = (
+            browser.clone(),
+            page.clone(),
+            blocked.clone(),
+            missing.clone(),
+            current.clone(),
+        );
         tasks.push(tokio::spawn(async move {
             while let Some(ev) = paused.next().await {
                 let url = ev.request.url.clone();
                 if allowed(&url) {
+                    if file_path(&url).is_some_and(|f| !f.exists()) {
+                        m.lock().unwrap().push((url, c.lock().unwrap().clone()));
+                    }
                     let _ = p
                         .execute(ContinueRequestParams::new(ev.request_id.clone()))
                         .await;
                 } else {
-                    b.lock().unwrap().push((url, c.lock().unwrap().clone()));
+                    // a frame of the deck, or an app's own iframe target under one;
+                    // Chrome's own (headless UI) requests are blocked too but not reported
+                    if in_deck(&p, &pg, &ev.frame_id).await {
+                        b.lock().unwrap().push((url, c.lock().unwrap().clone()));
+                    }
                     let _ = p
                         .execute(FailRequestParams::new(
                             ev.request_id.clone(),
@@ -189,6 +222,7 @@ impl OfflinePage {
             page,
             blocked,
             errors,
+            missing,
             current,
             tasks,
             profile,
@@ -222,8 +256,15 @@ impl OfflinePage {
     }
 
     pub async fn close(mut self) {
-        let _ = self.browser.close().await;
-        let _ = self.browser.wait().await;
+        // the event tasks hold the browser; the first task drives it, so it stops last
+        for t in self.tasks.drain(1..) {
+            t.abort();
+            let _ = t.await;
+        }
+        if let Some(b) = Arc::get_mut(&mut self.browser) {
+            let _ = b.close().await;
+            let _ = b.wait().await;
+        }
         for t in self.tasks.drain(..) {
             t.abort();
         }
@@ -235,6 +276,44 @@ pub(crate) fn runtime() -> Result<tokio::runtime::Runtime> {
     Ok(tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?)
+}
+
+/// Is `frame` the deck's page, one of its frames, or an out-of-process iframe below them?
+async fn in_deck(browser: &Browser, page: &Page, frame: &FrameId) -> bool {
+    let frames = page.frames().await.unwrap_or_default();
+    let targets = browser
+        .execute(GetTargetsParams::default())
+        .await
+        .map(|t| t.result.target_infos)
+        .unwrap_or_default();
+    let mut id = frame.clone();
+    for _ in 0..8 {
+        if frames.contains(&id) {
+            return true;
+        }
+        let parent = targets
+            .iter()
+            .find(|t| t.r#type == "iframe" && t.target_id.inner() == id.inner())
+            .and_then(|t| t.parent_frame_id.clone());
+        match parent {
+            Some(p) => id = p,
+            None => return false,
+        }
+    }
+    false
+}
+
+/// The file a `file:` URL names (without `?query`/`#hash`, `%`-decoded).
+fn file_path(url: &str) -> Option<PathBuf> {
+    let p = url.strip_prefix("file://")?.split(['?', '#']).next()?;
+    Some(PathBuf::from(
+        &*percent_encoding::percent_decode_str(p).decode_utf8_lossy(),
+    ))
+}
+
+/// `qd pdf` / `qd export --pdf` file name: `<stem>.pdf`, or `<stem>-notes.pdf` with notes.
+pub fn pdf_name(stem: &str, notes: bool) -> String {
+    format!("{stem}{}.pdf", if notes { "-notes" } else { "" })
 }
 
 pub(crate) fn file_url(html: &Path) -> Result<String> {
@@ -258,7 +337,8 @@ const SLIDES_JS: &str = r#"Reveal.getSlides().map(s => {
   const frags = new Set([...s.querySelectorAll('.fragment')].map(f => f.getAttribute('data-fragment-index')));
   const bg = ['data-background-video', 'data-background-iframe', 'data-background-image']
     .map(a => s.getAttribute(a)).filter(Boolean);
-  return { id: s.id || null, h: i.h, v: i.v, fragments: frags.size, backgrounds: bg };
+  const apps = s.querySelectorAll('iframe').length + s.hasAttribute('data-background-iframe');
+  return { id: s.id || null, h: i.h, v: i.v, fragments: frags.size, backgrounds: bg, apps };
 })"#;
 
 /// After showing a slide: is any math left untypeset?
@@ -270,20 +350,61 @@ const RAW_TEX_JS: &str = r#"(() => {
 const CONFIG_JS: &str = r#"(() => { const c = Reveal.getConfig();
   return { showNotes: !!c.showNotes, multiplex: !!c.multiplex, parallax: c.parallaxBackgroundImage || null }; })()"#;
 
-/// Is `p` a local path (not a URL or data URI)?
-fn local(p: &str) -> bool {
-    !(p.contains("://") || p.starts_with("data:") || p.starts_with('#') || p.starts_with("//"))
-}
+/// Elements outside the current slide (port of the quarto-revealjs skill's
+/// `check_overflow.py`), in slide coordinates with 2 px of slack. Not counted
+/// (false alarms there): speaker notes, SVG and MathJax internals, anything
+/// inside a clipping container, invisible or empty elements.
+const OVERFLOW_JS: &str = r#"(() => {
+  const tol = 2, box = document.querySelector('.reveal .slides').getBoundingClientRect();
+  const s = Reveal.getScale(), W = Reveal.getConfig().width, H = Reveal.getConfig().height;
+  const slide = Reveal.getCurrentSlide(), out = [];
+  const skip = (e) => e.closest('aside.notes, .notes, svg *, mjx-container *');
+  const clipped = (e) => {
+    for (let a = e.parentElement; a && a !== slide; a = a.parentElement) {
+      const o = getComputedStyle(a);
+      if (o.overflowX !== 'visible' || o.overflowY !== 'visible') return true;
+    }
+    return false;
+  };
+  for (const e of slide.querySelectorAll('*')) {
+    if (e.tagName === 'SECTION' || skip(e)) continue;
+    const st = getComputedStyle(e);
+    if (st.display === 'none' || st.visibility === 'hidden') continue;
+    const r = e.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) continue;
+    const x = (r.left - box.left) / s, y = (r.top - box.top) / s, w = r.width / s, h = r.height / s;
+    if (x < -tol || y < -tol || x + w > W + tol || y + h > H + tol) {
+      if (clipped(e)) continue;
+      const name = e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') +
+        (typeof e.className === 'string' && e.className.trim() ? '.' + e.className.trim().split(/\s+/).join('.') : '');
+      const text = (e.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 40);
+      out.push(`${name} at ${Math.round(x)},${Math.round(y)} size ${Math.round(w)}x${Math.round(h)}` +
+               ` (slide ${W}x${H})${text ? ' "' + text + '"' : ''}`);
+    }
+  }
+  return out;
+})()"#;
+
+use crate::inline::local;
 
 /// Run the offline check on a rendered deck.
 pub fn check(html: &Path, chrome: &Found) -> Result<CheckReport> {
     let url = file_url(html)?;
-    let dir = html.parent().unwrap_or(Path::new(".")).to_path_buf();
+    // canonical, like the URLs the page requests
+    let dir = std::fs::canonicalize(html)?
+        .parent()
+        .unwrap_or(Path::new("."))
+        .to_path_buf();
     runtime()?.block_on(async {
         let op = OfflinePage::open(chrome).await?;
         let res = check_page(&op, &url, &dir).await;
         op.close().await;
         let (slides, steps, mut problems) = res?;
+        let text = std::fs::read_to_string(html)?;
+        let size = Size {
+            bytes: text.len(),
+            largest: crate::inline::largest(&text, 8),
+        };
         problems.sort_by(|a, b| {
             (a.slide.is_some(), &a.slide, a.code).cmp(&(b.slide.is_some(), &b.slide, b.code))
         });
@@ -295,6 +416,7 @@ pub fn check(html: &Path, chrome: &Found) -> Result<CheckReport> {
             slides,
             steps,
             problems,
+            size,
         })
     })
 }
@@ -311,6 +433,9 @@ async fn check_page(
         )));
     }
     let mut problems = Vec::new();
+    // no slide animation: measured boxes are where they stay
+    op.eval("Reveal.configure({ transition: 'none', backgroundTransition: 'none' })")
+        .await?;
     let slides: Vec<Value> = serde_json::from_value(op.eval(SLIDES_JS).await?).unwrap_or_default();
     let mut steps = 0;
     for s in &slides {
@@ -323,7 +448,9 @@ async fn check_page(
         for f in 0..frags {
             op.eval(&format!("Reveal.slide({h}, {v}, {f})")).await?;
         }
-        tokio::time::sleep(Duration::from_millis(120)).await; // let lazy media/iframes request
+        // let lazy media request; an app (an iframe) gets time to load and run on its own slide
+        let apps = s["apps"].as_u64().unwrap_or(0) > 0;
+        tokio::time::sleep(Duration::from_millis(if apps { 700 } else { 120 })).await;
         if op.eval(RAW_TEX_JS).await? == Value::Bool(true) {
             problems.push(Problem::error(
                 "P_RAW_TEX",
@@ -331,6 +458,17 @@ async fn check_page(
                 "math on this slide is shown as raw TeX".into(),
                 None,
             ));
+        }
+        // the slide at its fullest: every fragment is shown now
+        for m in op.eval(OVERFLOW_JS).await?.as_array().into_iter().flatten() {
+            problems.push(Problem {
+                code: "P_OVERFLOW",
+                severity: "warning",
+                slide: anchor.clone(),
+                message: format!("outside the slide: {}", m.as_str().unwrap_or("")),
+                hint: hint("P_OVERFLOW"),
+                url: None,
+            });
         }
         for bg in s["backgrounds"]
             .as_array()
@@ -388,6 +526,23 @@ async fn check_page(
                 slide.clone(),
                 format!("tried to load {u}"),
                 Some(u.clone()),
+            ));
+        }
+    }
+    // any other local file that failed to load (an <object>, an image in an app…)
+    for (u, slide) in op.missing.lock().unwrap().iter() {
+        let f = file_path(u).unwrap_or_default();
+        let rel = f
+            .strip_prefix(dir)
+            .unwrap_or(&f)
+            .to_string_lossy()
+            .into_owned();
+        if !problems.iter().any(|p| p.url.as_ref() == Some(&rel)) {
+            problems.push(Problem::error(
+                "P_MISSING_FILE",
+                slide.clone(),
+                format!("'{rel}' is missing"),
+                Some(rel),
             ));
         }
     }
@@ -456,6 +611,8 @@ pub struct PdfResult {
     pub pages: usize,
     pub per_slide: bool,
     pub notes: bool,
+    /// Images recompressed by ghostscript (200 dpi JPEG).
+    pub compressed: bool,
 }
 
 /// Number of pages in a PDF (page objects, not the `/Pages` tree nodes).
@@ -506,10 +663,58 @@ pub fn print_pdf(
         std::fs::create_dir_all(dir)?;
     }
     std::fs::write(out, &bytes)?;
+    let compressed = recompress(out)?;
     Ok(PdfResult {
         path: out.to_path_buf(),
-        pages: count_pdf_pages(&bytes),
+        pages: count_pdf_pages(&std::fs::read(out)?),
         per_slide,
         notes,
+        compressed,
     })
+}
+
+/// Chrome stores images losslessly (a WebP becomes a large Flate image):
+/// when ghostscript is installed, rewrite them as 200 dpi JPEG, in RGB
+/// (the skill's `make_pdf.py`; about 50 MB -> 12 MB on a real talk).
+fn recompress(pdf: &Path) -> Result<bool> {
+    let Some(gs) = crate::render::which("gs", std::env::var_os("PATH")) else {
+        return Ok(false);
+    };
+    let small = pdf.with_extension("small.pdf");
+    let mut out = std::ffi::OsString::from("-sOutputFile=");
+    out.push(&small);
+    let st = std::process::Command::new(gs)
+        .args([
+            "-q",
+            "-dNOPAUSE",
+            "-dBATCH",
+            "-dSAFER",
+            "-sDEVICE=pdfwrite",
+            "-dCompatibilityLevel=1.7",
+            "-sColorConversionStrategy=RGB",
+            "-dDownsampleColorImages=true",
+            "-dColorImageResolution=200",
+            "-dColorImageDownsampleThreshold=1.2",
+            "-dColorImageDownsampleType=/Bicubic",
+            "-dAutoFilterColorImages=false",
+            "-dColorImageFilter=/DCTEncode",
+            "-dJPEGQ=88",
+            "-dDownsampleGrayImages=true",
+            "-dGrayImageResolution=200",
+            "-dAutoFilterGrayImages=false",
+            "-dGrayImageFilter=/DCTEncode",
+        ])
+        .arg(out)
+        .arg(pdf)
+        .output()?;
+    if !st.status.success() {
+        let _ = std::fs::remove_file(&small);
+        return Err(QdError::Io(std::io::Error::other(format!(
+            "ghostscript could not recompress {}: {}",
+            pdf.display(),
+            String::from_utf8_lossy(&st.stderr).trim()
+        ))));
+    }
+    std::fs::rename(&small, pdf)?;
+    Ok(true)
 }

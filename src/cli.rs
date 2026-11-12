@@ -89,7 +89,7 @@ enum Cmd {
         #[arg(long)]
         no_download: bool,
     },
-    /// Export a self-contained offline deck (one HTML + files that cannot be inlined), checked offline
+    /// Export one self-contained offline HTML (apps, objects, SVG images inlined; only background videos ship beside it), checked offline
     Export {
         /// Destination folder (default: export/ next to the deck)
         #[arg(long)]
@@ -103,6 +103,9 @@ enum Cmd {
         /// PDF: one page per slide instead of per fragment step
         #[arg(long, requires = "pdf")]
         per_slide: bool,
+        /// Remove speaker notes (a copy to share)
+        #[arg(long)]
+        strip_notes: bool,
         /// Never download MathJax or a browser (also QD_NO_DOWNLOAD=1)
         #[arg(long)]
         no_download: bool,
@@ -112,7 +115,7 @@ enum Cmd {
         /// Rendered HTML to print (default: export/<deck>.html)
         #[arg(long)]
         html: Option<PathBuf>,
-        /// Output PDF (default: next to the HTML)
+        /// Output PDF (default: next to the HTML; <deck>-notes.pdf with --notes)
         #[arg(long)]
         out: Option<PathBuf>,
         /// Speaker notes on separate pages
@@ -611,13 +614,13 @@ fn output_of(cmd: &str) -> &'static str {
         }
         "meta" => r#"{"version","front_matter":{...}}"#,
         "check" => {
-            r#"{"ok","version","problems":[{"severity":"error|warning","code","slide","message"}]} or with --offline {"kind":"offline_check","ok","html","slides","steps","problems":[{"code":"P_*","severity","slide","message","hint","url"?}]}"#
+            r#"{"ok","version","problems":[{"severity":"error|warning","code","slide","message"}]} or with --offline {"kind":"offline_check","ok","html","slides","steps","problems":[{"code":"P_*","severity","slide","message","hint","url"?}],"size":{"bytes","largest":[{"bytes","kind","context"}]}}"#
         }
         "serve" => r#"{"url","port","pid"} (one line, then serves until stopped)"#,
         "url" => r#"{"url"}"#,
-        "pdf" => r#"{"path","pages","per_slide","notes"}"#,
+        "pdf" => r#"{"path","pages","per_slide","notes","compressed"}"#,
         "export" => {
-            r#"{"kind":"export","ok","out","html","files":[...],"check":{offline_check},"assets":[{"name","version","sha256","source","path"}],"pdf"?:{"path","pages","per_slide","notes"},"staging"? (when ok is false)}"#
+            r#"{"kind":"export","ok","out","html","files":[...],"check":{offline_check},"assets":[{"name","version","sha256","source","path"}],"pdf"?:{"path","pages","per_slide","notes","compressed"},"staging"? (when ok is false)}"#
         }
         "browser" => r#"{"path","source":"env|installed|download","version"} or {"ok","removed"}"#,
         "render" => r#"{"ok","output":"<absolute path>","format","log"}"#,
@@ -1262,6 +1265,7 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             pdf,
             notes,
             per_slide,
+            strip_notes,
             no_download,
         } => crate::export::run(
             &ctx.store()?,
@@ -1270,6 +1274,7 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                 pdf: *pdf,
                 notes: *notes,
                 per_slide: *per_slide,
+                strip_notes: *strip_notes,
                 allow_download: allow_download(*no_download),
             },
         ),
@@ -1305,7 +1310,10 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                     h
                 }
             };
-            let out = out.clone().unwrap_or_else(|| html.with_extension("pdf"));
+            let out = out.clone().unwrap_or_else(|| {
+                let stem = html.file_stem().unwrap_or_default().to_string_lossy();
+                html.with_file_name(crate::offline::pdf_name(&stem, *notes))
+            });
             let chrome = crate::browser::find(&ctx.cache_root(), allow_download(*no_download))?;
             Ok(serde_json::to_value(crate::offline::print_pdf(
                 &html, &out, *notes, *per_slide, &chrome,

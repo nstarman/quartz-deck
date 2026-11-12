@@ -153,26 +153,16 @@ pub fn export_copy(d: &Deck, deck_dir: &Path, setup: &Setup) -> Result<String> {
     ))
 }
 
-/// Is `p` a path in the deck folder (not a URL or data URI)?
-fn local(p: &str) -> bool {
-    !(p.contains("://")
-        || p.starts_with("data:")
-        || p.starts_with("//")
-        || p.starts_with('#')
-        || p.is_empty())
-}
-
-/// Files the deck references that `embed-resources` does not inline
-/// (background video/iframe, parallax image), relative to the deck.
+/// Files the deck references that neither `embed-resources` nor
+/// [`crate::inline`] inlines (background video, parallax image), relative to the deck.
 pub fn collect_files(d: &Deck) -> Vec<String> {
     let mut out: Vec<String> = d
         .slides
         .iter()
         .filter_map(|s| s.attrs.as_ref())
-        .flat_map(|a| {
-            ["background-video", "background-iframe"]
-                .into_iter()
-                .filter_map(|k| a.get(k))
+        .filter_map(|a| {
+            // background iframes (apps) are inlined: crate::inline
+            a.get("background-video")
         })
         .map(String::from)
         .collect();
@@ -181,7 +171,7 @@ pub fn collect_files(d: &Deck) -> Vec<String> {
             .and_then(Yaml::as_str)
             .map(String::from),
     );
-    out.retain(|p| local(p));
+    out.retain(|p| crate::inline::local(p));
     out.sort();
     out.dedup();
     out
@@ -194,6 +184,7 @@ pub struct Options {
     pub pdf: bool,
     pub notes: bool,
     pub per_slide: bool,
+    pub strip_notes: bool,
     pub allow_download: bool,
 }
 
@@ -315,10 +306,17 @@ pub fn run(store: &crate::store::Store, opts: &Options) -> Result<serde_json::Va
         }
     }
     let staging = parent.join(format!(".{out_name}.qd-staging-{}", nanos()));
-    let rendered = crate::render::render(&store.path, &copy, "export", &staging, false)?;
+    let render_dir = staging.join(".render");
+    let rendered = crate::render::render(&store.path, &copy, "export", &render_dir, false)?;
     let html = staging.join(format!("{stem}.html"));
-    std::fs::rename(&rendered, &html)?;
-    let _ = std::fs::remove_dir_all(staging.join(format!("{stem}.qd-export_files")));
+    let one = crate::inline::inline(
+        &std::fs::read_to_string(&rendered)?,
+        &deck_dir,
+        opts.strip_notes,
+    );
+    std::fs::write(&html, &one.html)?;
+    // the deck is one file now: Quarto's copies of its resources (never pruned) are not needed
+    std::fs::remove_dir_all(&render_dir)?;
     let files = collect_files(&d);
     for f in &files {
         let src = deck_dir.join(f);
@@ -334,6 +332,17 @@ pub fn run(store: &crate::store::Store, opts: &Options) -> Result<serde_json::Va
     )?;
 
     let mut report = crate::offline::check(&html, &chrome)?;
+    for p in one.missing {
+        if !report.problems.iter().any(|q| q.url.as_ref() == Some(&p)) {
+            report.problems.push(crate::offline::Problem::error(
+                "P_MISSING_FILE",
+                None,
+                format!("'{p}' (an app, <object> or SVG image) is missing"),
+                Some(p),
+            ));
+        }
+    }
+    report.ok = !report.problems.iter().any(|p| p.severity == "error");
     let mut assets = vec![mathjax];
     assets.extend(plotly);
     let final_html = out.join(format!("{stem}.html"));
@@ -346,7 +355,7 @@ pub fn run(store: &crate::store::Store, opts: &Options) -> Result<serde_json::Va
     let pdf = if opts.pdf {
         let p = crate::offline::print_pdf(
             &html,
-            &staging.join(format!("{stem}.pdf")),
+            &staging.join(crate::offline::pdf_name(&stem, opts.notes)),
             opts.notes,
             opts.per_slide,
             &chrome,
@@ -372,7 +381,7 @@ pub fn run(store: &crate::store::Store, opts: &Options) -> Result<serde_json::Va
     let mut v = json!({"kind": "export", "ok": true, "out": out, "html": final_html, "files": files,
         "check": report, "assets": assets});
     if let Some(mut p) = pdf {
-        p.path = out.join(format!("{stem}.pdf"));
+        p.path = out.join(crate::offline::pdf_name(&stem, opts.notes));
         v["pdf"] = serde_json::to_value(p).unwrap();
     }
     Ok(v)
@@ -539,6 +548,6 @@ mod tests {
         );
         let mut f = collect_files(&d);
         f.sort();
-        assert_eq!(f, vec!["apps/app.html", "img/sky.png", "media/clip.mp4"]);
+        assert_eq!(f, vec!["img/sky.png", "media/clip.mp4"]);
     }
 }
