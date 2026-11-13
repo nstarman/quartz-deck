@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 
 const BRIDGE: &str = include_str!("kernel_bridge.py");
 const BRIDGE_R: &str = include_str!("kernel_bridge.R");
+const BRIDGE_JL: &str = include_str!("kernel_bridge.jl");
 
 /// Cold start measured at ~8 s (environment + kernel); allow for a first sync.
 const START: Duration = Duration::from_secs(180);
@@ -187,6 +188,18 @@ impl Session {
                 c.args(["-e", BRIDGE_R]);
                 let [w, h, dpi] = engine.fig;
                 c.env("QD_FIG", format!("{w} {h} {dpi}"));
+                c
+            }
+            Kind::Julia => {
+                let julia = crate::render::which("julia", path).ok_or_else(|| {
+                    QdError::Engine(
+                        "julia cells: Julia is not installed (https://julialang.org/downloads)"
+                            .into(),
+                    )
+                })?;
+                let mut c = std::process::Command::new(julia);
+                // the deck's own Julia project, found upwards from its folder (as Quarto)
+                c.args(["--startup-file=no", "--project=@.", "-e", BRIDGE_JL]);
                 c
             }
         };
