@@ -1,0 +1,17 @@
+---
+title: "paper"
+format: revealjs
+---
+
+## A result {#result}
+
+{{< paper url="https://doi.org/10.3847/1538-4357/ab5d40" who="Bonaca et al." year="2020" corner="true" >}}
+
+The icon at the top right links to the paper the result comes from.
+
+## References {#refs .bibliography}
+
+<!-- bibliography:start -->
+- {{< paper url="https://doi.org/10.3847/1538-4357/ab5d40" who="Bonaca et al." year="2020" title="High-resolution spectroscopy of the GD-1 stellar stream" >}}
+- {{< paper url="https://www.astropy.org" who="Astropy Collaboration" year="2022" title="The Astropy Project" >}}
+<!-- bibliography:end -->
