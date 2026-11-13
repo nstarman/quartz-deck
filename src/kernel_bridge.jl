@@ -68,8 +68,8 @@ function run(code)
                 v === nothing || endswith(rstrip(code), ';') || display(cap, v)
             end
         catch e
-            status = e isa InterruptException ? "stopped" : "error"
-            m = e isa LoadError ? e.error : e
+            m = e isa LoadError ? e.error : e  # include_string wraps what the cell threw
+            status = m isa InterruptException ? "stopped" : "error"
             msg = sprint(showerror, m)
             push!(out, obj(["kind" => js("error"), "ename" => js(string(nameof(typeof(m)))),
                             "evalue" => js(msg), "traceback" => "[" * js(msg) * "]"]))
