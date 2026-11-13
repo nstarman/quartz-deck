@@ -63,7 +63,8 @@ ta.addEventListener('keydown', (e) => {
   e.stopPropagation();
   if (e.key === 'Escape') { e.preventDefault(); if (err.textContent) current.cancel(); else current.save(ta.value); return; }
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); current.save(ta.value); }
-  if (e.key === 'Enter' && e.shiftKey && current.run) { e.preventDefault(); current.run(ta.value); }
+  // code runs only on the person's own key or click (spec 004), never a synthetic event
+  if (e.key === 'Enter' && e.shiftKey && current.run && e.isTrusted) { e.preventDefault(); current.run(ta.value); }
 });
 ta.addEventListener('blur', () => {
   // clicking elsewhere saves, unless the last save was refused (fix it or Esc)
@@ -71,4 +72,4 @@ ta.addEventListener('blur', () => {
 });
 for (const b of [cancel, runB]) b.addEventListener('mousedown', (e) => e.preventDefault()); // keep the text focused: no blur save
 cancel.addEventListener('click', () => current?.cancel());
-runB.addEventListener('click', () => current?.run?.(ta.value));
+runB.addEventListener('click', (e) => e.isTrusted && current?.run?.(ta.value));

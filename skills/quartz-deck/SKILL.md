@@ -92,7 +92,7 @@ when the current directory has exactly one `.qmd`.
 | validate | `qd check` (add `--render` to run Quarto) |
 | final output | `qd render` (→ `output` path; `--to pdf` etc. for other formats) |
 | Python code cells | each deck has its own locked environment: `qd env init` (uv; `--tool pixi` for pixi with PyPI packages), `qd env add numpy matplotlib`, `qd env` (where, `lock_current`), `qd env sync` (install the lock on a new machine / relock after a hand edit). The manifest and lockfile are part of the deck: commit them. Never `pip install`; `qd render` runs the cells inside the environment |
-| run code / check a result | `qd run results/1` (JSON outputs; figures as files: `outputs[].path`), `qd run --all` (stops at the first error), `--fresh` to restart and run from the top, `--timeout 60`. With `qd serve` running it uses the editor's live session and the person sees the outputs; otherwise a fresh one-shot session. Fix a failing cell with `qd replace --old … --new …`, then run it again |
+| run code / check a result | `qd run results/1` (JSON outputs; figures as files: `outputs[].path`), `qd run --all` (stops at the first error), `--fresh` to restart and run from the top, `--timeout 60`. With `qd serve` running it uses the editor's live session and the person sees the outputs; otherwise a fresh one-shot session. Fix a failing cell with `qd replace --old … --new …`, then run it again. Cells run with the deck's engine as Quarto picks it (`engine` in the result: `jupyter` with its `kernel`, `knitr` for R, `julia`); `{ojs}` cells run only in the editor's page |
 | stored outputs | `qd outputs` (or `qd outputs results/1`): last outputs per cell, `stale: true` once the cell changed |
 | works without network? | `qd check --offline` (headless Chrome, network blocked; problems per slide with hints) |
 | live preview | `qd serve --detach`, then `qd url results`; `qd stop` when done |
@@ -222,7 +222,7 @@ communicate with Zotero"). It is an edit like any other (`--dry-run`,
 | `E_LOCK_STALE` | manifest edited, lock out of date | `qd env sync` |
 | `E_ENV_TOOL` / `E_ENV` | uv/pixi missing, or it failed | install per the hint / read `details` |
 | `E_RUN` | a cell raised or was stopped (`qd run`) | read the error output in the stdout result; fix the cell; run again |
-| `E_NOT_CODE` / `E_ENGINE` | not an executable cell / not Python | run only ```` ```{python} ```` cells; `qd render` still runs others |
+| `E_NOT_CODE` / `E_ENGINE` | not an executable cell / the deck's engine can't run it here: the message names what is missing (a Jupyter kernel, with the ones installed; R, or its knitr/rmarkdown packages; Julia), or the cell's language isn't the deck's (an `{r}` cell in a Jupyter deck), or it's an `{ojs}` cell | tell the person what to install; `{ojs}` cells run in the editor; `qd render` still runs the whole deck |
 | `E_NO_REPO` | the deck is not in a git repository | `qd history --init`, if the person wants a history |
 | `E_NO_GIT` / `E_GIT` | git missing, or git refused (its message) | install git / read the message |
 | `E_REPO_BUSY` | a merge, rebase, cherry-pick or bisect, or a detached HEAD, so no commit is made | only in `commit.error`; the edit is kept and committed after the person finishes |

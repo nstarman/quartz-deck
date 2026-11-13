@@ -182,3 +182,13 @@ The header's **Export ▾** shows File ▸ Export's items. `export` and
 | View ▸ Restore this version… | — | `history-restore` |
 | Slide menus ▸ Restore slide from this version (a version open) | — | `history-restore-slide` |
 | Element menus ▸ Restore from this version (a version open) | — | `history-restore-element` |
+
+## Added by 013 (run on the slide)
+
+`run-cell` (Run ▸ Run cell, ⇧Enter) now also runs the selected cell on the
+slide, not only the cell under the source pane's caret.
+
+| Control | Key | Id |
+|---|---|---|
+| ▶ / ■ on a code cell (hovered or selected) | ⇧Enter (selected) | `run-cell` / `run-stop` |
+| Source pop-up on a code cell ▸ Run | ⇧Enter | (the pop-up's own button: save, then `run-cell`) |
