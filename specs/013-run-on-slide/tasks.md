@@ -203,7 +203,7 @@ As built:
   - the 007 action inventory: "Added by 013".
 - [X] T018 Run quickstart §1–§5 in the browser pane, and record it in `specs/013-run-on-slide/checklists/quickstart-run.md`.
 - [X] T019 Final constitution re-check in `plan.md`. fmt, clippy, `cargo test --no-fail-fast` and `node --test vscode/test/*.test.js` green.
-- [ ] T020 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
+- [X] T020 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
 
 ---
 
