@@ -118,7 +118,7 @@ fn no_r() {
     assert!(r["error"]["message"].as_str().unwrap().contains("R"), "{r}");
 }
 
-const JULIA_DECK: &str = "---\ntitle: J\nformat: revealjs\nengine: julia\n---\n\n## A {#a}\n\n```{julia}\nx = 20\n```\n\n## B {#b}\n\n```{julia}\nprintln(\"hi\")\nx + 22\n```\n\n## C {#c}\n\n```{julia}\nerror(\"boom\")\n```\n\n## Slow {#slow}\n\n```{julia}\nsleep(30)\n```\n";
+const JULIA_DECK: &str = "---\ntitle: J\nformat: revealjs\nengine: julia\n---\n\n## A {#a}\n\n```{julia}\nx = 20\n```\n\n## B {#b}\n\n```{julia}\nprintln(\"hi\")\nx + 22\n```\n\n## C {#c}\n\n```{julia}\nerror(\"boom\")\n```";
 
 /// 013 US5 (T015): Quarto's native Julia engine: one session (state carries),
 /// printed output and the last value, errors, --timeout. Needs Julia.
@@ -150,7 +150,13 @@ fn julia_cells() {
         c["outputs"][0]["evalue"].as_str().unwrap().contains("boom"),
         "{r}"
     );
-    let (_, r) = qd(dir, &[], &["run", "slow/0", "--timeout", "2"]);
+    // --timeout stops a slow cell (its own deck: a one-shot run stops at the error above)
+    let t2 = tempfile::tempdir().unwrap();
+    deck(
+        t2.path(),
+        "---\ntitle: J\nengine: julia\n---\n\n## Slow {#slow}\n\n```{julia}\nsleep(30)\n```\n",
+    );
+    let (_, r) = qd(t2.path(), &[], &["run", "slow/0", "--timeout", "2"]);
     assert_eq!(r["status"], "stopped", "{r}");
 }
 
