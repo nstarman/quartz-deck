@@ -4190,6 +4190,16 @@ async fn history_compare() {
         .await;
     ed.wait("location.hash === '#/b' && document.querySelector('#then iframe').contentWindow.location.hash === '#/b'")
         .await;
+    // the version beside still loading when the deck moves (a slow CI runner):
+    // once loaded it shows the deck's slide, not the one its URL named
+    let then = "document.querySelector('#then iframe')";
+    ed.eval(&format!("(async () => {{ const f = {then}; f.src = f.src.split('#')[0].split('?')[0] + '?again#/a'; (await import('/ui/history.js')).follow('b'); }})()"))
+        .await;
+    ed.wait_secs(
+        &format!("{then}.contentWindow.location.search === '?again' && {then}.contentWindow.Reveal?.isReady?.() && {then}.contentWindow.location.hash === '#/b'"),
+        30,
+    )
+    .await;
 }
 
 /// 012 US4 (T014): with a version open, a slide's right-click menu restores
