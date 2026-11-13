@@ -244,6 +244,24 @@ Decision, to confirm by probe when US5 starts (no Julia here):
 - It uses the person's Julia, with the deck's `--project` if Quarto's
   front matter names one.
 
+As built and checked in CI (T014, `julia-actions/setup-julia`, Julia 1.x):
+- **Detection.** `quarto inspect` answers `["julia"]` for an `engine: julia`
+  deck even without Julia installed, so detection works as for knitr.
+- **The bridge.** `kernel_bridge.jl` uses Base only, because there is no
+  JSON package. It reads a request's `op` and `code` with a pattern plus
+  `unescape_string`, and writes replies by hand.
+- **Running a cell.** Code runs in a fresh module, which Restart replaces.
+  A cell's printed output and its last value come back as separate outputs
+  (`hi`, then `42`), and `display()` is captured by MIME (png, svg, html,
+  text).
+- **Errors** carry Julia's own message (`ErrorException: boom`).
+- **Stopping.** SIGINT gives `stopped` once the `InterruptException` is
+  unwrapped from `include_string`'s `LoadError`. `Base.exit_on_sigint(false)`
+  keeps Julia running.
+- **Projects.** Julia starts with `--project=@.`: the deck's own project,
+  found upwards from its folder. Front-matter `julia: exeflags` are not
+  passed yet.
+
 ## R11. Tests without R or Julia on this machine
 
 Decision:

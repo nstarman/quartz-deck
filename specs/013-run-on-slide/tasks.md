@@ -188,9 +188,9 @@ As built:
 
 **Independent Test**: spec US5; quickstart §5.
 
-- [ ] T014 [US5] CI: add Julia (`julia-actions/setup-julia@v2`). Probe research R10 there: `quarto inspect` on an `engine: julia` deck, and a scratch `kernel_bridge.jl` that keeps state, captures a plot's `image/png` and answers SIGINT. Record the results in research.md R10.
-- [ ] T015 [P] [US5] Write failing tests in `tests/engine.rs`, **`julia_cells`** (skips without `julia`): an `engine: julia` deck runs three dependent cells, keeping state, and a missing Julia gives `E_ENGINE` with the install hint.
-- [ ] T016 [US5] Add `src/kernel_bridge.jl` and the `julia` kind in `src/engine.rs` (the command with the deck's `--project` when the front matter names one). T015 passes.
+- [X] T014 [US5] CI: add Julia (`julia-actions/setup-julia@v2`). Probe research R10 there: `quarto inspect` on an `engine: julia` deck, and a scratch `kernel_bridge.jl` that keeps state, captures a plot's `image/png` and answers SIGINT. Record the results in research.md R10.
+- [X] T015 [P] [US5] Write failing tests in `tests/engine.rs`, **`julia_cells`** (skips without `julia`): an `engine: julia` deck runs three dependent cells, keeping state, and a missing Julia gives `E_ENGINE` with the install hint.
+- [X] T016 [US5] Add `src/kernel_bridge.jl` and the `julia` kind in `src/engine.rs` (the command with the deck's `--project` when the front matter names one). T015 passes.
 
 ---
 
