@@ -206,6 +206,33 @@ to be confirmed. If there is no stable way to redefine one cell, the
 fallback is to re-render the preview, which needs no kernel, and keep the
 slide. That is slower but correct.
 
+Probe (T011, the browser pane, Quarto 1.11.9):
+- The page has `window._ojs.ojsConnector`, with `mainModule` (an Observable
+  runtime module with `redefine`, `define`, `value`) and
+  `interpreter.cell(source, module, observer)`. The preview evaluates `{ojs}`
+  cells as it loads, even though it renders with `--no-execute`.
+- Redefining one cell in place would need the variables each cell defined.
+  The runtime doesn't keep that link, and an anonymous cell (an expression
+  like `y`) has no name to find it by.
+
+As built, the fallback: ▶ on an OJS cell loads the preview again, which
+keeps the slide and runs every OJS cell. The pop-up's Run saves the edit,
+and the re-render shows the result. Two things were needed for that:
+- A new render now loads while a source pop-up is open. Before, renders
+  waited for every edit session, so the pop-up's Run never showed the new
+  code. They still wait while text is typed on the slide, where a reload
+  would lose it.
+- After a saved edit, Run doesn't also reload the frame, which would race
+  the render's own load.
+
+Two smaller findings:
+- An OJS declaration (`x = 1`) shows no value on a revealjs slide, so its
+  cell has no height. The editor's placeholder now covers any cell that
+  shows nothing; for OJS it reads "Observable JS cell (a declaration shows
+  no value)".
+- `quarto inspect` calls an OJS-only deck `markdown`, so the server marks
+  OJS cells with `"ojs": true`, and they never go to `/api/run`.
+
 ## R10. Quarto's native Julia engine (US5)
 
 Decision, to confirm by probe when US5 starts (no Julia here):

@@ -216,7 +216,10 @@ pub fn preview_copy(d: &Deck, outputs: &Value) -> String {
                     let shown = output_html(&outputs[&b.id], nl);
                     // .qd-cell: the editor's placeholder for a cell that shows
                     // nothing yet (revealjs hides code by default; spec 013)
-                    format!("::: {{.qd-cell data-qd=\"{tag}\"}}{nl}{text}{nl}{shown}:::")
+                    let lang = crate::kernel::cell_lang(d, b);
+                    format!(
+                        "::: {{.qd-cell data-qd=\"{tag}\" data-qd-lang=\"{lang}\"}}{nl}{text}{nl}{shown}:::"
+                    )
                 }
                 _ => format!("::: {{data-qd=\"{tag}\"}}{nl}{text}{nl}:::"),
             };
@@ -431,7 +434,7 @@ mod tests {
         let d = Deck::parse("## A\n\n```{python}\n1\n```\n".into());
         let c = preview_copy(&d, &json!({}));
         assert!(
-            c.contains("::: {.qd-cell data-qd=\"a/0\"}\n```{python}"),
+            c.contains("::: {.qd-cell data-qd=\"a/0\" data-qd-lang=\"python\"}\n```{python}"),
             "{c}"
         );
     }

@@ -25,7 +25,7 @@ const badge = pane.querySelector('.kernel');
 let engine = 'Python'; // the deck's engine, as the badge names it (spec 013)
 let needsEnv = false; // code cells and no environment yet: Set up Python… is offered
 
-let api = null; // { say, flush, selected?(), changed?() }
+let api = null; // { say, flush, selected?(), changed?(), reload?() }
 let order = []; // [{cell, lines, runnable}]
 let outs = {}; // cell → stored record
 let focus = null; // cell shown in the dock
@@ -40,10 +40,17 @@ async function post(path, body = {}) {
   return r.ok ? v : null;
 }
 
-/** Run cells by ref (after saving the source pane, so the file has the latest text). */
+/** An Observable JS cell: it runs in the page, on every load of the preview (013 US4). */
+export const inPage = (ref) => order.some((c) => c.cell === ref && c.ojs);
+
+/** Run cells by ref (after saving the source pane, so the file has the latest text).
+ *  Observable JS cells run in the page: the preview loads again (013 research R9). */
 export async function runCells(cells) {
   await api.flush();
-  if (cells.length) focus = cells[cells.length - 1];
+  if (cells.some(inPage)) api.reload?.();
+  cells = cells.filter((c) => !inPage(c));
+  if (!cells.length) return null;
+  focus = cells.at(-1);
   return post('/api/run', { cells });
 }
 const runAll = async (fresh = false) => { await api.flush(); return post('/api/run', { all: true, fresh }); };
