@@ -98,10 +98,15 @@ function close() {
   mark();
 }
 
+let following = null; // the slide the version beside should show
 /** The current deck went to slide `anchor`: the version beside it follows. */
 export function follow(anchor) {
+  following = anchor;
   if (open && thenFrame.contentWindow) thenFrame.contentWindow.location.hash = '#/' + anchor;
 }
+// a version still loading when the current deck moved would land where its URL pointed:
+// once it has loaded, it goes to the slide the current deck is on
+thenFrame.addEventListener('load', () => { if (open && following) follow(following); });
 
 export const versionOpen = () => !!open;
 export const version = () => open;
