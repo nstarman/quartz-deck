@@ -18,6 +18,7 @@ pub mod layouts;
 pub mod offline;
 pub mod ops;
 pub mod outputs;
+pub mod plugins;
 pub mod render;
 pub mod server;
 pub mod settings;
