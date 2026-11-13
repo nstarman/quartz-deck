@@ -2667,7 +2667,7 @@ async fn paste_key_uses_the_paste_event() {
 // ---------- spec 008: usability ----------
 
 /// The audit deck, the same file the audit's screenshots use.
-const AUDIT: &str = include_str!("../specs/008-usability/audit/deck/talk.qmd");
+const AUDIT: &str = include_str!("../../../specs/008-usability/audit/deck/talk.qmd");
 
 /// The slide ids in `qd slides` output, in order.
 fn slide_ids(v: &Value) -> Vec<String> {

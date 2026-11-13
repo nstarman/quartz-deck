@@ -40,7 +40,7 @@ Needs Rust ≥ 1.89; for preview/render [Quarto](https://quarto.org/docs/get-sta
 for offline check/export/PDF a Chrome or Chromium (or qd downloads Chrome for Testing).
 
 ```bash
-cargo install --path .
+cargo install --path crates/qd
 qd skill --install ~/.claude/skills/quartz-deck   # teach Claude Code to use qd
 ```
 

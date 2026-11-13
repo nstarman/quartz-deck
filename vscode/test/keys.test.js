@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const actions = require('../../src/ui/actions.json').filter((a) => a.id);
+const actions = require('../../crates/qd/src/ui/actions.json').filter((a) => a.id);
 const { keys: vscode } = require('../default-keys.json');
 
 /** One spelling per key: modifiers sorted, letters upper-case. */

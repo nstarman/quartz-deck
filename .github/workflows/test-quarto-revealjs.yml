@@ -13,7 +13,7 @@ on:
       - "skills/quarto-revealjs/**"
       - "tests/skills/quarto-revealjs/**"
       - ".github/workflows/test-quarto-revealjs.yml"
-      - "src/**"
+      - "crates/**"
       - "Cargo.*"
   workflow_dispatch:
     inputs:
@@ -45,7 +45,7 @@ jobs:
           sudo apt-get update -q && sudo apt-get install -y -q ./quarto.deb ffmpeg
           quarto --version
       - name: qd from this checkout
-        run: cargo install --locked --path . && qd --version   # qd finds the runner's Google Chrome
+        run: cargo install --locked --path crates/qd && qd --version   # qd finds the runner's Google Chrome
       - name: Python packages (latest, to catch upstream changes)
         run: |
           python -m pip install --quiet plotly jupyter playwright

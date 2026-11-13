@@ -87,6 +87,10 @@ say:
 
 ### G2. Not a workspace
 
+*Done on 2026-11-13: the root `Cargo.toml` is a workspace, and the crate is in
+`crates/qd/` with its tests. The paths elsewhere in this audit are as they
+stood on `b0d1fcc`, under `src/` and `tests/`.*
+
 - One crate holds the deck model, CLI, server, render pipeline and editor
   assets. That's fine for one binary, but there's nowhere for a second Rust
   crate to go, such as a shared deck-model library a plugin's tests or a
