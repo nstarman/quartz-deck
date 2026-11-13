@@ -1080,6 +1080,12 @@ fn watch(app: Shared) -> Result<notify::RecommendedWatcher> {
     let a = app.clone();
     let mut w = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         let Ok(ev) = res else { return };
+        // Linux's inotify also reports opens and reads: our own reads of the
+        // deck and settings would come back as events, again and again
+        use notify::event::{AccessKind, AccessMode, EventKind};
+        if matches!(ev.kind, EventKind::Access(k) if k != AccessKind::Close(AccessMode::Write)) {
+            return;
+        }
         // the person's settings changed (here, in another qd, or by `qd settings`)
         if ev.paths.iter().any(|p| p == &a.settings) {
             a.emit(
