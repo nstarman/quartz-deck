@@ -6,11 +6,13 @@ use crate::error::{QdError, Result};
 use serde_json::{Value, json};
 use std::path::Path;
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     Jupyter,
     Knitr,
+    /// Quarto's native Julia engine (`engine: julia`, US5).
+    Julia,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -42,6 +44,7 @@ impl Engine {
     pub fn runs(&self, lang: &str) -> bool {
         match self.kind {
             Kind::Knitr => lang == "r",
+            Kind::Julia => lang == "julia",
             Kind::Jupyter => lang == self.language,
         }
     }
@@ -95,9 +98,16 @@ fn from_inspect(v: &Value, d: &Deck) -> Result<Engine> {
     let kind = match v["engines"][0].as_str() {
         Some("knitr") => Kind::Knitr,
         Some("jupyter") => Kind::Jupyter,
-        _ => {
+        Some("julia") => Kind::Julia,
+        Some("markdown") => {
             return Err(QdError::Engine(format!(
                 "{language} cells here: they run in the page, not in a session"
+            )));
+        }
+        other => {
+            return Err(QdError::Engine(format!(
+                "{language} cells: Quarto's {} engine isn't supported here",
+                other.unwrap_or("?")
             )));
         }
     };
@@ -215,6 +225,14 @@ mod tests {
             (e.kind, e.kernel.as_deref(), e.fig),
             (Kind::Jupyter, Some("julia-1.10"), FIG)
         );
+        // Quarto's native Julia engine (US5)
+        let jn = deck("---\nengine: julia\n---\n\n## A\n\n```{julia}\n1\n```\n");
+        let e = from_inspect(&json!({"engines": ["julia"]}), &jn).unwrap();
+        assert_eq!(
+            (e.kind, e.language.as_str(), e.label()),
+            (Kind::Julia, "julia", "Julia".into())
+        );
+        assert!(e.runs("julia") && !e.runs("python"));
         // OJS-only (Quarto says `markdown`): nothing runs in a session
         let err = from_inspect(
             &json!({"engines": ["markdown"]}),
