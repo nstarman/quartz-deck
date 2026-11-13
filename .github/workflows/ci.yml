@@ -54,8 +54,6 @@ jobs:
 
       # Julia for Quarto's native Julia engine (spec 013 US5): tests/engine.rs julia_cells
       - uses: julia-actions/setup-julia@v2
-        with:
-          version: "1"
 
       # TeX for the Beamer export (spec 011); Typst comes with Quarto
       - name: TinyTeX

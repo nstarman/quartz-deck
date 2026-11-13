@@ -146,6 +146,12 @@ impl Session {
     /// (013 R3). knitr: R running `kernel_bridge.R` (R4).
     pub fn start(engine: &Engine, dir: &Path) -> Result<Session> {
         let path = std::env::var_os("PATH");
+        // R or Julia from PATH, or what to install
+        let tool = |name: &str, missing: &str| {
+            crate::render::which(name, path.clone())
+                .map(std::process::Command::new)
+                .ok_or_else(|| QdError::Engine(missing.into()))
+        };
         let mut cmd = match engine.kind {
             Kind::Jupyter => {
                 let env = crate::env::find(dir);
@@ -179,25 +185,20 @@ impl Session {
                 c
             }
             Kind::Knitr => {
-                let r = crate::render::which("Rscript", path).ok_or_else(|| {
-                    QdError::Engine(
-                        "r cells: R is not installed (https://cran.r-project.org)".into(),
-                    )
-                })?;
-                let mut c = std::process::Command::new(r);
+                let mut c = tool(
+                    "Rscript",
+                    "r cells: R is not installed (https://cran.r-project.org)",
+                )?;
                 c.args(["-e", BRIDGE_R]);
                 let [w, h, dpi] = engine.fig;
                 c.env("QD_FIG", format!("{w} {h} {dpi}"));
                 c
             }
             Kind::Julia => {
-                let julia = crate::render::which("julia", path).ok_or_else(|| {
-                    QdError::Engine(
-                        "julia cells: Julia is not installed (https://julialang.org/downloads)"
-                            .into(),
-                    )
-                })?;
-                let mut c = std::process::Command::new(julia);
+                let mut c = tool(
+                    "julia",
+                    "julia cells: Julia is not installed (https://julialang.org/downloads)",
+                )?;
                 // the deck's own Julia project, found upwards from its folder (as Quarto)
                 c.args(["--startup-file=no", "--project=@.", "-e", BRIDGE_JL]);
                 c

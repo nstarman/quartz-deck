@@ -12,23 +12,9 @@
 
 Base.exit_on_sigint(false)  # SIGINT stops the cell (InterruptException), not Julia
 
-function js(s::AbstractString)
-    io = IOBuffer()
-    print(io, '"')
-    for c in s
-        if c == '"' || c == '\\'
-            print(io, '\\', c)
-        elseif c == '\n'
-            print(io, "\\n")
-        elseif c < ' '
-            print(io, "\\u", string(UInt16(c), base = 16, pad = 4))
-        else
-            print(io, c)
-        end
-    end
-    print(io, '"')
-    String(take!(io))
-end
+# a JSON string: quotes, backslashes and control characters escaped
+js(s) = "\"" * replace(s, '\\' => "\\\\", '"' => "\\\"",
+                       r"[\x00-\x1f]" => c -> "\\u" * string(Int(c[1]), base = 16, pad = 4)) * "\""
 obj(pairs) = "{" * join(["$(js(k)): $v" for (k, v) in pairs], ", ") * "}"
 say(s) = (println(stdout, s); flush(stdout))
 
