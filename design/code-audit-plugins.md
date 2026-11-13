@@ -128,6 +128,13 @@ plugin features for free.
 
 ### G4. No plugin home, packaging or discovery
 
+*Started on 2026-11-13: `plugins/` exists, with conventions in `plugins/README.md`.
+`plugins/paper/` is the source of the shortcode, with an `example.qmd`, and the
+quarto-revealjs skill keeps a byte-for-byte copy so a deck set up from the skill
+alone still has it. `crates/qd/tests/plugins.rs` checks the copy and renders each
+example with plain Quarto. Discovery (`qd-plugin.json`) and `qd plugin add` come
+with the editor manifest (step 5).*
+
 - The only real plugin, the `paper` shortcode, lives in
   `skills/quarto-revealjs/assets/_extensions/paper`, a skill's asset folder.
 - **Fix:** add a `plugins/` folder. Each plugin is a directory:
