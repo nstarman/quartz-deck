@@ -1,6 +1,22 @@
 <!--
 Sync Impact Report
-- Version: 1.1.0 → 1.2.0 (MINOR: Constraints materially expanded, spec 004)
+- Version: 1.2.1 → 1.3.0 (MINOR: Principle VII materially expanded, plugins)
+- VII. Simplicity: no longer forbids a plugin system outright, because there
+  is now a concrete need (shapes, arrows, galleries and nicer tables through
+  existing libraries; design/code-audit-plugins.md). New slide features come
+  from Quarto and existing libraries first. Our own plugins are Quarto
+  extensions first (in `plugins/<name>/`, with an example deck that renders
+  with plain Quarto), with an optional editor manifest and Python package,
+  and follow every rule the core follows. Speculative abstraction is still
+  ruled out: the mechanism grows only as far as a real plugin needs.
+- Constraints: workspace layout names `plugins/`; plugins' third-party code
+  falls under the license rule and its test
+- Principles I–VI, Development Workflow, Governance: unchanged
+- Templates: none need changes (the Constitution Check still covers I–VII)
+- Deferred TODOs: none
+- Follow-up (not governance): the workspace move, `plugins/`, plugin license
+  and offline tests, and the editor manifest (design/code-audit-plugins.md §4)
+- Previous: 1.1.0 → 1.2.0 (MINOR: Constraints materially expanded, spec 004)
 - Constraints: external tools uv (default) or pixi (PyPI packages, not conda),
   needed only to run code cells or render decks with code; one locked
   environment per deck, never plain pip; code runs only on an explicit action
@@ -76,15 +92,35 @@ resulting file. GUI behavior is verified in a real browser.
 ### VII. Simplicity
 
 One Rust workspace, one `qd` binary. Prefer the standard library, stock
-Quarto/reveal.js features, and existing well-maintained crates over custom
-code. No speculative abstractions, plugin systems, or configuration until a
-concrete need exists. Complexity must be justified in the plan's Complexity
-Tracking table.
+Quarto/reveal.js features, existing libraries (Python, JavaScript, HTML,
+CSS), and well-maintained crates over custom code. New slide features come
+from Quarto and existing libraries first; quartz-deck's own plugins exist
+only for what nothing provides, or to connect an existing library to Quarto
+and reveal.js.
+
+- A plugin is a Quarto extension first (shortcode, filter, format, reveal.js
+  plugin, CSS/JS). It lives in `plugins/<name>/` with an example deck, and a
+  deck that uses it MUST still render with plain `quarto render` and no qd.
+- A plugin MAY add an editor manifest (`qd-plugin.json`: insert templates,
+  element kinds matched by class with their panel fields, preview CSS) and a
+  Python package for code cells. Editor changes it offers MUST go through
+  `qd` ops, so agents and the CLI get them too (Principle III).
+- A plugin follows every rule the core follows: its third-party code is
+  listed with a license compatible with private use and checked by a test;
+  it works offline (it passes the offline check, with no CDN at render or
+  present time); it runs code only on an explicit Run action with the
+  session token; it writes only the deck and its own files.
+
+No speculative abstractions or configuration: the plugin mechanism grows only
+as far as a real plugin needs. Complexity must be justified in the plan's
+Complexity Tracking table.
 
 ## Constraints
 
 - Language: Rust (stable) for the core, CLI, and server. The browser UI is
   plain HTML/CSS/JS served by the binary unless a plan justifies a framework.
+- Layout: one repository holding the Rust workspace, the editor, the VS Code
+  extension, skills, and `plugins/` (Principle VII), each tested in CI.
 - Runs fully locally and offline; the server binds to localhost only.
 - External runtime dependency: the Quarto CLI (which bundles Pandoc).
 - Decks with code cells also need **uv** (default) or **pixi** (PyPI
@@ -98,8 +134,9 @@ Tracking table.
   come from the editor link.
 - License: source-available, all rights reserved; published as alpha
   software, not licensed for use by others (`LICENSE`). Third-party
-  dependencies MUST have licenses compatible with private use and are listed
-  in each plan.
+  dependencies, plugins' JavaScript, CSS and Python packages included, MUST
+  have licenses compatible with private use and are listed in each plan (or
+  the plugin's manifest).
 - Target platform: macOS first; nothing should preclude Linux.
 
 ## Development Workflow
@@ -126,4 +163,4 @@ with semantic versioning (MAJOR: principle removed or redefined; MINOR:
 principle or section added; PATCH: wording). Every plan and review verifies
 compliance.
 
-**Version**: 1.2.1 | **Ratified**: 2026-11-03 | **Last Amended**: 2026-11-06
+**Version**: 1.3.0 | **Ratified**: 2026-11-03 | **Last Amended**: 2026-11-13
