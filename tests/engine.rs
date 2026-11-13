@@ -143,12 +143,11 @@ fn julia_cells() {
     assert_eq!(texts, ["hi\n", "42\n"], "{r}");
     let (ok, r) = qd(dir, &[], &["run", "c/0"]);
     assert!(!ok);
-    assert_eq!(r["runs"][0]["status"], "error", "{r}");
+    // one-shot (no server): from the top through c/0, so the error is last
+    let c = r["runs"].as_array().unwrap().last().unwrap().clone();
+    assert_eq!(c["status"], "error", "{r}");
     assert!(
-        r["runs"][0]["outputs"][0]["evalue"]
-            .as_str()
-            .unwrap()
-            .contains("boom"),
+        c["outputs"][0]["evalue"].as_str().unwrap().contains("boom"),
         "{r}"
     );
     let (_, r) = qd(dir, &[], &["run", "slow/0", "--timeout", "2"]);
