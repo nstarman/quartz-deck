@@ -37,7 +37,7 @@ use an embedded browser pane or a headless script, never a Chrome window or `ope
    Makefile           make, make notes, make refs
    README.md          fill in the title, venue and anything particular to this talk
    _quarto.yml        project options; Quarto reads it only at the root
-   _extensions/       the {{< paper >}} shortcode; Quarto looks for extensions only at the root
+   _extensions/       the {{< paper >}} shortcode (a copy of quartz-deck's plugins/paper); Quarto looks for extensions only at the root
    _output/           written by `make`
    _talk/             everything else; Quarto skips folders that start with _
      style/           presentation.css, fonts/ (subset woff2)

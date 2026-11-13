@@ -1,0 +1,17 @@
+---
+title: "paper"
+format: revealjs
+---
+
+## A result {#result}
+
+{{< paper url="https://doi.org/10.5555/xr7" who="Abel et al." year="2020" corner="true" >}}
+
+The icon at the top right links to the paper the result comes from.
+
+## References {#refs .bibliography}
+
+<!-- bibliography:start -->
+- {{< paper url="https://doi.org/10.5555/xr7" who="Abel et al." year="2020" title="High-resolution spectroscopy of the XR-7 sample" >}}
+- {{< paper url="https://example.org/toolkit" who="Toolkit Collaboration" year="2022" title="The Toolkit Project" >}}
+<!-- bibliography:end -->

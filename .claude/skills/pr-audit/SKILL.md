@@ -15,9 +15,9 @@ Split the changed files into slices (skip any slice with no changes):
 
 | Slice | Files |
 |---|---|
-| core | `src/**/*.rs` |
-| editor | `src/ui/**` (JS, CSS, HTML) |
-| tests | `tests/**/*.rs`, `tests/fixtures/**` |
+| core | `crates/qd/src/**/*.rs` |
+| editor | `crates/qd/src/ui/**` (JS, CSS, HTML) |
+| tests | `crates/qd/tests/**/*.rs`, `crates/qd/tests/fixtures/**`, `tests/skills/**` |
 | infrastructure | `.github/**`, `Cargo.toml`/`Cargo.lock` (dependencies, features), `.specify/scripts/**`, `.claude/**`, build or helper scripts |
 
 Specs, checklists and other prose under `specs/` are not audited.
