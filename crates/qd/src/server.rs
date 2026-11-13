@@ -1062,7 +1062,7 @@ fn is_references(app: &Shared, path: &Path) -> bool {
         return false;
     };
     let dir = app.store.path.parent().unwrap_or(Path::new("."));
-    let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let path = crate::bib::canonical(path);
     crate::bib::refs(&d, dir)
         .files
         .iter()

@@ -1230,9 +1230,10 @@ fn companion_file_change_rerenders() {
     let r = ev
         .wait("rendered", Duration::from_secs(30))
         .expect("rendered after the references changed");
-    let html = serde_json::from_str::<Value>(&r).unwrap()["html"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    assert!(get(server.port, &html).1.contains("Newname"));
+    let v: Value = serde_json::from_str(&r).unwrap();
+    assert!(
+        get(server.port, v["html"].as_str().unwrap())
+            .1
+            .contains("Newname")
+    );
 }

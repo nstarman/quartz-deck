@@ -57,7 +57,7 @@ Paths are relative to the repo root.
   - `undo` and `redo` check, then write, every file.
 
   T002 passes.
-- [X] T004 [P] Add `E_SOURCE`, `E_MIGRATE_DIFF` and `E_READ_ONLY` to `crates/qd/src/error.rs`, with codes, hints and exit codes as in `contracts/cli.md`. Add them to `qd schema`'s error list in `crates/qd/src/cli.rs`.
+- [X] T004 [P] Add `E_READ_ONLY` to `crates/qd/src/error.rs` (`E_SOURCE` comes with T024 and `E_MIGRATE_DIFF` with T032, where they are first used; concision audit), with codes, hints and exit codes as in `contracts/cli.md`. Add them to `qd schema`'s error list in `crates/qd/src/cli.rs`.
 - [X] T005 Turn `Cmd::Bib { zotero }` in `crates/qd/src/cli.rs` into a subcommand group `qd bib [list|pull|embed|extract|convert|install|migrate]`, where bare `qd bib` is `list`. Keep `qd bib --zotero KEY` working, as a hidden flag on the group, until T037. Update `qd schema` and the JSON shapes in `cli.rs`'s output docs. Add an empty `crates/qd/tests/bib.rs` using `mod common;`.
 
 **Checkpoint**: multi-file edits can be undone, and the command group exists.
@@ -205,7 +205,7 @@ Paths are relative to the repo root.
   - **`pull_from_source`**: it merges the stub's CSL-JSON and keeps the stub's `id`s for new entries, and the JSON has `source`;
   - **`pull_from_missing_source`**: `E_SOURCE` naming `qd-nope`, with the install hint;
   - **`pull_from_failing_source`**: a non-zero exit gives `E_SOURCE` with the stub's stderr, and invalid JSON gives `E_SOURCE`; the deck and companion file are unchanged in both.
-- [ ] T024 [US3] Implement `pull --from NAME ARGS…` in `crates/qd/src/bib.rs` and `cli.rs` (research R7, `std::process::Command`, no shell). T023 passes.
+- [ ] T024 [US3] Add `E_SOURCE` to `crates/qd/src/error.rs` and `qd schema`. Implement `pull --from NAME ARGS…` in `crates/qd/src/bib.rs` and `cli.rs` (research R7, `std::process::Command`, no shell). T023 passes.
 - [ ] T025 [US3] One test across the crates, `zotero_end_to_end` in `crates/qd/tests/bib.rs`: build `qd-zotero` (`cargo build -p qd-zotero` via `env!("CARGO")`, or skip if not built), put it on `PATH`, start the mock, and check that `qd bib pull --from zotero ABCD1234` fills the deck's references.
 
 **Checkpoint**: PR 4. Zotero refreshes a deck in one command.
@@ -265,7 +265,7 @@ Paths are relative to the repo root.
   - **`migrate_unmatched_url`**: a shortcode whose URL is arXiv where the entry has a DOI matches by title; one matching nothing gets a built entry, listed under `unmatched`.
   - **`migrate_needs_backup_outside_git`**: a non-git folder without `--backup` gives `E_INVALID_ARG`; with `--backup DIR`, the files are copied there first.
   - **`migrate_from_stub_source`**: with `--from zotero KEY` and a stub `qd-zotero` on `PATH`, the entries come from it.
-- [ ] T032 [US5] Implement `crates/qd/src/migrate.rs` and `qd bib migrate [--from] [--backup] [--accept]` in `cli.rs` (research R11):
+- [ ] T032 [US5] Add `E_MIGRATE_DIFF` to `crates/qd/src/error.rs` and `qd schema`. Implement `crates/qd/src/migrate.rs` and `qd bib migrate [--from] [--backup] [--accept]` in `cli.rs` (research R11):
   - the backup first;
   - the references from the source or the shortcodes, and the merge;
   - the patches;

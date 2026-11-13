@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::{have, qd};
+use common::{have, json as run};
 use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
@@ -11,23 +11,6 @@ use std::path::Path;
 const DECK: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## One\n\nSee @bonaca2020 and [@koposov2010]. Mail me@example.org, see @fig-x.\n\n```python\nx = '@notakey'\n```\n";
 
 const BIB: &str = "@article{bonaca2020,\n  author = {Bonaca, Ana and Hogg, David},\n  title = {Spur},\n  year = {2020},\n  doi = {10.1/x}\n}\n\n@article{koposov2010,\n  author = {Koposov, Sergey},\n  title = {GD-1},\n  year = {2010},\n  url = {https://e.x/k}\n}\n";
-
-fn run(dir: &Path, args: &[&str]) -> (bool, Value) {
-    let out = qd(dir).args(args).output().unwrap();
-    let text = if out.status.success() {
-        &out.stdout
-    } else {
-        &out.stderr
-    };
-    let v = serde_json::from_slice(text).unwrap_or_else(|_| {
-        panic!(
-            "{args:?}: not JSON: {}{}",
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr)
-        )
-    });
-    (out.status.success(), v)
-}
 
 fn ok(dir: &Path, args: &[&str]) -> Value {
     let (good, v) = run(dir, args);

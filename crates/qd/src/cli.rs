@@ -802,9 +802,7 @@ fn schema() -> Value {
         "E_ENGINE",
         "E_RUN",
         "E_ZOTERO",
-        "E_SOURCE",
-        "E_READ_ONLY",
-        "E_MIGRATE_DIFF"
+        "E_READ_ONLY"
     ]);
     v["refs"] = json!({
         "slide": "explicit id | auto id | @N (1-based) | first | last",

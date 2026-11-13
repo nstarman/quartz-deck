@@ -221,27 +221,19 @@ const HEADER: &str =
     "% Written by qd bib. Comments and @string macros are not kept when qd rewrites this file.\n\n";
 
 /// `quarto pandoc ARGS`, with `input` on stdin; its stdout.
-fn pandoc(args: &[&str], input: Option<&str>) -> Result<String> {
+fn pandoc(args: &[&str], input: &str) -> Result<String> {
     use std::io::Write;
     use std::process::Stdio;
     let mut child = std::process::Command::new(crate::render::quarto()?)
         .arg("pandoc")
         .args(args)
-        .stdin(if input.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
-    if let Some(text) = input {
-        child
-            .stdin
-            .take()
-            .expect("piped")
-            .write_all(text.as_bytes())?;
-    }
+    let mut stdin = child.stdin.take().expect("piped");
+    stdin.write_all(input.as_bytes())?;
+    drop(stdin);
     let out = child.wait_with_output()?;
     if !out.status.success() {
         return Err(QdError::Parse(format!(
@@ -269,10 +261,7 @@ pub fn read_file(path: &Path) -> Result<Vec<Value>> {
         .map_err(|e| QdError::NotFound(format!("{}: {e}", path.display())))?;
     match Format::of(path) {
         Format::Json => entries_of(&text, path),
-        Format::Bib => entries_of(
-            &pandoc(&["-f", "biblatex", "-t", "csljson"], Some(&text))?,
-            path,
-        ),
+        Format::Bib => entries_of(&pandoc(&["-f", "biblatex", "-t", "csljson"], &text)?, path),
     }
 }
 
@@ -283,7 +272,7 @@ pub fn file_text(entries: &[Value], f: Format) -> Result<String> {
         Format::Json => json + "\n",
         Format::Bib => format!(
             "{HEADER}{}",
-            pandoc(&["-f", "csljson", "-t", "biblatex"], Some(&json))?
+            pandoc(&["-f", "csljson", "-t", "biblatex"], &json)?
         ),
     })
 }
@@ -303,7 +292,8 @@ pub struct Refs {
     pub embedded: Vec<Value>,
 }
 
-fn canonical(p: &Path) -> PathBuf {
+/// `p` resolved, also when the file doesn't exist (yet, or any more).
+pub fn canonical(p: &Path) -> PathBuf {
     fs::canonicalize(p).unwrap_or_else(|_| match (p.parent(), p.file_name()) {
         (Some(dir), Some(name)) => fs::canonicalize(dir).map_or(p.to_path_buf(), |d| d.join(name)),
         _ => p.to_path_buf(),
@@ -820,7 +810,11 @@ pub fn key_for(e: &Value, taken: &std::collections::HashSet<String>) -> String {
     if stem.is_empty() {
         stem = "ref".into();
     }
-    let base = format!("{stem}{}", year(e));
+    free_key(&format!("{stem}{}", year(e)), taken)
+}
+
+/// `base`, else `base` with `a`, `b`… — the first not in `taken`.
+fn free_key(base: &str, taken: &std::collections::HashSet<String>) -> String {
     std::iter::once(String::new())
         .chain((b'a'..=b'z').map(|c| (c as char).to_string()))
         .map(|suffix| format!("{base}{suffix}"))
@@ -885,10 +879,7 @@ pub fn merge(existing: Vec<Value>, incoming: Vec<Value>) -> Merge {
         let id = if given.is_empty() {
             key_for(&inc, &taken)
         } else if taken.contains(&given) {
-            let k = (b'a'..=b'z')
-                .map(|c| format!("{given}{}", c as char))
-                .find(|x| !taken.contains(x))
-                .unwrap_or_else(|| format!("{given}-{}", taken.len()));
+            let k = free_key(&given, &taken);
             m.warnings.push(format!(
                 "'{given}' is already the key of another paper; this one is '{k}'"
             ));
@@ -918,10 +909,6 @@ mod tests {
 
     // ---------- spec 014: matching, keys, merge (research R6) ----------
 
-    fn e(v: Value) -> Value {
-        v
-    }
-
     #[test]
     fn normalises_dois_urls_and_titles() {
         assert_eq!(normalise_doi("https://doi.org/10.1/AbC"), "10.1/abc");
@@ -948,9 +935,9 @@ mod tests {
     #[test]
     fn matches_doi_then_url_then_title() {
         let deck = vec![
-            e(json!({"id": "a", "DOI": "10.1/a", "title": "A"})),
-            e(json!({"id": "b", "URL": "https://arxiv.org/abs/2602.01806", "title": "B"})),
-            e(json!({"id": "c", "title": "Hidden depths"})),
+            json!({"id": "a", "DOI": "10.1/a", "title": "A"}),
+            json!({"id": "b", "URL": "https://arxiv.org/abs/2602.01806", "title": "B"}),
+            json!({"id": "c", "title": "Hidden depths"}),
         ];
         let find = |v: Value| find_match(&deck, &v);
         assert_eq!(find(json!({"DOI": "https://doi.org/10.1/A"})), Some(0));
