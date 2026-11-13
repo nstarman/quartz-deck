@@ -178,9 +178,9 @@ As built:
 
 **Independent Test**: spec US4; quickstart §5.
 
-- [ ] T011 [US4] Probe research R9 in the browser pane: find how Quarto's OJS runtime on the preview page redefines one cell from new source, and whether it re-runs the cells that depend on it. Record the entry point, or that there is none, in research.md R9.
-- [ ] T012 [P] [US4] Write a failing browser test, `run_ojs_from_slide`: an `{ojs}` cell `x = 1` and a dependent `x * 2`. Change the first to `x = 5` in the pop-up and press ⇧Enter: the dependent cell shows 10, and no `/api/run` request was made.
-- [ ] T013 [US4] In `src/ui/runslide.js`, give `{ojs}` cells a ▶ that redefines the cell in the page through the entry point from T011, or else re-renders the preview and keeps the slide. In `src/engine.rs`, `ojs` decks need no session. T012 passes.
+- [X] T011 [US4] Probe research R9 in the browser pane: find how Quarto's OJS runtime on the preview page redefines one cell from new source, and whether it re-runs the cells that depend on it. Record the entry point, or that there is none, in research.md R9.
+- [X] T012 [P] [US4] Write a failing browser test, `run_ojs_from_slide`: an `{ojs}` cell `x = 1` and a dependent `x * 2`. Change the first to `x = 5` in the pop-up and press ⇧Enter: the dependent cell shows 10, and no `/api/run` request was made.
+- [X] T013 [US4] In `src/ui/runslide.js`, give `{ojs}` cells a ▶ that redefines the cell in the page through the entry point from T011, or else re-renders the preview and keeps the slide. In `src/engine.rs`, `ojs` decks need no session. T012 passes.
 
 ---
 

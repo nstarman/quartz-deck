@@ -705,7 +705,9 @@ async fn api_outputs(State(app): State<Shared>) -> Response {
                 let ok = engine
                     .as_ref()
                     .is_ok_and(|e| matches!(runnable(&d, b, e), Ok(Some(_))));
-                json!({"cell": b.id, "lines": d.lines(b.span), "runnable": ok})
+                // Observable JS runs in the page, not in a session (013 US4)
+                let ojs = crate::kernel::cell_lang(&d, b) == "ojs";
+                json!({"cell": b.id, "lines": d.lines(b.span), "runnable": ok || ojs, "ojs": ojs})
             })
             .collect();
         r["order"] = json!(order);

@@ -197,9 +197,11 @@ const PREVIEW_CSS = `html:not(.qd-present) {
   section > h1:hover, section > h2:hover, section > h3:hover, #title-slide :is(.title, .subtitle, .date):hover {
     outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; cursor: text; }
   .qd-off { outline: 2px dashed #b3261e; outline-offset: 2px; }
-  /* a cell that shows nothing yet (code hidden, never run): something to point at and run (spec 013) */
-  .qd-cell:not(:has(.qd-output, pre))::before { content: 'Code cell, not run yet'; display: block; color: #9a9aa0;
+  /* a cell that shows nothing (code hidden, never run; an OJS declaration): something to point at and run (spec 013) */
+  .qd-cell:not(:has(.qd-output, .cell-code:not(.hidden), .cell-output-display:not(.quarto-ojs-hide)))::before {
+    content: 'Code cell, not run yet'; display: block; color: #9a9aa0;
     font-size: .5em; border: 2px dashed #b9b9bf; border-radius: 6px; padding: .3em .6em; }
+  .qd-cell[data-qd-lang=ojs]::before { content: 'Observable JS cell (a declaration shows no value)'; }
   /* a cell's run state (spec 013): a bar at its left edge */
   .qd-running { box-shadow: inset 4px 0 0 #c58a00; }
   .qd-error { box-shadow: inset 4px 0 0 #b3261e; }
@@ -1053,8 +1055,9 @@ es.addEventListener('rendered', (e) => {
   status('Up to date', true);
   statusEl.title = `Version ${d.version.slice(0, 7)}`;
   banner.hidden = true;
-  if (state.session) {
-    // reloading now would throw away the open edit (research R4)
+  // reloading now would throw away an edit typed on the slide (research R4); a
+  // source pop-up's text is in this page, and Run there wants the new render (013)
+  if (state.session && state.session.mode !== 'source') {
     state.pendingRender = d;
     pendingBadge(true);
   } else {
@@ -1446,6 +1449,7 @@ async function runSource(s) {
     const b = await fetchBlock(s.ref); // the next save is checked against this text
     Object.assign(s, { source: b?.text ?? md, hash: b?.hash ?? s.hash });
     fetchDeck();
+    if (run.inPage(s.ref)) return; // the new render runs it (a reload now would race that load)
   }
   run.runCells([s.ref]);
 }
@@ -1731,7 +1735,7 @@ const runExternal = framed.get('run') === 'external';
 document.documentElement.classList.toggle('run-external', runExternal);
 if (!runExternal) {
   const selected = () => (state.session ? null : state.sel);
-  run.initRun({ say, flush: pane.save, selected, changed: runslide.mark });
+  run.initRun({ say, flush: pane.save, selected, changed: runslide.mark, reload: () => frameWin()?.location.reload() });
   runslide.initRunSlide({ elOf, frame, pageRect, selected }, es);
 }
 if (keys.framed) {
