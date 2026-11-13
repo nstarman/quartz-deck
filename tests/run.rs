@@ -3,6 +3,7 @@
 
 mod common;
 
+use quartz_deck::engine::{Engine, FIG, Kind};
 use quartz_deck::{env, kernel::Session};
 use std::time::Duration;
 
@@ -16,7 +17,14 @@ fn session_runs_cells_keeps_state_interrupts_and_restarts() {
     unsafe { std::env::set_var("QD_CACHE_DIR", d.path().join(".cache")) };
     let e = env::init(d.path(), env::Tool::Uv).unwrap();
     e.add(&["matplotlib".into()]).unwrap();
-    let s = Session::start(&e, d.path()).unwrap();
+    // a Python deck: the kernel in its environment (004)
+    let py = Engine {
+        kind: Kind::Jupyter,
+        kernel: None,
+        language: "python".into(),
+        fig: FIG,
+    };
+    let s = Session::start(&py, d.path()).unwrap();
 
     let r = s.execute("x = 21 * 2\nprint(x)", None).unwrap();
     assert_eq!(
@@ -84,7 +92,7 @@ fn session_runs_cells_keeps_state_interrupts_and_restarts() {
         .unwrap()
         .replace("\"pyyaml", "\"tomli\",\n    \"pyyaml");
     std::fs::write(&m, text).unwrap();
-    let err = Session::start(&e, d.path())
+    let err = Session::start(&py, d.path())
         .err()
         .expect("stale lock refused");
     assert_eq!(err.code(), "E_LOCK_STALE", "{err}");

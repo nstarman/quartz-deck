@@ -22,9 +22,10 @@ const ta = pane.querySelector('textarea');
 const gutter = pane.querySelector('.gutter');
 const dock = pane.querySelector('.outdock');
 const badge = pane.querySelector('.kernel');
+let engine = 'Python'; // the deck's engine, as the badge names it (spec 013)
 let needsEnv = false; // code cells and no environment yet: Set up Python… is offered
 
-let api = null; // { say, flush }
+let api = null; // { say, flush, selected?(), changed?(), reload?() }
 let order = []; // [{cell, lines, runnable}]
 let outs = {}; // cell → stored record
 let focus = null; // cell shown in the dock
@@ -39,13 +40,27 @@ async function post(path, body = {}) {
   return r.ok ? v : null;
 }
 
-/** Run cells by ref (after saving the source pane, so the file has the latest text). */
+/** An Observable JS cell: it runs in the page, on every load of the preview (013 US4). */
+export const inPage = (ref) => order.some((c) => c.cell === ref && c.ojs);
+
+/** Run cells by ref (after saving the source pane, so the file has the latest text).
+ *  Observable JS cells run in the page: the preview loads again (013 research R9). */
 export async function runCells(cells) {
   await api.flush();
-  if (cells.length) focus = cells[cells.length - 1];
+  if (cells.some(inPage)) api.reload?.();
+  cells = cells.filter((c) => !inPage(c));
+  if (!cells.length) return null;
+  focus = cells.at(-1);
   return post('/api/run', { cells });
 }
 const runAll = async (fresh = false) => { await api.flush(); return post('/api/run', { all: true, fresh }); };
+export const stopRun = () => post('/api/run/interrupt');
+
+/** A cell that can run here (spec 013: the slide's ▶). */
+export const runnable = (ref) => order.some((c) => c.cell === ref && c.runnable);
+/** `running`, `stale`, `error`, `stopped` or '' (done, or never run). */
+export const cellState = (ref) => (running.has(ref) ? 'running' : outs[ref]?.stale ? 'stale'
+  : { error: 'error', stopped: 'stopped' }[outs[ref]?.status] || '');
 
 const cellAt = (line) => order.find((c) => c.lines[0] <= line && line <= c.lines[1]);
 const caretLine = () => ta.value.slice(0, ta.selectionStart).split('\n').length;
@@ -54,9 +69,11 @@ async function refresh() {
   const r = await fetch('/api/outputs').then((x) => x.json()).catch(() => null);
   if (!r?.order) return;
   ({ order } = r);
+  if (r.engine?.label) engine = r.engine.label;
   outs = r.cells || {};
   drawGutter();
   drawDock();
+  api.changed?.();
 }
 
 function drawGutter() {
@@ -112,9 +129,13 @@ async function envStatus() {
 /** SSE events from the server (contracts/http.md). */
 export function listen(es) {
   const on = (name, f) => es.addEventListener(name, (e) => f(JSON.parse(e.data)));
-  on('kernel', ({ state }) => { badge.textContent = `Python · ${state === 'starting' ? 'starting…' : state}`; badge.dataset.state = state; });
-  on('run_started', ({ cells }) => { cells.forEach((c) => running.add(c)); drawGutter(); });
-  on('cell_output', (o) => { running.delete(o.cell); outs[o.cell] = { ...o, stale: false }; focus = o.cell; drawGutter(); drawDock(); });
+  on('kernel', ({ state, engine: e }) => {
+    if (e) engine = e.label;
+    badge.textContent = `${engine} · ${state === 'starting' ? 'starting…' : state}`;
+    badge.dataset.state = state;
+  });
+  on('run_started', ({ cells }) => { cells.forEach((c) => running.add(c)); drawGutter(); api.changed?.(); });
+  on('cell_output', (o) => { running.delete(o.cell); outs[o.cell] = { ...o, stale: false }; focus = o.cell; drawGutter(); drawDock(); api.changed?.(); });
   on('run_done', ({ status, error }) => {
     running.clear();
     if (error) api.say(fmt(error), true);
@@ -137,13 +158,14 @@ export function initRun(a) {
   // the Run menu and the source bar's buttons are the same actions (spec 007)
   const caretCell = () => { const c = !pane.hidden && cellAt(caretLine()); return c?.runnable ? c.cell : null; };
   keys.on('run-cell', {
-    key: () => !!caretCell(), // ⇧Enter in the source runs the cell at the caret, as in notebooks
+    // ⇧Enter in the source runs the cell at the caret, as in notebooks; on the slide, the selected cell (013)
+    key: (e) => (e.target === ta ? !!caretCell() : runnable(api.selected?.())),
     enabled: (ctx) => ctx.el?.block.kind === 'cell' || !!caretCell(),
-    run: (ctx) => runCells([!ctx.e && ctx.el?.block.kind === 'cell' ? ctx.el.ref : caretCell()]),
+    run: (ctx) => runCells([ctx.e?.target !== ta && ctx.el?.block.kind === 'cell' ? ctx.el.ref : caretCell()]),
   });
   keys.on('run-all', () => runAll());
   keys.on('run-fresh-all', () => runAll(true));
-  keys.on('run-stop', () => post('/api/run/interrupt'));
+  keys.on('run-stop', stopRun);
   keys.on('run-restart', () => post('/api/run/restart'));
   keys.on('run-env', {
     enabled: () => needsEnv,
