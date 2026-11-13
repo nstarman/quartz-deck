@@ -133,8 +133,14 @@ fn julia_cells() {
     let (ok, r) = qd(dir, &[], &["run", "a/0", "b/0"]);
     assert!(ok, "{r}");
     assert_eq!(r["engine"]["kind"], "julia");
-    let text = r["runs"][1]["outputs"][0]["text"].as_str().unwrap();
-    assert!(text.contains("hi") && text.contains("42"), "{r}");
+    // what it printed, then its last value (as a notebook shows them)
+    let texts: Vec<&str> = r["runs"][1]["outputs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|o| o["text"].as_str())
+        .collect();
+    assert_eq!(texts, ["hi\n", "42\n"], "{r}");
     let (ok, r) = qd(dir, &[], &["run", "c/0"]);
     assert!(!ok);
     assert_eq!(r["runs"][0]["status"], "error", "{r}");
