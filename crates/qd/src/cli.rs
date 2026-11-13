@@ -69,12 +69,15 @@ enum Cmd {
     Slides,
     /// Show one slide: attributes, source and blocks
     Show { slide: String },
-    /// Write the References list from a Zotero collection between the deck's
-    /// `<!-- bibliography:start -->` and `<!-- bibliography:end -->` lines
+    /// The deck's references: list them (no subcommand), pull, embed, extract, convert
+    #[command(args_conflicts_with_subcommands = true)]
     Bib {
-        /// Collection key (8 characters, from the collection's Zotero URL); read from the running Zotero's local API
-        #[arg(long)]
-        zotero: String,
+        /// Old form, until `qd bib migrate` lands: write the References list from a
+        /// Zotero collection between the deck's `bibliography:start/end` lines
+        #[arg(long, hide = true)]
+        zotero: Option<String>,
+        #[command(subcommand)]
+        action: Option<BibCmd>,
     },
     /// Print front matter, or set/unset a top-level key
     Meta {
@@ -635,6 +638,29 @@ fn parse_pair(s: &str) -> std::result::Result<(f64, f64), String> {
 }
 
 #[derive(Subcommand)]
+enum BibCmd {
+    /// Merge a .bib (BibTeX/BibLaTeX) or CSL-JSON file into the deck's references, keeping cited keys
+    Pull { file: PathBuf },
+    /// Move the companion file's references into the front matter (`references:`)
+    Embed,
+    /// Move `references:` into a companion file inside the deck's folder
+    Extract {
+        /// The file (default: `_talk/references.bib`, or `references.bib` beside the deck)
+        #[arg(long)]
+        to: Option<PathBuf>,
+        #[arg(long, value_enum)]
+        format: Option<crate::bib::Format>,
+    },
+    /// Rewrite the companion file in the other format, renamed (`references.bib` ↔ `references.json`)
+    Convert {
+        #[arg(long, value_enum)]
+        format: crate::bib::Format,
+    },
+    /// Install or update the citation extensions qd carries in the deck's `_extensions/`
+    Install,
+}
+
+#[derive(Subcommand)]
 enum MetaCmd {
     /// Set a top-level key to a single-line YAML value
     Set {
@@ -663,7 +689,7 @@ fn output_of(cmd: &str) -> &'static str {
         }
         "meta" => r#"{"version","front_matter":{...}}"#,
         "bib" => {
-            r#"{"ok","op":"bib","diff","version","target":"bibliography","entries","warnings":[...]} (an edit: --dry-run, --expect, qd undo)"#
+            r#"bare: {"ok","kind":"bib","where":"none|companion|embedded|both","files":[{"path","format","inside"}],"embedded","entries","missing":[{"key","slides"}]}; pull: {"ok","op":"bib-pull","version","diff","file"?,"created"?,"embedded"?,"added","changed":[{"id","fields"}],"merged":[{"id","from"}],"gone","warnings"}; embed: {...,"entries","left"}; extract: {...,"file","entries"}; convert: {...,"file","from"} — every write is an edit of the deck and its companion file together (--dry-run, --expect, one qd undo)"#
         }
         "check" => {
             r#"{"ok","version","problems":[{"severity":"error|warning","code","slide","message"}]} or with --offline {"kind":"offline_check","ok","html","slides","steps","problems":[{"code":"P_*","severity","slide","message","hint","url"?}],"size":{"bytes","largest":[{"bytes","kind","context"}]}}"#
@@ -775,7 +801,10 @@ fn schema() -> Value {
         "E_NOT_CODE",
         "E_ENGINE",
         "E_RUN",
-        "E_ZOTERO"
+        "E_ZOTERO",
+        "E_SOURCE",
+        "E_READ_ONLY",
+        "E_MIGRATE_DIFF"
     ]);
     v["refs"] = json!({
         "slide": "explicit id | auto id | @N (1-based) | first | last",
@@ -1130,6 +1159,48 @@ impl Ctx<'_> {
         Ok(v)
     }
 
+    /// A `qd bib` write (spec 014): the deck and its companion file in one
+    /// journaled edit, so one `qd undo` reverts both (research R4).
+    fn edit_files(
+        &self,
+        op: &str,
+        f: impl FnOnce(&Deck) -> Result<crate::bib::Edit>,
+    ) -> Result<Value> {
+        let store = self.store()?;
+        let d = store.read()?;
+        self.check_expect(&d)?;
+        let crate::bib::Edit { text, also, report } = f(&d)?;
+        let also: Vec<_> = also.into_iter().filter(|o| o.before != o.after).collect();
+        let mut v = report;
+        v["ok"] = json!(true);
+        v["op"] = json!(op);
+        v["diff"] = json!(ops::diff(&d.text, &text));
+        if self.cli.dry_run {
+            v["dry_run"] = json!(true);
+            v["version"] = json!(d.version);
+        } else if text == d.text && also.is_empty() {
+            v["version"] = json!(d.version);
+        } else {
+            v["version"] = json!(store.write_many(&d, &text, also, op, "references")?);
+            let dir = store.path.parent().unwrap_or(Path::new("."));
+            let ext = crate::plugins::install(dir)?;
+            v["installed"] = ext["installed"].clone();
+            if let Some(w) = v["warnings"].as_array_mut() {
+                w.extend(
+                    ext["kept"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|k| k.get("message").cloned()),
+                );
+            }
+            if let Some(c) = self.commit(&store).filter(|_| text != d.text) {
+                v["commit"] = c;
+            }
+        }
+        Ok(v)
+    }
+
     /// Save as git commit (spec 012 US2) for a CLI edit with no server
     /// running; a server commits after its pause instead. Silent outside git.
     fn commit(&self, store: &Store) -> Option<Value> {
@@ -1316,7 +1387,41 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
         Cmd::Meta {
             action: Some(MetaCmd::Unset { key }),
         } => ctx.edit(|d| ops::meta_unset(d, key)),
-        Cmd::Bib { zotero } => {
+        Cmd::Bib {
+            zotero: None,
+            action,
+        } => {
+            let store = ctx.store()?;
+            let d = store.read()?;
+            let dir = store.path.parent().unwrap_or(Path::new(".")).to_path_buf();
+            match action {
+                None => crate::bib::list(&d, &dir).map(|mut v| {
+                    v["extensions"] = crate::plugins::states(&dir);
+                    v
+                }),
+                Some(BibCmd::Install) => {
+                    let mut v = crate::plugins::install(&dir)?;
+                    v["ok"] = json!(true);
+                    v["kind"] = json!("bib-install");
+                    Ok(v)
+                }
+                Some(BibCmd::Pull { file }) => {
+                    let incoming = crate::bib::read_file(file)?;
+                    ctx.edit_files("bib-pull", |d| crate::bib::pull(d, &dir, incoming))
+                }
+                Some(BibCmd::Embed) => ctx.edit_files("bib-embed", |d| crate::bib::embed(d, &dir)),
+                Some(BibCmd::Extract { to, format }) => ctx.edit_files("bib-extract", |d| {
+                    crate::bib::extract(d, &dir, to.as_deref(), *format)
+                }),
+                Some(BibCmd::Convert { format }) => {
+                    ctx.edit_files("bib-convert", |d| crate::bib::convert(d, &dir, *format))
+                }
+            }
+        }
+        Cmd::Bib {
+            zotero: Some(zotero),
+            ..
+        } => {
             // a stale --expect or no marker pair: fail before asking Zotero
             let d = read()?.1;
             ctx.check_expect(&d)?;
