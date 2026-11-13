@@ -16,6 +16,10 @@ built only with quartz-deck's `qd`, and the per-deck tools are gone (`inline_app
    place of `{{< include _bibliography.qmd >}}`, run `make refs`, and delete `_bibliography.qmd`.
 5. Give a full-bleed footer band class `overflow-ok`. Run `make`; `qd export` reports what is left.
 
+**The `paper` shortcode** in `assets/_extensions/paper/` is a copy of quartz-deck's
+`plugins/paper/_extensions/paper/`, so a deck set up from this skill alone has it. Change it there,
+then copy it here: quartz-deck's `crates/qd/tests/plugins.rs` fails while the two differ.
+
 This skill documents a moving target: Quarto, the reveal.js it bundles, MathJax and plotly.py.
 Every claim in `references/quarto-revealjs-guide.md` was observed in a browser against the versions in
 `versions.json`. When those move, re-verify; do not edit claims from release notes alone.
