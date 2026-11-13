@@ -199,9 +199,9 @@ const PREVIEW_CSS = `html:not(.qd-present) {
   .qd-off { outline: 2px dashed #b3261e; outline-offset: 2px; }
   /* a cell that shows nothing (code hidden, never run; an OJS declaration): something to point at and run (spec 013) */
   .qd-cell:not(:has(.qd-output, .cell-code:not(.hidden), .cell-output-display:not(.quarto-ojs-hide)))::before {
-    content: 'Code cell, not run yet'; display: block; color: #9a9aa0;
+    content: var(--qd-ph, 'Code cell, not run yet'); display: block; color: #9a9aa0;
     font-size: .5em; border: 2px dashed #b9b9bf; border-radius: 6px; padding: .3em .6em; }
-  .qd-cell[data-qd-lang=ojs]::before { content: 'Observable JS cell (a declaration shows no value)'; }
+  .qd-cell[data-qd-lang=ojs] { --qd-ph: 'Observable JS cell (a declaration shows no value)'; }
   /* a cell's run state (spec 013): a bar at its left edge */
   .qd-running { box-shadow: inset 4px 0 0 #c58a00; }
   .qd-error { box-shadow: inset 4px 0 0 #b3261e; }

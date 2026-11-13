@@ -201,7 +201,7 @@ plain Quarto: a layout's areas and a placed element are Quarto's own
   numpy matplotlib`, `qd env sync` on a new machine. The manifest and lockfile
   sit beside the deck (or at the Quarto project root): commit them. Never
   `pip install`. `qd render` runs the cells inside that environment.
-- **Run:** a ▶ beside each Python cell, ⇧Enter on the cell under the caret,
+- **Run:** a ▶ beside each code cell, ⇧Enter on the cell under the caret,
   Run all / Stop / Restart / Restart & run all in the source bar. Text,
   figures, tables and tracebacks show in the dock below the source and on the
   slide. Outputs live in qd's cache, never in the `.qmd`; they come back when
@@ -215,6 +215,35 @@ plain Quarto: a layout's areas and a placed element are Quarto's own
   code needs the session token, which comes in the editor link that `qd
   serve` prints / `qd url` returns, never in the page. No other web page or
   link can make it run anything.
+
+### Run on the slide (spec [013](specs/013-run-on-slide/spec.md))
+
+- **On the slide:** pointing at a code cell, or selecting it, shows a ▶ at
+  its top right. ⇧Enter runs the selected cell. While a cell runs, the ▶
+  turns into ■ to stop it, and a bar at the cell's left edge shows running,
+  error or stopped. The new output replaces the old one in place, on the same
+  slide. A cell with hidden code and nothing to show yet appears as "Code
+  cell, not run yet", in the editor only.
+- **In the pop-up:** the box that opens over a code cell has **Run ⇧Enter**.
+  It saves your change as one undo step, runs the cell and stays open, so a
+  plot can be tuned without leaving the slide. If the file changed underneath,
+  it says so and runs nothing.
+- **The deck's own engine:** cells run the way `quarto render` runs them.
+  - A Python deck uses its locked environment, as above.
+  - A deck with `jupyter: NAME` runs that kernel. Any other Jupyter deck
+    runs the first installed kernel for its language, without needing a qd
+    environment.
+  - An `{r}` deck runs in one R session (knitr), with plots at the deck's
+    figure size.
+  - An `engine: julia` deck runs in one Julia session, using the deck's own
+    project.
+  - Observable JS cells run in the page: their ▶ reloads the preview on the
+    same slide.
+
+  R and Julia are your own installs, the same ones Quarto uses. The source
+  bar's badge names the engine (`R · idle`).
+- **Never when presenting:** the presented deck, and a page opened without
+  the session token, show no ▶.
 
 ### Offline export (specs [002](specs/002-offline-export/spec.md), [010](specs/010-one-file-deck/spec.md))
 
