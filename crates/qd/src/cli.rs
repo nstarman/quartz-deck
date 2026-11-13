@@ -10,7 +10,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-pub const SKILL: &str = include_str!("../skills/quartz-deck/SKILL.md");
+pub const SKILL: &str = include_str!("../../../skills/quartz-deck/SKILL.md");
 
 #[derive(Parser)]
 #[command(

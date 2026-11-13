@@ -6,7 +6,7 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
 const LIST: &str = include_str!("../src/ui/actions.json");
-const INVENTORY: &str = include_str!("../specs/007-app-shell/checklists/action-inventory.md");
+const INVENTORY: &str = include_str!("../../../specs/007-app-shell/checklists/action-inventory.md");
 
 fn actions() -> Vec<Value> {
     serde_json::from_str(LIST).expect("actions.json is a JSON list")
