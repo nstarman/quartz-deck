@@ -66,3 +66,22 @@ pub fn hook(dir: &Path, script: &str) {
     std::fs::write(&hook, format!("#!/bin/sh\n{script}\n")).unwrap();
     std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
+
+/// `qd args…` in `dir`: whether it succeeded, and its JSON (stdout, or stderr
+/// on failure); panics on output that isn't JSON.
+pub fn json(dir: &Path, args: &[&str]) -> (bool, serde_json::Value) {
+    let out = qd(dir).args(args).output().unwrap();
+    let text = if out.status.success() {
+        &out.stdout
+    } else {
+        &out.stderr
+    };
+    let v = serde_json::from_slice(text).unwrap_or_else(|_| {
+        panic!(
+            "{args:?}: not JSON: {}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        )
+    });
+    (out.status.success(), v)
+}

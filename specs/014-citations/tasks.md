@@ -46,19 +46,19 @@ Paths are relative to the repo root.
 
 ## Phase 2: Foundational (blocks every story; lands in PR 2)
 
-- [ ] T002 Write failing unit tests in `crates/qd/src/store.rs` for an undo entry with `also` (data-model "Undo journal entry"):
+- [X] T002 Write failing unit tests in `crates/qd/src/store.rs` for an undo entry with `also` (data-model "Undo journal entry"):
   - `write_with_also` writes the deck and one other file;
   - `undo` restores both, and `redo` re-applies both;
   - a file that `also` created is removed on undo;
   - undo refuses with `E_NO_UNDO` when the other file changed since the edit, and keeps the entry;
   - a journal written before 014 (no `also`) still loads.
-- [ ] T003 Implement `also: Vec<OtherFile>` (`#[serde(default)]`) in `crates/qd/src/store.rs`:
+- [X] T003 Implement `also: Vec<OtherFile>` (`#[serde(default)]`) in `crates/qd/src/store.rs`:
   - `Store::write_many(before, deck_text, others, op, target)`: the others are written atomically first, the deck last, and all are conflict-checked against the versions they were read at;
   - `undo` and `redo` check, then write, every file.
 
   T002 passes.
-- [ ] T004 [P] Add `E_SOURCE`, `E_MIGRATE_DIFF` and `E_READ_ONLY` to `crates/qd/src/error.rs`, with codes, hints and exit codes as in `contracts/cli.md`. Add them to `qd schema`'s error list in `crates/qd/src/cli.rs`.
-- [ ] T005 Turn `Cmd::Bib { zotero }` in `crates/qd/src/cli.rs` into a subcommand group `qd bib [list|pull|embed|extract|convert|install|migrate]`, where bare `qd bib` is `list`. Keep `qd bib --zotero KEY` working, as a hidden flag on the group, until T037. Update `qd schema` and the JSON shapes in `cli.rs`'s output docs. Add an empty `crates/qd/tests/bib.rs` using `mod common;`.
+- [X] T004 [P] Add `E_READ_ONLY` to `crates/qd/src/error.rs` (`E_SOURCE` comes with T024 and `E_MIGRATE_DIFF` with T032, where they are first used; concision audit), with codes, hints and exit codes as in `contracts/cli.md`. Add them to `qd schema`'s error list in `crates/qd/src/cli.rs`.
+- [X] T005 Turn `Cmd::Bib { zotero }` in `crates/qd/src/cli.rs` into a subcommand group `qd bib [list|pull|embed|extract|convert|install|migrate]`, where bare `qd bib` is `list`. Keep `qd bib --zotero KEY` working, as a hidden flag on the group, until T037. Update `qd schema` and the JSON shapes in `cli.rs`'s output docs. Add an empty `crates/qd/tests/bib.rs` using `mod common;`.
 
 **Checkpoint**: multi-file edits can be undone, and the command group exists.
 
@@ -70,7 +70,7 @@ Paths are relative to the repo root.
 
 **Independent Test**: spec US2; quickstart §1.
 
-- [ ] T006 [P] [US2] Write failing unit tests in `crates/qd/src/bib.rs` for matching and keys (research R6):
+- [X] T006 [P] [US2] Write failing unit tests in `crates/qd/src/bib.rs` for matching and keys (research R6):
   - DOI normalising (case, `https://doi.org/` prefix);
   - URL normalising (scheme, `www.`, trailing `/`, an arXiv `abs`/`pdf` id with its version);
   - title normalising;
@@ -85,12 +85,12 @@ Paths are relative to the repo root.
     - a literal author (`Astropy Collaboration` → `astropycollaboration…`);
     - ASCII folding (`Martínez-Delgado` → `martinezdelgado`);
     - `nd` without a year.
-- [ ] T007 [US2] Rewrite `crates/qd/src/bib.rs` around CSL-JSON `Value`s (data-model "Reference entry"):
+- [X] T007 [US2] Rewrite `crates/qd/src/bib.rs` around CSL-JSON `Value`s (data-model "Reference entry"):
   - `normalise_doi`, `normalise_url`, `normalise_title`, `key_for`, `merge -> Merge`;
   - keep today's `fetch`, `lines` and `patch` beside them for now (they go in T037).
 
   T006 passes.
-- [ ] T008 [P] [US2] Write failing CLI tests in `crates/qd/tests/bib.rs` (skip without quarto), on a temp deck and `.bib`/`.json` fixtures in `crates/qd/tests/fixtures/bib/`:
+- [X] T008 [P] [US2] Write failing CLI tests in `crates/qd/tests/bib.rs` (skip without quarto), on a temp deck and `.bib`/`.json` fixtures in `crates/qd/tests/fixtures/bib/`:
   - **`list_none_and_missing`**: `qd bib` reports `where: none`, and lists a cited key with no entry under `missing`.
   - **`pull_creates_companion`**:
     - the first `pull refs.bib` creates `references.bib` beside the deck, or `_talk/references.bib` when `_talk/` exists;
@@ -110,24 +110,24 @@ Paths are relative to the repo root.
     - a stale `--expect` gives `E_CONFLICT`;
     - `qd undo` after a pull restores both the deck and the companion file, the companion file's absence included;
     - `qd undo` after a convert restores the old file name and format.
-- [ ] T009 [US2] In `crates/qd/src/bib.rs`, read and write formats through `quarto pandoc` (research R5):
+- [X] T009 [US2] In `crates/qd/src/bib.rs`, read and write formats through `quarto pandoc` (research R5):
   - `read(path) -> Vec<Value>` (BibLaTeX for `.bib`, direct for `.json`);
   - `write(path, entries, format) -> String`, with the header comment for `.bib`;
   - a missing Quarto gives `E_NO_QUARTO`.
-- [ ] T010 [US2] In `crates/qd/src/bib.rs`, resolve the deck's references (data-model "Deck references"):
+- [X] T010 [US2] In `crates/qd/src/bib.rs`, resolve the deck's references (data-model "Deck references"):
   - from the front matter, find the state (none, companion inside or outside, embedded, both) and the default place;
   - inside means the canonical path is under the deck's folder;
   - several writable files give `E_AMBIGUOUS`;
   - a write to an outside file gives `E_READ_ONLY` with the contract's hint.
-- [ ] T011 [US2] Implement `list`, `pull FILE`, `embed`, `extract [--to] [--format]` and `convert --format` in `crates/qd/src/cli.rs` and `crates/qd/src/bib.rs`:
+- [X] T011 [US2] Implement `list`, `pull FILE`, `embed`, `extract [--to] [--format]` and `convert --format` in `crates/qd/src/cli.rs` and `crates/qd/src/bib.rs`:
   - front-matter changes reuse `ops`' front-matter patch (`qd meta set`'s);
   - `references:` is written as CSL YAML with `serde_yaml_ng`;
   - every write goes through `Store::write_many` (T003), with `--dry-run` and `--expect`;
   - JSON as in `contracts/cli.md`.
 
   T008 passes.
-- [ ] T012 [US2] In `crates/qd/src/server.rs`, also watch the file named by `bibliography:` (inside or outside the deck folder), so a pull that changes only the companion file re-renders the preview (Principle IV). Add a test in `crates/qd/tests/onslide.rs` or the server's watcher tests: changing the companion file triggers a reload event.
-- [ ] T013 [US2] Add `crates/qd/src/plugins.rs` (research R9):
+- [X] T012 [US2] In `crates/qd/src/server.rs`, also watch the file named by `bibliography:` (inside or outside the deck folder), so a pull that changes only the companion file re-renders the preview (Principle IV). Add a test in `crates/qd/tests/onslide.rs` or the server's watcher tests: changing the companion file triggers a reload event.
+- [X] T013 [US2] Add `crates/qd/src/plugins.rs` (research R9):
   - `install(deck_dir) -> {installed, kept}`, with the version compare and the `W_EDITED` rule;
   - the list of compiled-in extensions is empty until T018 and T028.
 
@@ -205,7 +205,7 @@ Paths are relative to the repo root.
   - **`pull_from_source`**: it merges the stub's CSL-JSON and keeps the stub's `id`s for new entries, and the JSON has `source`;
   - **`pull_from_missing_source`**: `E_SOURCE` naming `qd-nope`, with the install hint;
   - **`pull_from_failing_source`**: a non-zero exit gives `E_SOURCE` with the stub's stderr, and invalid JSON gives `E_SOURCE`; the deck and companion file are unchanged in both.
-- [ ] T024 [US3] Implement `pull --from NAME ARGS…` in `crates/qd/src/bib.rs` and `cli.rs` (research R7, `std::process::Command`, no shell). T023 passes.
+- [ ] T024 [US3] Add `E_SOURCE` to `crates/qd/src/error.rs` and `qd schema`. Implement `pull --from NAME ARGS…` in `crates/qd/src/bib.rs` and `cli.rs` (research R7, `std::process::Command`, no shell). T023 passes.
 - [ ] T025 [US3] One test across the crates, `zotero_end_to_end` in `crates/qd/tests/bib.rs`: build `qd-zotero` (`cargo build -p qd-zotero` via `env!("CARGO")`, or skip if not built), put it on `PATH`, start the mock, and check that `qd bib pull --from zotero ABCD1234` fills the deck's references.
 
 **Checkpoint**: PR 4. Zotero refreshes a deck in one command.
@@ -265,7 +265,7 @@ Paths are relative to the repo root.
   - **`migrate_unmatched_url`**: a shortcode whose URL is arXiv where the entry has a DOI matches by title; one matching nothing gets a built entry, listed under `unmatched`.
   - **`migrate_needs_backup_outside_git`**: a non-git folder without `--backup` gives `E_INVALID_ARG`; with `--backup DIR`, the files are copied there first.
   - **`migrate_from_stub_source`**: with `--from zotero KEY` and a stub `qd-zotero` on `PATH`, the entries come from it.
-- [ ] T032 [US5] Implement `crates/qd/src/migrate.rs` and `qd bib migrate [--from] [--backup] [--accept]` in `cli.rs` (research R11):
+- [ ] T032 [US5] Add `E_MIGRATE_DIFF` to `crates/qd/src/error.rs` and `qd schema`. Implement `crates/qd/src/migrate.rs` and `qd bib migrate [--from] [--backup] [--accept]` in `cli.rs` (research R11):
   - the backup first;
   - the references from the source or the shortcodes, and the merge;
   - the patches;

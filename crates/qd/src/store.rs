@@ -26,6 +26,56 @@ struct Entry {
     /// What the edit changed (`one`, `one/2`), for commit messages.
     #[serde(default)]
     target: String,
+    /// Other files the same edit wrote (spec 014: the companion references
+    /// file), undone and redone with the deck.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    also: Vec<OtherFile>,
+}
+
+/// A file besides the deck that an edit writes: its text before and after
+/// (`None`: absent).
+#[derive(Serialize, Deserialize, Clone)]
+pub struct OtherFile {
+    pub path: PathBuf,
+    pub before: Option<String>,
+    pub after: Option<String>,
+}
+
+fn current(path: &Path) -> Option<String> {
+    fs::read_to_string(path).ok()
+}
+
+/// Write `text` atomically, or remove the file for `None`. ponytail: no
+/// inode check as for the deck; the content check before it is the guard.
+fn put(path: &Path, text: Option<&str>) -> Result<()> {
+    match text {
+        Some(t) => {
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            let tmp = path.with_file_name(format!(".{name}.qd-tmp-{}", std::process::id()));
+            fs::write(&tmp, t)?;
+            fs::rename(&tmp, path)?;
+        }
+        None => {
+            if path.exists() {
+                fs::remove_file(path)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Each other file holds its text from after the edit (`after`) or before it, else `E_NO_UNDO`.
+fn others_at(also: &[OtherFile], after: bool, what: &str) -> Result<()> {
+    for o in also {
+        let want = if after { &o.after } else { &o.before };
+        if current(&o.path) != *want {
+            return Err(QdError::NoUndo(format!(
+                "{} changed since the {what}",
+                o.path.display()
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn agent() -> String {
@@ -249,8 +299,41 @@ impl Store {
 
     /// Write an edit made against `before`; journals it for undo and clears redo.
     pub fn write(&self, before: &Deck, text: &str, op: &str, target: &str) -> Result<String> {
+        self.write_many(before, text, vec![], op, target)
+    }
+
+    /// `write`, plus other files written in the same edit (spec 014 R4). Each
+    /// must still hold its `before` text; they are written first, the deck
+    /// last, and put back if the deck's write is refused.
+    pub fn write_many(
+        &self,
+        before: &Deck,
+        text: &str,
+        also: Vec<OtherFile>,
+        op: &str,
+        target: &str,
+    ) -> Result<String> {
         let _lock = self.lock()?;
-        let version = self.replace(&before.version, text)?;
+        for o in &also {
+            if current(&o.path) != o.before {
+                return Err(QdError::Conflict(format!(
+                    "{} changed since it was read",
+                    o.path.display()
+                )));
+            }
+        }
+        for o in &also {
+            put(&o.path, o.after.as_deref())?;
+        }
+        let version = match self.replace(&before.version, text) {
+            Ok(v) => v,
+            Err(e) => {
+                for o in &also {
+                    put(&o.path, o.before.as_deref())?;
+                }
+                return Err(e);
+            }
+        };
         let entry = Entry {
             ts: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -267,6 +350,7 @@ impl Store {
             }
             .into(),
             target: target.into(),
+            also,
         };
         self.push("undo", &entry)?;
         let _ = fs::remove_file(self.journal("redo"));
@@ -283,6 +367,13 @@ impl Store {
                 "file changed since the last qd edit".into(),
             ));
         }
+        if let Err(err) = others_at(&e.also, true, "last qd edit") {
+            self.push("undo", &e)?;
+            return Err(err);
+        }
+        for o in &e.also {
+            put(&o.path, o.before.as_deref())?;
+        }
         let v = self.replace(&current, &e.before_text)?;
         self.push("redo", &e)?;
         Ok((v, e.op))
@@ -295,6 +386,13 @@ impl Store {
         if current != e.version_before {
             self.push("redo", &e)?;
             return Err(QdError::NoUndo("file changed since the undo".into()));
+        }
+        if let Err(err) = others_at(&e.also, false, "undo") {
+            self.push("redo", &e)?;
+            return Err(err);
+        }
+        for o in &e.also {
+            put(&o.path, o.after.as_deref())?;
         }
         let v = self.replace(&current, &e.after_text)?;
         self.push("undo", &e)?;
@@ -497,5 +595,78 @@ mod tests {
                 .iter()
                 .all(|n| !n.to_string_lossy().contains("qd-tmp"))
         );
+    }
+
+    /// Spec 014 R4: an edit that also writes the companion file undoes and
+    /// redoes both, and refuses when either changed since.
+    #[test]
+    fn undo_spans_other_files() {
+        let (d, s) = setup("## A\n");
+        let bib = d.path().join("refs.bib");
+        let other = |before: Option<&str>, after: Option<&str>| OtherFile {
+            path: bib.clone(),
+            before: before.map(Into::into),
+            after: after.map(Into::into),
+        };
+        let read = || fs::read_to_string(&bib).ok();
+        // created by the edit
+        let d0 = s.read().unwrap();
+        s.write_many(&d0, "## B\n", vec![other(None, Some("one"))], "bib", "")
+            .unwrap();
+        assert_eq!(read().as_deref(), Some("one"));
+        // changed alone: the deck's text is the same
+        let d1 = s.read().unwrap();
+        s.write_many(
+            &d1,
+            "## B\n",
+            vec![other(Some("one"), Some("two"))],
+            "bib",
+            "",
+        )
+        .unwrap();
+        s.undo().unwrap();
+        assert_eq!(read().as_deref(), Some("one"));
+        s.redo().unwrap();
+        assert_eq!(read().as_deref(), Some("two"));
+        s.undo().unwrap();
+        s.undo().unwrap();
+        assert_eq!(read(), None, "a file the edit created is removed");
+        assert_eq!(fs::read_to_string(&s.path).unwrap(), "## A\n");
+        // the other file changed since: refused, entry kept
+        s.redo().unwrap();
+        fs::write(&bib, "by hand").unwrap();
+        assert_eq!(s.undo().unwrap_err().code(), "E_NO_UNDO");
+        fs::write(&bib, "one").unwrap();
+        s.undo().unwrap();
+    }
+
+    #[test]
+    fn write_many_refuses_a_changed_other_file() {
+        let (d, s) = setup("## A\n");
+        let bib = d.path().join("refs.bib");
+        fs::write(&bib, "theirs").unwrap();
+        let d0 = s.read().unwrap();
+        let o = OtherFile {
+            path: bib.clone(),
+            before: Some("ours".into()),
+            after: Some("new".into()),
+        };
+        assert_eq!(
+            s.write_many(&d0, "## B\n", vec![o], "bib", "")
+                .unwrap_err()
+                .code(),
+            "E_CONFLICT"
+        );
+        assert_eq!(fs::read_to_string(&bib).unwrap(), "theirs");
+        assert_eq!(fs::read_to_string(&s.path).unwrap(), "## A\n");
+    }
+
+    #[test]
+    fn journal_without_also_still_loads() {
+        let e: Entry = serde_json::from_str(
+            r#"{"ts":1,"op":"x","version_before":"a","version_after":"b","before_text":"","after_text":""}"#,
+        )
+        .unwrap();
+        assert!(e.also.is_empty());
     }
 }

@@ -20,7 +20,7 @@ use notify::Watcher;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::convert::Infallible;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -1052,6 +1052,23 @@ async fn render_loop(app: Shared) {
     }
 }
 
+/// `path` is a references file the deck names (only `.bib`/`.json` are checked).
+fn is_references(app: &Shared, path: &Path) -> bool {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    if !matches!(ext, "bib" | "json") {
+        return false;
+    }
+    let Ok(d) = app.store.read() else {
+        return false;
+    };
+    let dir = app.store.path.parent().unwrap_or(Path::new("."));
+    let path = crate::bib::canonical(path);
+    crate::bib::refs(&d, dir)
+        .files
+        .iter()
+        .any(|f| f.path == path)
+}
+
 /// Watch the deck's directory (atomic renames replace the file's inode).
 fn watch(app: Shared) -> Result<notify::RecommendedWatcher> {
     let deck = app.store.path.clone();
@@ -1063,12 +1080,24 @@ fn watch(app: Shared) -> Result<notify::RecommendedWatcher> {
     let a = app.clone();
     let mut w = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         let Ok(ev) = res else { return };
+        // Linux's inotify also reports opens and reads: our own reads of the
+        // deck and settings would come back as events, again and again
+        use notify::event::{AccessKind, AccessMode, EventKind};
+        if matches!(ev.kind, EventKind::Access(k) if k != AccessKind::Close(AccessMode::Write)) {
+            return;
+        }
         // the person's settings changed (here, in another qd, or by `qd settings`)
         if ev.paths.iter().any(|p| p == &a.settings) {
             a.emit(
                 "settings",
                 json!({ "values": crate::settings::load(&a.settings).0 }),
             );
+            return;
+        }
+        // the deck's references file changed alone (spec 014): render again
+        if ev.paths.iter().any(|p| is_references(&a, p)) {
+            let a = a.clone();
+            rt.spawn(async move { a.kick.notify_one() });
             return;
         }
         if !ev
@@ -1118,6 +1147,24 @@ fn watch(app: Shared) -> Result<notify::RecommendedWatcher> {
     .map_err(|e| QdError::Io(std::io::Error::other(e)))?;
     w.watch(deck.parent().unwrap(), notify::RecursiveMode::NonRecursive)
         .map_err(|e| QdError::Io(std::io::Error::other(e)))?;
+    // where references files live: the support folder, and the folders of
+    // the files the deck names now. ponytail: a file named later in a new
+    // folder is watched from the next `qd serve`.
+    let dir = deck.parent().unwrap();
+    let mut folders = vec![dir.join("_talk")];
+    if let Ok(d) = app.store.read() {
+        folders.extend(
+            crate::bib::refs(&d, dir)
+                .files
+                .iter()
+                .filter_map(|f| f.path.parent().map(Path::to_path_buf)),
+        );
+    }
+    folders.sort();
+    folders.dedup();
+    for f in folders.iter().filter(|f| f.is_dir() && f.as_path() != dir) {
+        let _ = w.watch(f, notify::RecursiveMode::NonRecursive);
+    }
     w.watch(app.store.cache_dir(), notify::RecursiveMode::NonRecursive)
         .map_err(|e| QdError::Io(std::io::Error::other(e)))?;
     w.watch(

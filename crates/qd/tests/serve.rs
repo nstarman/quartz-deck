@@ -1200,3 +1200,40 @@ fn layouts_over_http() {
         400,
     );
 }
+
+/// Spec 014 (T012): a change to the deck's companion references file alone
+/// (here in `_talk/`) re-renders the preview.
+#[test]
+fn companion_file_change_rerenders() {
+    if !have("quarto") {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path();
+    std::fs::create_dir(p.join("_talk")).unwrap();
+    let refs = |name: &str| {
+        format!(
+            r#"[{{"id": "a", "type": "book", "author": [{{"family": "{name}"}}], "issued": {{"date-parts": [[2020]]}}, "title": "T"}}]"#
+        )
+    };
+    std::fs::write(p.join("_talk/references.json"), refs("Oldname")).unwrap();
+    std::fs::write(
+        p.join("deck.qmd"),
+        "---\nformat: revealjs\nbibliography: _talk/references.json\n---\n\n## One\n\nSee @a.\n",
+    )
+    .unwrap();
+    let server = start(p);
+    let mut ev = Events::open(server.port, "/events");
+    ev.wait("rendered", Duration::from_secs(60))
+        .expect("initial render");
+    std::fs::write(p.join("_talk/references.json"), refs("Newname")).unwrap();
+    let r = ev
+        .wait("rendered", Duration::from_secs(30))
+        .expect("rendered after the references changed");
+    let v: Value = serde_json::from_str(&r).unwrap();
+    assert!(
+        get(server.port, v["html"].as_str().unwrap())
+            .1
+            .contains("Newname")
+    );
+}

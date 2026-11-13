@@ -83,6 +83,9 @@ pub enum QdError {
     Run(String),
     #[error("Zotero's local API is not reachable: {0}")]
     Zotero(String),
+    /// Spec 014: a write to a bibliography file outside the deck's folder.
+    #[error("read-only: {0}")]
+    ReadOnly(String),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -120,6 +123,7 @@ impl QdError {
             Self::Engine(_) => "E_ENGINE",
             Self::Run(_) => "E_RUN",
             Self::Zotero(_) => "E_ZOTERO",
+            Self::ReadOnly(_) => "E_READ_ONLY",
             Self::Io(_) => "E_IO",
         }
     }
@@ -190,6 +194,9 @@ impl QdError {
             }
             Self::Zotero(_) => {
                 "start Zotero 7 and tick Settings > Advanced > \"Allow other applications on this computer to communicate with Zotero\""
+            }
+            Self::ReadOnly(_) => {
+                "qd only reads bibliography files outside the deck's folder: copy it into the folder, or pull from it with `qd bib pull PATH`"
             }
             Self::Io(_) => "check the path and permissions",
         }
