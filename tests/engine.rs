@@ -117,3 +117,61 @@ fn no_r() {
     assert_eq!(r["error"]["code"], "E_ENGINE", "{r}");
     assert!(r["error"]["message"].as_str().unwrap().contains("R"), "{r}");
 }
+
+const JULIA_DECK: &str = "---\ntitle: J\nformat: revealjs\nengine: julia\n---\n\n## A {#a}\n\n```{julia}\nx = 20\n```\n\n## B {#b}\n\n```{julia}\nprintln(\"hi\")\nx + 22\n```\n\n## C {#c}\n\n```{julia}\nerror(\"boom\")\n```";
+
+/// 013 US5 (T015): Quarto's native Julia engine: one session (state carries),
+/// printed output and the last value, errors, --timeout. Needs Julia.
+#[test]
+fn julia_cells() {
+    if !have("julia") || !have("quarto") {
+        return;
+    }
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path();
+    deck(dir, JULIA_DECK);
+    let (ok, r) = qd(dir, &[], &["run", "a/0", "b/0"]);
+    assert!(ok, "{r}");
+    assert_eq!(r["engine"]["kind"], "julia");
+    // what it printed, then its last value (as a notebook shows them)
+    let texts: Vec<&str> = r["runs"][1]["outputs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|o| o["text"].as_str())
+        .collect();
+    assert_eq!(texts, ["hi\n", "42\n"], "{r}");
+    let (ok, r) = qd(dir, &[], &["run", "c/0"]);
+    assert!(!ok);
+    // one-shot (no server): from the top through c/0, so the error is last
+    let c = r["runs"].as_array().unwrap().last().unwrap().clone();
+    assert_eq!(c["status"], "error", "{r}");
+    assert!(
+        c["outputs"][0]["evalue"].as_str().unwrap().contains("boom"),
+        "{r}"
+    );
+    // --timeout stops a slow cell (its own deck: a one-shot run stops at the error above)
+    let t2 = tempfile::tempdir().unwrap();
+    deck(
+        t2.path(),
+        "---\ntitle: J\nengine: julia\n---\n\n## Slow {#slow}\n\n```{julia}\nsleep(30)\n```\n",
+    );
+    let (_, r) = qd(t2.path(), &[], &["run", "slow/0", "--timeout", "2"]);
+    assert_eq!(r["status"], "stopped", "{r}");
+}
+
+#[test]
+fn no_julia() {
+    if have("julia") || !have("quarto") {
+        return;
+    }
+    let t = tempfile::tempdir().unwrap();
+    deck(t.path(), JULIA_DECK);
+    let (ok, r) = qd(t.path(), &[], &["run", "a/0"]);
+    assert!(!ok);
+    assert_eq!(r["error"]["code"], "E_ENGINE", "{r}");
+    assert!(
+        r["error"]["message"].as_str().unwrap().contains("Julia"),
+        "{r}"
+    );
+}
