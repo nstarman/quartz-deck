@@ -122,6 +122,29 @@ tests/
 module (`runslide.js`), next to 004's run code. Everything else extends files
 that already own the behaviour.
 
+## Re-check after building (T019)
+
+| Principle | As built |
+|---|---|
+| I. Clean room | Built from Quarto's `inspect` command, `jupyter_client`, R's `evaluate`, and Base Julia. The OJS ▶ uses only a page reload; nothing calls into Quarto's runtime. Pass. |
+| II. `.qmd` is the truth | Runs never write the deck; the pop-up's Run saves as one ordinary edit. Outputs stay in qd's cache. The placeholder and state marks exist only in the editor's preview. Pass. |
+| III. CLI first | `qd run` uses the same engine choice and reports `engine`. Errors name what's missing, including an `{ojs}` cell asked for from the CLI. The editor calls the same `/api/run`. Pass. |
+| IV. Live preview | Outputs are swapped in place, on the same slide. A new render loads behind an open source pop-up, but still waits while text is typed on the slide. Pass. |
+| V. Safe concurrent edits | The pop-up's Run saves with the element check, and a refused save runs nothing. Five quick runs report in the order asked, and the last one asked is stored. Pass. |
+| VI. Test first | Tests were written first: units, `tests/engine.rs`, and browser tests for the ▶, states, pop-up, ordering, OJS, R, and no token. R and Julia tests run in CI. The two pop-up tests weren't run before their code (noted in PR #56). Pass. |
+| VII. Simplicity | One protocol and one `Session` for Jupyter, R and Julia; one output renderer (`render::output_div`); Quarto's own engine choice. No new crates. OJS uses a reload instead of re-running one cell. Pass. |
+| Constraints: code runs only on an explicit action, with the token | ▶ is editor-only. `/api/run` needs the token. The pop-up's Run now requires a real key press or click (fixed in the quickstart run). Pass. |
+
+Quickstart run: `checklists/quickstart-run.md`. Three fixes came out of it:
+- the pop-up's trusted-input check;
+- the OJS message from the CLI;
+- the OJS placeholder text.
+
+Not built:
+- R and Julia environments aren't locked (a later spec, as clarified);
+- front-matter `julia: exeflags` aren't passed;
+- figure size isn't applied to Julia plots.
+
 ## Complexity Tracking
 
 | Item | Why needed | Simpler alternative rejected because |

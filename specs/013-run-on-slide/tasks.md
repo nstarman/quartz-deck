@@ -196,13 +196,13 @@ As built:
 
 ## Phase 8: Polish & cross-cutting
 
-- [ ] T017 [P] Docs:
+- [X] T017 [P] Docs:
   - README: Run on the slide, and engines;
   - the qd skill: `qd run`'s `engine` and the `E_ENGINE` cases;
   - `specs/ROADMAP.md`: 013's status;
   - the 007 action inventory: "Added by 013".
-- [ ] T018 Run quickstart §1–§5 in the browser pane, and record it in `specs/013-run-on-slide/checklists/quickstart-run.md`.
-- [ ] T019 Final constitution re-check in `plan.md`. fmt, clippy, `cargo test --no-fail-fast` and `node --test vscode/test/*.test.js` green.
+- [X] T018 Run quickstart §1–§5 in the browser pane, and record it in `specs/013-run-on-slide/checklists/quickstart-run.md`.
+- [X] T019 Final constitution re-check in `plan.md`. fmt, clippy, `cargo test --no-fail-fast` and `node --test vscode/test/*.test.js` green.
 - [ ] T020 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
 
 ---

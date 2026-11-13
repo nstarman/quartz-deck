@@ -59,6 +59,11 @@ pub type Planned = (String, String, String);
 pub fn runnable(d: &Deck, b: &Block, engine: &Engine) -> Result<Option<String>> {
     let code = cell_code(d, b)?;
     let lang = cell_lang(d, b);
+    if lang == "ojs" {
+        return Err(QdError::Engine(
+            "ojs cells from here: they run in the editor's page (`qd serve`)".into(),
+        ));
+    }
     if !engine.runs(lang) {
         return Err(QdError::Engine(format!(
             "{lang} cells in a deck that runs {}",
