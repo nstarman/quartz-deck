@@ -4,7 +4,13 @@ New slide features come from Quarto and existing libraries first. A plugin here
 is for what nothing provides, or to connect an existing library to Quarto and
 reveal.js (constitution, principle VII).
 
-Each plugin is a folder:
+Plugins come in two kinds (constitution 1.4.0):
+- a **render plugin** is a Quarto extension, such as `cite-links`;
+- a **source plugin** feeds `qd bib` with references and renders nothing.
+  It is a program `qd-NAME` on `PATH` that prints CSL-JSON, built as a
+  member crate of this workspace, such as `zotero/` (`qd-zotero`).
+
+A render plugin is a folder:
 
 ```text
 plugins/<name>/

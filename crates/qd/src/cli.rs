@@ -639,8 +639,15 @@ fn parse_pair(s: &str) -> std::result::Result<(f64, f64), String> {
 
 #[derive(Subcommand)]
 enum BibCmd {
-    /// Merge a .bib (BibTeX/BibLaTeX) or CSL-JSON file into the deck's references, keeping cited keys
-    Pull { file: PathBuf },
+    /// Merge a .bib (BibTeX/BibLaTeX) or CSL-JSON file, or a source plugin's
+    /// references (`--from zotero KEY` runs `qd-zotero KEY`), keeping cited keys
+    Pull {
+        /// Run the source plugin `qd-NAME` from PATH
+        #[arg(long, value_name = "NAME")]
+        from: Option<String>,
+        /// The file; with --from, the source's arguments (after `--` if one starts with `-`)
+        args: Vec<String>,
+    },
     /// Move the companion file's references into the front matter (`references:`)
     Embed,
     /// Move `references:` into a companion file inside the deck's folder
@@ -802,6 +809,7 @@ fn schema() -> Value {
         "E_ENGINE",
         "E_RUN",
         "E_ZOTERO",
+        "E_SOURCE",
         "E_READ_ONLY"
     ]);
     v["refs"] = json!({
@@ -1408,9 +1416,22 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                         report: json!({"warnings": []}),
                     })
                 }),
-                Some(BibCmd::Pull { file }) => {
-                    let incoming = crate::bib::read_file(file)?;
-                    ctx.edit_files("bib-pull", |d| crate::bib::pull(d, &dir, incoming))
+                Some(BibCmd::Pull { from, args }) => {
+                    let incoming = match (from, &args[..]) {
+                        (Some(name), _) => crate::bib::from_source(name, args)?,
+                        (None, [file]) => crate::bib::read_file(Path::new(file))?,
+                        (None, _) => {
+                            return Err(QdError::Usage(
+                                "pull takes one FILE, or --from NAME and its arguments".into(),
+                            ));
+                        }
+                    };
+                    let mut v =
+                        ctx.edit_files("bib-pull", |d| crate::bib::pull(d, &dir, incoming))?;
+                    if let Some(name) = from {
+                        v["source"] = json!(name);
+                    }
+                    Ok(v)
                 }
                 Some(BibCmd::Embed) => ctx.edit_files("bib-embed", |d| crate::bib::embed(d, &dir)),
                 Some(BibCmd::Extract { to, format }) => ctx.edit_files("bib-extract", |d| {

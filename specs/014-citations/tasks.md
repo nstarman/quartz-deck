@@ -186,8 +186,8 @@ Paths are relative to the repo root.
 
 **Independent Test**: spec US3; quickstart §3.
 
-- [ ] T020 [US3] Add the crate `plugins/zotero/` (`Cargo.toml`: package `qd-zotero`, bin `qd-zotero`, with deps `ureq` and `serde_json` at the workspace's versions) and add it to the root `Cargo.toml`'s `members`. Add `plugins/zotero/qd-plugin.json` (data-model) and `plugins/zotero/README.md` covering install, usage and errors.
-- [ ] T021 [P] [US3] Write failing tests in `plugins/zotero/tests/zotero.rs`, against a mock server (moved from the existing Zotero mock in `crates/qd/tests`) with `QD_ZOTERO_URL`:
+- [X] T020 [US3] Add the crate `plugins/zotero/` (`Cargo.toml`: package `qd-zotero`, bin `qd-zotero`, with deps `ureq` and `serde_json` at the workspace's versions) and add it to the root `Cargo.toml`'s `members`. Add `plugins/zotero/qd-plugin.json` (data-model) and `plugins/zotero/README.md` covering install, usage and errors.
+- [X] T021 [P] [US3] Write failing tests in `plugins/zotero/tests/zotero.rs`, against a mock server (moved from the existing Zotero mock in `crates/qd/tests`) with `QD_ZOTERO_URL`:
   - paging past 100 items;
   - attachments and notes skipped;
   - the CSL-JSON is printed;
@@ -195,18 +195,18 @@ Paths are relative to the repo root.
   - an arXiv DOI dropped when a URL exists;
   - a bad key exits 2 with `E_INVALID_ARG` and makes no request;
   - an unreachable server exits 2 with `E_ZOTERO` and the hint, in under 5 s.
-- [ ] T022 [US3] Implement `plugins/zotero/src/main.rs` (research R8):
+- [X] T022 [US3] Implement `plugins/zotero/src/main.rs` (research R8):
   - the moved `fetch`, with `include=data,csljson` and a 5 s connect timeout;
   - the key check, the citekey and the arXiv rule;
   - errors as `CODE message` plus the hint on stderr.
 
   T021 passes.
-- [ ] T023 [P] [US3] Write failing CLI tests in `crates/qd/tests/bib.rs` with a stub source (a script `qd-stub` put first on `PATH` by the test):
+- [X] T023 [P] [US3] Write failing CLI tests in `crates/qd/tests/bib.rs` with a stub source (a script `qd-stub` put first on `PATH` by the test):
   - **`pull_from_source`**: it merges the stub's CSL-JSON and keeps the stub's `id`s for new entries, and the JSON has `source`;
   - **`pull_from_missing_source`**: `E_SOURCE` naming `qd-nope`, with the install hint;
   - **`pull_from_failing_source`**: a non-zero exit gives `E_SOURCE` with the stub's stderr, and invalid JSON gives `E_SOURCE`; the deck and companion file are unchanged in both.
-- [ ] T024 [US3] Add `E_SOURCE` to `crates/qd/src/error.rs` and `qd schema`. Implement `pull --from NAME ARGS…` in `crates/qd/src/bib.rs` and `cli.rs` (research R7, `std::process::Command`, no shell). T023 passes.
-- [ ] T025 [US3] One test across the crates, `zotero_end_to_end` in `crates/qd/tests/bib.rs`: build `qd-zotero` (`cargo build -p qd-zotero` via `env!("CARGO")`, or skip if not built), put it on `PATH`, start the mock, and check that `qd bib pull --from zotero ABCD1234` fills the deck's references.
+- [X] T024 [US3] Add `E_SOURCE` to `crates/qd/src/error.rs` and `qd schema`. Implement `pull --from NAME ARGS…` in `crates/qd/src/bib.rs` and `cli.rs` (research R7, `std::process::Command`, no shell). T023 passes.
+- [X] T025 [US3] One test across the crates, `zotero_end_to_end` in `crates/qd/tests/bib.rs`: build `qd-zotero` (`cargo build -p qd-zotero` via `env!("CARGO")`, or skip if not built), put it on `PATH`, start the mock, and check that `qd bib pull --from zotero ABCD1234` fills the deck's references.
 
 **Checkpoint**: PR 4. Zotero refreshes a deck in one command.
 

@@ -265,6 +265,40 @@ pub fn read_file(path: &Path) -> Result<Vec<Value>> {
     }
 }
 
+/// `qd-NAME ARGS…` from `PATH` (no shell): the CSL-JSON list it prints
+/// (spec 014 R7). A source plugin may reach the network; qd never does.
+pub fn from_source(name: &str, args: &[String]) -> Result<Vec<Value>> {
+    // a name, not a path: `qd-../x` must not run a file elsewhere
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(QdError::InvalidArg(format!(
+            "'{name}' is not a source name"
+        )));
+    }
+    let prog = format!("qd-{name}");
+    let out = std::process::Command::new(&prog)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => {
+                QdError::Source(format!("{prog} is not installed (not on PATH)"))
+            }
+            _ => QdError::Source(format!("{prog}: {e}")),
+        })?;
+    if !out.status.success() {
+        return Err(QdError::Source(format!(
+            "{prog} failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        )));
+    }
+    entries_of(&String::from_utf8_lossy(&out.stdout), Path::new(&prog))
+        .map_err(|_| QdError::Source(format!("{prog} printed no CSL-JSON list of references")))
+}
+
 /// The text of a references file holding `entries`.
 pub fn file_text(entries: &[Value], f: Format) -> Result<String> {
     let json = serde_json::to_string_pretty(entries).expect("JSON values serialize");
