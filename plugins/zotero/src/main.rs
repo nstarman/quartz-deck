@@ -24,25 +24,35 @@ fn citation_key(data: &Value) -> Option<&str> {
     })
 }
 
+/// The item's CSL-JSON: an object from the web API; from Zotero 7's local
+/// API, a string holding a one-entry array (observed on the person's Zotero).
+fn csl(item: &Value) -> Option<Value> {
+    match &item["csljson"] {
+        o @ Value::Object(_) => Some(o.clone()),
+        Value::String(s) => match serde_json::from_str(s).ok()? {
+            Value::Array(mut a) if !a.is_empty() => Some(a.swap_remove(0)),
+            o @ Value::Object(_) => Some(o),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// One item as a deck's reference: its CSL-JSON, keyed by its citation key.
-fn entry(item: &Value) -> Value {
-    let mut e = item["csljson"].clone();
-    let obj = e.as_object_mut().expect("Zotero's CSL-JSON is an object");
+fn entry(item: &Value) -> Option<Value> {
+    let mut e = csl(item)?;
+    let obj = e.as_object_mut()?;
     // Zotero's own ids ("1234/ABCD") are not citation keys: without a key, qd makes one
     obj.remove("id");
     if let Some(k) = citation_key(&item["data"]) {
         obj.insert("id".into(), json!(k));
     }
     // arXiv's 10.48550 DOIs: the item's page is the better link
-    let c = &item["csljson"];
-    if c["DOI"]
-        .as_str()
-        .is_some_and(|d| d.to_lowercase().starts_with("10.48550"))
-        && c["URL"].as_str().is_some_and(|u| !u.is_empty())
-    {
+    let has = |k: &str, f: fn(&str) -> bool| obj.get(k).and_then(Value::as_str).is_some_and(f);
+    if has("DOI", |d| d.to_lowercase().starts_with("10.48550")) && has("URL", |u| !u.is_empty()) {
         obj.remove("DOI");
     }
-    e
+    Some(e)
 }
 
 fn main() {
@@ -96,8 +106,7 @@ fn main() {
         out.extend(
             page.iter()
                 .filter(|i| !matches!(i["data"]["itemType"].as_str(), Some("attachment" | "note")))
-                .filter(|i| i["csljson"].is_object())
-                .map(entry),
+                .filter_map(entry),
         );
         if n < 100 {
             break;
