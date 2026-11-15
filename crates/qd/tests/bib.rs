@@ -286,26 +286,21 @@ fn dry_run_expect_undo() {
 }
 
 /// A folder holding an executable `qd-NAME` shell script, for `PATH`.
-fn stub(dir: &Path, name: &str, script: &str) -> std::path::PathBuf {
-    use std::os::unix::fs::PermissionsExt;
+fn stub(dir: &Path, name: &str, body: &str) -> std::path::PathBuf {
     let bin = dir.join("bin");
     fs::create_dir_all(&bin).unwrap();
-    let p = bin.join(format!("qd-{name}"));
-    fs::write(&p, format!("#!/bin/sh\n{script}\n")).unwrap();
-    fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+    common::script(&bin.join(format!("qd-{name}")), body);
     bin
 }
 
 /// `qd args…` with `bin` first on `PATH`.
 fn with_path(dir: &Path, bin: &Path, args: &[&str]) -> (bool, Value) {
-    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
-    let out = qd(dir).env("PATH", path).args(args).output().unwrap();
-    let text = if out.status.success() {
-        &out.stdout
-    } else {
-        &out.stderr
-    };
-    (out.status.success(), serde_json::from_slice(text).unwrap())
+    let mut c = qd(dir);
+    c.env(
+        "PATH",
+        format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()),
+    );
+    common::json_of(c, args)
 }
 
 /// Spec 014 US3 (T023): `pull --from NAME ARGS` runs `qd-NAME ARGS` from
@@ -338,23 +333,31 @@ fn pull_from_missing_or_failing_source() {
     let bin = stub(t.path(), "broken", "echo 'no such collection' >&2; exit 3");
     stub(t.path(), "garbled", "echo 'not json'");
     stub(t.path(), "object", "echo '{\"id\": \"x\"}'");
-    for (args, says) in [
-        (vec!["bib", "pull", "--from", "nope"], "qd-nope"),
+    for (args, code, says) in [
+        (vec!["bib", "pull", "--from", "nope"], "E_SOURCE", "qd-nope"),
         (
             vec!["bib", "pull", "--from", "broken", "X"],
+            "E_SOURCE",
             "no such collection",
         ),
-        (vec!["bib", "pull", "--from", "garbled"], "qd-garbled"),
-        (vec!["bib", "pull", "--from", "object"], "qd-object"),
-        (vec!["bib", "pull", "--from", "../evil"], "../evil"),
+        (
+            vec!["bib", "pull", "--from", "garbled"],
+            "E_SOURCE",
+            "qd-garbled",
+        ),
+        (
+            vec!["bib", "pull", "--from", "object"],
+            "E_SOURCE",
+            "qd-object",
+        ),
+        (
+            vec!["bib", "pull", "--from", "../evil"],
+            "E_INVALID_ARG",
+            "../evil",
+        ),
     ] {
         let (good, v) = with_path(t.path(), &bin, &args);
         assert!(!good, "{args:?}: {v}");
-        let code = if args[3] == "../evil" {
-            "E_INVALID_ARG"
-        } else {
-            "E_SOURCE"
-        };
         assert_eq!(v["error"]["code"], code, "{args:?}: {v}");
         assert!(
             v["error"]["message"].as_str().unwrap().contains(says),

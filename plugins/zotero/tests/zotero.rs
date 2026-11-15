@@ -42,8 +42,7 @@ fn mock(items: Vec<Value>) -> String {
 }
 
 /// One Zotero item as `include=data,csljson` returns it.
-fn item(n: usize, data: Value, csl: Value) -> Value {
-    let mut csl = csl;
+fn item(n: usize, data: Value, mut csl: Value) -> Value {
     csl["id"] = json!(format!("1234/ITEM{n}"));
     json!({"key": format!("ITEM{n}"), "data": data, "csljson": csl})
 }
@@ -197,11 +196,8 @@ fn qd_pulls_from_zotero() {
         String::from_utf8_lossy(&out.stderr)
     );
     let v: Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(
-        (v["source"].clone(), v["added"].clone()),
-        (json!("zotero"), json!(["bonaca2020"])),
-        "{v}"
-    );
+    assert_eq!(v["source"], "zotero", "{v}");
+    assert_eq!(v["added"], json!(["bonaca2020"]), "{v}");
     let bib = std::fs::read_to_string(t.join("references.bib")).unwrap();
     assert!(
         bib.contains("@article{bonaca2020,") && bib.contains("10.1/x"),

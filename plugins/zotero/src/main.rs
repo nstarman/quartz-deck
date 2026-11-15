@@ -13,22 +13,15 @@ fn fail(code: &str, message: &str, hint: &str) -> ! {
     std::process::exit(2)
 }
 
-/// Zotero's local API (user 0 is the local user); `QD_ZOTERO_URL` replaces it in tests.
-fn api() -> String {
-    std::env::var("QD_ZOTERO_URL").unwrap_or_else(|_| "http://localhost:23119".into())
-}
-
 /// The key a deck cites the item by: Zotero 7's own, else Better BibTeX's line in Extra.
-fn citation_key(data: &Value) -> Option<String> {
+fn citation_key(data: &Value) -> Option<&str> {
     let own = data["citationKey"].as_str().filter(|k| !k.is_empty());
-    let bbt = || {
-        data["extra"].as_str()?.lines().find_map(|l| {
-            l.strip_prefix("Citation Key:")
-                .map(|k| k.trim().to_string())
-                .filter(|k| !k.is_empty())
-        })
-    };
-    own.map(str::to_string).or_else(bbt)
+    own.or_else(|| {
+        data["extra"]
+            .as_str()?
+            .lines()
+            .find_map(|l| Some(l.strip_prefix("Citation Key:")?.trim()).filter(|k| !k.is_empty()))
+    })
 }
 
 /// One item as a deck's reference: its CSL-JSON, keyed by its citation key.
@@ -41,15 +34,11 @@ fn entry(item: &Value) -> Value {
         obj.insert("id".into(), json!(k));
     }
     // arXiv's 10.48550 DOIs: the item's page is the better link
-    let arxiv = obj
-        .get("DOI")
-        .and_then(Value::as_str)
-        .is_some_and(|d| d.to_lowercase().starts_with("10.48550"));
-    if arxiv
-        && obj
-            .get("URL")
-            .and_then(Value::as_str)
-            .is_some_and(|u| !u.is_empty())
+    let c = &item["csljson"];
+    if c["DOI"]
+        .as_str()
+        .is_some_and(|d| d.to_lowercase().starts_with("10.48550"))
+        && c["URL"].as_str().is_some_and(|u| !u.is_empty())
     {
         obj.remove("DOI");
     }
@@ -77,11 +66,13 @@ fn main() {
         .timeout_connect(Some(Duration::from_secs(5)))
         .build()
         .into();
+    // Zotero's local API (user 0 is the local user); `QD_ZOTERO_URL` replaces it in tests
+    let base = std::env::var("QD_ZOTERO_URL").unwrap_or_else(|_| "http://localhost:23119".into());
     let mut out = Vec::new();
     for start in (0..).step_by(100) {
         let url = format!(
             "{}/api/users/0/collections/{key}/items/top?include=data,csljson&limit=100&start={start}",
-            api()
+            base
         );
         let text = agent
             .get(&url)

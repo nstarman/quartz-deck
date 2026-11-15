@@ -59,7 +59,12 @@ fn dependency_licenses_are_allowed() {
         .unwrap()
         .iter()
         // our own crates (qd, plugin binaries) are under LICENSE
-        .filter(|p| !meta["workspace_members"].as_array().unwrap().contains(&p["id"]))
+        .filter(|p| {
+            !meta["workspace_members"]
+                .as_array()
+                .unwrap()
+                .contains(&p["id"])
+        })
         .filter(|p| !p["license"].as_str().is_some_and(allowed))
         .map(|p| format!("{} {} ({})", p["name"], p["version"], p["license"]))
         .collect();
