@@ -218,22 +218,22 @@ Paths are relative to the repo root.
 
 **Independent Test**: spec US4; quickstart §4.
 
-- [ ] T026 [P] [US4] Add `plugins/refs-slide/example.qmd` and its references: one References slide per style, a 1-column and a 2-column one, one at each size, and one long `.scrollable` list. Reuse the clash pair from T014 so the compact suffixes can be checked.
-- [ ] T027 [US4] Write a failing test in `crates/qd/tests/plugins.rs`, **`refs_slide_example`**, which renders the example with plain Quarto and checks:
+- [X] T026 [P] [US4] Add `plugins/refs-slide/example.qmd` and its references: one References slide per style, a 1-column and a 2-column one, one at each size, and one long `.scrollable` list. Reuse the clash pair from T014 so the compact suffixes can be checked.
+- [X] T027 [US4] Write a failing test in `crates/qd/tests/plugins.rs`, **`refs_slide_example`**, which renders the example with plain Quarto and checks:
   - the `#refs` classes (`refs-compact|short|full`, `refs-cols-N`, `refs-size-…`), with defaults compact, 3, smaller;
   - every entry has a link to its DOI or URL;
   - compact labels equal what `@key` renders, the a/b suffix included (cited in the same example);
   - short has "Authors (year), *Venue*";
   - full is citeproc's entry;
   - `id="ref-KEY"` is kept.
-- [ ] T028 [US4] Write `plugins/refs-slide/_extensions/refs-slide/` (`_extension.yml`, `refs-slide.lua`, `refs-slide.css`), following `contracts/extensions.md`:
+- [X] T028 [US4] Write `plugins/refs-slide/_extensions/refs-slide/` (`_extension.yml`, `refs-slide.lua`, `refs-slide.css`), following `contracts/extensions.md`:
   - the same run-citeproc-once step as `cite-links` (R1);
   - the compact labels from a scratch citeproc run (R3);
   - short from `pandoc.utils.references`;
   - classes on `#refs`; CSS for the columns and sizes.
 
   Compile it into `crates/qd/src/plugins.rs`, and add `plugins/refs-slide/README.md`. T027 passes.
-- [ ] T029 [US4] Overflow (research R10): in `crates/qd/tests/plugins.rs`, the rendered check on the example warns for a long non-scrollable References slide and not for the `.scrollable` one. If the existing check misses either case, fix it in `crates/qd/src/offline.rs`.
+- [X] T029 [US4] Overflow (research R10): in `crates/qd/tests/plugins.rs`, the rendered check on the example warns for a long non-scrollable References slide and not for the `.scrollable` one. If the existing check misses either case, fix it in `crates/qd/src/offline.rs`.
 
 **Checkpoint**: PR 5. The References slide looks as the presenter picks.
 

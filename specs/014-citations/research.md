@@ -158,6 +158,14 @@ hash per released version if that ever matters.
 
 ## R10. The References slide overflowing
 
+**Found while building (Quarto 1.11.9):** Quarto adds `smaller scrollable`
+to the slide holding `#refs`. So the References slide always scrolls, and
+`refs-size` applies on top of `smaller`: the default `smaller` works out to
+about 0.5em, today's `paper` list size. The rendered check wrongly flagged
+a scrollable slide's content as overflow, because it did not count the
+slide itself as clipping. It now skips `.scrollable` slides
+(`offline.rs`).
+
 **Decision**: no new code. The rendered check (`qd check --offline`,
 `offline.rs`) already flags content past the slide, and it skips elements
 that scroll (`overflow` not `visible`). That covers `.scrollable`. A test
