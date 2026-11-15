@@ -263,8 +263,10 @@ it, and only replaces the previous export if the offline check passes. The
 check blocks the network for the deck and its apps, visits every slide and
 step, and also lists missing files, elements outside the slide (warnings) and
 the largest parts of the file. With ghostscript (`gs`) installed, PDFs are
-recompressed to 200 dpi JPEG. A deck's Makefile needs only these commands. `qd bib --zotero KEY` writes
-the References slide's list from a Zotero collection, as an ordinary edit.
+recompressed to 200 dpi JPEG. A deck's Makefile needs only these commands. `qd bib pull --from zotero KEY`
+fills the deck's references from a Zotero collection, as an ordinary edit
+(`qd bib migrate` converts a deck that cites with the old `{{< paper >}}`
+shortcode).
 The deck and `_quarto.yml` are never modified. The first export needs the network
 once (MathJax; Chrome for Testing if no Chrome is installed).
 

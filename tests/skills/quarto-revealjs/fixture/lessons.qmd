@@ -1,5 +1,28 @@
 ---
 title: "Lessons fixture"
+suppress-bibliography: true
+filters:
+- cite-links
+- refs-slide
+references:
+- DOI: 10.1000/one
+  author:
+  - literal: Author et al.
+  id: author2020
+  issued:
+    date-parts:
+    - - 2020
+  title: A paper
+  type: article-journal
+- DOI: 10.1000/two
+  author:
+  - literal: Other & Second
+  id: other2021
+  issued:
+    date-parts:
+    - - 2021
+  title: Another paper
+  type: article-journal
 ---
 
 ## Math with long notes {#math}
@@ -36,9 +59,9 @@ A long speaker note that runs well past the slide. A long speaker note that runs
 
 ## Citations {#cite}
 
-{{< paper url="https://doi.org/10.1000/one" who="Author et al." year="2020" title="A paper" corner="true" >}}
+[[@author2020]]{.corner}
 
-- A result {{< paper url="https://doi.org/10.1000/two" who="Other & Second" year="2021" title="Another paper" >}}
+- A result @other2021
 
 ## Build-up {#steps}
 

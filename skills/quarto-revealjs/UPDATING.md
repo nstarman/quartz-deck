@@ -12,13 +12,13 @@ built only with quartz-deck's `qd`, and the per-deck tools are gone (`inline_app
    `pdf-separate-fragments`; include `_talk/html/skip-steps.html` after the body. (qd's header
    carries the WebKit `MathJax.Hub` stand-in the old header had.) Delete `_vendor/` and the scripts above, and
    the `{{< include _deck/setup.qmd >}}` line (qd adds its own Plotly renderer).
-4. Put `<!-- bibliography:start -->` and `<!-- bibliography:end -->` on the References slide in
-   place of `{{< include _bibliography.qmd >}}`, run `make refs`, and delete `_bibliography.qmd`.
+4. Put `::: {#refs}` and `:::` on the References slide in place of
+   `{{< include _bibliography.qmd >}}`, run `make refs`, and delete `_bibliography.qmd`. A deck
+   that cites with `{{< paper >}}`: `qd bib migrate` converts it (see quartz-deck's skill).
 5. Give a full-bleed footer band class `overflow-ok`. Run `make`; `qd export` reports what is left.
 
-**The `paper` shortcode** in `assets/_extensions/paper/` is a copy of quartz-deck's
-`plugins/paper/_extensions/paper/`, so a deck set up from this skill alone has it. Change it there,
-then copy it here: quartz-deck's `crates/qd/tests/plugins.rs` fails while the two differ.
+**Citations** come from quartz-deck's `cite-links` and `refs-slide` extensions. `qd bib` installs
+them into a deck (`make refs`), so this skill ships no copy.
 
 This skill documents a moving target: Quarto, the reveal.js it bundles, MathJax and plotly.py.
 Every claim in `references/quarto-revealjs-guide.md` was observed in a browser against the versions in
@@ -49,7 +49,7 @@ Every claim in `references/quarto-revealjs-guide.md` was observed in a browser a
    flagged), `qd check`, and WebKit; `qd export` of each fixture deck; exactly one MathJax in
    `demo.html`; the exported decks in WebKit (`offline_check.py --webkit`: network, errors, raw TeX);
    `lessons.html` alone in an empty folder (`lessons_check.py`, Chromium and WebKit: the background
-   app and the 3 MB `data-app` app run, the "]" skip key, the `paper` shortcode, an image on two
+   app and the 3 MB `data-app` app run, the "]" skip key, the cite-links citations, an image on two
    slides kept once; `<object>` and SVG `<image href>` inlined, notes kept, apps gzipped, a size
    report); qd's overflow check (only `#too-long` in `lessons.html`, nothing in `demo.html`); the
    shared copy (`--strip-notes`); the PDF (5 pages including the app's still, and a longer notes

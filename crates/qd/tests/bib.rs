@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::{have, json as run, qd};
+use common::{have, json as run, with_path};
 use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
@@ -291,16 +291,6 @@ fn stub(dir: &Path, name: &str, body: &str) -> std::path::PathBuf {
     fs::create_dir_all(&bin).unwrap();
     common::script(&bin.join(format!("qd-{name}")), body);
     bin
-}
-
-/// `qd args…` with `bin` first on `PATH`.
-fn with_path(dir: &Path, bin: &Path, args: &[&str]) -> (bool, Value) {
-    let mut c = qd(dir);
-    c.env(
-        "PATH",
-        format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()),
-    );
-    common::json_of(c, args)
 }
 
 /// Spec 014 US3 (T023): `pull --from NAME ARGS` runs `qd-NAME ARGS` from

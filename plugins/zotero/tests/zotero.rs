@@ -91,6 +91,11 @@ fn prints_the_collection_as_csl_json() {
             json!({"type": "book", "title": format!("B{n}")}),
         )
     }));
+    // Zotero 7's local API sends csljson as a string holding a one-entry array
+    for i in [1, 2] {
+        let csl = items[i]["csljson"].clone();
+        items[i]["csljson"] = json!(serde_json::to_string(&[csl]).unwrap());
+    }
     let url = mock(items);
     let out = run(&url, &["ABCD1234"]);
     assert!(
