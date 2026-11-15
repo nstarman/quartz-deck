@@ -266,7 +266,7 @@ re!(APP_ID, r#"id="(inlined-app-\d+)""#);
 /// Smallest part listed by [`largest`].
 const PART_MIN: usize = 20_000;
 
-fn squeeze(s: &str) -> String {
+pub(crate) fn squeeze(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 

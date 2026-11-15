@@ -24,7 +24,7 @@ static MAKE_REFS: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// One `{{< paper url= who= year= title= [corner="true"] >}}`.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Shortcode {
     pub span: Span,
     pub slide: String,
@@ -191,7 +191,7 @@ pub fn makefile_rewrite(makefile: &str) -> String {
 }
 
 /// A link the audience sees: where it goes and its text.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Shown {
     pub href: String,
     pub text: String,
@@ -228,11 +228,7 @@ pub fn links(html: &str, class: &str) -> Vec<(String, Vec<Shown>)> {
                     href: HREF
                         .captures(&c[1])
                         .map_or(String::new(), |h| h[1].to_string()),
-                    text: TAG
-                        .replace_all(&c[2], "")
-                        .split_whitespace()
-                        .collect::<Vec<_>>()
-                        .join(" "),
+                    text: crate::inline::squeeze(&TAG.replace_all(&c[2], "")),
                 })
                 .collect();
             (id.clone(), shown)
@@ -258,8 +254,7 @@ pub fn compare(before: &[(String, Vec<Shown>)], after: &[(String, Vec<Shown>)]) 
                 (Some(_), None) => "missing",
                 _ => "extra",
             };
-            let j = |s: Option<&Shown>| s.map(|s| json!({"href": s.href, "text": s.text}));
-            out.push(json!({"slide": slide, "kind": kind, "before": j(b), "after": j(a)}));
+            out.push(json!({"slide": slide, "kind": kind, "before": b, "after": a}));
         }
     }
     out
@@ -273,11 +268,6 @@ pub struct Options {
     pub accept: bool,
     pub dry_run: bool,
     pub expect: Option<String>,
-}
-
-fn in_git(dir: &Path) -> bool {
-    crate::history::git(dir, &["rev-parse", "--is-inside-work-tree"])
-        .is_ok_and(|o| o.trim() == "true")
 }
 
 /// `qd bib migrate`: convert, render before and after, compare, and keep the
@@ -297,7 +287,7 @@ pub fn run(store: &Store, o: &Options) -> Result<Value> {
             "the deck has no paper shortcodes to convert".into(),
         ));
     }
-    if o.backup.is_none() && !in_git(&dir) {
+    if o.backup.is_none() && crate::history::repo(&store.path).ok().flatten().is_none() {
         return Err(QdError::InvalidArg(format!(
             "{} is not under git: pass --backup DIR so the deck can be put back",
             dir.display()

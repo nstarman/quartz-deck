@@ -4,7 +4,7 @@
 
 mod common;
 
-use common::{git_repo, have, json_of, qd, script};
+use common::{git_repo, have, json_of, qd, script, with_path};
 use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -38,16 +38,16 @@ fn in_git(edit: impl Fn(String) -> String) -> tempfile::TempDir {
 
 /// `qd bib migrate args…`, with `bin` (stub plugins) first on PATH.
 fn migrate(dir: &Path, bin: Option<&Path>, args: &[&str]) -> (bool, Value) {
-    let mut c = qd(dir);
-    if let Some(b) = bin {
-        c.env(
-            "PATH",
-            format!("{}:{}", b.display(), std::env::var("PATH").unwrap()),
-        );
+    let all = [&["bib", "migrate"], args].concat();
+    match bin {
+        Some(b) => with_path(dir, b, &all),
+        None => json_of(qd(dir), &all),
     }
-    let mut all = vec!["bib", "migrate"];
-    all.extend(args);
-    json_of(c, &all)
+}
+
+/// The deck's text.
+fn deck(dir: &Path) -> String {
+    fs::read_to_string(dir.join("deck.qmd")).unwrap()
 }
 
 /// Every file under `dir`, with its bytes, but qd's cache, git's folder and
@@ -90,7 +90,7 @@ fn migrate_clean() {
     assert_eq!(v["differences"], json!([]), "{v}");
     assert_eq!(v["citations"], json!({"inline": 1, "corner": 1}));
     assert_eq!(v["installed"], json!(["cite-links", "refs-slide"]));
-    let deck = fs::read_to_string(p.join("deck.qmd")).unwrap();
+    let deck = deck(p);
     assert!(
         !deck.contains("{{< paper") && !deck.contains("bibliography:start"),
         "{deck}"
@@ -140,28 +140,17 @@ fn migrate_diff_fails_and_restores_unless_accepted() {
     let r: Value = serde_json::from_str(&fs::read_to_string(report).unwrap()).unwrap();
     assert_eq!(r["differences"][0]["kind"], "text", "{r}");
     assert_eq!(r["differences"][0]["slide"], "bibliography", "{r}");
-    let names = |s: &[(PathBuf, Vec<u8>)]| s.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>();
-    let after = snapshot(p);
-    assert_eq!(names(&after), names(&before), "the same files");
-    assert_eq!(after, before, "every file back as it was");
+    assert_eq!(snapshot(p), before, "every file back as it was");
 
     let (good, v) = migrate(p, None, &["--accept"]);
     assert!(good, "{v}");
     assert_eq!(v["accepted"], true);
     assert!(!v["differences"].as_array().unwrap().is_empty());
-    assert!(
-        !fs::read_to_string(p.join("deck.qmd"))
-            .unwrap()
-            .contains("{{< paper")
-    );
+    assert!(!deck(p).contains("{{< paper"));
     // and it is one edit: qd undo puts the deck, Makefile-less folder and paper back
     let (good, v) = json_of(qd(p), &["undo"]);
     assert!(good, "{v}");
-    assert!(
-        fs::read_to_string(p.join("deck.qmd"))
-            .unwrap()
-            .contains("{{< paper")
-    );
+    assert!(deck(p).contains("{{< paper"));
     assert!(p.join("_extensions/paper/paper.lua").is_file());
 }
 
@@ -191,7 +180,7 @@ JSON"#,
     assert!(good, "{v}");
     assert_eq!(v["differences"], json!([]), "{v}");
     assert_eq!(v["unmatched"], json!([]));
-    let deck = fs::read_to_string(p.join("deck.qmd")).unwrap();
+    let deck = deck(p);
     assert!(
         deck.contains("[[@Bell_TwoAuthors]]{.corner}") && deck.contains("@arden_one."),
         "{deck}"
@@ -233,7 +222,7 @@ fn migrate_without_a_references_slide() {
     let (good, v) = migrate(t.path(), None, &[]);
     assert!(good, "{v}");
     assert_eq!(v["differences"], json!([]));
-    let deck = fs::read_to_string(t.path().join("deck.qmd")).unwrap();
+    let deck = deck(t.path());
     assert!(deck.contains("suppress-bibliography: true"), "{deck}");
 }
 

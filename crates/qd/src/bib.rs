@@ -228,14 +228,15 @@ pub(crate) fn default_place(dir: &Path, f: Format) -> String {
     }
 }
 
+/// A key Pandoc's bare `@key` holds: punctuation only between letters or digits.
+const KEY: &str = r"[A-Za-z0-9_](?:[A-Za-z0-9_]|[:.#$%&\-+?<>~/][A-Za-z0-9_])*";
+
 /// Keys cited on the slides (`@key`), outside code and math; Quarto's
 /// cross-references (`@fig-…`) and e-mail addresses are not citations.
 pub fn cited_keys(d: &Deck) -> Vec<(String, String)> {
     use crate::deck::BlockKind;
-    let re = regex::Regex::new(
-        r"(?:^|[^\w@.])@(?:\{([^}]+)\}|([A-Za-z0-9_](?:[A-Za-z0-9_]|[:.#$%&\-+?<>~/][A-Za-z0-9_])*))",
-    )
-    .expect("valid regex");
+    let re = regex::Regex::new(&format!(r"(?:^|[^\w@.])@(?:\{{([^}}]+)\}}|({KEY}))"))
+        .expect("valid regex");
     const CROSSREF: [&str; 13] = [
         "fig-", "tbl-", "sec-", "eq-", "lst-", "thm-", "lem-", "cor-", "prp-", "cnj-", "def-",
         "exm-", "exr-",
@@ -270,10 +271,8 @@ pub fn cited_keys(d: &Deck) -> Vec<(String, String)> {
 /// `@key`, or `@{key}` for a key Pandoc's bare form can't hold (Better
 /// BibTeX's `Name+:2025:Title` has two punctuation marks in a row).
 pub fn cite(key: &str) -> String {
-    static PLAIN: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-        regex::Regex::new(r"^[A-Za-z0-9_](?:[A-Za-z0-9_]|[:.#$%&\-+?<>~/][A-Za-z0-9_])*$")
-            .expect("valid regex")
-    });
+    static PLAIN: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(&format!("^{KEY}$")).expect("valid regex"));
     if PLAIN.is_match(key) {
         format!("@{key}")
     } else {
