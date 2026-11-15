@@ -200,6 +200,10 @@ CSL-JSON), or embedded in the front matter as `references:`.
   The first pull creates `_talk/references.bib` (or `references.bib` beside
   the deck). A paper already in the deck keeps its key; the file's fields
   win; nothing is deleted (`gone` lists entries the file lacks).
+- `qd bib pull --from zotero KEY`: the same, from a Zotero collection (KEY:
+  its 8-character key), through the source plugin `qd-zotero` (Zotero 7
+  running, with the local API allowed). `E_SOURCE`: the plugin is missing,
+  or it failed; its message says why.
 - `qd bib embed` / `qd bib extract [--to FILE] [--format bib|json]`: move
   them into the front matter and back. `qd bib convert --format bib|json`:
   the companion file in the other format.
@@ -240,6 +244,7 @@ communicate with Zotero"). It is an edit like any other (`--dry-run`,
 | `E_OFFLINE_INCOMPATIBLE` | chalkboard/multiplex can't be one offline file | remove the feature for the export |
 | `E_NO_TEX` | `qd export --to beamer`/`pdf` without TeX | `quarto install tinytex`, or `--to typst` |
 | `E_ZOTERO` | `qd bib` cannot reach Zotero's local API | start Zotero 7 and allow other applications to talk to it (Settings > Advanced) |
+| `E_SOURCE` | `qd bib pull --from NAME`: `qd-NAME` is not on `PATH`, failed, or printed no reference list | install it (`cargo install --git https://github.com/nstarman/quartz-deck qd-NAME`), or fix what its message says (for Zotero: open it) |
 | `E_READ_ONLY` | a `qd bib` write would change a bibliography file outside the deck's folder | copy it into the folder, or `qd bib pull PATH` from it |
 | `E_NO_ENV` | deck has code cells but no environment | `qd env init`, then `qd env add <pkgs>` |
 | `E_LOCK_STALE` | manifest edited, lock out of date | `qd env sync` |

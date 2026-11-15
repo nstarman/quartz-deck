@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::{have, json as run};
+use common::{have, json as run, qd};
 use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
@@ -283,4 +283,87 @@ fn dry_run_expect_undo() {
         !p.join("references.bib").exists(),
         "the file the pull created is gone"
     );
+}
+
+/// A folder holding an executable `qd-NAME` shell script, for `PATH`.
+fn stub(dir: &Path, name: &str, script: &str) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let bin = dir.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let p = bin.join(format!("qd-{name}"));
+    fs::write(&p, format!("#!/bin/sh\n{script}\n")).unwrap();
+    fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+    bin
+}
+
+/// `qd args…` with `bin` first on `PATH`.
+fn with_path(dir: &Path, bin: &Path, args: &[&str]) -> (bool, Value) {
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    let out = qd(dir).env("PATH", path).args(args).output().unwrap();
+    let text = if out.status.success() {
+        &out.stdout
+    } else {
+        &out.stderr
+    };
+    (out.status.success(), serde_json::from_slice(text).unwrap())
+}
+
+/// Spec 014 US3 (T023): `pull --from NAME ARGS` runs `qd-NAME ARGS` from
+/// `PATH` and merges the CSL-JSON it prints.
+#[test]
+fn pull_from_source() {
+    if !have("quarto") {
+        return;
+    }
+    let t = setup();
+    let bin = stub(
+        t.path(),
+        "stub",
+        r#"[ "$1" = "COLL" ] || exit 9
+cat <<'JSON'
+[{"id": "bonaca2020", "type": "book", "author": [{"family": "Bonaca"}], "issued": {"date-parts": [[2020]]}, "title": "Spur"},
+ {"type": "book", "author": [{"family": "Koposov"}], "issued": {"date-parts": [[2010]]}, "title": "GD-1"}]
+JSON"#,
+    );
+    let (good, v) = with_path(t.path(), &bin, &["bib", "pull", "--from", "stub", "COLL"]);
+    assert!(good, "{v}");
+    assert_eq!(v["source"], "stub");
+    assert_eq!(v["added"], json!(["bonaca2020", "koposov2010"]), "{v}");
+    assert_eq!(ok(t.path(), &["bib"])["missing"], json!([]));
+}
+
+#[test]
+fn pull_from_missing_or_failing_source() {
+    let t = setup();
+    let bin = stub(t.path(), "broken", "echo 'no such collection' >&2; exit 3");
+    stub(t.path(), "garbled", "echo 'not json'");
+    stub(t.path(), "object", "echo '{\"id\": \"x\"}'");
+    for (args, says) in [
+        (vec!["bib", "pull", "--from", "nope"], "qd-nope"),
+        (
+            vec!["bib", "pull", "--from", "broken", "X"],
+            "no such collection",
+        ),
+        (vec!["bib", "pull", "--from", "garbled"], "qd-garbled"),
+        (vec!["bib", "pull", "--from", "object"], "qd-object"),
+        (vec!["bib", "pull", "--from", "../evil"], "../evil"),
+    ] {
+        let (good, v) = with_path(t.path(), &bin, &args);
+        assert!(!good, "{args:?}: {v}");
+        let code = if args[3] == "../evil" {
+            "E_INVALID_ARG"
+        } else {
+            "E_SOURCE"
+        };
+        assert_eq!(v["error"]["code"], code, "{args:?}: {v}");
+        assert!(
+            v["error"]["message"].as_str().unwrap().contains(says),
+            "{args:?}: {v}"
+        );
+    }
+    assert_eq!(deck(t.path()), DECK, "nothing written");
+    assert!(!t.path().join("references.bib").exists());
+    // a file and --from together, or neither
+    err(t.path(), &["bib", "pull"], "E_USAGE");
+    err(t.path(), &["bib", "pull", "a.bib", "b.bib"], "E_USAGE");
 }

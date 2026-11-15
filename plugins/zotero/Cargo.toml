@@ -1,0 +1,19 @@
+[package]
+name = "qd-zotero"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+description = "Source plugin for `qd bib pull --from zotero`: a Zotero collection as CSL-JSON"
+license-file = "../../LICENSE"
+publish = false
+
+[[bin]]
+name = "qd-zotero"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1.0.154"
+ureq = "3"
+
+[dev-dependencies]
+tempfile = "3.27.0"
