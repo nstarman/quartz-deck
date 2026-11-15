@@ -60,24 +60,8 @@ fn plugin_examples_render_with_plain_quarto() {
             continue;
         }
         seen += 1;
-        let t = tempfile::tempdir().unwrap();
-        for f in files(&dir) {
-            let to = t.path().join(&f);
-            std::fs::create_dir_all(to.parent().unwrap()).unwrap();
-            std::fs::copy(dir.join(&f), &to).unwrap();
-        }
-        let out = std::process::Command::new("quarto")
-            .args(["render", "example.qmd", "--to", "revealjs"])
-            .current_dir(t.path())
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "{}: {}",
-            dir.display(),
-            String::from_utf8_lossy(&out.stderr)
-        );
-        let html = std::fs::read_to_string(t.path().join("example.html")).unwrap();
+        let name = dir.file_name().unwrap().to_string_lossy();
+        let (html, _) = render_example(&name, |t| t, &[]);
         if dir.ends_with("paper") {
             assert!(
                 html.contains("paper-ref") && html.contains("paper-corner"),
@@ -88,13 +72,8 @@ fn plugin_examples_render_with_plain_quarto() {
     assert!(seen > 0, "no plugin has an example.qmd");
 }
 
-/// Copy `plugins/<name>/` into a temp folder, change its example with `edit`,
-/// render it with plain Quarto; the HTML and Quarto's stderr.
-fn render_example(
-    name: &str,
-    edit: impl Fn(String) -> String,
-    extra: &[(&str, &str)],
-) -> (String, String) {
+/// `plugins/<name>/`, copied into a temp folder.
+fn copy_plugin(name: &str) -> tempfile::TempDir {
     let dir = root().join("plugins").join(name);
     let t = tempfile::tempdir().unwrap();
     for f in files(&dir) {
@@ -102,6 +81,17 @@ fn render_example(
         std::fs::create_dir_all(to.parent().unwrap()).unwrap();
         std::fs::copy(dir.join(&f), &to).unwrap();
     }
+    t
+}
+
+/// Copy `plugins/<name>/` into a temp folder, change its example with `edit`,
+/// render it with plain Quarto; the HTML and Quarto's stderr.
+fn render_example(
+    name: &str,
+    edit: impl Fn(String) -> String,
+    extra: &[(&str, &str)],
+) -> (String, String) {
+    let t = copy_plugin(name);
     for (f, text) in extra {
         std::fs::write(t.path().join(f), text).unwrap();
     }
@@ -255,27 +245,17 @@ fn cite_links_example() {
 /// bundled. Needs Quarto and a browser; skips otherwise.
 #[test]
 fn cite_links_example_works_offline() {
-    let t = tempfile::tempdir().unwrap();
-    let qd = |args: &[&str]| {
-        std::process::Command::new(env!("CARGO_BIN_EXE_qd"))
-            .current_dir(t.path())
+    let t = copy_plugin("cite-links");
+    let qd = |a: &[&str]| {
+        common::qd(t.path())
             .env("QD_NO_DOWNLOAD", "1")
-            .env("QD_CACHE_DIR", t.path().join(".cache"))
-            .env("QD_CONFIG_DIR", t.path().join(".config"))
-            .env_remove("QD_DECK")
-            .args(args)
+            .args(a)
             .output()
             .unwrap()
     };
     if !have("quarto") || !qd(&["browser"]).status.success() {
         eprintln!("no browser: skipping");
         return;
-    }
-    let dir = root().join("plugins/cite-links");
-    for f in files(&dir) {
-        let to = t.path().join(&f);
-        std::fs::create_dir_all(to.parent().unwrap()).unwrap();
-        std::fs::copy(dir.join(&f), &to).unwrap();
     }
     let out = qd(&["--deck", "example.qmd", "check", "--offline"]);
     let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or_default();

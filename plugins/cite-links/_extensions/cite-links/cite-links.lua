@@ -16,9 +16,7 @@ local function citeproc_once(doc)
   for _, r in ipairs(pandoc.utils.references(doc)) do
     refs[r.id] = pandoc.MetaMap({ doi = str(r.doi), url = str(r.url), title = str(r.title) })
   end
-  if not doc.meta.csl then
-    doc.meta.csl = pandoc.MetaString(quarto.utils.resolve_path("talk.csl"))
-  end
+  doc.meta.csl = doc.meta.csl or pandoc.MetaString(quarto.utils.resolve_path("talk.csl"))
   doc.meta["link-citations"] = true
   doc = pandoc.utils.citeproc(doc)
   doc.meta.bibliography, doc.meta.references, doc.meta.nocite = nil, nil, nil
@@ -33,6 +31,10 @@ local function target(ref)
     return "https://doi.org/" .. doi
   end
   return url ~= "" and url or nil
+end
+
+local function icon_span()
+  return pandoc.Span({}, { class = "cite-icon" })
 end
 
 -- "Dunn et al. (2021)" -> "Dunn et al. 2021"
@@ -65,7 +67,7 @@ function Pandoc(doc)
     end
     local inlines = pandoc.Inlines({})
     if icon then
-      inlines:extend({ pandoc.Span({}, { class = "cite-icon" }), pandoc.Space() })
+      inlines:extend({ icon_span(), pandoc.Space() })
     end
     inlines:extend(content)
     return pandoc.Link(inlines, href, title, pandoc.Attr("", { "cite-link" }, { ["aria-label"] = title }))
@@ -89,10 +91,7 @@ function Pandoc(doc)
         return link(first.id, content) or content
       end
       -- a span, not the Cite: Quarto's own citeproc pass would render a Cite again
-      local ids = {}
-      for _, ci in ipairs(c.citations) do
-        ids[#ids + 1] = ci.id
-      end
+      local ids = c.citations:map(function(ci) return ci.id end)
       local content = c.content:walk({
         Link = function(l)
           local key = key_of(l)
@@ -110,7 +109,7 @@ function Pandoc(doc)
       local found
       s:walk({ Link = function(l) if not found and l.classes:includes("cite-link") then found = l end end })
       if found then
-        found.content = { pandoc.Span({}, { class = "cite-icon" }) }
+        found.content = { icon_span() }
         found.classes:insert("cite-corner")
         return found
       end

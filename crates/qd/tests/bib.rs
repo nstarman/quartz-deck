@@ -88,11 +88,8 @@ fn pull_creates_companion() {
     // cite-links is installed and named in `filters:`, so a plain render links
     assert_eq!(v["installed"], json!(["cite-links"]));
     assert!(t.path().join("_extensions/cite-links/talk.csl").is_file());
-    assert!(
-        deck(t.path()).contains("filters:\n- cite-links\n"),
-        "{}",
-        deck(t.path())
-    );
+    let d = deck(t.path());
+    assert!(d.contains("filters:\n- cite-links\n"), "{d}");
     assert!(cited(t.path()).contains("Bonaca and Hogg"));
     let out = std::process::Command::new("quarto")
         .args(["render", "talk.qmd", "--to", "revealjs"])

@@ -131,17 +131,16 @@ pub fn with_filters(text: &str) -> Result<String> {
         l.iter()
             .any(|f| f.as_str() == Some(n) || f.get("path").and_then(Yaml::as_str) == Some(n))
     };
-    let missing: Vec<&str> = EXTENSIONS
-        .iter()
-        .map(|e| e.name)
-        .filter(|n| !named(&list, n))
-        .collect();
-    if missing.is_empty() {
+    let n = list.len();
+    for e in EXTENSIONS {
+        if !named(&list, e.name) {
+            list.push(e.name.into());
+        }
+    }
+    if list.len() == n {
         return Ok(text.to_string());
     }
-    list.extend(missing.into_iter().map(|n| Yaml::String(n.into())));
-    let p = crate::ops::meta_set_yaml(&d, "filters", &Yaml::Sequence(list))?;
-    crate::ops::apply(text, &p)
+    crate::bib::set_front(text, &[("filters", Some(Yaml::Sequence(list)))])
 }
 
 /// Each extension's state in the deck, for `qd bib`.
