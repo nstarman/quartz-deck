@@ -520,8 +520,8 @@ mod tests {
 
     #[test]
     fn makefile_key_and_rewrite() {
-        let mk = "ZOTERO = S376YTIE   # the key\nrefs:\n\tqd bib --zotero $(ZOTERO)\n";
-        assert_eq!(makefile_key(mk).as_deref(), Some("S376YTIE"));
+        let mk = "ZOTERO = ABCD1234   # the key\nrefs:\n\tqd bib --zotero $(ZOTERO)\n";
+        assert_eq!(makefile_key(mk).as_deref(), Some("ABCD1234"));
         assert_eq!(
             makefile_rewrite(mk),
             mk.replace("qd bib --zotero", "qd bib pull --from zotero")

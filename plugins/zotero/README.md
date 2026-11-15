@@ -6,7 +6,7 @@ prints a Zotero collection as a CSL-JSON list, read from the running Zotero
 
 ```bash
 cargo install --git https://github.com/nstarman/quartz-deck qd-zotero
-qd bib pull --from zotero S376YTIE
+qd bib pull --from zotero ABCD1234
 ```
 
 `qd bib pull --from zotero KEY` runs `qd-zotero KEY` from `PATH` and merges

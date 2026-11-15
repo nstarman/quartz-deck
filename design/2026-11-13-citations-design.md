@@ -71,8 +71,8 @@ plugins only for what's missing.
    `qd check` warns when the slide overflows (it already detects overflow).
 9. **Convert now.** `paper` is removed in this work, not retired gradually.
    The decks using it are converted in the same change, with a backup first:
-   - `Presentations/2026-PPP Talk/presentation.qmd`: 49 citations, 24 of them
-     corner, its References from `qd bib --zotero S376YTIE`, not a git
+   - the PPP talk (outside this repository): 49 citations, 24 of them
+     corner, its References from `qd bib --zotero KEY`, not a git
      repository;
    - the skill's test fixture `tests/skills/quarto-revealjs/fixture/lessons.qmd`;
    - the skill's scaffold (`assets/`: `_extensions/paper`, `Makefile`'s
@@ -206,7 +206,7 @@ decision must be stated.
 { "source": { "name": "zotero", "command": "qd-zotero", "args": "COLLECTION" } }
 ```
 
-- `qd bib pull --from zotero S376YTIE` runs `qd-<name>` from `PATH` (the
+- `qd bib pull --from zotero KEY` runs `qd-<name>` from `PATH` (the
   manifest names the command, for documentation and for a plugin whose binary
   is named differently) with the given arguments.
 - The command prints a CSL-JSON array on stdout, and errors on stderr, with
@@ -299,7 +299,7 @@ skill keeps making `paper` decks until it's synced *(my call)*.
 *(decided by the person)*:
 1. copy the folder to a dated backup;
 2. with Zotero running (the person opens it), run `qd bib migrate --from
-   zotero S376YTIE`;
+   zotero KEY`;
 3. hand the before/after report to the person to check.
 
 Shortcodes that no longer match an entry in today's collection by URL get

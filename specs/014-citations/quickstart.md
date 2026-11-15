@@ -116,20 +116,20 @@ qd bib migrate --deck lessons.qmd
 extensions installed, and `differences: 0`.
 
 **The PPP talk** (the builder runs it; the person opens Zotero and reads the
-report):
+report). `TALK` is the talk's folder and `KEY` its Zotero collection key:
 
 ```bash
-cp -R "$HOME/Documents/Academia/Presentations/2026-PPP Talk" "$HOME/Documents/Academia/Presentations/2026-PPP Talk.backup-2026-11-13"
+cp -R "$TALK" "$TALK.backup-$(date +%F)"
 ```
 
 ```bash
-qd bib migrate --from zotero S376YTIE --backup "$HOME/Documents/Academia/Presentations/2026-PPP Talk.backup-2026-11-13" --deck "$HOME/Documents/Academia/Presentations/2026-PPP Talk/presentation.qmd"
+qd bib migrate --from zotero "$KEY" --backup "$TALK.backup-$(date +%F)" --deck "$TALK/presentation.qmd"
 ```
 
 **Expected**: it fails with `E_MIGRATE_DIFF` and the folder is restored.
 The report lists about 11 label and 9 link differences (research R11).
 After the person accepts the report, run the same command with `--accept`.
-`make refs` in the talk then runs `qd bib pull --from zotero S376YTIE`.
+`make refs` in the talk then runs `qd bib pull --from zotero KEY`.
 
 ## 6. `paper` is gone
 

@@ -284,9 +284,9 @@ Paths are relative to the repo root.
 
   Update `skills/quarto-revealjs/SKILL.md` and its references on citations.
 - [X] T035 [US5] Convert the PPP talk (quickstart §5). This needs the person.
-  1. Copy the folder to `2026-PPP Talk.backup-2026-11-13` beside it.
-  2. Ask the person to open Zotero. Confirm that `qd-zotero S376YTIE` works against the real Zotero, which also checks `include=csljson` (R8; fall back as R8 says if not).
-  3. Run `qd bib migrate --from zotero S376YTIE --backup … --deck ….`
+  1. Copy the talk's folder to a dated backup beside it.
+  2. Ask the person to open Zotero. Confirm that `qd-zotero KEY` works against the real Zotero, which also checks `include=csljson` (R8; fall back as R8 says if not).
+  3. Run `qd bib migrate --from zotero KEY --backup … --deck ….`
   4. Give the person the report (expect about 11 label and 9 link differences).
   5. Run with `--accept` only on their word, quoted.
   6. Render the talk with plain `quarto render` and open it in the browser pane for them.
