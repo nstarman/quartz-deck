@@ -26,18 +26,17 @@ python3 "$here/versions_check.py" "$skill/versions.json" || status=1
 
 step "set up the deck folder from the skill's assets"
 cp -R "$skill/assets/." "$work/"
-for f in Makefile presentation.qmd README.md _quarto.yml .gitignore _extensions/paper/paper.lua \
+for f in Makefile presentation.qmd README.md _quarto.yml .gitignore \
          _talk/html/skip-steps.html _talk/html/notes-below.html _talk/style/presentation.css; do
   [ -f "$work/$f" ] || fail "the scaffold has no $f"
 done
-for f in inline_apps.py make_pdf.py check_offline.py check_overflow.py size_report.py bibliography.py \
+for f in inline_apps.py make_pdf.py check_offline.py check_overflow.py size_report.py bibliography.py _extensions/paper \
          _quarto-share.yml _deck _vendor; do
   [ ! -e "$work/$f" ] || fail "the scaffold still ships $f (qd replaces it)"
 done
 grep -q 'qd export --pdf --out _output' "$work/Makefile" || fail "Makefile: make is not qd export --pdf"
-grep -q -- '--notes' "$work/Makefile" && grep -q 'qd bib --zotero' "$work/Makefile" || fail "Makefile: notes or refs target"
-grep -q '<!-- bibliography:start' "$work/presentation.qmd" && grep -q '<!-- bibliography:end' "$work/presentation.qmd" \
-  || fail "presentation.qmd has no bibliography markers"
+grep -q -- '--notes' "$work/Makefile" && grep -q 'qd bib pull --from zotero' "$work/Makefile" || fail "Makefile: notes or refs target"
+grep -q '::: {#refs' "$work/presentation.qmd" || fail "presentation.qmd has no References div"
 
 step "a new deck from the scaffold alone: make (qd export --pdf), make notes, qd check"
 sc="$work-scaffold"; rm -rf "$sc"; mkdir -p "$sc"; cp -R "$skill/assets/." "$sc/"
@@ -77,6 +76,9 @@ python3 -c "import pathlib; a = pathlib.Path('_talk/apps'); pathlib.Path(a, 'big
 export QUARTO_PYTHON=${QUARTO_PYTHON:-$(command -v python3)}
 
 step "qd export of the fixture decks (offline check, overflow check, size report in its JSON)"
+# lessons.qmd cites with @key (references embedded): qd installs cite-links and refs-slide
+qd bib install -d lessons.qmd > install.json \
+  && [ "$(field install.json "d['installed'] == ['cite-links', 'refs-slide']")" = True ] || fail "qd bib install"
 for deck in demo lessons reveal-features; do
   qd export -d $deck.qmd --out "out-$deck" $([ $deck = demo ] && echo --pdf) > "$deck.json"
   [ "$(field "$deck.json" "d['ok']")" = True ] || { fail "qd export $deck"; field "$deck.json" "json.dumps(d.get('check', d), indent=1)[:3000]"; }

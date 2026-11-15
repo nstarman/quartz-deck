@@ -52,12 +52,20 @@ fn put(path: &Path, text: Option<&str>) -> Result<()> {
         Some(t) => {
             let name = path.file_name().unwrap_or_default().to_string_lossy();
             let tmp = path.with_file_name(format!(".{name}.qd-tmp-{}", std::process::id()));
+            // an undo may put back a file whose folder went with it
+            if let Some(dir) = path.parent() {
+                fs::create_dir_all(dir)?;
+            }
             fs::write(&tmp, t)?;
             fs::rename(&tmp, path)?;
         }
         None => {
             if path.exists() {
                 fs::remove_file(path)?;
+            }
+            // and its folder, once empty (`_extensions/paper` after a migrate)
+            if let Some(dir) = path.parent() {
+                let _ = fs::remove_dir(dir);
             }
         }
     }

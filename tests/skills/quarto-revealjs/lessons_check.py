@@ -86,11 +86,11 @@ with sync_playwright() as p:
     if imgs != [["data:image/png;", True]] * 2:
         fails.append(f"image on two slides not restored: {imgs}")
 
-    links = pg.evaluate("""[...document.querySelectorAll('#cite a.paper-ref')].map(a =>
-        [a.getAttribute('href'), a.classList.contains('paper-corner'), a.innerText.trim(),
-         !!a.querySelector('.paper-icon'), a.getAttribute('title')])""")
-    want = [["https://doi.org/10.1000/one", True, "", True, "Author et al. (2020): A paper"],
-            ["https://doi.org/10.1000/two", False, "Other & Second (2021)", True, "Other & Second (2021): Another paper"]]
+    links = pg.evaluate("""[...document.querySelectorAll('#cite a.cite-link')].map(a =>
+        [a.getAttribute('href'), a.classList.contains('cite-corner'), a.innerText.trim(),
+         !!a.querySelector('.cite-icon'), a.getAttribute('title')])""")
+    want = [["https://doi.org/10.1000/one", True, "", True, "Author et al. 2020: A paper"],
+            ["https://doi.org/10.1000/two", False, "Other & Second (2021)", True, "Other & Second 2021: Another paper"]]
     if links != want:
         fails.append(f"citations: {links}")
 

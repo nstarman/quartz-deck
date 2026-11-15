@@ -1,6 +1,6 @@
 # make        _output/presentation.html (one offline file, checked) and _output/presentation.pdf
 # make notes  _output/presentation-notes.pdf, each slide followed by its speaker notes
-# make refs   rewrite the References slide's list from the Zotero collection (Zotero running)
+# make refs   the deck's references from the Zotero collection (Zotero running, qd-zotero installed)
 # Needs quarto and quartz-deck's `qd` (github.com/nstarman/quartz-deck). `qd export` replaces
 # _output/ as a whole, so it prints the PDF in the same run.
 HTML = _output/presentation.html
@@ -14,7 +14,7 @@ notes: | $(HTML)
 	qd pdf --html $(HTML) --notes
 
 refs:
-	qd bib --zotero $(ZOTERO)
+	qd bib pull --from zotero $(ZOTERO)
 
 $(HTML):
 	qd export --pdf --out _output

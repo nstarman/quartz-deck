@@ -70,12 +70,7 @@ enum Cmd {
     /// Show one slide: attributes, source and blocks
     Show { slide: String },
     /// The deck's references: list them (no subcommand), pull, embed, extract, convert
-    #[command(args_conflicts_with_subcommands = true)]
     Bib {
-        /// Old form, until `qd bib migrate` lands: write the References list from a
-        /// Zotero collection between the deck's `bibliography:start/end` lines
-        #[arg(long, hide = true)]
-        zotero: Option<String>,
         #[command(subcommand)]
         action: Option<BibCmd>,
     },
@@ -665,6 +660,22 @@ enum BibCmd {
     },
     /// Install or update the citation extensions qd carries in the deck's `_extensions/`
     Install,
+    /// Convert a deck citing with the old `{{< paper >}}` shortcode to `@key`
+    /// citations; renders before and after, and puts the deck back on any
+    /// difference unless --accept
+    Migrate {
+        /// The references' source plugin (default: the Makefile's `qd bib --zotero KEY`)
+        #[arg(long, value_name = "NAME")]
+        from: Option<String>,
+        /// The source's arguments
+        args: Vec<String>,
+        /// Copy the files it changes here first (required outside git)
+        #[arg(long)]
+        backup: Option<PathBuf>,
+        /// Keep the conversion even when the report lists differences
+        #[arg(long)]
+        accept: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -808,9 +819,9 @@ fn schema() -> Value {
         "E_NOT_CODE",
         "E_ENGINE",
         "E_RUN",
-        "E_ZOTERO",
         "E_SOURCE",
-        "E_READ_ONLY"
+        "E_READ_ONLY",
+        "E_MIGRATE_DIFF"
     ]);
     v["refs"] = json!({
         "slide": "explicit id | auto id | @N (1-based) | first | last",
@@ -1397,10 +1408,7 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
         Cmd::Meta {
             action: Some(MetaCmd::Unset { key }),
         } => ctx.edit(|d| ops::meta_unset(d, key)),
-        Cmd::Bib {
-            zotero: None,
-            action,
-        } => {
+        Cmd::Bib { action } => {
             let store = ctx.store()?;
             let d = store.read()?;
             let dir = store.path.parent().unwrap_or(Path::new(".")).to_path_buf();
@@ -1409,6 +1417,21 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                     v["extensions"] = crate::plugins::states(&dir);
                     v
                 }),
+                Some(BibCmd::Migrate {
+                    from,
+                    args,
+                    backup,
+                    accept,
+                }) => crate::migrate::run(
+                    &store,
+                    &crate::migrate::Options {
+                        from: from.clone().map(|f| (f, args.clone())),
+                        backup: backup.clone(),
+                        accept: *accept,
+                        dry_run: cli.dry_run,
+                        expect: cli.expect.clone(),
+                    },
+                ),
                 Some(BibCmd::Install) => ctx.edit_files("bib-install", |d| {
                     Ok(crate::bib::Edit {
                         text: d.text.clone(),
@@ -1441,20 +1464,6 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                     ctx.edit_files("bib-convert", |d| crate::bib::convert(d, &dir, *format))
                 }
             }
-        }
-        Cmd::Bib {
-            zotero: Some(zotero),
-            ..
-        } => {
-            // a stale --expect or no marker pair: fail before asking Zotero
-            let d = read()?.1;
-            ctx.check_expect(&d)?;
-            crate::bib::patch(&d, &[])?;
-            let (rows, warnings) = crate::bib::lines(&crate::bib::fetch(zotero)?);
-            let mut v = ctx.edit(|d| crate::bib::patch(d, &rows))?;
-            v["entries"] = json!(rows.len());
-            v["warnings"] = json!(warnings);
-            Ok(v)
         }
         Cmd::Check {
             offline: true,

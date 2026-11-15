@@ -210,6 +210,18 @@ the warning only for the first.
   `<cache>/migrate/<hash>/<timestamp>/`. A non-git folder without
   `--backup` is refused (`E_INVALID_ARG`).
 
+**Found while building:**
+- A deck that cited with `paper` but had no References list would get one
+  appended to its last slide by citeproc, and the check caught that
+  ("extra" links). The conversion sets `suppress-bibliography: true` for
+  such a deck.
+- With the list suppressed, citeproc links no citation, so cite-links
+  couldn't find a parenthetical or corner citation's keys. The shared
+  step now runs citeproc with the list and drops the `#refs` div itself
+  (cite-links 1.2.0, refs-slide 1.1.0).
+- Entries built from shortcodes are `article-journal`, since Pandoc's
+  BibLaTeX round trip drops CSL's plain `article`.
+
 **PPP talk facts (measured)**: 35 shortcodes in the text, 24 of them
 corner, and 15 in the marker list. Comparing them to that list: 11 in-text
 labels differ (hand-written "Myers, Starkman & Necib (2025)", "Euclid

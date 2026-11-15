@@ -77,6 +77,16 @@ pub fn json(dir: &Path, args: &[&str]) -> (bool, serde_json::Value) {
     json_of(qd(dir), args)
 }
 
+/// `json`, with `bin` first on `PATH` (stub plugins).
+pub fn with_path(dir: &Path, bin: &Path, args: &[&str]) -> (bool, serde_json::Value) {
+    let mut c = qd(dir);
+    c.env(
+        "PATH",
+        format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()),
+    );
+    json_of(c, args)
+}
+
 /// `json`, with a prepared `qd` command (extra environment).
 pub fn json_of(mut c: Command, args: &[&str]) -> (bool, serde_json::Value) {
     let out = c.args(args).output().unwrap();

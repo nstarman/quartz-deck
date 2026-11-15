@@ -245,7 +245,7 @@ Paths are relative to the repo root.
 
 **Independent Test**: spec US5; quickstart §5–§6.
 
-- [ ] T030 [P] [US5] Write failing unit tests in `crates/qd/src/migrate.rs`:
+- [X] T030 [P] [US5] Write failing unit tests in `crates/qd/src/migrate.rs`:
   - shortcode parsing: the arguments, `corner="true"`, an unknown argument giving `E_INVALID_ARG` with the slide;
   - an entry built from a shortcode (data-model "Paper shortcode");
   - the Makefile's `qd bib --zotero KEY` line read;
@@ -254,7 +254,7 @@ Paths are relative to the repo root.
     - the marker list → `::: {#refs refs-style="compact" refs-columns="3"}`/`:::`;
     - bytes elsewhere unchanged;
   - the HTML comparison: per slide, `(href, text, title)` for `a.paper-ref` before and for `a.cite-link` and `#refs` links after, with each kind of difference (`text`, `href`, `title`, `missing`, `extra`).
-- [ ] T031 [P] [US5] Write failing CLI tests in `crates/qd/tests/migrate.rs` (skip without quarto), on fixtures in `crates/qd/tests/fixtures/migrate/`: a small `paper` deck in a temp git repo, with `_extensions/paper`, a Makefile and a marker list, whose shortcode labels match their entries.
+- [X] T031 [P] [US5] Write failing CLI tests in `crates/qd/tests/migrate.rs` (skip without quarto), on fixtures in `crates/qd/tests/fixtures/migrate/`: a small `paper` deck in a temp git repo, with `_extensions/paper`, a Makefile and a marker list, whose shortcode labels match their entries.
   - **`migrate_clean`**:
     - `differences: 0`, no shortcodes left;
     - `_extensions/paper` removed, both extensions installed;
@@ -265,7 +265,7 @@ Paths are relative to the repo root.
   - **`migrate_unmatched_url`**: a shortcode whose URL is arXiv where the entry has a DOI matches by title; one matching nothing gets a built entry, listed under `unmatched`.
   - **`migrate_needs_backup_outside_git`**: a non-git folder without `--backup` gives `E_INVALID_ARG`; with `--backup DIR`, the files are copied there first.
   - **`migrate_from_stub_source`**: with `--from zotero KEY` and a stub `qd-zotero` on `PATH`, the entries come from it.
-- [ ] T032 [US5] Add `E_MIGRATE_DIFF` to `crates/qd/src/error.rs` and `qd schema`. Implement `crates/qd/src/migrate.rs` and `qd bib migrate [--from] [--backup] [--accept]` in `cli.rs` (research R11):
+- [X] T032 [US5] Add `E_MIGRATE_DIFF` to `crates/qd/src/error.rs` and `qd schema`. Implement `crates/qd/src/migrate.rs` and `qd bib migrate [--from] [--backup] [--accept]` in `cli.rs` (research R11):
   - the backup first;
   - the references from the source or the shortcodes, and the merge;
   - the patches;
@@ -276,23 +276,23 @@ Paths are relative to the repo root.
   - the restore on a difference unless `--accept`.
 
   Writes go through `Store::write_many`. T030 and T031 pass.
-- [ ] T033 [US5] Convert `tests/skills/quarto-revealjs/fixture/lessons.qmd` with `qd bib migrate`, review its report, and update `tests/skills` expectations that mention `paper`.
-- [ ] T034 [US5] Convert the skill's scaffold in `skills/quarto-revealjs/assets/`:
+- [X] T033 [US5] Convert `tests/skills/quarto-revealjs/fixture/lessons.qmd` with `qd bib migrate`, review its report, and update `tests/skills` expectations that mention `paper`.
+- [X] T034 [US5] Convert the skill's scaffold in `skills/quarto-revealjs/assets/`:
   - `presentation.qmd` cites with `@key` and has the `#refs` slide;
   - the `Makefile`'s `refs` target becomes `qd bib pull --from zotero $(ZOTERO)`;
   - `_extensions/paper` is deleted, and decks get the extensions from `qd bib install`.
 
   Update `skills/quarto-revealjs/SKILL.md` and its references on citations.
-- [ ] T035 [US5] Convert the PPP talk (quickstart §5). This needs the person.
+- [X] T035 [US5] Convert the PPP talk (quickstart §5). This needs the person.
   1. Copy the folder to `2026-PPP Talk.backup-2026-11-13` beside it.
   2. Ask the person to open Zotero. Confirm that `qd-zotero S376YTIE` works against the real Zotero, which also checks `include=csljson` (R8; fall back as R8 says if not).
   3. Run `qd bib migrate --from zotero S376YTIE --backup … --deck ….`
   4. Give the person the report (expect about 11 label and 9 link differences).
   5. Run with `--accept` only on their word, quoted.
   6. Render the talk with plain `quarto render` and open it in the browser pane for them.
-- [ ] T036 [US5] Remove `plugins/paper/` and the `skill_copy_of_paper_matches_the_plugin` test, and the `paper` branch of `plugin_examples_render_with_plain_quarto`, in `crates/qd/tests/plugins.rs`. Update `plugins/README.md`.
-- [ ] T037 [US5] Remove `qd bib --zotero`, `bib::fetch`, `bib::lines`, `bib::patch` and the marker constants from `crates/qd/src/bib.rs` and `cli.rs`, along with their tests, and the old Zotero mock test in `crates/qd/tests`. Keep `E_ZOTERO`'s text only where `qd-zotero` uses it. `migrate` still reads the old Makefile line (T030).
-- [ ] T038 [US5] Run quickstart §6's grep. No `paper` shortcode, extension, `--zotero` or marker list is left outside `specs/` and migrate's own parser and fixtures.
+- [X] T036 [US5] Remove `plugins/paper/` and the `skill_copy_of_paper_matches_the_plugin` test, and the `paper` branch of `plugin_examples_render_with_plain_quarto`, in `crates/qd/tests/plugins.rs`. Update `plugins/README.md`.
+- [X] T037 [US5] Remove `qd bib --zotero`, `bib::fetch`, `bib::lines`, `bib::patch` and the marker constants from `crates/qd/src/bib.rs` and `cli.rs`, along with their tests, and the old Zotero mock test in `crates/qd/tests`. Keep `E_ZOTERO`'s text only where `qd-zotero` uses it. `migrate` still reads the old Makefile line (T030).
+- [X] T038 [US5] Run quickstart §6's grep. No `paper` shortcode, extension, `--zotero` or marker list is left outside `specs/` and migrate's own parser and fixtures.
 
 **Checkpoint**: PR 6. `paper` is gone, and every deck cites natively.
 
@@ -300,7 +300,7 @@ Paths are relative to the repo root.
 
 ## Phase 8: Polish & cross-cutting
 
-- [ ] T039 [P] Docs:
+- [X] T039 [P] Docs:
   - `skills/quartz-deck/SKILL.md`: `qd bib` commands, source plugins, migrate;
   - `README.md`: citations;
   - `design/code-audit-plugins.md`: G4 note on source plugins;

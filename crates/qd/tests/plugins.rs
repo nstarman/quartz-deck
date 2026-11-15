@@ -28,24 +28,6 @@ fn files(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// The quarto-revealjs skill ships its own copy of `paper`, so a deck set up
-/// from the skill alone has it. `plugins/paper` is the source; the copy must
-/// match it byte for byte.
-#[test]
-fn skill_copy_of_paper_matches_the_plugin() {
-    let plugin = root().join("plugins/paper/_extensions/paper");
-    let copy = root().join("skills/quarto-revealjs/assets/_extensions/paper");
-    assert_eq!(files(&plugin), files(&copy), "the same files");
-    for f in files(&plugin) {
-        assert_eq!(
-            std::fs::read(plugin.join(&f)).unwrap(),
-            std::fs::read(copy.join(&f)).unwrap(),
-            "{} differs: edit plugins/paper and copy it to the skill",
-            f.display()
-        );
-    }
-}
-
 /// Each plugin's `example.qmd` renders with plain Quarto (no qd).
 #[test]
 fn plugin_examples_render_with_plain_quarto() {
@@ -61,13 +43,7 @@ fn plugin_examples_render_with_plain_quarto() {
         }
         seen += 1;
         let name = dir.file_name().unwrap().to_string_lossy();
-        let (html, _) = render_example(&name, |t| t, &[]);
-        if dir.ends_with("paper") {
-            assert!(
-                html.contains("paper-ref") && html.contains("paper-corner"),
-                "both forms of the paper link"
-            );
-        }
+        render_example(&name, |t| t, &[]);
     }
     assert!(seen > 0, "no plugin has an example.qmd");
 }
@@ -233,6 +209,24 @@ fn cite_links_example() {
         &[("own.csl", own)],
     );
     assert!(html.contains("OWN-STYLE"), "the deck's csl: wins");
+
+    // embedded references keep CSL's capitalised DOI/URL (a .bib gives doi/url)
+    let (html, _) = render_example(
+        "cite-links",
+        |t| {
+            t.replace(
+                "bibliography: references.bib\n",
+                "references:\n- id: bell2020\n  type: article-journal\n  author: [{family: Bell}, {family: Cho}]\n  issued: {date-parts: [[2020]]}\n  title: Two authors\n  DOI: 10.5555/bell\n",
+            )
+        },
+        &[],
+    );
+    assert!(
+        cite_links(&html)
+            .iter()
+            .any(|(tag, _)| tag.contains(r#"href="https://doi.org/10.5555/bell""#)),
+        "an embedded entry links to its DOI"
+    );
 }
 
 /// `qd check --offline`'s problems for `example.qmd` in `dir`, or None
