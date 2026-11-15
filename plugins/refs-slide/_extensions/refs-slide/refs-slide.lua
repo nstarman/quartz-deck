@@ -44,7 +44,8 @@ end
 
 -- The DOI, except arXiv's own (10.48550) when the entry has its page.
 local function target(ref)
-  local doi, url = str(ref.doi), str(ref.url)
+  -- a .bib file's entries come back as doi/url, embedded CSL YAML keeps DOI/URL
+  local doi, url = str(ref.doi or ref.DOI), str(ref.url or ref.URL)
   if doi ~= "" and not (doi:lower():find("^10%.48550/") and url ~= "") then
     return "https://doi.org/" .. doi
   end

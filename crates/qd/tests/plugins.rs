@@ -209,6 +209,24 @@ fn cite_links_example() {
         &[("own.csl", own)],
     );
     assert!(html.contains("OWN-STYLE"), "the deck's csl: wins");
+
+    // embedded references keep CSL's capitalised DOI/URL (a .bib gives doi/url)
+    let (html, _) = render_example(
+        "cite-links",
+        |t| {
+            t.replace(
+                "bibliography: references.bib\n",
+                "references:\n- id: bell2020\n  type: article-journal\n  author: [{family: Bell}, {family: Cho}]\n  issued: {date-parts: [[2020]]}\n  title: Two authors\n  DOI: 10.5555/bell\n",
+            )
+        },
+        &[],
+    );
+    assert!(
+        cite_links(&html)
+            .iter()
+            .any(|(tag, _)| tag.contains(r#"href="https://doi.org/10.5555/bell""#)),
+        "an embedded entry links to its DOI"
+    );
 }
 
 /// `qd check --offline`'s problems for `example.qmd` in `dir`, or None
