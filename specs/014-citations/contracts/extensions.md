@@ -12,7 +12,7 @@ network request.
 | Markup | Renders |
 |---|---|
 | `@key` | `<a class="cite-link" href="DOI-or-URL" title="Label: Title" aria-label="…"><span class="cite-icon"></span> Name et al. (2020)</a>` |
-| `[@key]`, `[@a; @b]`, `[see @a, p. 3]` | citeproc's text, with each key's part wrapped as above. Prefixes, suffixes and locators stay outside the links |
+| `[@key]`, `[@a; @b]`, `[see @a, p. 3]` | citeproc's text, with each key's part wrapped as above. Prefixes such as "see" stay outside the links; a locator ("p. 3") is part of its key's link, as citeproc renders it |
 | `[[@key]]{.corner}` | the icon alone, `class="cite-link cite-corner"`, top right. Its paragraph takes no height |
 | a key without DOI or URL | citeproc's text unlinked. Warning on stderr: `cite-links: no DOI or URL for 'key'` |
 

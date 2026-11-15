@@ -447,7 +447,7 @@ pub struct Edit {
 }
 
 /// Apply front-matter changes in turn (`None` removes a key that is there).
-fn set_front(text: &str, changes: &[(&str, Option<Yaml>)]) -> Result<String> {
+pub(crate) fn set_front(text: &str, changes: &[(&str, Option<Yaml>)]) -> Result<String> {
     let mut text = text.to_string();
     for (key, value) in changes {
         let d = Deck::parse(text.clone());

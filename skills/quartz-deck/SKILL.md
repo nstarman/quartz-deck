@@ -203,7 +203,10 @@ CSL-JSON), or embedded in the front matter as `references:`.
 - `qd bib embed` / `qd bib extract [--to FILE] [--format bib|json]`: move
   them into the front matter and back. `qd bib convert --format bib|json`:
   the companion file in the other format.
-- `qd bib install`: the citation extensions into `_extensions/`.
+- `qd bib install`: the citation extensions into `_extensions/`, named in
+  `filters:`. Every `qd bib` write does this too. With `cite-links`, each
+  citation links to its paper with an icon ("Name et al. (2021)", from its
+  `talk.csl`), and `[[@key]]{.corner}` is the icon alone, top right.
 
 Each write is one edit of the deck and its companion file (`--dry-run`,
 `--expect`, one `qd undo` reverts both). A bibliography file outside the

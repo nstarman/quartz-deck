@@ -1168,6 +1168,8 @@ impl Ctx<'_> {
         let d = store.read()?;
         self.check_expect(&d)?;
         let crate::bib::Edit { text, also, report } = f(&d)?;
+        // the deck runs the extensions qd installs: name them in `filters:`
+        let text = crate::plugins::with_filters(&text)?;
         let also: Vec<_> = also.into_iter().filter(|o| o.before != o.after).collect();
         let mut v = report;
         v["ok"] = json!(true);
@@ -1176,10 +1178,12 @@ impl Ctx<'_> {
         if self.cli.dry_run {
             v["dry_run"] = json!(true);
             v["version"] = json!(d.version);
-        } else if text == d.text && also.is_empty() {
-            v["version"] = json!(d.version);
         } else {
-            v["version"] = json!(store.write_many(&d, &text, also, op, "references")?);
+            v["version"] = if text == d.text && also.is_empty() {
+                json!(d.version)
+            } else {
+                json!(store.write_many(&d, &text, also, op, "references")?)
+            };
             let dir = store.path.parent().unwrap_or(Path::new("."));
             let ext = crate::plugins::install(dir)?;
             v["installed"] = ext["installed"].clone();
@@ -1397,12 +1401,13 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                     v["extensions"] = crate::plugins::states(&dir);
                     v
                 }),
-                Some(BibCmd::Install) => {
-                    let mut v = crate::plugins::install(&dir)?;
-                    v["ok"] = json!(true);
-                    v["kind"] = json!("bib-install");
-                    Ok(v)
-                }
+                Some(BibCmd::Install) => ctx.edit_files("bib-install", |d| {
+                    Ok(crate::bib::Edit {
+                        text: d.text.clone(),
+                        also: vec![],
+                        report: json!({"warnings": []}),
+                    })
+                }),
                 Some(BibCmd::Pull { file }) => {
                     let incoming = crate::bib::read_file(file)?;
                     ctx.edit_files("bib-pull", |d| crate::bib::pull(d, &dir, incoming))
