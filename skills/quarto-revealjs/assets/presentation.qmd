@@ -12,7 +12,7 @@ Text.
 What I say on this slide.
 :::
 
-## References {#bibliography .bibliography visibility="uncounted"}
+## References {#bibliography visibility="uncounted"}
 
-<!-- bibliography:start (written by `make refs`, i.e. qd bib; edits here are overwritten) -->
-<!-- bibliography:end -->
+::: {#refs refs-style="compact" refs-columns="3" refs-size="smaller"}
+:::

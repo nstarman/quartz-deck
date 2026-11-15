@@ -1,0 +1,26 @@
+---
+title: "cite-links"
+format: revealjs
+bibliography: references.bib
+filters: [cite-links]
+---
+
+## Citations link to the paper
+
+One author: @arden2019. Two: @bell2020. Three or more: @dunn2021.
+
+Same first author and year: @evans2022first and @evans2022second.
+
+An arXiv preprint links its page: @survey2023.
+
+## In parentheses
+
+Several at once [@bell2020; see @dunn2021, p. 3].
+
+No DOI or URL, so no link: @nolink2024.
+
+## A result slide
+
+[[@dunn2021]]{.corner}
+
+The icon top right is where the figure comes from.

@@ -189,16 +189,43 @@ tell the person what git said (a hook, signing). With a server running, it
 commits after `history.pause` seconds. Outside a repository, `qd history
 --init` starts one, but only when the person asks for it.
 
-## References from Zotero
+## References
 
-`qd bib --zotero KEY` (KEY: the 8-character collection key) rewrites the
-lines between `<!-- bibliography:start -->` and `<!-- bibliography:end -->`
-(on the References slide) as one `- {{< paper url= who= year= title= >}}`
-line per item of the collection, read from the running Zotero 7's local API
-(Settings > Advanced > "Allow other applications on this computer to
-communicate with Zotero"). It is an edit like any other (`--dry-run`,
-`--expect`, `qd undo`); `warnings` lists items with no DOI or URL.
-`E_ZOTERO`: Zotero is not running or the API is off.
+A deck cites with Pandoc's own syntax (`@key`, `[@key]`), and its
+references live in a companion file named by `bibliography:` (BibTeX or
+CSL-JSON), or embedded in the front matter as `references:`.
+- `qd bib`: where they live, how many, and `missing`: keys cited on slides
+  with no entry.
+- `qd bib pull FILE`: merge a `.bib` or CSL-JSON file (any manager's export).
+  The first pull creates `_talk/references.bib` (or `references.bib` beside
+  the deck). A paper already in the deck keeps its key; the file's fields
+  win; nothing is deleted (`gone` lists entries the file lacks).
+- `qd bib pull --from zotero KEY`: the same, from a Zotero collection (KEY:
+  its 8-character key), through the source plugin `qd-zotero` (Zotero 7
+  running, with the local API allowed). `E_SOURCE`: the plugin is missing,
+  or it failed; its message says why.
+- `qd bib embed` / `qd bib extract [--to FILE] [--format bib|json]`: move
+  them into the front matter and back. `qd bib convert --format bib|json`:
+  the companion file in the other format.
+- `qd bib install`: the citation extensions into `_extensions/`, named in
+  `filters:`. Every `qd bib` write does this too. With `cite-links`, each
+  citation links to its paper with an icon ("Name et al. (2021)", from its
+  `talk.csl`), and `[[@key]]{.corner}` is the icon alone, top right.
+  With `refs-slide`, the References slide (`::: {#refs}` then `:::`) takes
+  `refs-style="compact|short|full"`, `refs-columns="1|2|3"` and
+  `refs-size="normal|smaller|smallest"` (defaults: compact, 3, smaller).
+
+Each write is one edit of the deck and its companion file (`--dry-run`,
+`--expect`, one `qd undo` reverts both). A bibliography file outside the
+deck's folder is only read: writing it gives `E_READ_ONLY`.
+
+A deck still citing with the old `{{< paper >}}` shortcode: `qd bib migrate`
+converts it to `@key` citations, with references from `--from zotero KEY`
+(or the Makefile's old `qd bib --zotero KEY` line), else built from the
+shortcodes. It renders the deck before and after and compares each slide's
+links and their text. Any difference puts every file back and fails with
+`E_MIGRATE_DIFF`, naming a report: show it to the person, and run again with
+`--accept` only when they say so. Outside git it needs `--backup DIR`.
 
 ## Errors and what to do
 
@@ -217,7 +244,9 @@ communicate with Zotero"). It is an edit like any other (`--dry-run`,
 | `E_OFFLINE` | the deck would not work offline | read `problems` in the stdout report; fix; re-run |
 | `E_OFFLINE_INCOMPATIBLE` | chalkboard/multiplex can't be one offline file | remove the feature for the export |
 | `E_NO_TEX` | `qd export --to beamer`/`pdf` without TeX | `quarto install tinytex`, or `--to typst` |
-| `E_ZOTERO` | `qd bib` cannot reach Zotero's local API | start Zotero 7 and allow other applications to talk to it (Settings > Advanced) |
+| `E_MIGRATE_DIFF` | `qd bib migrate` found differences for the audience; everything was put back | show the person the report; `--accept` only on their word |
+| `E_SOURCE` | `qd bib pull --from NAME`: `qd-NAME` is not on `PATH`, failed, or printed no reference list | install it (`cargo install --git https://github.com/nstarman/quartz-deck qd-NAME`), or fix what its message says (for Zotero: open it) |
+| `E_READ_ONLY` | a `qd bib` write would change a bibliography file outside the deck's folder | copy it into the folder, or `qd bib pull PATH` from it |
 | `E_NO_ENV` | deck has code cells but no environment | `qd env init`, then `qd env add <pkgs>` |
 | `E_LOCK_STALE` | manifest edited, lock out of date | `qd env sync` |
 | `E_ENV_TOOL` / `E_ENV` | uv/pixi missing, or it failed | install per the hint / read `details` |

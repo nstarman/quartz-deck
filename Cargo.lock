@@ -1194,6 +1194,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "qd-zotero"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tempfile",
+ "ureq",
+]
+
+[[package]]
 name = "quartz-deck"
 version = "0.1.0"
 dependencies = [

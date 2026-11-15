@@ -69,12 +69,10 @@ enum Cmd {
     Slides,
     /// Show one slide: attributes, source and blocks
     Show { slide: String },
-    /// Write the References list from a Zotero collection between the deck's
-    /// `<!-- bibliography:start -->` and `<!-- bibliography:end -->` lines
+    /// The deck's references: list them (no subcommand), pull, embed, extract, convert
     Bib {
-        /// Collection key (8 characters, from the collection's Zotero URL); read from the running Zotero's local API
-        #[arg(long)]
-        zotero: String,
+        #[command(subcommand)]
+        action: Option<BibCmd>,
     },
     /// Print front matter, or set/unset a top-level key
     Meta {
@@ -635,6 +633,52 @@ fn parse_pair(s: &str) -> std::result::Result<(f64, f64), String> {
 }
 
 #[derive(Subcommand)]
+enum BibCmd {
+    /// Merge a .bib (BibTeX/BibLaTeX) or CSL-JSON file, or a source plugin's
+    /// references (`--from zotero KEY` runs `qd-zotero KEY`), keeping cited keys
+    Pull {
+        /// Run the source plugin `qd-NAME` from PATH
+        #[arg(long, value_name = "NAME")]
+        from: Option<String>,
+        /// The file; with --from, the source's arguments (after `--` if one starts with `-`)
+        args: Vec<String>,
+    },
+    /// Move the companion file's references into the front matter (`references:`)
+    Embed,
+    /// Move `references:` into a companion file inside the deck's folder
+    Extract {
+        /// The file (default: `_talk/references.bib`, or `references.bib` beside the deck)
+        #[arg(long)]
+        to: Option<PathBuf>,
+        #[arg(long, value_enum)]
+        format: Option<crate::bib::Format>,
+    },
+    /// Rewrite the companion file in the other format, renamed (`references.bib` ↔ `references.json`)
+    Convert {
+        #[arg(long, value_enum)]
+        format: crate::bib::Format,
+    },
+    /// Install or update the citation extensions qd carries in the deck's `_extensions/`
+    Install,
+    /// Convert a deck citing with the old `{{< paper >}}` shortcode to `@key`
+    /// citations; renders before and after, and puts the deck back on any
+    /// difference unless --accept
+    Migrate {
+        /// The references' source plugin (default: the Makefile's `qd bib --zotero KEY`)
+        #[arg(long, value_name = "NAME")]
+        from: Option<String>,
+        /// The source's arguments
+        args: Vec<String>,
+        /// Copy the files it changes here first (required outside git)
+        #[arg(long)]
+        backup: Option<PathBuf>,
+        /// Keep the conversion even when the report lists differences
+        #[arg(long)]
+        accept: bool,
+    },
+}
+
+#[derive(Subcommand)]
 enum MetaCmd {
     /// Set a top-level key to a single-line YAML value
     Set {
@@ -663,7 +707,7 @@ fn output_of(cmd: &str) -> &'static str {
         }
         "meta" => r#"{"version","front_matter":{...}}"#,
         "bib" => {
-            r#"{"ok","op":"bib","diff","version","target":"bibliography","entries","warnings":[...]} (an edit: --dry-run, --expect, qd undo)"#
+            r#"bare: {"ok","kind":"bib","where":"none|companion|embedded|both","files":[{"path","format","inside"}],"embedded","entries","missing":[{"key","slides"}]}; pull: {"ok","op":"bib-pull","version","diff","file"?,"created"?,"embedded"?,"added","changed":[{"id","fields"}],"merged":[{"id","from"}],"gone","warnings"}; embed: {...,"entries","left"}; extract: {...,"file","entries"}; convert: {...,"file","from"} — every write is an edit of the deck and its companion file together (--dry-run, --expect, one qd undo)"#
         }
         "check" => {
             r#"{"ok","version","problems":[{"severity":"error|warning","code","slide","message"}]} or with --offline {"kind":"offline_check","ok","html","slides","steps","problems":[{"code":"P_*","severity","slide","message","hint","url"?}],"size":{"bytes","largest":[{"bytes","kind","context"}]}}"#
@@ -775,7 +819,9 @@ fn schema() -> Value {
         "E_NOT_CODE",
         "E_ENGINE",
         "E_RUN",
-        "E_ZOTERO"
+        "E_SOURCE",
+        "E_READ_ONLY",
+        "E_MIGRATE_DIFF"
     ]);
     v["refs"] = json!({
         "slide": "explicit id | auto id | @N (1-based) | first | last",
@@ -1130,6 +1176,52 @@ impl Ctx<'_> {
         Ok(v)
     }
 
+    /// A `qd bib` write (spec 014): the deck and its companion file in one
+    /// journaled edit, so one `qd undo` reverts both (research R4).
+    fn edit_files(
+        &self,
+        op: &str,
+        f: impl FnOnce(&Deck) -> Result<crate::bib::Edit>,
+    ) -> Result<Value> {
+        let store = self.store()?;
+        let d = store.read()?;
+        self.check_expect(&d)?;
+        let crate::bib::Edit { text, also, report } = f(&d)?;
+        // the deck runs the extensions qd installs: name them in `filters:`
+        let text = crate::plugins::with_filters(&text)?;
+        let also: Vec<_> = also.into_iter().filter(|o| o.before != o.after).collect();
+        let mut v = report;
+        v["ok"] = json!(true);
+        v["op"] = json!(op);
+        v["diff"] = json!(ops::diff(&d.text, &text));
+        if self.cli.dry_run {
+            v["dry_run"] = json!(true);
+            v["version"] = json!(d.version);
+        } else {
+            v["version"] = if text == d.text && also.is_empty() {
+                json!(d.version)
+            } else {
+                json!(store.write_many(&d, &text, also, op, "references")?)
+            };
+            let dir = store.path.parent().unwrap_or(Path::new("."));
+            let ext = crate::plugins::install(dir)?;
+            v["installed"] = ext["installed"].clone();
+            if let Some(w) = v["warnings"].as_array_mut() {
+                w.extend(
+                    ext["kept"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|k| k.get("message").cloned()),
+                );
+            }
+            if let Some(c) = self.commit(&store).filter(|_| text != d.text) {
+                v["commit"] = c;
+            }
+        }
+        Ok(v)
+    }
+
     /// Save as git commit (spec 012 US2) for a CLI edit with no server
     /// running; a server commits after its pause instead. Silent outside git.
     fn commit(&self, store: &Store) -> Option<Value> {
@@ -1316,16 +1408,62 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
         Cmd::Meta {
             action: Some(MetaCmd::Unset { key }),
         } => ctx.edit(|d| ops::meta_unset(d, key)),
-        Cmd::Bib { zotero } => {
-            // a stale --expect or no marker pair: fail before asking Zotero
-            let d = read()?.1;
-            ctx.check_expect(&d)?;
-            crate::bib::patch(&d, &[])?;
-            let (rows, warnings) = crate::bib::lines(&crate::bib::fetch(zotero)?);
-            let mut v = ctx.edit(|d| crate::bib::patch(d, &rows))?;
-            v["entries"] = json!(rows.len());
-            v["warnings"] = json!(warnings);
-            Ok(v)
+        Cmd::Bib { action } => {
+            let store = ctx.store()?;
+            let d = store.read()?;
+            let dir = store.path.parent().unwrap_or(Path::new(".")).to_path_buf();
+            match action {
+                None => crate::bib::list(&d, &dir).map(|mut v| {
+                    v["extensions"] = crate::plugins::states(&dir);
+                    v
+                }),
+                Some(BibCmd::Migrate {
+                    from,
+                    args,
+                    backup,
+                    accept,
+                }) => crate::migrate::run(
+                    &store,
+                    &crate::migrate::Options {
+                        from: from.clone().map(|f| (f, args.clone())),
+                        backup: backup.clone(),
+                        accept: *accept,
+                        dry_run: cli.dry_run,
+                        expect: cli.expect.clone(),
+                    },
+                ),
+                Some(BibCmd::Install) => ctx.edit_files("bib-install", |d| {
+                    Ok(crate::bib::Edit {
+                        text: d.text.clone(),
+                        also: vec![],
+                        report: json!({"warnings": []}),
+                    })
+                }),
+                Some(BibCmd::Pull { from, args }) => {
+                    let incoming = match (from, &args[..]) {
+                        (Some(name), _) => crate::bib::from_source(name, args)?,
+                        (None, [file]) => crate::bib::read_file(Path::new(file))?,
+                        (None, _) => {
+                            return Err(QdError::Usage(
+                                "pull takes one FILE, or --from NAME and its arguments".into(),
+                            ));
+                        }
+                    };
+                    let mut v =
+                        ctx.edit_files("bib-pull", |d| crate::bib::pull(d, &dir, incoming))?;
+                    if let Some(name) = from {
+                        v["source"] = json!(name);
+                    }
+                    Ok(v)
+                }
+                Some(BibCmd::Embed) => ctx.edit_files("bib-embed", |d| crate::bib::embed(d, &dir)),
+                Some(BibCmd::Extract { to, format }) => ctx.edit_files("bib-extract", |d| {
+                    crate::bib::extract(d, &dir, to.as_deref(), *format)
+                }),
+                Some(BibCmd::Convert { format }) => {
+                    ctx.edit_files("bib-convert", |d| crate::bib::convert(d, &dir, *format))
+                }
+            }
         }
         Cmd::Check {
             offline: true,

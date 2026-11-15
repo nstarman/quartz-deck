@@ -10,7 +10,7 @@ presentation.qmd   the talk
 abstract.md        its title and abstract
 Makefile           make, make notes, make refs (all through qd)
 _quarto.yml        project options (Quarto reads it only here)
-_extensions/       the {{< paper >}} shortcode (Quarto looks for extensions only here)
+_extensions/       cite-links and refs-slide, written by `make refs` (Quarto looks for extensions only here)
 _talk/             everything else; Quarto skips folders starting with _
   style/           presentation.css, fonts/ (subset woff2)
   html/            skip-steps, notes panel, and {{< include >}} slide pieces

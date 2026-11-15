@@ -1015,17 +1015,33 @@ fn edit_front_matter(d: &Deck, key: &str, value: Option<&str>) -> Result<Patch> 
     if !valid_name(key) {
         return Err(QdError::InvalidArg(format!("'{key}' is not a valid key")));
     }
-    let nl = d.nl;
     if let Some(v) = value {
         single_line(v, "value")?;
         serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&format!("{key}: {v}"))
             .map_err(|e| QdError::InvalidArg(format!("value is not valid YAML: {e}")))?;
     }
+    replace_key(d, key, value.map(|v| format!("{key}: {v}{}", d.nl)))
+}
+
+/// Set a top-level key to any YAML value, written as a block (spec 014:
+/// `references:`); the rest of the front matter is kept byte for byte.
+pub fn meta_set_yaml(d: &Deck, key: &str, value: &serde_yaml_ng::Value) -> Result<Patch> {
+    let mut m = serde_yaml_ng::Mapping::new();
+    m.insert(key.into(), value.clone());
+    let text = serde_yaml_ng::to_string(&m)
+        .map_err(|e| QdError::InvalidArg(format!("cannot write YAML: {e}")))?;
+    replace_key(d, key, Some(text.replace('\n', d.nl)))
+}
+
+/// Replace a top-level key's lines with `new` (whole lines, `key:` included),
+/// add them at the end, or remove the key for `None`.
+fn replace_key(d: &Deck, key: &str, new_line: Option<String>) -> Result<Patch> {
+    let nl = d.nl;
     let Some(fm) = d.front_matter else {
-        let Some(v) = value else {
+        let Some(l) = new_line else {
             return Err(QdError::NotFound(format!("front matter key '{key}'")));
         };
-        let text = format!("---{nl}{key}: {v}{nl}---{nl}{nl}");
+        let text = format!("---{nl}{l}---{nl}{nl}");
         return Ok(patch(
             "meta",
             key.into(),
@@ -1041,7 +1057,6 @@ fn edit_front_matter(d: &Deck, key: &str, value: Option<&str>) -> Result<Patch> 
         .map(|l| l.trim_end_matches(['\n', '\r']))
         .collect();
     let inner = &bare[1..bare.len() - 1];
-    let new_line = value.map(|v| format!("{key}: {v}{nl}"));
     match key_extent(inner, key) {
         Some((a, b)) => {
             lines.splice(a + 1..b + 1, new_line);

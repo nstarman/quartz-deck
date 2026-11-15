@@ -59,10 +59,48 @@ pub fn settings(dir: &Path, v: serde_json::Value) {
     std::fs::write(dir.join(".config/settings.json"), v.to_string()).unwrap();
 }
 
-/// A `pre-commit` hook running `script` in the repository at `dir`.
-pub fn hook(dir: &Path, script: &str) {
+/// An executable shell script at `path` running `body`.
+pub fn script(path: &Path, body: &str) {
     use std::os::unix::fs::PermissionsExt;
-    let hook = dir.join(".git/hooks/pre-commit");
-    std::fs::write(&hook, format!("#!/bin/sh\n{script}\n")).unwrap();
-    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::write(path, format!("#!/bin/sh\n{body}\n")).unwrap();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+/// A `pre-commit` hook running `body` in the repository at `dir`.
+pub fn hook(dir: &Path, body: &str) {
+    script(&dir.join(".git/hooks/pre-commit"), body);
+}
+
+/// `qd args…` in `dir`: whether it succeeded, and its JSON (stdout, or stderr
+/// on failure); panics on output that isn't JSON.
+pub fn json(dir: &Path, args: &[&str]) -> (bool, serde_json::Value) {
+    json_of(qd(dir), args)
+}
+
+/// `json`, with `bin` first on `PATH` (stub plugins).
+pub fn with_path(dir: &Path, bin: &Path, args: &[&str]) -> (bool, serde_json::Value) {
+    let mut c = qd(dir);
+    c.env(
+        "PATH",
+        format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()),
+    );
+    json_of(c, args)
+}
+
+/// `json`, with a prepared `qd` command (extra environment).
+pub fn json_of(mut c: Command, args: &[&str]) -> (bool, serde_json::Value) {
+    let out = c.args(args).output().unwrap();
+    let text = if out.status.success() {
+        &out.stdout
+    } else {
+        &out.stderr
+    };
+    let v = serde_json::from_slice(text).unwrap_or_else(|_| {
+        panic!(
+            "{args:?}: not JSON: {}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        )
+    });
+    (out.status.success(), v)
 }

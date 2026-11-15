@@ -1,6 +1,20 @@
 <!--
 Sync Impact Report
-- Version: 1.2.1 → 1.3.0 (MINOR: Principle VII materially expanded, plugins)
+- Version: 1.3.0 → 1.4.0 (MINOR: Principle VII materially expanded, plugin
+  kinds and plugin binaries; spec 014, research R12)
+- VII. Simplicity: plugins come in two kinds. Render plugins are Quarto
+  extensions, as in 1.3.0. Source plugins are programs that feed `qd bib`
+  with references and render nothing (the first is `qd-zotero`), found on
+  `PATH` as `qd-<name>`. "One `qd` binary" now allows the small binaries of
+  plugins that need one, each a member crate of the workspace in
+  `plugins/<name>/`. A source plugin may reach the network only while its
+  command runs, and qd makes no request for it. The plugin rules (licences,
+  offline, Run, writes) are unchanged and apply to both kinds.
+- Constraints: the layout line names plugin crates in the workspace
+- Principles I–VI, Development Workflow, Governance: unchanged
+- Templates: none need changes (the Constitution Check still covers I–VII)
+- Deferred TODOs: none
+- Previous: 1.2.1 → 1.3.0 (MINOR: Principle VII materially expanded, plugins)
 - VII. Simplicity: no longer forbids a plugin system outright, because there
   is now a concrete need (shapes, arrows, galleries and nicer tables through
   existing libraries; design/code-audit-plugins.md). New slide features come
@@ -91,21 +105,28 @@ resulting file. GUI behavior is verified in a real browser.
 
 ### VII. Simplicity
 
-One Rust workspace, one `qd` binary. Prefer the standard library, stock
+One Rust workspace, and one `qd` binary, plus the small binaries of plugins
+that need one, each built in the workspace (`plugins/<name>/` as a member
+crate). Prefer the standard library, stock
 Quarto/reveal.js features, existing libraries (Python, JavaScript, HTML,
 CSS), and well-maintained crates over custom code. New slide features come
 from Quarto and existing libraries first; quartz-deck's own plugins exist
 only for what nothing provides, or to connect an existing library to Quarto
 and reveal.js.
 
-- A plugin is a Quarto extension first (shortcode, filter, format, reveal.js
-  plugin, CSS/JS). It lives in `plugins/<name>/` with an example deck, and a
-  deck that uses it MUST still render with plain `quarto render` and no qd.
+- Plugins come in two kinds, and each lives in `plugins/<name>/`:
+  - A **render plugin** is a Quarto extension (shortcode, filter, format,
+    reveal.js plugin, CSS/JS) with an example deck. A deck that uses it MUST
+    still render with plain `quarto render` and no qd.
+  - A **source plugin** feeds `qd bib` with references and renders nothing.
+    It is a program `qd-<name>` on `PATH` that prints CSL-JSON. It MAY reach
+    the network only while its command runs; qd itself makes no request for
+    it, and nothing reaches the network at render or present time.
 - A plugin MAY add an editor manifest (`qd-plugin.json`: insert templates,
   element kinds matched by class with their panel fields, preview CSS) and a
   Python package for code cells. Editor changes it offers MUST go through
   `qd` ops, so agents and the CLI get them too (Principle III).
-- A plugin follows every rule the core follows: its third-party code is
+- Every plugin, of either kind, follows every rule the core follows: its third-party code is
   listed with a license compatible with private use and checked by a test;
   it works offline (it passes the offline check, with no CDN at render or
   present time); it runs code only on an explicit Run action with the
@@ -120,7 +141,9 @@ Complexity Tracking table.
 - Language: Rust (stable) for the core, CLI, and server. The browser UI is
   plain HTML/CSS/JS served by the binary unless a plan justifies a framework.
 - Layout: one repository holding the Rust workspace, the editor, the VS Code
-  extension, skills, and `plugins/` (Principle VII), each tested in CI.
+  extension, skills, and `plugins/` (Principle VII), each tested in CI. A
+  plugin's binary is a member crate of the workspace, built and tested with
+  it.
 - Runs fully locally and offline; the server binds to localhost only.
 - External runtime dependency: the Quarto CLI (which bundles Pandoc).
 - Decks with code cells also need **uv** (default) or **pixi** (PyPI
@@ -163,4 +186,4 @@ with semantic versioning (MAJOR: principle removed or redefined; MINOR:
 principle or section added; PATCH: wording). Every plan and review verifies
 compliance.
 
-**Version**: 1.3.0 | **Ratified**: 2026-11-03 | **Last Amended**: 2026-11-13
+**Version**: 1.4.0 | **Ratified**: 2026-11-03 | **Last Amended**: 2026-11-13

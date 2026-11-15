@@ -2145,6 +2145,9 @@ async fn framed_editor_takes_theme_and_messages() {
         .await;
     esc().await; // clears the selection
     ed.wait(&format!("!{SEL}")).await;
+    // ending the edit can re-render the preview; on a slow runner the reload
+    // lands after these keys, and a key sent while it reloads is lost
+    ed.settle().await;
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert_eq!(
         ed.eval(focus_text).await,

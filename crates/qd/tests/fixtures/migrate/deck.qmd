@@ -1,0 +1,17 @@
+---
+title: A paper deck
+format: revealjs
+---
+
+## Results {#res}
+
+{{< paper url="https://doi.org/10.5555/bell" who="Bell & Cho" year="2020" title="Two authors" corner="true" >}}
+
+The stream was found by {{< paper url="https://example.org/arden" who="Arden" year="2019" title="One author" >}}.
+
+## References {#bibliography .bibliography}
+
+<!-- bibliography:start (written by `make refs`, i.e. qd bib; edits here are overwritten) -->
+- {{< paper url="https://example.org/arden" who="Arden" year="2019" title="One author" >}}
+- {{< paper url="https://doi.org/10.5555/bell" who="Bell & Cho" year="2020" title="Two authors" >}}
+<!-- bibliography:end -->

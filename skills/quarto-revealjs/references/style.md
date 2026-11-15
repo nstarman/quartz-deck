@@ -10,7 +10,7 @@ notes after a divider, a backup section) and leave the rest.
 - In slide **body text** write "DM", not "dark matter". **Titles** keep the words as the author
   wrote them.
 - A constraint or result slide names its source with the paper icon at the **top right**
-  (`{{< paper … corner="true" >}}`), not with the paper's name in the title.
+  (`[[@key]]{.corner}`), not with the paper's name in the title.
 - Slides on a field outside the author's expertise get a **light grey background**
   (`{background-color="#efefef"}`) and their notes start with "I'm not an expert here; this is my
   reading of the literature."
@@ -39,9 +39,9 @@ Plane regenerated from the review's public code (scripts/planes.py). Microlensin
 ## Citations
 
 - Every paper cited in the talk is in the talk's **Zotero collection**; the bibliography slide is
-  generated from it (`make refs`, i.e. `qd bib --zotero KEY`), never typed by hand. Add a paper to the collection when you
+  generated from it (`make refs`, i.e. `qd bib pull --from zotero KEY`), never typed by hand. Add a paper to the collection when you
   cite it.
-- Cite on a slide with the `paper` shortcode: "[icon] Name et al. (year)", linking to the DOI.
+- Cite on a slide with `@key`: "[icon] Name et al. (year)", linking to the DOI (cite-links).
 - **Check before showing**: every citation, arXiv ID, DOI, figure number or label and physical claim is
   checked against its source (open the paper or its arXiv page) before the slide is shown to the
   author. A plausible-looking arXiv ID is not evidence.
