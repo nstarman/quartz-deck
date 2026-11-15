@@ -213,7 +213,13 @@ JSON"#,
     let (good, v) = migrate(p, Some(&bin), &["--accept"]);
     assert!(good, "{v}");
     assert_eq!(v["unmatched"][0]["key"], "arden2019", "{v}");
-    assert!(v["differences"].as_array().unwrap().iter().any(|d| d["slide"] == "bibliography"));
+    assert!(
+        v["differences"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["slide"] == "bibliography")
+    );
 }
 
 /// A deck with citations but no References list keeps having none: citeproc

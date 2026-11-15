@@ -135,6 +135,11 @@ alone still has it. `crates/qd/tests/plugins.rs` checks the copy and renders eac
 example with plain Quarto. Discovery (`qd-plugin.json`) and `qd plugin add` come
 with the editor manifest (step 5).*
 
+*Spec 014 (2026-11-14): `paper` is gone, replaced by two render plugins,
+`cite-links` and `refs-slide`, which qd carries and installs with `qd bib`.
+There is also a first source plugin, `zotero` (`qd-zotero`, a workspace
+crate, run from `PATH`). Constitution 1.4.0 names the two kinds.*
+
 - The only real plugin, the `paper` shortcode, lives in
   `skills/quarto-revealjs/assets/_extensions/paper`, a skill's asset folder.
 - **Fix:** add a `plugins/` folder. Each plugin is a directory:

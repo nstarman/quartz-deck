@@ -283,16 +283,16 @@ Paths are relative to the repo root.
   - `_extensions/paper` is deleted, and decks get the extensions from `qd bib install`.
 
   Update `skills/quarto-revealjs/SKILL.md` and its references on citations.
-- [ ] T035 [US5] Convert the PPP talk (quickstart §5). This needs the person.
+- [X] T035 [US5] Convert the PPP talk (quickstart §5). This needs the person.
   1. Copy the folder to `2026-PPP Talk.backup-2026-11-13` beside it.
   2. Ask the person to open Zotero. Confirm that `qd-zotero S376YTIE` works against the real Zotero, which also checks `include=csljson` (R8; fall back as R8 says if not).
   3. Run `qd bib migrate --from zotero S376YTIE --backup … --deck ….`
   4. Give the person the report (expect about 11 label and 9 link differences).
   5. Run with `--accept` only on their word, quoted.
   6. Render the talk with plain `quarto render` and open it in the browser pane for them.
-- [ ] T036 [US5] Remove `plugins/paper/` and the `skill_copy_of_paper_matches_the_plugin` test, and the `paper` branch of `plugin_examples_render_with_plain_quarto`, in `crates/qd/tests/plugins.rs`. Update `plugins/README.md`.
-- [ ] T037 [US5] Remove `qd bib --zotero`, `bib::fetch`, `bib::lines`, `bib::patch` and the marker constants from `crates/qd/src/bib.rs` and `cli.rs`, along with their tests, and the old Zotero mock test in `crates/qd/tests`. Keep `E_ZOTERO`'s text only where `qd-zotero` uses it. `migrate` still reads the old Makefile line (T030).
-- [ ] T038 [US5] Run quickstart §6's grep. No `paper` shortcode, extension, `--zotero` or marker list is left outside `specs/` and migrate's own parser and fixtures.
+- [X] T036 [US5] Remove `plugins/paper/` and the `skill_copy_of_paper_matches_the_plugin` test, and the `paper` branch of `plugin_examples_render_with_plain_quarto`, in `crates/qd/tests/plugins.rs`. Update `plugins/README.md`.
+- [X] T037 [US5] Remove `qd bib --zotero`, `bib::fetch`, `bib::lines`, `bib::patch` and the marker constants from `crates/qd/src/bib.rs` and `cli.rs`, along with their tests, and the old Zotero mock test in `crates/qd/tests`. Keep `E_ZOTERO`'s text only where `qd-zotero` uses it. `migrate` still reads the old Makefile line (T030).
+- [X] T038 [US5] Run quickstart §6's grep. No `paper` shortcode, extension, `--zotero` or marker list is left outside `specs/` and migrate's own parser and fixtures.
 
 **Checkpoint**: PR 6. `paper` is gone, and every deck cites natively.
 
@@ -300,7 +300,7 @@ Paths are relative to the repo root.
 
 ## Phase 8: Polish & cross-cutting
 
-- [ ] T039 [P] Docs:
+- [X] T039 [P] Docs:
   - `skills/quartz-deck/SKILL.md`: `qd bib` commands, source plugins, migrate;
   - `README.md`: citations;
   - `design/code-audit-plugins.md`: G4 note on source plugins;

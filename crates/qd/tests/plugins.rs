@@ -43,13 +43,7 @@ fn plugin_examples_render_with_plain_quarto() {
         }
         seen += 1;
         let name = dir.file_name().unwrap().to_string_lossy();
-        let (html, _) = render_example(&name, |t| t, &[]);
-        if dir.ends_with("paper") {
-            assert!(
-                html.contains("paper-ref") && html.contains("paper-corner"),
-                "both forms of the paper link"
-            );
-        }
+        render_example(&name, |t| t, &[]);
     }
     assert!(seen > 0, "no plugin has an example.qmd");
 }
