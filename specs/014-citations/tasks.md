@@ -143,7 +143,7 @@ Paths are relative to the repo root.
 
 **Independent Test**: spec US1; quickstart §2.
 
-- [ ] T014 [P] [US1] Add `plugins/cite-links/example.qmd` and `plugins/cite-links/references.bib` (CSL-JSON is fine too). The references:
+- [X] T014 [P] [US1] Add `plugins/cite-links/example.qmd` and `plugins/cite-links/references.bib` (CSL-JSON is fine too). The references:
   - 1, 2 and 3 authors;
   - two papers by the same first author in the same year;
   - an arXiv entry with a 10.48550 DOI and a URL;
@@ -151,7 +151,7 @@ Paths are relative to the repo root.
   - a `literal` author.
 
   The citations: narrative, parenthetical, two keys with a locator, and the corner form.
-- [ ] T015 [US1] Write a failing test in `crates/qd/tests/plugins.rs`, **`cite_links_example`**, which renders `plugins/cite-links/example.qmd` with plain Quarto and checks the HTML:
+- [X] T015 [US1] Write a failing test in `crates/qd/tests/plugins.rs`, **`cite_links_example`**, which renders `plugins/cite-links/example.qmd` with plain Quarto and checks the HTML:
   - the labels "Name (2021)", "A & B (2021)", "A et al. (2021)", and the "a"/"b" suffixes;
   - each `a.cite-link` has the DOI href, or the URL for the arXiv entry, and a `title` of "Label: Title";
   - the two-key citation has two links, with the locator outside them;
@@ -159,12 +159,12 @@ Paths are relative to the repo root.
   - the entry without a link renders plain, and the render's stderr has `cite-links: no DOI or URL for`;
   - with `cite-links: {icon: false, link: references}` in a second render, there is no icon and the href is `#ref-KEY`;
   - with `csl:` set in the deck, the deck's style wins.
-- [ ] T016 [US1] Write `plugins/cite-links/_extensions/cite-links/talk.csl` from scratch (research R2):
+- [X] T016 [US1] Write `plugins/cite-links/_extensions/cite-links/talk.csl` from scratch (research R2):
   - **citations**: author-date, narrative "Name (year)" / "A & B (year)" / "A et al. (year)", `disambiguate-add-year-suffix`;
   - **bibliography**: authors, year, title, container, DOI or URL.
 
   Note in a comment at the top that it is our own work and not derived from any CC BY-SA style.
-- [ ] T017 [US1] Write the rest of `plugins/cite-links/_extensions/cite-links/`, following `contracts/extensions.md`:
+- [X] T017 [US1] Write the rest of `plugins/cite-links/_extensions/cite-links/`, following `contracts/extensions.md`:
   - `_extension.yml` (version 1.0.0, filter at `post-quarto`);
   - `cite-links.lua`:
     - set `meta.csl` when absent, run citeproc once and clear the metadata (R1);
@@ -173,8 +173,8 @@ Paths are relative to the repo root.
   - `cite-links.css`: the icon from `paper.css`'s mask SVG, renamed classes, and the corner CSS.
 
   T015 passes.
-- [ ] T018 [US1] Compile `cite-links` into `crates/qd/src/plugins.rs` (`include_str!` of each file). Add `plugins/cite-links/README.md` covering markup, options and the licence note. Extend `crates/qd/tests/bib.rs` **`pull_creates_companion`**: the pull installs `_extensions/cite-links`, and a deck citing a pulled key renders linked.
-- [ ] T019 [US1] Run the offline check on the rendered example (`qd check --offline` on `plugins/cite-links/example.qmd`) in `crates/qd/tests/plugins.rs`: no CDN, and the icon is inline.
+- [X] T018 [US1] Compile `cite-links` into `crates/qd/src/plugins.rs` (`include_str!` of each file). Add `plugins/cite-links/README.md` covering markup, options and the licence note. Extend `crates/qd/tests/bib.rs` **`pull_creates_companion`**: the pull installs `_extensions/cite-links`, and a deck citing a pulled key renders linked.
+- [X] T019 [US1] Run the offline check on the rendered example (`qd check --offline` on `plugins/cite-links/example.qmd`) in `crates/qd/tests/plugins.rs`: no CDN, and the icon is inline. Every reveal.js deck loads MathJax from its CDN until `qd export` bundles it, so that one problem is allowed.
 
 **Checkpoint**: PR 3. A deck cites natively and looks as it does today.
 

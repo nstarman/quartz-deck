@@ -14,8 +14,18 @@ pub struct Extension {
     pub files: &'static [(&'static str, &'static str)],
 }
 
-/// The extensions `qd bib` installs (filled by cite-links and refs-slide).
-pub const EXTENSIONS: &[Extension] = &[];
+macro_rules! extension {
+    ($name:literal: $($file:literal),+) => {
+        Extension {
+            name: $name,
+            files: &[$(($file, include_str!(concat!("../../../plugins/", $name, "/_extensions/", $name, "/", $file)))),+],
+        }
+    };
+}
+
+/// The extensions `qd bib` installs, in the order the deck's `filters:` runs them.
+pub const EXTENSIONS: &[Extension] =
+    &[extension!("cite-links": "_extension.yml", "cite-links.lua", "cite-links.css", "talk.csl")];
 
 /// A deck's copy compared with qd's.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -107,6 +117,33 @@ pub fn install(deck_dir: &Path) -> Result<Value> {
     install_these(EXTENSIONS, deck_dir)
 }
 
+/// `text` with every extension qd installs named in its `filters:` (added at
+/// the end, in order); the same text when they all are.
+pub fn with_filters(text: &str) -> Result<String> {
+    use serde_yaml_ng::Value as Yaml;
+    let d = crate::deck::Deck::parse(text.to_string());
+    let mut list: Vec<Yaml> = match d.meta.get("filters") {
+        Some(Yaml::Sequence(v)) => v.clone(),
+        Some(one @ Yaml::String(_)) => vec![one.clone()],
+        _ => vec![],
+    };
+    let named = |l: &[Yaml], n: &str| {
+        l.iter()
+            .any(|f| f.as_str() == Some(n) || f.get("path").and_then(Yaml::as_str) == Some(n))
+    };
+    let missing: Vec<&str> = EXTENSIONS
+        .iter()
+        .map(|e| e.name)
+        .filter(|n| !named(&list, n))
+        .collect();
+    if missing.is_empty() {
+        return Ok(text.to_string());
+    }
+    list.extend(missing.into_iter().map(|n| Yaml::String(n.into())));
+    let p = crate::ops::meta_set_yaml(&d, "filters", &Yaml::Sequence(list))?;
+    crate::ops::apply(text, &p)
+}
+
 /// Each extension's state in the deck, for `qd bib`.
 pub fn states(deck_dir: &Path) -> Value {
     EXTENSIONS
@@ -134,6 +171,21 @@ mod tests {
             ("demo.lua", "-- two\n"),
         ],
     };
+
+    #[test]
+    fn names_the_extensions_in_filters() {
+        let names: Vec<&str> = EXTENSIONS.iter().map(|e| e.name).collect();
+        let listed = |t: &str| {
+            let d = crate::deck::Deck::parse(with_filters(t).unwrap());
+            serde_json::to_value(d.meta.get("filters").unwrap()).unwrap()
+        };
+        assert_eq!(listed("---\ntitle: T\n---\n\n## A\n"), json!(names));
+        let mut want = vec![json!("other.lua")];
+        want.extend(names.iter().map(|n| json!(n)));
+        assert_eq!(listed("---\nfilters: [other.lua]\n---\n"), json!(want));
+        let all = format!("---\nfilters: [{}]\n---\n", names.join(", "));
+        assert_eq!(with_filters(&all).unwrap(), all, "already named: unchanged");
+    }
 
     #[test]
     fn installs_by_version_and_keeps_edits() {
