@@ -1,5 +1,5 @@
 [workspace]
 # One Rust workspace, one `qd` binary (constitution VII). The crate lives in
 # crates/qd; skills, the VS Code extension and plugins/ sit beside it.
-members = ["crates/qd"]
+members = ["crates/qd", "plugins/zotero"]
 resolver = "3"
