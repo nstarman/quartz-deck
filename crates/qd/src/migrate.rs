@@ -146,9 +146,9 @@ pub fn rewrite(d: &Deck, cites: &[(Shortcode, String)]) -> String {
         .filter(|(sc, _)| !sc.listed)
         .map(|(sc, key)| {
             let cite = if sc.corner {
-                format!("[[@{key}]]{{.corner}}")
+                format!("[[{}]]{{.corner}}", bib::cite(key))
             } else {
-                format!("@{key}")
+                bib::cite(key)
             };
             (sc.span, cite)
         })
@@ -359,16 +359,13 @@ pub fn run(store: &Store, o: &Options) -> Result<Value> {
             )],
         )?;
     }
-    // no References list before: citeproc would append one to the last slide
-    if marker_block(&d.text).is_none() {
-        text = bib::set_front(
-            &text,
-            &[(
-                "suppress-bibliography",
-                Some(serde_yaml_ng::Value::Bool(true)),
-            )],
-        )?;
-    }
+    // the old list held every entry (the whole collection), cited or not;
+    // without one, citeproc would append a list to the last slide
+    let (key, value) = match marker_block(&d.text) {
+        Some(_) => ("nocite", serde_yaml_ng::Value::String("@*".into())),
+        None => ("suppress-bibliography", serde_yaml_ng::Value::Bool(true)),
+    };
+    text = bib::set_front(&text, &[(key, Some(value))])?;
     let text = crate::plugins::with_filters(&text)?;
     let mut also = vec![bib::file_change(
         &path,

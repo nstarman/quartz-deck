@@ -101,6 +101,10 @@ fn migrate_clean() {
     );
     assert!(deck.contains("::: {#refs refs-style=\"compact\" refs-columns=\"3\"}\n:::\n"));
     assert!(deck.contains("bibliography: references.bib") && deck.contains("- refs-slide"));
+    assert!(
+        deck.contains("nocite: '@*'"),
+        "the list keeps every entry, as before: {deck}"
+    );
     assert!(!p.join("_extensions/paper").exists(), "paper removed");
     assert!(p.join("references.bib").is_file());
     assert!(Path::new(v["report"].as_str().unwrap()).is_file());
@@ -204,9 +208,12 @@ JSON"#,
     });
     let p = t.path();
     fs::write(p.join("Makefile"), "refs:\n\tqd bib --zotero ABCD1234\n").unwrap();
-    let (good, v) = migrate(p, Some(&bin), &[]);
+    // its own entry joins the whole collection on the References slide: a
+    // change the report shows, accepted here as the person would
+    let (good, v) = migrate(p, Some(&bin), &["--accept"]);
     assert!(good, "{v}");
     assert_eq!(v["unmatched"][0]["key"], "arden2019", "{v}");
+    assert!(v["differences"].as_array().unwrap().iter().any(|d| d["slide"] == "bibliography"));
 }
 
 /// A deck with citations but no References list keeps having none: citeproc

@@ -410,7 +410,7 @@ pub(crate) fn default_place(dir: &Path, f: Format) -> String {
 pub fn cited_keys(d: &Deck) -> Vec<(String, String)> {
     use crate::deck::BlockKind;
     let re = regex::Regex::new(
-        r"(?:^|[^\w@.])@([A-Za-z0-9_](?:[A-Za-z0-9_]|[:.#$%&\-+?<>~/][A-Za-z0-9_])*)",
+        r"(?:^|[^\w@.])@(?:\{([^}]+)\}|([A-Za-z0-9_](?:[A-Za-z0-9_]|[:.#$%&\-+?<>~/][A-Za-z0-9_])*))",
     )
     .expect("valid regex");
     const CROSSREF: [&str; 13] = [
@@ -427,7 +427,12 @@ pub fn cited_keys(d: &Deck) -> Vec<(String, String)> {
                 continue;
             }
             for c in re.captures_iter(d.slice(b.span)) {
-                let key = c[1].to_string();
+                let key = c
+                    .get(1)
+                    .or(c.get(2))
+                    .expect("one of the two")
+                    .as_str()
+                    .to_string();
                 if !CROSSREF.iter().any(|p| key.starts_with(p))
                     && !out.iter().any(|(k, s)| *k == key && *s == slide.id)
                 {
@@ -437,6 +442,20 @@ pub fn cited_keys(d: &Deck) -> Vec<(String, String)> {
         }
     }
     out
+}
+
+/// `@key`, or `@{key}` for a key Pandoc's bare form can't hold (Better
+/// BibTeX's `Name+:2025:Title` has two punctuation marks in a row).
+pub fn cite(key: &str) -> String {
+    static PLAIN: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"^[A-Za-z0-9_](?:[A-Za-z0-9_]|[:.#$%&\-+?<>~/][A-Za-z0-9_])*$")
+            .expect("valid regex")
+    });
+    if PLAIN.is_match(key) {
+        format!("@{key}")
+    } else {
+        format!("@{{{key}}}")
+    }
 }
 
 /// `qd bib`: where the references live, and cited keys with no entry.
@@ -942,6 +961,16 @@ mod tests {
     use serde_json::json;
 
     // ---------- spec 014: matching, keys, merge (research R6) ----------
+
+    #[test]
+    fn cites_any_key() {
+        assert_eq!(cite("bonaca2020"), "@bonaca2020");
+        assert_eq!(cite("Myers+:2026:PINNs"), "@{Myers+:2026:PINNs}");
+        assert_eq!(cite("a.b:c"), "@a.b:c");
+        let d = Deck::parse("## A\n\nSee @{Myers+:2026:PINNs} and [@a.b:c; @x2020].\n".to_string());
+        let keys: Vec<String> = cited_keys(&d).into_iter().map(|(k, _)| k).collect();
+        assert_eq!(keys, ["Myers+:2026:PINNs", "a.b:c", "x2020"]);
+    }
 
     #[test]
     fn normalises_dois_urls_and_titles() {
