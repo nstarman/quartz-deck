@@ -103,6 +103,40 @@ abstraction beyond `bib::merge`, `plugins::install` and the undo entry's
 convert and migrate all use merge and install, and undo and redo both use
 `also`).
 
+**Final re-check after the build (T041, 2026-11-15)**: pass.
+- **I.** `talk.csl` and both filters are our own. The tests and examples
+  cite only made-up references (`10.5555/…` test DOIs, example.org links).
+- **II.** `qd bib` and `migrate` patch only the front matter and each
+  shortcode's span. Embed, extract and convert leave the rendered citations
+  identical.
+- **III.** Every capability is a `qd bib` subcommand with JSON output and
+  stable codes (`E_SOURCE`, `E_READ_ONLY`, `E_MIGRATE_DIFF`). `qd schema`
+  and both skills are updated.
+- **IV.** The watcher re-renders when the references file alone changes.
+  Building this found that Linux reports opens and reads as events. The
+  watcher now ignores them, which stopped the server re-triggering itself.
+- **V.** `Store::write_many` writes the deck and its companion file as one
+  edit, and one undo reverts both. `migrate` backs up first and puts
+  everything back through that undo when the check finds a difference.
+- **VI.** Each story's tests came first. Coverage:
+  - unit tests for merge and keys, the undo across files, install and
+    migrate;
+  - CLI tests for every `qd bib` command;
+  - plain-Quarto renders of both plugin examples;
+  - qd-zotero against a mock of the local API;
+  - the quickstart run (`checklists/quickstart-run.md`).
+- **VII.**
+  - **Code:** two small extensions and one small binary, as amended in
+    1.4.0. There's no registry. `qd-plugin.json` documents the source
+    plugin and isn't read at run time.
+  - **Dependencies:** none new. qd-zotero's only dev-dependency, `tempfile`,
+    was already in the lockfile.
+  - **Licences:** the licence test now exempts every workspace member, our
+    own code, instead of naming `qd`.
+- **Checks:** fmt, clippy (`--workspace --all-targets -D warnings`),
+  `cargo test --workspace` and the VS Code tests pass. CI's commands run at
+  the workspace root, so they cover both crates.
+
 ## Project Structure
 
 ### Documentation (this feature)

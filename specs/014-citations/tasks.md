@@ -305,9 +305,9 @@ Paths are relative to the repo root.
   - `README.md`: citations;
   - `design/code-audit-plugins.md`: G4 note on source plugins;
   - the list of what changed for the nstarman-skills-small marketplace copy, in PR 6's description.
-- [ ] T040 Run quickstart §1–§6 and record it in `specs/014-citations/checklists/quickstart-run.md`.
-- [ ] T041 Final constitution re-check in `specs/014-citations/plan.md`. fmt, clippy (`--workspace --all-targets -D warnings`), `cargo test --workspace --no-fail-fast` and `node --test vscode/test/*.test.js` green. CI runs `cargo test --workspace`; update `.github/workflows/ci.yml` if it doesn't.
-- [ ] T042 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
+- [X] T040 Run quickstart §1–§6 and record it in `specs/014-citations/checklists/quickstart-run.md`.
+- [X] T041 Final constitution re-check in `specs/014-citations/plan.md`. fmt, clippy (`--workspace --all-targets -D warnings`), `cargo test --workspace --no-fail-fast` and `node --test vscode/test/*.test.js` green. CI runs `cargo test --workspace`; update `.github/workflows/ci.yml` if it doesn't.
+- [X] T042 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
 
 ---
 

@@ -100,16 +100,17 @@ on the slide.
 qd check --offline --deck talk.qmd
 ```
 
-**Expected**: each style looks as described, and every entry is linked. The
-check warns when a long list overflows a slide that isn't scrollable.
+**Expected**: each style looks as described, and every entry is linked.
+Quarto makes the slide holding `#refs` `smaller scrollable`, so a long list
+scrolls, and the check doesn't call it an overflow.
 
 ## 5. Converting a `paper` deck (US5)
 
-On a copy of `tests/skills/quarto-revealjs/fixture/lessons.qmd` in a git
-folder:
+On a copy of the migrate fixture (`crates/qd/tests/fixtures/migrate`) in a
+git folder:
 
 ```bash
-qd bib migrate --deck lessons.qmd
+qd bib migrate --deck deck.qmd
 ```
 
 **Expected**: no shortcodes left, `_extensions/paper` gone, the two new
