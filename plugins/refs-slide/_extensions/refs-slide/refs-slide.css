@@ -1,0 +1,17 @@
+/* refs-slide (spec 014): the References slide's columns and sizes. Nothing resizes it while
+   it is shown; reveal.js's .scrollable on the slide lets a long list scroll. */
+.reveal #refs.refs-slide { font-size: 0.7em; }
+.reveal #refs.refs-size-normal { font-size: 1em; }
+.reveal #refs.refs-size-smallest { font-size: 0.5em; }
+.reveal #refs.refs-cols-2 { columns: 2; }
+.reveal #refs.refs-cols-3 { columns: 3; }
+.reveal #refs.refs-slide .csl-entry { break-inside: avoid; }
+.reveal #refs.refs-compact .csl-entry { margin: 0 0 0.3em; padding-left: 0; text-indent: 0; }
+/* the same icon as cite-links, so refs-slide works alone */
+.reveal #refs .cite-link { white-space: nowrap; }
+.reveal #refs .cite-icon {
+  display: inline-block; width: 0.8em; height: 1em; vertical-align: -0.12em;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAzMCI+PHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMiAxaDEzbDcgN3YyMUgyek0xNSAxdjdoN3pNNiAxM2gxMnYySDZ6bTAgNGgxMnYySDZ6bTAgNGg4djJINnoiLz48L3N2Zz4=") no-repeat center / contain;
+  mask: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAzMCI+PHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMiAxaDEzbDcgN3YyMUgyek0xNSAxdjdoN3pNNiAxM2gxMnYySDZ6bTAgNGgxMnYySDZ6bTAgNGg4djJINnoiLz48L3N2Zz4=") no-repeat center / contain;
+}

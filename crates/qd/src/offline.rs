@@ -369,11 +369,13 @@ const CONFIG_JS: &str = r#"(() => { const c = Reveal.getConfig();
 /// `check_overflow.py`), in slide coordinates with 2 px of slack. Not counted
 /// (false alarms there): speaker notes, anything marked `.overflow-ok` (a
 /// footer meant to bleed off the edge), SVG and MathJax internals, anything
-/// inside a clipping container, invisible or empty elements.
+/// inside a clipping container, invisible or empty elements, and every
+/// element of a `.scrollable` slide, which is meant to be longer (spec 014).
 const OVERFLOW_JS: &str = r#"(() => {
   const tol = 2, box = document.querySelector('.reveal .slides').getBoundingClientRect();
   const s = Reveal.getScale(), W = Reveal.getConfig().width, H = Reveal.getConfig().height;
   const slide = Reveal.getCurrentSlide(), out = [];
+  if (slide.classList.contains('scrollable')) return out;
   const skip = (e) => e.closest('aside.notes, .notes, .overflow-ok, svg *, mjx-container *');
   const clipped = (e) => {
     for (let a = e.parentElement; a && a !== slide; a = a.parentElement) {

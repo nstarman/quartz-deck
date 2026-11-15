@@ -211,6 +211,9 @@ CSL-JSON), or embedded in the front matter as `references:`.
   `filters:`. Every `qd bib` write does this too. With `cite-links`, each
   citation links to its paper with an icon ("Name et al. (2021)", from its
   `talk.csl`), and `[[@key]]{.corner}` is the icon alone, top right.
+  With `refs-slide`, the References slide (`::: {#refs}` then `:::`) takes
+  `refs-style="compact|short|full"`, `refs-columns="1|2|3"` and
+  `refs-size="normal|smaller|smallest"` (defaults: compact, 3, smaller).
 
 Each write is one edit of the deck and its companion file (`--dry-run`,
 `--expect`, one `qd undo` reverts both). A bibliography file outside the

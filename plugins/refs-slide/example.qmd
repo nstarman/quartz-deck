@@ -1,0 +1,17 @@
+---
+title: "refs-slide"
+format: revealjs
+bibliography: references.bib
+filters: [refs-slide]
+---
+
+## Results
+
+@arden2019, @bell2020 and @dunn2021 found it first. @evans2022first and
+@evans2022second share a first author and a year. @kim2018 has four authors,
+and @survey2023 is a preprint. @nolink2024 has no DOI or URL.
+
+## References
+
+::: {#refs refs-style="compact" refs-columns="3" refs-size="smaller"}
+:::

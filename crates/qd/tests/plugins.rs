@@ -111,14 +111,8 @@ fn render_example(
 /// The `<a …>…</a>` elements with class `cite-link`, as (opening tag, text).
 fn cite_links(html: &str) -> Vec<(String, String)> {
     let re = regex::Regex::new(r#"(?s)<a ([^>]*class="cite-link[^"]*"[^>]*)>(.*?)</a>"#).unwrap();
-    let tags = regex::Regex::new(r"<[^>]+>").unwrap();
     re.captures_iter(html)
-        .map(|c| {
-            (
-                c[1].to_string(),
-                tags.replace_all(&c[2], "").trim().to_string(),
-            )
-        })
+        .map(|c| (c[1].to_string(), text(&c[2])))
         .collect()
 }
 
@@ -241,25 +235,38 @@ fn cite_links_example() {
     assert!(html.contains("OWN-STYLE"), "the deck's csl: wins");
 }
 
-/// Spec 014 (T019): cite-links needs no network: its CSS and icon are
-/// bundled. Needs Quarto and a browser; skips otherwise.
-#[test]
-fn cite_links_example_works_offline() {
-    let t = copy_plugin("cite-links");
+/// `qd check --offline`'s problems for `example.qmd` in `dir`, or None
+/// without Quarto or a browser (downloads are off).
+fn offline_problems(dir: &Path) -> Option<Vec<serde_json::Value>> {
     let qd = |a: &[&str]| {
-        common::qd(t.path())
+        common::qd(dir)
             .env("QD_NO_DOWNLOAD", "1")
             .args(a)
             .output()
             .unwrap()
     };
     if !have("quarto") || !qd(&["browser"]).status.success() {
-        eprintln!("no browser: skipping");
-        return;
+        eprintln!("no quarto or browser: skipping");
+        return None;
     }
     let out = qd(&["--deck", "example.qmd", "check", "--offline"]);
     let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or_default();
-    let problems = report["problems"].as_array().expect("a check report");
+    Some(
+        report["problems"]
+            .as_array()
+            .expect("a check report")
+            .clone(),
+    )
+}
+
+/// Spec 014 (T019): cite-links needs no network: its CSS and icon are
+/// bundled. Needs Quarto and a browser; skips otherwise.
+#[test]
+fn cite_links_example_works_offline() {
+    let t = copy_plugin("cite-links");
+    let Some(problems) = offline_problems(t.path()) else {
+        return;
+    };
     // every reveal.js deck loads MathJax from its CDN until `qd export`
     // bundles it; anything else would come from the extension
     let others: Vec<_> = problems
@@ -267,4 +274,141 @@ fn cite_links_example_works_offline() {
         .filter(|p| !p["url"].as_str().unwrap_or("").contains("/mathjax@"))
         .collect();
     assert!(others.is_empty(), "{others:#?}");
+}
+
+/// The HTML of the `#refs` div (to the end of its slide).
+fn refs_html(html: &str) -> String {
+    let start = html.find(r#"<div id="refs""#).expect("a #refs div");
+    let end = html[start..]
+        .find("</section>")
+        .map_or(html.len(), |e| start + e);
+    html[start..end].to_string()
+}
+
+/// Text without tags, spaces collapsed.
+fn text(html: &str) -> String {
+    static TAGS: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"<[^>]+>").unwrap());
+    TAGS.replace_all(html, "")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Spec 014 US4 (T027): the References slide in the style, columns and size
+/// chosen on it, every entry linked to its paper.
+#[test]
+fn refs_slide_example() {
+    if !have("quarto") {
+        return;
+    }
+    let with = |attrs: &str| {
+        render_example(
+            "refs-slide",
+            |t| {
+                t.replace(
+                    r#"{#refs refs-style="compact" refs-columns="3" refs-size="smaller"}"#,
+                    &format!("{{#refs {attrs}}}"),
+                )
+            },
+            &[],
+        )
+        .0
+    };
+
+    // the defaults: compact, 3 columns, smaller
+    let html = with("");
+    let refs = refs_html(&html);
+    assert!(
+        refs.starts_with(
+            r#"<div id="refs" class="refs-slide refs-compact refs-cols-3 refs-size-smaller"#
+        ),
+        "{refs}"
+    );
+    // compact labels are the citations' own, suffixes included
+    let cited = |key: &str| {
+        let re = regex::Regex::new(&format!(
+            r#"(?s)<span class="citation" data-cites="{key}">(.*?)</span>"#
+        ))
+        .unwrap();
+        text(&re.captures(&html).unwrap_or_else(|| panic!("{key} cited"))[1])
+    };
+    let entry = |key: &str| {
+        let re =
+            regex::Regex::new(&format!(r#"(?s)<div id="ref-{key}"[^>]*>(.*?)</div>"#)).unwrap();
+        re.captures(&refs)
+            .unwrap_or_else(|| panic!("entry {key}: {refs}"))[1]
+            .to_string()
+    };
+    for (key, href) in [
+        ("evans2022first", "https://doi.org/10.5555/evans1"),
+        ("evans2022second", "https://doi.org/10.5555/evans2"),
+        ("bell2020", "https://doi.org/10.5555/bell"),
+        ("survey2023", "https://arxiv.org/abs/0000.00001"),
+    ] {
+        let entry = entry(key);
+        assert!(
+            entry.contains(&format!(r#"href="{href}""#)),
+            "{key}: {entry}"
+        );
+        assert!(entry.contains(r#"class="cite-icon""#), "{key}: {entry}");
+        assert_eq!(text(&entry), cited(key), "{key}");
+    }
+    // however the deck's style tells them apart (talk.csl: 2022a/b; the default: co-authors)
+    assert_ne!(cited("evans2022first"), cited("evans2022second"));
+    // no DOI or URL: listed, not linked
+    assert!(!entry("nolink2024").contains("href"), "{refs}");
+
+    // short, 2 columns
+    let refs = refs_html(&with(r#"refs-style="short" refs-columns="2""#));
+    assert!(
+        refs.contains(r#"class="refs-slide refs-short refs-cols-2 refs-size-smaller"#),
+        "{refs}"
+    );
+    let t = text(&refs);
+    assert!(t.contains("Bell &amp; Cho (2020), Example Journal"), "{t}");
+    assert!(t.contains("Kim et al. (2018), Example Letters"), "{t}");
+    assert!(refs.contains("<em>Example Journal</em>"));
+    assert!(refs.contains(r#"href="https://doi.org/10.5555/kim""#));
+
+    // full, 1 column, smallest: citeproc's entries, linked
+    let refs = refs_html(&with(
+        r#"refs-style="full" refs-columns="1" refs-size="smallest""#,
+    ));
+    assert!(
+        refs.contains(r#"class="refs-slide refs-full refs-cols-1 refs-size-smallest"#),
+        "{refs}"
+    );
+    // the deck's style decides the case (the default, Chicago, title-cases)
+    let t = text(&refs);
+    assert!(t.to_lowercase().contains("two authors"), "{t}");
+    assert!(
+        refs.contains(r#"href="https://doi.org/10.5555/bell""#),
+        "{refs}"
+    );
+}
+
+/// Spec 014 (T029): Quarto makes the slide holding `#refs` `smaller
+/// scrollable`, so a long list scrolls, and `qd check --offline` must not
+/// call it an overflow (it did before 014). Needs Quarto and a browser.
+#[test]
+fn long_refs_slide_scrolls_without_an_overflow_warning() {
+    let t = copy_plugin("refs-slide");
+    // 30 made-up entries, all listed, in the longest form on one column
+    let bib: String = (0..30)
+        .map(|n| format!("@book{{long{n},\n  author = {{Long, Lee}},\n  title = {{Entry number {n} with a title long enough to wrap}},\n  year = {{{}}},\n  doi = {{10.5555/long{n}}}\n}}\n", 1990 + n))
+        .collect();
+    std::fs::write(t.path().join("references.bib"), bib).unwrap();
+    std::fs::write(
+        t.path().join("example.qmd"),
+        "---\nformat: revealjs\nbibliography: references.bib\nnocite: '@*'\nfilters: [refs-slide]\n---\n\n## References\n\n::: {#refs refs-style=\"full\" refs-columns=\"1\" refs-size=\"normal\"}\n:::\n",
+    )
+    .unwrap();
+    let Some(problems) = offline_problems(t.path()) else {
+        return;
+    };
+    assert!(
+        !problems.iter().any(|p| p["code"] == "P_OVERFLOW"),
+        "{problems:#?}"
+    );
 }

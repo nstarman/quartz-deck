@@ -7,21 +7,34 @@ local function str(v)
   return v and pandoc.utils.stringify(v) or ""
 end
 
--- The step shared with refs-slide: run citeproc once, keeping each entry's link and title.
-local function citeproc_once(doc)
-  if doc.meta["cite-links-refs"] or not (doc.meta.bibliography or doc.meta.references) then
+-- The step shared with refs-slide (the same code in both, so each works alone): run citeproc
+-- once, and keep what it read in meta["qd-citeproc"] so either filter can look entries up later.
+local function citeproc_once(doc, default_csl)
+  if doc.meta["qd-citeproc"] or not (doc.meta.bibliography or doc.meta.references) then
     return doc
   end
-  local refs = {}
-  for _, r in ipairs(pandoc.utils.references(doc)) do
-    refs[r.id] = pandoc.MetaMap({ doi = str(r.doi), url = str(r.url), title = str(r.title) })
-  end
-  doc.meta.csl = doc.meta.csl or pandoc.MetaString(quarto.utils.resolve_path("talk.csl"))
+  doc.meta.csl = doc.meta.csl or default_csl
   doc.meta["link-citations"] = true
+  local read = { bibliography = doc.meta.bibliography, references = doc.meta.references, csl = doc.meta.csl }
   doc = pandoc.utils.citeproc(doc)
   doc.meta.bibliography, doc.meta.references, doc.meta.nocite = nil, nil, nil
-  doc.meta["cite-links-refs"] = pandoc.MetaMap(refs)
+  doc.meta["qd-citeproc"] = pandoc.MetaMap(read)
   return doc
+end
+
+-- The entries citeproc_once read, by key.
+local function references(doc)
+  local read = doc.meta["qd-citeproc"]
+  local by_key = {}
+  if read then
+    -- `references` returns cited entries only: cite them all
+    local all = pandoc.Cite({ pandoc.Str("@*") }, { pandoc.Citation("*", "NormalCitation") })
+    local meta = pandoc.Meta({ bibliography = read.bibliography, references = read.references, nocite = { all } })
+    for _, r in ipairs(pandoc.utils.references(pandoc.Pandoc({}, meta))) do
+      by_key[r.id] = r
+    end
+  end
+  return by_key
 end
 
 -- The DOI, except arXiv's own (10.48550) when the entry has its page.
@@ -43,11 +56,11 @@ local function label(inlines)
 end
 
 function Pandoc(doc)
-  doc = citeproc_once(doc)
+  doc = citeproc_once(doc, pandoc.MetaString(quarto.utils.resolve_path("talk.csl")))
   local opts = doc.meta["cite-links"] or {}
   local icon = opts.icon ~= false
   local to_refs = str(opts.link) == "references"
-  local refs = doc.meta["cite-links-refs"] or {}
+  local refs = references(doc)
   local warned = {}
 
   -- a link for one key around `content`, or nil (with a warning) when it has nowhere to go
@@ -115,7 +128,6 @@ function Pandoc(doc)
       end
     end,
   })
-  doc.meta["cite-links-refs"] = nil
   quarto.doc.add_html_dependency({ name = "cite-links", version = "1.0.0", stylesheets = { "cite-links.css" } })
   return doc
 end
