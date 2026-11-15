@@ -85,7 +85,34 @@ fn pull_creates_companion() {
         "only the front matter changed"
     );
     assert_eq!(ok(t.path(), &["bib"])["missing"], json!([]));
+    // cite-links is installed and named in `filters:`, so a plain render links
+    assert_eq!(v["installed"], json!(["cite-links"]));
+    assert!(t.path().join("_extensions/cite-links/talk.csl").is_file());
+    let d = deck(t.path());
+    assert!(d.contains("filters:\n- cite-links\n"), "{d}");
     assert!(cited(t.path()).contains("Bonaca and Hogg"));
+    let out = std::process::Command::new("quarto")
+        .args(["render", "talk.qmd", "--to", "revealjs"])
+        .current_dir(t.path())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let html = fs::read_to_string(t.path().join("talk.html")).unwrap();
+    assert!(
+        html.contains(r#"href="https://doi.org/10.1/x" class="cite-link""#),
+        "a linked citation"
+    );
+    assert!(
+        html.contains("Bonaca &amp; Hogg (2020)"),
+        "talk.csl's label"
+    );
+    // install again: nothing to do
+    let v = ok(t.path(), &["bib", "install"]);
+    assert_eq!(v["installed"], json!([]));
 
     // a _talk/ support folder is the default place
     let t2 = setup();
