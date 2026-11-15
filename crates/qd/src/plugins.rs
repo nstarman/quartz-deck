@@ -24,8 +24,10 @@ macro_rules! extension {
 }
 
 /// The extensions `qd bib` installs, in the order the deck's `filters:` runs them.
-pub const EXTENSIONS: &[Extension] =
-    &[extension!("cite-links": "_extension.yml", "cite-links.lua", "cite-links.css", "talk.csl")];
+pub const EXTENSIONS: &[Extension] = &[
+    extension!("cite-links": "_extension.yml", "cite-links.lua", "cite-links.css", "talk.csl"),
+    extension!("refs-slide": "_extension.yml", "refs-slide.lua", "refs-slide.css"),
+];
 
 /// A deck's copy compared with qd's.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

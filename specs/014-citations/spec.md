@@ -315,6 +315,8 @@ conversion fails and the deck is restored byte for byte.
   labels, suffixes included.
 - **FR-010**: Nothing MUST resize the References slide while it's shown.
   `qd check` MUST warn when a References slide overflows and doesn't scroll.
+  (Quarto itself makes the slide holding `#refs` `smaller scrollable`, so in
+  practice it scrolls, and the check must not call that an overflow.)
 
 **References in the deck (qd bib)**
 

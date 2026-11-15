@@ -49,7 +49,9 @@ with the parentheses dropped from around the year ("Abel et al. 2020").
 | `refs-columns` | `1`, `2`, `3` | `3` |
 | `refs-size` | `normal`, `smaller`, `smallest` | `smaller` |
 
-Scrolling is reveal.js's own `.scrollable` on the slide.
+Scrolling is reveal.js's own `.scrollable` on the slide. Quarto adds it,
+with `.smaller`, to the slide holding `#refs`, so the sizes are relative to
+that already smaller text.
 
 **Styles**:
 - `compact`: `icon Label` links, with the labels the same as the citations'
