@@ -245,7 +245,7 @@ Paths are relative to the repo root.
 
 **Independent Test**: spec US5; quickstart §5–§6.
 
-- [ ] T030 [P] [US5] Write failing unit tests in `crates/qd/src/migrate.rs`:
+- [X] T030 [P] [US5] Write failing unit tests in `crates/qd/src/migrate.rs`:
   - shortcode parsing: the arguments, `corner="true"`, an unknown argument giving `E_INVALID_ARG` with the slide;
   - an entry built from a shortcode (data-model "Paper shortcode");
   - the Makefile's `qd bib --zotero KEY` line read;
@@ -254,7 +254,7 @@ Paths are relative to the repo root.
     - the marker list → `::: {#refs refs-style="compact" refs-columns="3"}`/`:::`;
     - bytes elsewhere unchanged;
   - the HTML comparison: per slide, `(href, text, title)` for `a.paper-ref` before and for `a.cite-link` and `#refs` links after, with each kind of difference (`text`, `href`, `title`, `missing`, `extra`).
-- [ ] T031 [P] [US5] Write failing CLI tests in `crates/qd/tests/migrate.rs` (skip without quarto), on fixtures in `crates/qd/tests/fixtures/migrate/`: a small `paper` deck in a temp git repo, with `_extensions/paper`, a Makefile and a marker list, whose shortcode labels match their entries.
+- [X] T031 [P] [US5] Write failing CLI tests in `crates/qd/tests/migrate.rs` (skip without quarto), on fixtures in `crates/qd/tests/fixtures/migrate/`: a small `paper` deck in a temp git repo, with `_extensions/paper`, a Makefile and a marker list, whose shortcode labels match their entries.
   - **`migrate_clean`**:
     - `differences: 0`, no shortcodes left;
     - `_extensions/paper` removed, both extensions installed;
@@ -265,7 +265,7 @@ Paths are relative to the repo root.
   - **`migrate_unmatched_url`**: a shortcode whose URL is arXiv where the entry has a DOI matches by title; one matching nothing gets a built entry, listed under `unmatched`.
   - **`migrate_needs_backup_outside_git`**: a non-git folder without `--backup` gives `E_INVALID_ARG`; with `--backup DIR`, the files are copied there first.
   - **`migrate_from_stub_source`**: with `--from zotero KEY` and a stub `qd-zotero` on `PATH`, the entries come from it.
-- [ ] T032 [US5] Add `E_MIGRATE_DIFF` to `crates/qd/src/error.rs` and `qd schema`. Implement `crates/qd/src/migrate.rs` and `qd bib migrate [--from] [--backup] [--accept]` in `cli.rs` (research R11):
+- [X] T032 [US5] Add `E_MIGRATE_DIFF` to `crates/qd/src/error.rs` and `qd schema`. Implement `crates/qd/src/migrate.rs` and `qd bib migrate [--from] [--backup] [--accept]` in `cli.rs` (research R11):
   - the backup first;
   - the references from the source or the shortcodes, and the merge;
   - the patches;
@@ -276,8 +276,8 @@ Paths are relative to the repo root.
   - the restore on a difference unless `--accept`.
 
   Writes go through `Store::write_many`. T030 and T031 pass.
-- [ ] T033 [US5] Convert `tests/skills/quarto-revealjs/fixture/lessons.qmd` with `qd bib migrate`, review its report, and update `tests/skills` expectations that mention `paper`.
-- [ ] T034 [US5] Convert the skill's scaffold in `skills/quarto-revealjs/assets/`:
+- [X] T033 [US5] Convert `tests/skills/quarto-revealjs/fixture/lessons.qmd` with `qd bib migrate`, review its report, and update `tests/skills` expectations that mention `paper`.
+- [X] T034 [US5] Convert the skill's scaffold in `skills/quarto-revealjs/assets/`:
   - `presentation.qmd` cites with `@key` and has the `#refs` slide;
   - the `Makefile`'s `refs` target becomes `qd bib pull --from zotero $(ZOTERO)`;
   - `_extensions/paper` is deleted, and decks get the extensions from `qd bib install`.

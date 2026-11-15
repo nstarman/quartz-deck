@@ -15,6 +15,7 @@ pub mod images;
 pub mod inline;
 pub mod kernel;
 pub mod layouts;
+pub mod migrate;
 pub mod offline;
 pub mod ops;
 pub mod outputs;

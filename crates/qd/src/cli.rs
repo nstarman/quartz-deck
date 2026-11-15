@@ -665,6 +665,22 @@ enum BibCmd {
     },
     /// Install or update the citation extensions qd carries in the deck's `_extensions/`
     Install,
+    /// Convert a deck citing with the old `{{< paper >}}` shortcode to `@key`
+    /// citations; renders before and after, and puts the deck back on any
+    /// difference unless --accept
+    Migrate {
+        /// The references' source plugin (default: the Makefile's `qd bib --zotero KEY`)
+        #[arg(long, value_name = "NAME")]
+        from: Option<String>,
+        /// The source's arguments
+        args: Vec<String>,
+        /// Copy the files it changes here first (required outside git)
+        #[arg(long)]
+        backup: Option<PathBuf>,
+        /// Keep the conversion even when the report lists differences
+        #[arg(long)]
+        accept: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -810,7 +826,8 @@ fn schema() -> Value {
         "E_RUN",
         "E_ZOTERO",
         "E_SOURCE",
-        "E_READ_ONLY"
+        "E_READ_ONLY",
+        "E_MIGRATE_DIFF"
     ]);
     v["refs"] = json!({
         "slide": "explicit id | auto id | @N (1-based) | first | last",
@@ -1409,6 +1426,21 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                     v["extensions"] = crate::plugins::states(&dir);
                     v
                 }),
+                Some(BibCmd::Migrate {
+                    from,
+                    args,
+                    backup,
+                    accept,
+                }) => crate::migrate::run(
+                    &store,
+                    &crate::migrate::Options {
+                        from: from.clone().map(|f| (f, args.clone())),
+                        backup: backup.clone(),
+                        accept: *accept,
+                        dry_run: cli.dry_run,
+                        expect: cli.expect.clone(),
+                    },
+                ),
                 Some(BibCmd::Install) => ctx.edit_files("bib-install", |d| {
                     Ok(crate::bib::Edit {
                         text: d.text.clone(),

@@ -86,6 +86,9 @@ pub enum QdError {
     /// Spec 014: a source plugin (`qd-NAME`) is missing, failed or printed no reference list.
     #[error("source plugin: {0}")]
     Source(String),
+    /// Spec 014: `qd bib migrate` found differences; everything was put back.
+    #[error("{0}")]
+    MigrateDiff(String),
     /// Spec 014: a write to a bibliography file outside the deck's folder.
     #[error("read-only: {0}")]
     ReadOnly(String),
@@ -128,6 +131,7 @@ impl QdError {
             Self::Zotero(_) => "E_ZOTERO",
             Self::Source(_) => "E_SOURCE",
             Self::ReadOnly(_) => "E_READ_ONLY",
+            Self::MigrateDiff(_) => "E_MIGRATE_DIFF",
             Self::Io(_) => "E_IO",
         }
     }
@@ -201,6 +205,9 @@ impl QdError {
             }
             Self::Source(_) => {
                 "install the plugin (`cargo install --git https://github.com/nstarman/quartz-deck qd-NAME`), or fix what its message names"
+            }
+            Self::MigrateDiff(_) => {
+                "read the report; to convert anyway, run the same command again with --accept"
             }
             Self::ReadOnly(_) => {
                 "qd only reads bibliography files outside the deck's folder: copy it into the folder, or pull from it with `qd bib pull PATH`"

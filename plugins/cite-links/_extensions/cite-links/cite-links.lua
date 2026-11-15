@@ -16,7 +16,13 @@ local function citeproc_once(doc, default_csl)
   doc.meta.csl = doc.meta.csl or default_csl
   doc.meta["link-citations"] = true
   local read = { bibliography = doc.meta.bibliography, references = doc.meta.references, csl = doc.meta.csl }
+  -- with the list suppressed citeproc links nothing; keep its links, drop the list after
+  local suppress = doc.meta["suppress-bibliography"]
+  doc.meta["suppress-bibliography"] = nil
   doc = pandoc.utils.citeproc(doc)
+  if suppress then
+    doc = doc:walk({ Div = function(d) if d.identifier == "refs" then return {} end end })
+  end
   doc.meta.bibliography, doc.meta.references, doc.meta.nocite = nil, nil, nil
   doc.meta["qd-citeproc"] = pandoc.MetaMap(read)
   return doc

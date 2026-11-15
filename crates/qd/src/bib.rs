@@ -366,7 +366,7 @@ pub fn refs(d: &Deck, dir: &Path) -> Refs {
 
 impl Refs {
     /// The one file qd may write: `None` when the deck names no file.
-    fn writable(&self) -> Result<Option<&BibFile>> {
+    pub(crate) fn writable(&self) -> Result<Option<&BibFile>> {
         let inside: Vec<&BibFile> = self.files.iter().filter(|f| f.inside).collect();
         match inside[..] {
             [f] => Ok(Some(f)),
@@ -386,7 +386,7 @@ impl Refs {
         }
     }
 
-    fn file_entries(&self) -> Result<Vec<Value>> {
+    pub(crate) fn file_entries(&self) -> Result<Vec<Value>> {
         let mut all = Vec::new();
         for f in &self.files {
             all.extend(read_file(&f.path)?);
@@ -396,7 +396,7 @@ impl Refs {
 }
 
 /// Where a new companion file goes: `_talk/` when the deck has one, else beside it.
-fn default_place(dir: &Path, f: Format) -> String {
+pub(crate) fn default_place(dir: &Path, f: Format) -> String {
     let name = format!("references.{}", f.ext());
     if dir.join("_talk").is_dir() {
         format!("_talk/{name}")
@@ -499,7 +499,7 @@ fn yaml(v: &impl serde::Serialize) -> Yaml {
     serde_yaml_ng::to_value(v).expect("JSON values are YAML")
 }
 
-fn file_change(path: &Path, after: String) -> OtherFile {
+pub(crate) fn file_change(path: &Path, after: String) -> OtherFile {
     OtherFile {
         path: path.to_path_buf(),
         before: fs::read_to_string(path).ok(),

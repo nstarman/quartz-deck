@@ -28,24 +28,6 @@ fn files(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// The quarto-revealjs skill ships its own copy of `paper`, so a deck set up
-/// from the skill alone has it. `plugins/paper` is the source; the copy must
-/// match it byte for byte.
-#[test]
-fn skill_copy_of_paper_matches_the_plugin() {
-    let plugin = root().join("plugins/paper/_extensions/paper");
-    let copy = root().join("skills/quarto-revealjs/assets/_extensions/paper");
-    assert_eq!(files(&plugin), files(&copy), "the same files");
-    for f in files(&plugin) {
-        assert_eq!(
-            std::fs::read(plugin.join(&f)).unwrap(),
-            std::fs::read(copy.join(&f)).unwrap(),
-            "{} differs: edit plugins/paper and copy it to the skill",
-            f.display()
-        );
-    }
-}
-
 /// Each plugin's `example.qmd` renders with plain Quarto (no qd).
 #[test]
 fn plugin_examples_render_with_plain_quarto() {

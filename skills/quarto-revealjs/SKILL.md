@@ -37,7 +37,7 @@ use an embedded browser pane or a headless script, never a Chrome window or `ope
    Makefile           make, make notes, make refs
    README.md          fill in the title, venue and anything particular to this talk
    _quarto.yml        project options; Quarto reads it only at the root
-   _extensions/       the {{< paper >}} shortcode (a copy of quartz-deck's plugins/paper); Quarto looks for extensions only at the root
+   _extensions/       cite-links and refs-slide, written by `make refs` (qd bib); Quarto looks for extensions only at the root
    _output/           written by `make`
    _talk/             everything else; Quarto skips folders that start with _
      style/           presentation.css, fonts/ (subset woff2)
@@ -61,7 +61,7 @@ use an embedded browser pane or a headless script, never a Chrome window or `ope
 ```bash
 make         # qd export --pdf --out _output: _output/presentation.html (checked) and .pdf
 make notes   # qd pdf --html _output/presentation.html --notes: presentation-notes.pdf
-make refs    # qd bib --zotero KEY: the References list from the Zotero collection (Zotero running)
+make refs    # qd bib pull --from zotero KEY: the deck's references from the Zotero collection (Zotero running)
 ```
 
 `qd export` owns `_output/` and replaces the whole folder on every run, which is why `make` prints
@@ -108,8 +108,8 @@ audience; `qd pdf --notes` turns them on only for the PDF.
 | Link to a slide | `[text](#id)`, **not** `#/id` (Quarto rewrites it to `#//id`) |
 | Backup slides | `{visibility="uncounted"}`; drafts `{visibility="hidden"}` |
 | JavaScript | a ```` ```{=html} ```` block with `<script>`; use `Reveal` after `window` `load` |
-| Cite a paper | `{{< paper url="https://doi.org/…" who="Name et al." year="2021" title="…" >}}`; top right of a result slide: add `corner="true"` |
-| References slide | the scaffold's `## References {#bibliography .bibliography visibility="uncounted"}`: `make refs` (`qd bib --zotero KEY`) writes the list between its `<!-- bibliography:start -->` and `<!-- bibliography:end -->` lines |
+| Cite a paper | `@key`: "Name et al. (2021)" with an icon, linking to the DOI; `[@a; @b]`; top right of a result slide: `[[@key]]{.corner}` (cite-links) |
+| References slide | the scaffold's `::: {#refs refs-style="compact" refs-columns="3" refs-size="smaller"}` and `:::` (refs-slide: `compact`, `short` or `full`; 1–3 columns; `normal`, `smaller`, `smallest`); `make refs` fills the deck's references; a deck still citing with `{{< paper >}}`: `qd bib migrate` |
 | Skip a build-up | press **]** (last step of the slide; again: next slide), from `_talk/html/skip-steps.html` |
 
 The table escapes `|` as `\|`; in a deck write `code-line-numbers="|1|2-3"`.
