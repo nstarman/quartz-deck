@@ -99,8 +99,13 @@ local function labels(doc, keys)
   return out
 end
 
+-- citeproc's entry div `ref-KEY`: its key
+local function key_of(e)
+  return e.t == "Div" and e.identifier:match("^ref%-(.+)$") or nil
+end
+
 function Pandoc(doc)
-  doc = citeproc_once(doc, nil)
+  doc = citeproc_once(doc)
   local refs = references(doc)
   doc = doc:walk({
     Div = function(d)
@@ -117,16 +122,10 @@ function Pandoc(doc)
       if style == "full" then
         return d
       end
-      local keys = {}
-      for _, e in ipairs(d.content) do
-        local key = e.t == "Div" and e.identifier:match("^ref%-(.+)$")
-        if key then
-          keys[#keys + 1] = key
-        end
-      end
+      local keys = d.content:filter(key_of):map(key_of)
       local label = style == "compact" and labels(doc, keys) or {}
       d.content = d.content:map(function(e)
-        local key = e.t == "Div" and e.identifier:match("^ref%-(.+)$")
+        local key = key_of(e)
         local ref = key and refs[key]
         if not ref then
           return e
@@ -137,8 +136,8 @@ function Pandoc(doc)
           inlines = pandoc.Inlines(label[key] or { pandoc.Str(key) })
           if href then
             local tip = str(inlines):gsub("[()]", "") .. (str(ref.title) ~= "" and (": " .. str(ref.title)) or "")
-            inlines = { pandoc.Link({ pandoc.Span({}, { class = "cite-icon" }), pandoc.Space(), table.unpack(inlines) },
-              href, tip, pandoc.Attr("", { "cite-link" }, { ["aria-label"] = tip })) }
+            local attr = pandoc.Attr("", { "cite-link" }, { ["aria-label"] = tip })
+            inlines = { pandoc.Link(pandoc.Inlines({ icon_span(), pandoc.Space() }) .. inlines, href, tip, attr) }
           end
         else
           inlines = pandoc.Inlines({ pandoc.Str(authors(ref) .. " (" .. year(ref) .. ")") })
