@@ -911,10 +911,7 @@ mod tests {
             vec![json!({"id": "abel2020", "fields": ["DOI", "title", "volume"]})]
         );
         assert_eq!(m.added, ["kovac2010", "abel2020a"]);
-        assert_eq!(
-            m.merged,
-            vec![json!({"id": "kovac2010", "from": ["dup"]})]
-        );
+        assert_eq!(m.merged, vec![json!({"id": "kovac2010", "from": ["dup"]})]);
         assert_eq!(m.entries[2]["page"], "9");
         assert_eq!(m.gone, ["old2001"]);
         assert_eq!(

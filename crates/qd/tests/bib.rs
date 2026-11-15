@@ -106,10 +106,7 @@ fn pull_creates_companion() {
         html.contains(r#"href="https://doi.org/10.1/x" class="cite-link""#),
         "a linked citation"
     );
-    assert!(
-        html.contains("Abel &amp; Hale (2020)"),
-        "talk.csl's label"
-    );
+    assert!(html.contains("Abel &amp; Hale (2020)"), "talk.csl's label");
     // install again: nothing to do
     let v = ok(t.path(), &["bib", "install"]);
     assert_eq!(v["installed"], json!([]));
