@@ -4431,3 +4431,200 @@ async fn diagram_pin_prompt() {
         );
     }
 }
+
+// ---------- spec 015 US2: building diagrams on the slide ----------
+
+impl Ed {
+    /// Page point of a selected box's connect handle (`right`, `left`, `top`, `bottom`).
+    async fn handle_point(&self, side: &str) -> (f64, f64) {
+        let h = format!("{FRAME}.querySelector('.qd-dot-handle[data-side={side}]')");
+        self.wait(&format!("!!{h}")).await;
+        self.point(&format!("(() => {{ const f = document.querySelector('#preview').getBoundingClientRect(); const r = {h}.getBoundingClientRect(); return [f.left + r.left + r.width / 2, f.top + r.top + r.height / 2]; }})()")).await
+    }
+    /// Page point halfway along the arrow titled `title` (`a->b`).
+    async fn edge_point(&self, title: &str) -> (f64, f64) {
+        let e = format!(
+            "[...{FRAME}.querySelectorAll('[data-qd-lang=dot] g.edge')].find((g) => g.querySelector('title')?.textContent === {title:?})"
+        );
+        self.wait(&format!("!!{e}")).await;
+        self.point(&format!("(() => {{ const f = document.querySelector('#preview').getBoundingClientRect(); const p = {e}.querySelector('path'); const q = p.getPointAtLength(p.getTotalLength() / 2).matrixTransform(p.getScreenCTM()); return [f.left + q.x, f.top + q.y]; }})()")).await
+    }
+    async fn double_click(&self, (x, y): (f64, f64)) {
+        use DispatchMouseEventType::*;
+        for n in [1, 2] {
+            for t in [MousePressed, MouseReleased] {
+                let p = DispatchMouseEventParams::builder()
+                    .r#type(t)
+                    .x(x)
+                    .y(y)
+                    .button(MouseButton::Left)
+                    .click_count(n)
+                    .build()
+                    .unwrap();
+                self.page.execute(p).await.unwrap();
+            }
+        }
+    }
+    /// View ▸ Properties panel, open.
+    async fn properties(&self) {
+        if !self
+            .eval("document.querySelector('main')?.classList.contains('panel-open') ?? false")
+            .await
+            .as_bool()
+            .unwrap_or(false)
+        {
+            self.menu("View", "Properties panel").await;
+        }
+        self.wait("!!document.querySelector('form.dot-form')").await;
+    }
+}
+
+/// Spec 015 US2 (T016): dragging from a handle onto a box connects them; onto
+/// empty space it adds a box there (snapped), in the first box's look.
+#[tokio::test(flavor = "multi_thread")]
+async fn diagram_connect_and_add() {
+    let deck = DIAGRAM.replace("pos=\"0,1!\"]", "pos=\"0,1!\", fillcolor=white]");
+    let Some(ed) = Ed::open(&deck).await else {
+        return;
+    };
+    ed.go("flow").await;
+    ed.select_node("c").await;
+    let from = ed.handle_point("left").await;
+    let a = ed.node_point("a").await;
+    ed.drag(from, a).await;
+    ed.wait_file(|f| f.contains("  c -> a;\n"), "c connected to a")
+        .await;
+    ed.settle().await;
+    let a = ed.select_node("a").await;
+    let inch = ed.inch_px().await;
+    let from = ed.handle_point("bottom").await;
+    ed.drag(from, (a.0 + 0.1 * inch, a.1 + inch)).await;
+    ed.wait_file(
+        |f| f.contains("  n1 [fillcolor=white, pos=\"0,0!\"];\n  a -> n1;\n"),
+        "a new box below a, in a's look, connected",
+    )
+    .await;
+}
+
+/// Double-click a box, type, Enter: only its label changes; Escape cancels.
+#[tokio::test(flavor = "multi_thread")]
+async fn diagram_rename_in_place() {
+    let Some(ed) = Ed::open(DIAGRAM).await else {
+        return;
+    };
+    ed.go("flow").await;
+    let a = ed.node_point("a").await;
+    ed.double_click(a).await;
+    ed.wait("document.activeElement?.closest('dialog.sheet') && document.activeElement.value === 'Data'").await;
+    ed.type_text("Raw data").await; // the label is selected: typing replaces it
+    ed.key("Enter", "Enter", 13, 0).await;
+    ed.wait_file(|f| f.contains("label=\"Raw data\""), "renamed")
+        .await;
+    assert_eq!(
+        ed.file(),
+        DIAGRAM.replace("label=\"Data\"", "label=\"Raw data\"")
+    );
+    ed.settle().await;
+    let before = ed.file();
+    ed.double_click(ed.node_point("a").await).await;
+    ed.wait("!!document.activeElement?.closest('dialog.sheet')")
+        .await;
+    ed.type_text("Other").await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("!document.querySelector('dialog.sheet')").await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(ed.file(), before, "Escape cancels");
+}
+
+/// Delete removes a selected box with its arrows; an arrow is selected by a
+/// click, and the Properties panel reverses it and turns its head off.
+#[tokio::test(flavor = "multi_thread")]
+async fn diagram_delete_and_edge_properties() {
+    let Some(ed) = Ed::open(DIAGRAM).await else {
+        return;
+    };
+    ed.go("flow").await;
+    ed.select_node("c").await;
+    ed.key("Delete", "Delete", 46, 0).await;
+    ed.wait_file(|f| !f.contains("Paper"), "c deleted").await;
+    assert!(ed.file().contains("  a -> b;\n}"), "{}", ed.file());
+    ed.settle().await;
+    let e = ed.edge_point("a->b").await;
+    ed.page.click(Point { x: e.0, y: e.1 }).await.unwrap();
+    ed.wait(DOT_SEL).await;
+    ed.properties().await;
+    // the panel's own controls (the element bar can float over them in a small window)
+    ed.eval("[...document.querySelectorAll('form.dot-form button')].find((b) => b.textContent === 'Reverse').click()").await;
+    ed.wait_file(|f| f.contains("  b -> a;\n"), "reversed")
+        .await;
+    ed.settle().await;
+    ed.wait("document.querySelector('form.dot-form legend')?.textContent === 'Arrow b->a'")
+        .await;
+    ed.eval("document.querySelector('form.dot-form input[type=checkbox]').click()")
+        .await;
+    ed.wait_file(
+        |f| f.contains("  b -> a [arrowhead=none];\n"),
+        "no arrowhead",
+    )
+    .await;
+}
+
+/// A box's look, link and size from the Properties panel; the rendered box links there.
+#[tokio::test(flavor = "multi_thread")]
+async fn diagram_properties_look_link_size() {
+    let Some(ed) = Ed::open(DIAGRAM).await else {
+        return;
+    };
+    ed.go("flow").await;
+    ed.select_node("a").await;
+    ed.properties().await;
+    ed.eval("(() => { const f = document.querySelector('form.dot-form'); f.look.value = 'starter:artifact'; f.link.value = 'https://example.org/data'; f.width.value = '1.5'; f.requestSubmit(); })()").await;
+    ed.wait_file(|f| f.contains("https://example.org/data"), "set")
+        .await;
+    assert!(
+        ed.file().contains("a [label=\"Data\", pos=\"0,1!\", URL=\"https://example.org/data\", width=1.5, shape=box, style=\"rounded,filled\", fillcolor=white, color=\"#c8ccd2\", fontcolor=\"#1f2933\"];"),
+        "{}",
+        ed.file()
+    );
+    ed.settle().await;
+    ed.wait(&format!("[...{FRAME}.querySelectorAll('[data-qd-lang=dot] g.node a')].some((a) => (a.getAttribute('xlink:href') || a.getAttribute('href')) === 'https://example.org/data')")).await;
+}
+
+/// Insert ▸ Diagram on an empty slide adds the starter diagram; with one of
+/// its boxes selected, Insert ▸ Box in diagram adds a box in that box's look.
+#[tokio::test(flavor = "multi_thread")]
+async fn diagram_insert_menus() {
+    let deck = "---\ntitle: T\nformat: revealjs\n---\n\n## Empty {#empty}\n";
+    let Some(ed) = Ed::open(deck).await else {
+        return;
+    };
+    ed.go("empty").await;
+    ed.menu("Insert", "Diagram").await;
+    ed.wait_file(|f| f.contains("data -> tool;"), "a starter diagram")
+        .await;
+    assert_eq!(
+        ed.file(),
+        format!("{deck}\n{}\n", quartz_deck::dot::starter_diagram())
+    );
+    ed.settle().await;
+    ed.select_node("tool").await;
+    ed.menu("Insert", "Box in diagram").await;
+    ed.wait_file(
+        |f| f.contains("  n1 [shape=box, style=\"rounded,filled\", fillcolor=\"#3d4a5c\", color=\"#3d4a5c\", fontcolor=white, pos=\"4,0!\"];\n"),
+        "a box in tool's look, right of the others",
+    )
+    .await;
+}
+
+/// The connect handles have accessible names.
+#[tokio::test(flavor = "multi_thread")]
+async fn diagram_keyboard_and_names() {
+    let Some(ed) = Ed::open(DIAGRAM).await else {
+        return;
+    };
+    ed.go("flow").await;
+    ed.select_node("b").await;
+    ed.handle_point("right").await;
+    let names = ed.eval(&format!("[...{FRAME}.querySelectorAll('.qd-dot-handle')].map((h) => h.getAttribute('role') + ' ' + h.getAttribute('aria-label'))")).await;
+    assert_eq!(names, json!(vec!["button Connect from Tool"; 4]));
+}

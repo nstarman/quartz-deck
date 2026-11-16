@@ -138,6 +138,8 @@ pub struct Edge {
     pub index: usize,
     /// `(link, links)` when its statement is a chain of more than one link.
     pub chain: Option<(usize, usize)>,
+    /// Its top-level statement (the subgraph's, inside one).
+    pub stmt: usize,
     pub attrs: Vec<Attr>,
     pub locked: bool,
 }
@@ -748,8 +750,8 @@ impl Graph {
                 Operand::Group(g) => g.iter().map(|n| (n.clone(), None)).collect(),
             }
         }
-        fn walk(stmts: &[Stmt], locked: bool, out: &mut Vec<Edge>) {
-            for s in stmts {
+        fn walk(stmts: &[Stmt], top: Option<usize>, locked: bool, out: &mut Vec<Edge>) {
+            for (i, s) in stmts.iter().enumerate() {
                 match &s.kind {
                     Kind::Edge { ops, lists } => {
                         let locked = locked || ops.iter().any(|o| matches!(o, Operand::Group(_)));
@@ -768,6 +770,7 @@ impl Graph {
                                         to_port,
                                         index,
                                         chain: (links > 1).then_some((k, links)),
+                                        stmt: top.unwrap_or(i),
                                         attrs: list_attrs(lists),
                                         locked,
                                     });
@@ -775,13 +778,13 @@ impl Graph {
                             }
                         }
                     }
-                    Kind::Subgraph { body, .. } => walk(body, true, out),
+                    Kind::Subgraph { body, .. } => walk(body, top.or(Some(i)), true, out),
                     _ => {}
                 }
             }
         }
         let mut out = Vec::new();
-        walk(&self.stmts, false, &mut out);
+        walk(&self.stmts, None, false, &mut out);
         out
     }
 
@@ -870,9 +873,20 @@ pub fn show(d: &Deck, r: &str) -> Result<Value> {
         .iter()
         .map(|e| json!({"from": e.from, "to": e.to, "index": e.index, "attrs": attrs_json(&e.attrs), "locked": e.locked}))
         .collect();
+    let starters: Vec<Value> = ["tool", "artifact"]
+        .iter()
+        .map(|n| {
+            let look = starter(n)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(k, v)| (k, json!(v)));
+            json!({"name": n, "look": Value::Object(look.collect())})
+        })
+        .collect();
     Ok(
         json!({"ok": true, "kind": "dot", "cell": cell, "directed": g.directed, "pinned": g.pinned(),
-        "editable": true, "settings": attrs_json(&g.settings()), "nodes": nodes, "edges": edges}),
+        "editable": true, "settings": attrs_json(&g.settings()), "nodes": nodes, "edges": edges,
+        "starters": starters}),
     )
 }
 
@@ -970,6 +984,34 @@ fn set_in(lists: &[List], end: usize, key: &str, value: &str) -> (Span, String) 
     }
 }
 
+/// A box qd may edit: it exists and isn't inside a subgraph.
+fn node(g: &Graph, name: &str) -> Result<Node> {
+    let n = g
+        .nodes()
+        .into_iter()
+        .find(|n| n.name == name)
+        .ok_or_else(|| QdError::NotFound(format!("no box named '{name}'")))?;
+    if n.locked {
+        return Err(QdError::UnsafeEdit(format!(
+            "'{name}' is inside a subgraph; edit it as text"
+        )));
+    }
+    Ok(n)
+}
+
+/// `name [k=v, …]`, or just `name`.
+fn node_stmt(name: &str, attrs: &[(String, String)]) -> String {
+    let list: Vec<String> = attrs
+        .iter()
+        .map(|(k, v)| format!("{k}={}", dot_value(v)))
+        .collect();
+    if list.is_empty() {
+        dot_value(name)
+    } else {
+        format!("{} [{}]", dot_value(name), list.join(", "))
+    }
+}
+
 /// Set a box's attribute (one edit, relative to `text`).
 pub fn set_node_attr(
     text: &str,
@@ -978,27 +1020,14 @@ pub fn set_node_attr(
     key: &str,
     value: &str,
 ) -> Result<(Span, String)> {
-    let node = g
-        .nodes()
-        .into_iter()
-        .find(|n| n.name == name)
-        .ok_or_else(|| QdError::NotFound(format!("no box named '{name}'")))?;
-    if node.locked {
-        return Err(QdError::UnsafeEdit(format!(
-            "'{name}' is inside a subgraph; edit it as text"
-        )));
-    }
+    node(g, name)?;
     let stmt = g.stmts.iter().rev().find_map(|s| match &s.kind {
         Kind::Node { name: n, lists, .. } if n == name => Some((lists, s.span.end)),
         _ => None,
     });
     Ok(match stmt {
         Some((lists, end)) => set_in(lists, end, key, value),
-        None => add_stmt(
-            text,
-            g,
-            &format!("{} [{key}={}]", dot_value(name), dot_value(value)),
-        ),
+        None => add_stmt(text, g, &node_stmt(name, &[(key.into(), value.into())])),
     })
 }
 
@@ -1036,27 +1065,42 @@ fn read<'a>(d: &'a Deck, r: &str) -> Result<(String, Span, &'a str, Graph)> {
     Ok((cell, body, text, g))
 }
 
+/// A diagram's text through several edits: each step reads it afresh.
+struct Doc(String);
+
+impl Doc {
+    fn graph(&self) -> Result<Graph> {
+        parse(&self.0).map_err(|s| QdError::UnsafeEdit(s.reason))
+    }
+
+    fn apply(&mut self, (span, new): (Span, String)) {
+        self.0.replace_range(span.start..span.end, &new);
+    }
+
+    /// The cell's body replaced by the edited text.
+    fn patch(self, op: &str, target: String, body: Span) -> crate::ops::Patch {
+        crate::ops::patch(op, target, vec![(body, self.0)], vec![])
+    }
+}
+
 /// `qd dot move`: a box's pinned position, `at` or moved `by` (inches), snapped unless `exact`.
 pub fn move_node(
     d: &Deck,
     r: &str,
-    node: &str,
+    name: &str,
     at: Option<(f64, f64)>,
     by: Option<(f64, f64)>,
     exact: bool,
-) -> Result<(crate::ops::Patch, (f64, f64))> {
+) -> Result<(crate::ops::Patch, Value)> {
     let (cell, body, text, g) = read(d, r)?;
     if !g.pinned() {
         return Err(QdError::InvalidArg(format!(
             "the diagram in {cell} isn't pinned, so its boxes can't be placed: run `qd dot pin {cell}` first"
         )));
     }
-    let n = g
-        .nodes()
-        .into_iter()
-        .find(|n| n.name == node)
-        .ok_or_else(|| QdError::NotFound(format!("no box named '{node}' in {cell}")))?;
-    let (x, y, _) = n.pos().expect("pinned diagrams pin every box");
+    let (x, y, _) = node(&g, name)?
+        .pos()
+        .expect("pinned diagrams pin every box");
     let (mut x, mut y) = match (at, by) {
         (Some(a), _) => a,
         (None, Some((dx, dy))) => (x + dx, y + dy),
@@ -1065,20 +1109,12 @@ pub fn move_node(
     if !exact {
         (x, y) = (snap(x), snap(y));
     }
-    let edit = set_node_attr(text, &g, node, "pos", &pos_value(x, y))?;
-    let p = crate::ops::patch(
-        "dot-move",
-        format!("{cell}:{node}"),
-        vec![(
-            Span {
-                start: edit.0.start + body.start,
-                end: edit.0.end + body.start,
-            },
-            edit.1,
-        )],
-        vec![],
-    );
-    Ok((p, (x, y)))
+    let mut doc = Doc(text.into());
+    doc.apply(set_node_attr(text, &g, name, "pos", &pos_value(x, y))?);
+    Ok((
+        doc.patch("dot-move", format!("{cell}:{name}"), body),
+        json!({"pos": [x, y]}),
+    ))
 }
 
 /// `qd dot pin`: `layout=neato`, `splines=ortho`, and every box at `positions` (inches).
@@ -1086,7 +1122,7 @@ pub fn pin(
     d: &Deck,
     r: &str,
     positions: &std::collections::HashMap<String, (f64, f64)>,
-) -> Result<(crate::ops::Patch, usize)> {
+) -> Result<(crate::ops::Patch, Value)> {
     let (cell, body, text, g) = read(d, r)?;
     let names: Vec<String> = g
         .nodes()
@@ -1099,25 +1135,571 @@ pub fn pin(
             "no position for '{missing}' in {cell}"
         )));
     }
-    // several edits to one body: apply them in turn, then replace the body once
-    let mut t = text.to_string();
-    type Edit<'a> = &'a dyn Fn(&str, &Graph) -> Result<(Span, String)>;
-    let mut step = |f: Edit| -> Result<()> {
-        let g = parse(&t).map_err(|s| QdError::UnsafeEdit(s.reason))?;
-        let (span, new) = f(&t, &g)?;
-        t.replace_range(span.start..span.end, &new);
-        Ok(())
-    };
-    step(&|t, g| Ok(set_setting(t, g, "layout", "neato")))?;
-    step(&|t, g| Ok(set_setting(t, g, "splines", "ortho")))?;
+    let mut doc = Doc(text.into());
+    for (k, v) in [("layout", "neato"), ("splines", "ortho")] {
+        let g = doc.graph()?;
+        doc.apply(set_setting(&doc.0, &g, k, v));
+    }
     for n in &names {
         let (x, y) = positions[n];
-        step(&|t, g| set_node_attr(t, g, n, "pos", &pos_value(x, y)))?;
+        let g = doc.graph()?;
+        doc.apply(set_node_attr(&doc.0, &g, n, "pos", &pos_value(x, y))?);
     }
     Ok((
-        crate::ops::patch("dot-pin", cell, vec![(body, t)], vec![]),
-        names.len(),
+        doc.patch("dot-pin", cell, body),
+        json!({"pinned": names.len()}),
     ))
+}
+
+// ---------- building (spec 015 US2) ----------
+
+/// A look: style attributes in `LOOK` order.
+pub type Look = Vec<(String, String)>;
+
+/// The two starter looks (data-model "Look").
+pub fn starter(name: &str) -> Option<Look> {
+    let l: &[(&str, &str)] = match name {
+        "tool" => &[
+            ("shape", "box"),
+            ("style", "rounded,filled"),
+            ("fillcolor", "#3d4a5c"),
+            ("color", "#3d4a5c"),
+            ("fontcolor", "white"),
+        ],
+        "artifact" => &[
+            ("shape", "box"),
+            ("style", "rounded,filled"),
+            ("fillcolor", "white"),
+            ("color", "#c8ccd2"),
+            ("fontcolor", "#1f2933"),
+        ],
+        _ => return None,
+    };
+    Some(
+        l.iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect(),
+    )
+}
+
+fn look_of(n: &Node) -> Look {
+    LOOK.iter()
+        .filter_map(|k| n.attr(k).map(|v| (k.to_string(), v)))
+        .collect()
+}
+
+/// The distinct looks among a diagram's boxes, in order of first use.
+pub fn looks(g: &Graph) -> Vec<Look> {
+    let mut out: Vec<Look> = Vec::new();
+    for l in g.nodes().iter().map(look_of) {
+        if !l.is_empty() && !out.contains(&l) {
+            out.push(l);
+        }
+    }
+    out
+}
+
+/// `--look NAME` or `--look-of NODE`.
+fn chosen_look(g: &Graph, look: Option<&str>, look_of_node: Option<&str>) -> Result<Option<Look>> {
+    match (look, look_of_node) {
+        (Some(n), _) => starter(n).map(Some).ok_or_else(|| {
+            QdError::InvalidArg(format!(
+                "no look named '{n}': use tool or artifact, or --look-of NODE"
+            ))
+        }),
+        (None, Some(n)) => Ok(Some(look_of(&node(g, n)?))),
+        (None, None) => Ok(None),
+    }
+}
+
+/// `n1`, `n2`, …: the first name not in use.
+pub fn fresh(g: &Graph) -> String {
+    let names: Vec<String> = g.nodes().into_iter().map(|n| n.name).collect();
+    (1..)
+        .map(|i| format!("n{i}"))
+        .find(|n| !names.contains(n))
+        .expect("a free name")
+}
+
+/// The cell `qd dot new` inserts: two placed boxes in the starter looks, joined.
+pub fn starter_diagram() -> String {
+    let with = |label: &str, pos: &str, look: &str| {
+        let mut a = vec![("label".into(), label.into()), ("pos".into(), pos.into())];
+        a.extend(starter(look).expect("a starter"));
+        node_stmt(&a[0].1.to_lowercase(), &a)
+    };
+    format!(
+        "```{{dot}}\ndigraph {{\n  layout=neato; splines=ortho;\n  {};\n  {};\n  data -> tool;\n}}\n```",
+        with("Data", "0,0!", "artifact"),
+        with("Tool", "2,0!", "tool"),
+    )
+}
+
+/// `A->B#k`.
+fn edge_name(g: &Graph, e: &Edge) -> String {
+    format!("{}{}{}#{}", e.from, g.op(), e.to, e.index)
+}
+
+/// An arrow qd may edit, from `A->B`, `A--B` or `A->B#k`.
+fn edge(g: &Graph, r: &str) -> Result<Edge> {
+    let (ends, k) = match r.rsplit_once('#') {
+        Some((e, k)) => (
+            e,
+            k.parse()
+                .map_err(|_| QdError::InvalidArg(format!("'{r}': #k must be a number")))?,
+        ),
+        None => (r, 1),
+    };
+    let (a, b) = ends
+        .split_once(g.op())
+        .ok_or_else(|| QdError::InvalidArg(format!("'{r}' isn't an arrow: write A{}B", g.op())))?;
+    let e = g
+        .edges()
+        .into_iter()
+        .find(|e| e.from == a.trim() && e.to == b.trim() && e.index == k)
+        .ok_or_else(|| QdError::NotFound(format!("no arrow {r}")))?;
+    if e.locked {
+        return Err(QdError::UnsafeEdit(format!(
+            "{r} is inside a subgraph; edit it as text"
+        )));
+    }
+    Ok(e)
+}
+
+/// A statement removed: its whole line when alone on it, else it and its spaces.
+fn remove_stmt(text: &str, s: &Stmt) -> (Span, String) {
+    let end = s.term.map_or(s.span.end, |t| t.end);
+    let ls = text[..s.span.start].rfind('\n').map_or(0, |n| n + 1);
+    let le = text[end..].find('\n').map_or(text.len(), |n| end + n + 1);
+    let none = |t: &str| t.trim().is_empty();
+    let span = if none(&text[ls..s.span.start]) && none(&text[end..le]) {
+        Span { start: ls, end: le }
+    } else if none(&text[end..le]) {
+        let start = text[..s.span.start].trim_end_matches([' ', '\t']).len();
+        Span { start, end }
+    } else {
+        let after = &text[end..];
+        Span {
+            start: s.span.start,
+            end: end + after.len() - after.trim_start_matches([' ', '\t']).len(),
+        }
+    };
+    (span, String::new())
+}
+
+/// Remove `key` from a statement's lists (the last one written), with its
+/// separator, and the list itself when it empties.
+fn unset_in(text: &str, lists: &[List], key: &str) -> Option<(Span, String)> {
+    let (l, a) = lists
+        .iter()
+        .rev()
+        .find_map(|l| l.attrs.iter().rev().find(|a| a.key == key).map(|a| (l, a)))?;
+    let seps: &[char] = &[' ', '\t', '\r', '\n', ',', ';'];
+    let span = if l.attrs.len() == 1 {
+        Span {
+            start: text[..l.span.start].trim_end_matches([' ', '\t']).len(),
+            end: l.span.end,
+        }
+    } else {
+        let close = l.span.end - 1;
+        let rest = &text[a.value_span.end..close];
+        let gap = rest.len() - rest.trim_start_matches(seps).len();
+        if a.value_span.end + gap < close {
+            Span {
+                start: a.key_span.start,
+                end: a.value_span.end + gap,
+            }
+        } else {
+            Span {
+                start: text[..a.key_span.start].trim_end_matches(seps).len(),
+                end: a.value_span.end,
+            }
+        }
+    };
+    Some((span, String::new()))
+}
+
+/// An edge statement's operands as text ranges (each with its port), and its lists' text.
+fn operands(text: &str, g: &Graph, s: &Stmt) -> (Vec<std::ops::Range<usize>>, String) {
+    let Kind::Edge { ops, lists } = &s.kind else {
+        unreachable!("an edge statement")
+    };
+    let starts: Vec<usize> = ops
+        .iter()
+        .map(|o| match o {
+            Operand::Node { span, .. } => span.start,
+            Operand::Group(_) => unreachable!("groups are locked"),
+        })
+        .collect();
+    let last = lists.first().map_or(s.span.end, |l| l.span.start);
+    let ranges = (0..starts.len())
+        .map(|j| {
+            let to = starts.get(j + 1).map_or(last, |&n| {
+                starts[j] + text[starts[j]..n].rfind(g.op()).expect("an operator")
+            });
+            starts[j]..text[..to].trim_end().len()
+        })
+        .collect();
+    let attrs = match (lists.first(), lists.last()) {
+        (Some(f), Some(l)) => format!(" {}", &text[f.span.start..l.span.end]),
+        _ => String::new(),
+    };
+    (ranges, attrs)
+}
+
+/// Edge statement `i` as `pieces` (runs of its operands), each keeping its
+/// attributes; a lone operand stays as a node statement only when its box
+/// would otherwise vanish (and isn't `dropped`).
+fn split(
+    text: &str,
+    g: &Graph,
+    i: usize,
+    pieces: &[std::ops::Range<usize>],
+    dropped: Option<&str>,
+) -> (Span, String) {
+    let s = &g.stmts[i];
+    let (ranges, attrs) = operands(text, g, s);
+    let Kind::Edge { ops, .. } = &s.kind else {
+        unreachable!()
+    };
+    let name = |j: usize| match &ops[j] {
+        Operand::Node { name, .. } => name.as_str(),
+        Operand::Group(_) => unreachable!(),
+    };
+    let mut elsewhere = Vec::new();
+    for (k, t) in g.stmts.iter().enumerate() {
+        if k != i {
+            collect_names(std::slice::from_ref(t), &mut elsewhere);
+        }
+    }
+    let kept: Vec<String> = pieces
+        .iter()
+        .filter_map(|p| match p.len() {
+            0 => None,
+            1 => {
+                let n = name(p.start);
+                let other = pieces
+                    .iter()
+                    .any(|q| q != p && q.len() > 1 && q.clone().any(|j| name(j) == n));
+                (Some(n) != dropped && !other && !elsewhere.iter().any(|e| e == n))
+                    .then(|| text[ranges[p.start].clone()].to_string())
+            }
+            _ => Some(format!(
+                "{}{attrs}",
+                &text[ranges[p.start].start..ranges[p.end - 1].end]
+            )),
+        })
+        .collect();
+    if kept.is_empty() {
+        remove_stmt(text, s)
+    } else {
+        (s.span, kept.join("; "))
+    }
+}
+
+/// Link `k` of statement `i` cut out.
+fn cut(text: &str, g: &Graph, e: &Edge) -> (Span, String) {
+    let k = e.chain.map_or(0, |c| c.0);
+    let Kind::Edge { ops, .. } = &g.stmts[e.stmt].kind else {
+        unreachable!()
+    };
+    split(text, g, e.stmt, &[0..k + 1, k + 1..ops.len()], None)
+}
+
+/// An arrow as its own statement (out of its chain), returning that statement's index.
+fn isolate(doc: &mut Doc, e: &Edge) -> Result<usize> {
+    let g = doc.graph()?;
+    if e.chain.is_none() {
+        return Ok(e.stmt);
+    }
+    let k = e.chain.map_or(0, |c| c.0);
+    let (r, attrs) = operands(&doc.0, &g, &g.stmts[e.stmt]);
+    let alone = format!(
+        "{} {} {}{attrs}",
+        &doc.0[r[k].clone()],
+        g.op(),
+        &doc.0[r[k + 1].clone()]
+    );
+    doc.apply(cut(&doc.0, &g, e));
+    let g = doc.graph()?;
+    doc.apply(add_stmt(&doc.0, &g, &alone));
+    Ok(doc.graph()?.stmts.len() - 1)
+}
+
+/// `qd dot add`: a new box, optionally placed, styled and connected.
+#[allow(clippy::too_many_arguments)]
+pub fn add(
+    d: &Deck,
+    r: &str,
+    label: Option<&str>,
+    at: Option<(f64, f64)>,
+    look: Option<&str>,
+    look_of_node: Option<&str>,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> Result<(crate::ops::Patch, Value)> {
+    let (cell, body, text, g) = read(d, r)?;
+    let name = fresh(&g);
+    let mut attrs: Look = label
+        .map(|l| ("label".into(), l.into()))
+        .into_iter()
+        .collect();
+    attrs.extend(chosen_look(&g, look, look_of_node)?.unwrap_or_default());
+    let at = match at {
+        Some(_) if !g.pinned() => {
+            return Err(QdError::InvalidArg(format!(
+                "the diagram in {cell} isn't pinned, so --at has no effect: run `qd dot pin {cell}` first"
+            )));
+        }
+        Some((x, y)) => Some((snap(x), snap(y))),
+        // a pinned diagram stays pinned: right of the rightmost box
+        None if g.pinned() => g
+            .nodes()
+            .iter()
+            .filter_map(|n| n.pos())
+            .map(|(x, y, _)| (x + 2.0, y))
+            .reduce(|a, b| if b.0 > a.0 { b } else { a }),
+        None => None,
+    };
+    if let Some((x, y)) = at {
+        attrs.push(("pos".into(), pos_value(x, y)));
+    }
+    let mut doc = Doc(text.into());
+    doc.apply(add_stmt(text, &g, &node_stmt(&name, &attrs)));
+    for (a, b) in [(from, Some(name.as_str())), (Some(name.as_str()), to)] {
+        if let (Some(a), Some(b)) = (a, b) {
+            let g = doc.graph()?;
+            node(&g, a)?;
+            node(&g, b)?;
+            let s = format!("{} {} {}", dot_value(a), g.op(), dot_value(b));
+            doc.apply(add_stmt(&doc.0, &g, &s));
+        }
+    }
+    Ok((
+        doc.patch("dot-add", format!("{cell}:{name}"), body),
+        json!({"node": name}),
+    ))
+}
+
+/// `qd dot connect`: an arrow from `a` to `b`.
+pub fn connect(d: &Deck, r: &str, a: &str, b: &str) -> Result<(crate::ops::Patch, Value)> {
+    let (cell, body, text, g) = read(d, r)?;
+    node(&g, a)?;
+    node(&g, b)?;
+    let k = 1 + g
+        .edges()
+        .iter()
+        .filter(|e| e.from == a && e.to == b)
+        .count();
+    let mut doc = Doc(text.into());
+    let s = format!("{} {} {}", dot_value(a), g.op(), dot_value(b));
+    doc.apply(add_stmt(text, &g, &s));
+    let e = format!("{a}{}{b}#{k}", g.op());
+    Ok((
+        doc.patch("dot-connect", format!("{cell}:{e}"), body),
+        json!({"edge": e}),
+    ))
+}
+
+/// `qd dot set`: attributes of a box or an arrow (an empty value removes one),
+/// and for a box, a look from `--look`/`--look-of`.
+pub fn set(
+    d: &Deck,
+    r: &str,
+    target: &str,
+    pairs: &[String],
+    look: Option<&str>,
+    look_of_node: Option<&str>,
+) -> Result<(crate::ops::Patch, Value)> {
+    let (cell, body, text, g) = read(d, r)?;
+    let mut kv: Vec<(String, String)> = Vec::new();
+    for p in pairs {
+        let (k, v) = p
+            .split_once('=')
+            .ok_or_else(|| QdError::InvalidArg(format!("'{p}': write KEY=VALUE")))?;
+        if !(k
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
+        {
+            return Err(QdError::InvalidArg(format!(
+                "'{k}' isn't an attribute name"
+            )));
+        }
+        kv.push((k.into(), v.into()));
+    }
+    let mut doc = Doc(text.into());
+    if target.contains(g.op()) {
+        if look.is_some() || look_of_node.is_some() {
+            return Err(QdError::InvalidArg(
+                "looks are for boxes, not arrows".into(),
+            ));
+        }
+        let i = isolate(&mut doc, &edge(&g, target)?)?;
+        for (k, v) in &kv {
+            let g = doc.graph()?;
+            let s = &g.stmts[i];
+            let Kind::Edge { lists, .. } = &s.kind else {
+                unreachable!()
+            };
+            let e = if v.is_empty() {
+                unset_in(&doc.0, lists, k)
+            } else {
+                Some(set_in(lists, s.span.end, k, v))
+            };
+            e.into_iter().for_each(|e| doc.apply(e));
+        }
+    } else {
+        node(&g, target)?;
+        if let Some(l) = chosen_look(&g, look, look_of_node)? {
+            for k in LOOK {
+                let v = l.iter().find(|(lk, _)| lk == k).map_or("", |(_, v)| v);
+                kv.push((k.into(), v.into()));
+            }
+        }
+        for (k, v) in &kv {
+            if !v.is_empty() {
+                let g = doc.graph()?;
+                doc.apply(set_node_attr(&doc.0, &g, target, k, v)?);
+                continue;
+            }
+            // every statement of the box that writes it
+            loop {
+                let g = doc.graph()?;
+                let e = g.stmts.iter().find_map(|s| match &s.kind {
+                    Kind::Node { name, lists, .. } if name == target => unset_in(&doc.0, lists, k),
+                    _ => None,
+                });
+                match e {
+                    Some(e) => doc.apply(e),
+                    None => break,
+                }
+            }
+        }
+    }
+    Ok((
+        doc.patch("dot-set", format!("{cell}:{target}"), body),
+        json!({}),
+    ))
+}
+
+/// `qd dot rename`: a box's label.
+pub fn rename(d: &Deck, r: &str, name: &str, label: &str) -> Result<(crate::ops::Patch, Value)> {
+    let (cell, body, text, g) = read(d, r)?;
+    let mut doc = Doc(text.into());
+    doc.apply(set_node_attr(text, &g, name, "label", label)?);
+    Ok((
+        doc.patch("dot-rename", format!("{cell}:{name}"), body),
+        json!({}),
+    ))
+}
+
+/// `qd dot rm`: a box and every arrow touching it, or one arrow.
+pub fn rm(d: &Deck, r: &str, target: &str) -> Result<(crate::ops::Patch, Value)> {
+    let (cell, body, text, g) = read(d, r)?;
+    let mut doc = Doc(text.into());
+    let removed = if target.contains(g.op()) {
+        let e = edge(&g, target)?;
+        doc.apply(cut(text, &g, &e));
+        json!({"nodes": [], "edges": [edge_name(&g, &e)]})
+    } else {
+        node(&g, target)?;
+        let edges: Vec<String> = g
+            .edges()
+            .iter()
+            .filter(|e| e.from == target || e.to == target)
+            .map(|e| edge_name(&g, e))
+            .collect();
+        loop {
+            let g = doc.graph()?;
+            let hit = g.stmts.iter().enumerate().find_map(|(i, s)| match &s.kind {
+                Kind::Node { name, .. } if name == target => Some(remove_stmt(&doc.0, s)),
+                Kind::Edge { ops, .. } => ops
+                    .iter()
+                    .position(|o| matches!(o, Operand::Node { name, .. } if name == target))
+                    .map(|k| split(&doc.0, &g, i, &[0..k, k + 1..ops.len()], Some(target))),
+                _ => None,
+            });
+            match hit {
+                Some(e) => doc.apply(e),
+                None => break,
+            }
+        }
+        if doc.graph()?.nodes().iter().any(|n| n.name == target) {
+            return Err(QdError::UnsafeEdit(format!(
+                "'{target}' is also used inside a subgraph; edit it as text"
+            )));
+        }
+        json!({"nodes": [target], "edges": edges})
+    };
+    Ok((
+        doc.patch("dot-rm", format!("{cell}:{target}"), body),
+        json!({"removed": removed}),
+    ))
+}
+
+/// `qd dot flip`: an arrow reversed (in place, or out of its chain).
+pub fn flip(d: &Deck, r: &str, target: &str) -> Result<(crate::ops::Patch, Value)> {
+    let (cell, body, text, g) = read(d, r)?;
+    if !g.directed {
+        return Err(QdError::InvalidArg(format!(
+            "the diagram in {cell} is undirected (graph): its lines have no direction to flip"
+        )));
+    }
+    let e = edge(&g, target)?;
+    let mut doc = Doc(text.into());
+    let i = isolate(&mut doc, &e)?;
+    let g = doc.graph()?;
+    let (r, _) = operands(&doc.0, &g, &g.stmts[i]);
+    let t = &doc.0;
+    let swapped = format!(
+        "{}{}{}",
+        &t[r[1].clone()],
+        &t[r[0].end..r[1].start],
+        &t[r[0].clone()]
+    );
+    doc.apply((
+        Span {
+            start: r[0].start,
+            end: r[1].end,
+        },
+        swapped,
+    ));
+    let g = doc.graph()?;
+    let flipped = g
+        .edges()
+        .into_iter()
+        .find(|e| e.stmt == i)
+        .expect("the flipped arrow");
+    let name = edge_name(&g, &flipped);
+    Ok((
+        doc.patch("dot-flip", format!("{cell}:{target}"), body),
+        json!({"edge": name}),
+    ))
+}
+
+/// `qd dot new`: the starter diagram at the end of slide `on`, or before or after a block.
+pub fn new(
+    d: &Deck,
+    on: Option<&str>,
+    at: Option<crate::ops::Pos>,
+) -> Result<(crate::ops::Patch, Value)> {
+    let (slide, at) = match (at, on) {
+        (Some(p @ (crate::ops::Pos::After(r) | crate::ops::Pos::Before(r))), _) => {
+            (d.element(r)?.0.id.clone(), p)
+        }
+        (_, Some(s)) => (s.to_string(), crate::ops::Pos::End),
+        _ => {
+            return Err(QdError::InvalidArg(
+                "give --on SLIDE, --after REF or --before REF".into(),
+            ));
+        }
+    };
+    let mut p = crate::ops::block_add(d, &slide, at, &starter_diagram())?;
+    p.op = "dot-new".into();
+    let cell = p.target.clone();
+    Ok((p, json!({"cell": cell})))
 }
 
 /// Box centres in inches from a rendered page: the `{dot}` cell tagged
@@ -1509,5 +2091,124 @@ mod tests {
         ] {
             assert_eq!(dot_value(v), want, "{v}");
         }
+    }
+
+    /// One edit applied to `text`.
+    fn edited(text: &str, f: impl Fn(&str, &Graph) -> (Span, String)) -> String {
+        let mut doc = Doc(text.into());
+        let g = doc.graph().unwrap();
+        doc.apply(f(text, &g));
+        doc.0
+    }
+
+    #[test]
+    fn add_stmt_follows_its_neighbours() {
+        let t = "digraph {\n    a;\n    b;\n}\n";
+        assert_eq!(
+            edited(t, |t, g| add_stmt(t, g, "c")),
+            "digraph {\n    a;\n    b;\n    c;\n}\n"
+        );
+        let t = "digraph {\n  a\n}";
+        assert_eq!(
+            edited(t, |t, g| add_stmt(t, g, "c")),
+            "digraph {\n  a\n  c\n}"
+        );
+        let t = "digraph { a; }";
+        assert_eq!(edited(t, |t, g| add_stmt(t, g, "c")), "digraph { a; c; }");
+    }
+
+    #[test]
+    fn remove_stmt_alone_and_sharing_a_line() {
+        let t = "digraph {\n  a;\n  b; c;\n}\n";
+        let g = parse(t).unwrap();
+        assert_eq!(
+            edited(t, |t, _| remove_stmt(t, &g.stmts[0])),
+            "digraph {\n  b; c;\n}\n"
+        );
+        assert_eq!(
+            edited(t, |t, _| remove_stmt(t, &g.stmts[1])),
+            "digraph {\n  a;\n  c;\n}\n"
+        );
+        assert_eq!(
+            edited(t, |t, _| remove_stmt(t, &g.stmts[2])),
+            "digraph {\n  a;\n  b;\n}\n"
+        );
+    }
+
+    #[test]
+    fn cut_splits_a_chain_keeping_its_attributes() {
+        let t = "digraph {\n  a -> b:p -> c [color=red];\n}\n";
+        let g = parse(t).unwrap();
+        let e = g.edges().into_iter().find(|e| e.from == "b").unwrap();
+        assert_eq!(
+            edited(t, |t, g| cut(t, g, &e)),
+            "digraph {\n  a -> b:p [color=red]; c;\n}\n",
+            "c would vanish: kept as its own statement"
+        );
+        let t = "digraph {\n  c;\n  a -> b -> c [color=red];\n}\n";
+        let g = parse(t).unwrap();
+        let e = &g.edges()[0];
+        assert_eq!(
+            edited(t, |t, g| cut(t, g, e)),
+            "digraph {\n  c;\n  a; b -> c [color=red];\n}\n"
+        );
+    }
+
+    #[test]
+    fn unset_takes_its_separator_and_empty_lists() {
+        let t = "digraph {\n  a [x=1, y=2];\n  b [z=3];\n}\n";
+        let g = parse(t).unwrap();
+        let lists = |i: usize| match &g.stmts[i].kind {
+            Kind::Node { lists, .. } => lists.clone(),
+            _ => unreachable!(),
+        };
+        assert_eq!(
+            edited(t, |t, _| unset_in(t, &lists(0), "x").unwrap()),
+            "digraph {\n  a [y=2];\n  b [z=3];\n}\n"
+        );
+        assert_eq!(
+            edited(t, |t, _| unset_in(t, &lists(0), "y").unwrap()),
+            "digraph {\n  a [x=1];\n  b [z=3];\n}\n"
+        );
+        assert_eq!(
+            edited(t, |t, _| unset_in(t, &lists(1), "z").unwrap()),
+            "digraph {\n  a [x=1, y=2];\n  b;\n}\n"
+        );
+    }
+
+    #[test]
+    fn fresh_names_looks_and_the_starter() {
+        let g = parse("digraph { n1; n3; x [shape=box]; y [shape=box]; z [shape=oval] }").unwrap();
+        assert_eq!(fresh(&g), "n2");
+        let shapes: Vec<String> = looks(&g).iter().map(|l| l[0].1.clone()).collect();
+        assert_eq!(shapes, ["box", "oval"]);
+        assert_eq!(
+            starter("tool").unwrap()[2],
+            ("fillcolor".into(), "#3d4a5c".into())
+        );
+        assert_eq!(
+            starter("artifact").unwrap()[2],
+            ("fillcolor".into(), "white".into())
+        );
+        assert!(starter("other").is_none());
+        let cell = starter_diagram();
+        assert!(cell.starts_with("```{dot}\n") && cell.ends_with("\n```"));
+        let g = parse(&cell[9..cell.len() - 4]).unwrap();
+        assert!(g.pinned());
+        assert_eq!(
+            looks(&g),
+            [starter("artifact").unwrap(), starter("tool").unwrap()]
+        );
+        assert_eq!(edges(&g), ["data->tool#1"]);
+    }
+
+    #[test]
+    fn undirected_graphs_and_subgraphs() {
+        let g = parse("graph { a -- b; subgraph s { c -- d } }").unwrap();
+        assert_eq!(g.op(), "--");
+        assert!(edge(&g, "a--b").is_ok());
+        assert!(matches!(edge(&g, "c--d"), Err(QdError::UnsafeEdit(_))));
+        assert!(matches!(node(&g, "c"), Err(QdError::UnsafeEdit(_))));
+        assert!(matches!(edge(&g, "a->b"), Err(QdError::InvalidArg(_))));
     }
 }

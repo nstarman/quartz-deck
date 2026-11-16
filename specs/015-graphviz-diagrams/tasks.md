@@ -120,7 +120,7 @@ or names.
 
 **Independent Test**: spec US2; quickstart §1, §2 steps 2–6.
 
-- [ ] T013 [P] [US2] Write failing unit tests in `crates/qd/src/dot.rs`:
+- [X] T013 [P] [US2] Write failing unit tests in `crates/qd/src/dot.rs`:
   - add a statement before the closing `}` with the neighbours' indentation and terminator;
   - remove a whole-line statement, and one sharing a line;
   - remove an edge from a chain, which splits it keeping its attributes;
@@ -130,7 +130,7 @@ or names.
   - the looks found in a diagram, and the two starter looks (data-model "Look");
   - the starter diagram's text;
   - edits inside a subgraph give `E_UNSAFE_EDIT`.
-- [ ] T014 [P] [US2] Write failing CLI tests in `crates/qd/tests/dot.rs`, one per command in `contracts/cli.md`:
+- [X] T014 [P] [US2] Write failing CLI tests in `crates/qd/tests/dot.rs`, one per command in `contracts/cli.md`:
   - `add` (with `--at`, `--look`, `--look-of`, `--from`, `--to`);
   - `connect` (and `#2` for a repeat);
   - `rename`;
@@ -141,15 +141,15 @@ or names.
   - `new --on` / `--after`.
 
   Each: JSON as in the contract, only the touched lines changed, undo restores. One test renders the result with plain Quarto (skip without quarto).
-- [ ] T015 [US2] Implement `add`, `connect`, `rename`, `set` (with `--look`, `--look-of`), `rm`, `flip` and `new` in `crates/qd/src/dot.rs` and `crates/qd/src/cli.rs`. T013 and T014 pass.
-- [ ] T016 [P] [US2] Write failing browser tests in `crates/qd/tests/onslide.rs`:
+- [X] T015 [US2] Implement `add`, `connect`, `rename`, `set` (with `--look`, `--look-of`), `rm`, `flip` and `new` in `crates/qd/src/dot.rs` and `crates/qd/src/cli.rs`. T013 and T014 pass.
+- [X] T016 [P] [US2] Write failing browser tests in `crates/qd/tests/onslide.rs`:
   - **`diagram_connect_and_add`:** dragging from a node's right handle onto another node adds `a -> b`; onto empty space adds a connected node at the drop point (snapped) in the first node's look.
   - **`diagram_rename_in_place`:** double-click, type, Enter changes only the label; Escape cancels.
   - **`diagram_delete_and_edge_properties`:** Delete on a node removes it and its edges; on a selected edge, removes it; the Properties panel flips an edge and turns its arrowhead off.
   - **`diagram_properties_look_link_size`:** picking the "artifact" look, a link and a width in Properties writes those attributes; the rendered node links there.
   - **`diagram_insert_menus`:** Insert ▸ Diagram on an empty slide adds the starter diagram; with it selected, Insert ▸ Box adds a node.
   - **`diagram_keyboard_and_names`:** handles have accessible names ("Connect from …").
-- [ ] T017 [US2] Implement in `crates/qd/src/ui/dot.js`:
+- [X] T017 [US2] Implement in `crates/qd/src/ui/dot.js`:
   - connect handles and the follow line;
   - drop on a node or on empty space;
   - in-place rename;
@@ -157,11 +157,13 @@ or names.
   - edge selection.
 
   T016 passes, except the Properties and Insert tests.
-- [ ] T018 [US2] Add the Properties fields in `crates/qd/src/ui/sheet.js`:
+- [X] T018 [US2] Add the Properties fields in `crates/qd/src/ui/sheet.js`:
   - for a node: label, look picker (the diagram's looks plus the starters), link, image, width/height;
   - for an edge: direction, arrowhead.
 
   Add the actions `dot-new`, `dot-add`, `dot-rm`, `dot-flip` in `crates/qd/src/ui/actions.json` (Insert menu and element menu, `where: diagram`). The rest of T016 passes.
+
+  As built: the fields are in the Properties panel (`dot.panel` in `dot.js`, shown above the source form), not a sheet; rename on double-click uses the editor's sheet. Insert ▸ Diagram is `insert-diagram`, beside the other Insert items, and Insert ▸ Box in diagram is `dot-add`. Turning an arrowhead back on removes `arrowhead=none` rather than writing `arrowhead=normal`. The image field comes with US3 (T019–T023), which writes the spacer label.
 
 **Checkpoint**: PR 3. Diagrams are built and changed on the slide, Keynote-style.
 
