@@ -115,7 +115,7 @@ const DEFS: &[Def] = &[
     def(
         "diagrams.live-layout",
         "Route arrows while dragging",
-        "While you drag a box in a diagram, its arrows re-route as they will be drawn (Graphviz is fetched once). Off: straight lines until the drop.",
+        "While you drag a box in a diagram, its arrows re-route as they will be drawn, by your Quarto's own Graphviz. Off: straight lines until the drop.",
         Kind::Bool,
         || json!(false),
     ),

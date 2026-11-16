@@ -39,6 +39,7 @@ III).
 - `dot-rm`, `dot-flip`, `dot-pin` (element menu, where `diagram`).
 
 **Setting:** Settings ▸ "Route arrows while dragging"
-(`diagrams.live-layout`, off), with a note that the first use downloads the
-layout engine (Quarto's own build doesn't load in a browser, research R6).
-qd serves it at `/lib/graphviz.js`; not found when it can't be had.
+(`diagrams.live-layout`, off). The engine is the person's own Quarto's
+Graphviz, the build that renders the deck: qd serves its two files at
+`/lib/quarto/graphviz-wasm.js` and `/lib/quarto/graphvizlib.wasm`, not
+found without them (research R6). Nothing is downloaded.

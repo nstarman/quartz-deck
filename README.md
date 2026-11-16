@@ -201,8 +201,8 @@ line or two of the cell's DOT text.
   `dot-image` filter to the deck, because Quarto's Graphviz doesn't draw
   pictures.
 - **Live routing:** with Settings ▸ "Route arrows while dragging" on, a box's
-  arrows re-route while you drag it. The first use downloads Graphviz for
-  the browser once (about 0.8 MB).
+  arrows re-route while you drag it, laid out by your Quarto's own Graphviz,
+  so they match the render. Nothing is downloaded.
 - **CLI:** `qd dot show`, `pin`, `move`, `new`, `add`, `connect`, `rename`,
   `set`, `rm`, `flip`. DOT that qd can't read safely stays editable as text.
 

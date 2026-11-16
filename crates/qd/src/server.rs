@@ -242,23 +242,26 @@ async fn ui_module(UrlPath(name): UrlPath<String>) -> Response {
     }
 }
 
-/// The editor's Graphviz (spec 015 US4), fetched into qd's cache on first use.
-/// Not found when it can't be had: the editor then draws straight lines.
-async fn graphviz_js(State(app): State<Shared>) -> Response {
-    let root = app.store.root();
-    let got = tokio::task::spawn_blocking(move || {
-        crate::assets::ensure(
-            &root,
-            &crate::assets::GRAPHVIZ,
-            crate::cli::allow_download(false),
-        )
+/// The Graphviz of the person's own Quarto (spec 015 US4, research R6), the
+/// build that renders the deck, for live routing: `<quarto>/share/…` beside
+/// the `bin/` that `quarto` resolves to. Not found without it: the editor
+/// then draws straight lines.
+async fn quarto_graphviz(UrlPath(name): UrlPath<String>) -> Response {
+    let (rel, ty) = match name.as_str() {
+        "graphviz-wasm.js" => ("js/graphviz-wasm.js", "text/javascript"),
+        "graphvizlib.wasm" => ("wasm/graphvizlib.wasm", "application/wasm"),
+        _ => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let Some(f) = crate::render::quarto()
         .ok()
-        .and_then(|a| std::fs::read(a.path).ok())
-    })
-    .await;
-    match got {
-        Ok(Some(body)) => ([(header::CONTENT_TYPE, "text/javascript")], body).into_response(),
-        _ => StatusCode::NOT_FOUND.into_response(),
+        .and_then(|q| q.canonicalize().ok())
+        .and_then(|q| Some(q.parent()?.parent()?.join("share").join(rel)))
+    else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    match tokio::fs::read(f).await {
+        Ok(body) => ([(header::CONTENT_TYPE, ty)], body).into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
 }
 
@@ -1255,7 +1258,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             .route("/editor.js", get(editor_js))
             .route("/editor.css", get(editor_css))
             .route("/ui/{name}", get(ui_module))
-            .route("/lib/graphviz.js", get(graphviz_js))
+            .route("/lib/quarto/{name}", get(quarto_graphviz))
             .route("/present/", get(present))
             .route("/api/deck", get(api_deck))
             .route("/api/source", get(api_source))

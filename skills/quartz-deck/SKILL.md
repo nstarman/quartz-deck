@@ -235,11 +235,14 @@ A diagram is a `{dot}` (Graphviz) cell. `qd dot show CELL` lists its boxes
 be edited. `pinned` is true when the cell uses `layout=neato` and every box
 has `pos="x,y!"`, so boxes stay where they're placed. DOT that can't be
 read safely is reported in `editable` with the line, and stays editable
-as text.
+as text. So is a `//| file: x.dot` diagram, which lives in another file.
 
 `qd dot pin CELL` pins a diagram where Graphviz put it: it adds
-`layout=neato; splines=ortho;` and a `pos` for every box, read from the
-preview (or from `--positions '{"a":[0,1],...}'` in inches). Then
+`layout=neato` and a `pos` for every box, read from the preview (or from
+`--positions '{"a":[0,1],...}'` in inches). It adds `splines=ortho` (right
+angles) only when the diagram has no `splines` and no arrow uses a port. A
+diagram with a `subgraph` is refused (`E_UNSAFE_EDIT`): `neato` doesn't draw
+clusters. Then
 `qd dot move CELL NODE --at X,Y` or `--by DX,DY` (inches, y up) places one
 box; positions snap to 0.25 in unless `--no-snap`. Arrows re-route on the
 next render. A diagram that isn't pinned refuses `move` with the hint to pin.

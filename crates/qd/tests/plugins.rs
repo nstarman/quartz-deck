@@ -470,6 +470,23 @@ fn dot_image_example() {
         &[("more.qmd", "## More\n")],
     );
     assert!(err.contains("are not scanned for pictures"), "{err}");
+
+    // a diagram the scan can't see (pulled in by an include) comes first: the
+    // picture still goes to the diagram whose boxes it names
+    let (html, _) = render_example(
+        "dot-image",
+        |t| t.replacen("\n## ", "\n{{< include more.qmd >}}\n\n## ", 1),
+        &[(
+            "more.qmd",
+            "## Before\n\n```{dot}\ndigraph { x -> y; }\n```\n",
+        )],
+    );
+    assert!(
+        html.contains("<title>x</title>"),
+        "the included diagram rendered"
+    );
+    assert!(node_svg(&html, "tool").contains("class=\"dot-image\""));
+    assert!(!node_svg(&html, "x").contains("<image"));
 }
 
 /// Spec 015 US3 (T023): the example needs no network beyond reveal.js's

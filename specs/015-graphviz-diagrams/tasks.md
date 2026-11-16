@@ -230,6 +230,17 @@ or names.
 
 ---
 
+## Phase 8: Audit follow-up (after PR 6)
+
+An audit of how close the diagrams stay to plain Quarto and Graphviz found
+two bugs and three improvements:
+
+- [X] T032 `qd dot pin` refuses a diagram with a `subgraph` (`E_UNSAFE_EDIT`): `neato` doesn't draw clusters, and boxes inside a subgraph can't be placed, so pin used to leave it half-pinned (`pin_refuses_subgraphs`).
+- [X] T033 `qd dot pin` keeps a diagram's own `splines` and adds `ortho` only when there is none and no arrow uses a port; Graphviz's ortho routing ignores ports (`pin_keeps_splines_and_ports`).
+- [X] T034 Live routing uses the person's own Quarto's Graphviz through a one-call Deno shim (research R6, revised): `/lib/quarto/{graphviz-wasm.js,graphvizlib.wasm}` in `crates/qd/src/server.rs`; `assets::GRAPHVIZ` and the EPL-1.0 exemption removed. The no-engine browser test uses a `quarto` wrapper with no `share/` beside it.
+- [X] T035 A `//| file: x.dot` cell is named as such in `qd dot show` and refused by edits, rather than reported as a parse error (`file_cells_are_named`).
+- [X] T036 `dot-image` 1.1.0 gives each rendered diagram the first cell whose picture boxes it has, rather than pairing by order, so a diagram from an include doesn't shift the rest (`dot_image_example`).
+
 ## Dependencies & Execution Order
 
 - **Setup (T001) → Foundational (T002–T006)** → every story.

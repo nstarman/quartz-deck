@@ -50,12 +50,16 @@ the file.
 - It runs after Quarto (`post-quarto`).
 - It reads the deck's own source and finds each `{dot}` cell's boxes with
   `image=`, skipping arrows' attributes.
-- It pairs the cells with the rendered diagrams in order.
+- It gives each rendered diagram the first cell, in order, whose picture
+  boxes it has, so a diagram it can't see (from an include, or pasted SVG)
+  doesn't shift the rest.
 - It adds the `<image>` inside the box's `<g>`, before its label, so the
   text stays on top.
 
-**Limit:** cells pulled in with `{{< include >}}` aren't scanned. The
-render warns once when the deck uses `include`.
+**Limit:** cells pulled in with `{{< include >}}` aren't scanned, so their
+boxes get no picture. The render warns once when the deck uses `include`.
+Quarto turns a diagram into SVG before any filter runs, so the cell's text
+is only in the source.
 
 **Licence:** our own work, like the rest of quartz-deck.
 

@@ -98,9 +98,8 @@ specs/015-graphviz-diagrams/
 crates/qd/src/
 ├── dot.rs              # new: DOT reader (spans), model, patches
 ├── cli.rs              # `qd dot` subcommands; schema
-├── server.rs           # serves the pinned Graphviz for live routing (/lib/graphviz.js); dot ops via the existing op route
+├── server.rs           # serves Quarto's own Graphviz for live routing (/lib/quarto/…); dot ops via the existing op route
 ├── settings.rs         # diagrams.live-layout
-├── assets.rs           # pinned @hpcc-js/wasm-graphviz (Quarto's build doesn't load in a browser, R6)
 ├── plugins.rs          # dot-image compiled in; installed when a diagram uses image=
 └── ui/
     ├── dot.js          # new: diagram overlay (select, drag, connect, rename, delete, live routing)
@@ -162,6 +161,11 @@ Then, with the person: their pipeline diagram rebuilt as the proving case
   SHA-256.
 - **Licences.** The engine's licences (Apache-2.0 and Graphviz's EPL-1.0) are
   checked by the licence test; EPL-1.0 is allowed for this engine only.
+
+**After the audit follow-up (T032–T036, 2026-11-16)**: still pass, and
+closer to VII: live routing uses Quarto's own Graphviz through a one-call
+shim, so qd downloads nothing for diagrams and carries no EPL-1.0
+exemption.
 
 ## Complexity Tracking
 
