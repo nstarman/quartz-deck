@@ -231,9 +231,9 @@ links and their text. Any difference puts every file back and fails with
 
 A diagram is a `{dot}` (Graphviz) cell. `qd dot show CELL` lists its boxes
 (name, label, look, link, image, position in inches, size), its arrows
-(`A->B`, with `#2` for a repeat), its graph settings, and whether qd can
-edit it. `pinned` is true when the cell uses `layout=neato` and every box
-has `pos="x,y!"`, so boxes stay where they're placed. Anything qd can't
+(`A->B`, with `#2` for a repeat), its graph settings, and whether it can
+be edited. `pinned` is true when the cell uses `layout=neato` and every box
+has `pos="x,y!"`, so boxes stay where they're placed. DOT that can't be
 read safely is reported in `editable` with the line, and stays editable
 as text.
 
