@@ -178,6 +178,34 @@ plain Quarto: a layout's areas and a placed element are Quarto's own
   layouts for every deck. They head the gallery, with Rename and Delete.
   CLI: `qd layout save SLIDE NAME [--mine]`, `qd layout rename`, `qd layout rm`.
 
+### Diagrams (spec [015](specs/015-graphviz-diagrams/spec.md))
+
+A diagram is a `{dot}` (Graphviz) cell, and you can edit it on the slide the
+way you would in Keynote. The deck stays plain Quarto: every edit changes a
+line or two of the cell's DOT text.
+
+- **Make one:** Insert ▸ Diagram adds a starter diagram with two joined
+  boxes. Insert ▸ Box in diagram adds a box in the look of the one you
+  selected last.
+- **Place boxes:** click a box to select it, then drag it or nudge it with the
+  arrow keys (0.25 in steps). Its arrows re-route after the drop. A diagram
+  Graphviz laid out itself offers **Pin layout** when you drag it, which
+  fixes every box where it is now.
+- **Connect:** drag from one of a selected box's four handles onto another
+  box for an arrow, or into empty space for a new connected box.
+- **Change:** double-click a box to rename it. Select an arrow by clicking
+  it. Edit ▸ Delete from diagram and Arrange ▸ Reverse arrow act on the
+  selection. View ▸ Properties panel shows the box's label, look, link,
+  picture and size, or the arrow's settings.
+- **Pictures:** a box can show a picture at its left. The first one adds the
+  `dot-image` filter to the deck, because Quarto's Graphviz doesn't draw
+  pictures.
+- **Live routing:** with Settings ▸ "Route arrows while dragging" on, a box's
+  arrows re-route while you drag it. The first use downloads Graphviz for
+  the browser once (about 0.8 MB).
+- **CLI:** `qd dot show`, `pin`, `move`, `new`, `add`, `connect`, `rename`,
+  `set`, `rm`, `flip`. DOT that qd can't read safely stays editable as text.
+
 ### Shared focus (spec [005](specs/005-shared-focus/spec.md))
 
 - **"This" means what you selected:** click an element, select a few words

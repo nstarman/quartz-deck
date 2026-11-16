@@ -1487,6 +1487,10 @@ pub fn add(
     to: Option<&str>,
 ) -> Result<(crate::ops::Patch, Value)> {
     let (cell, body, text, g) = read(d, r)?;
+    // boxes that are there now: never the new box's own name
+    for n in [from, to].into_iter().flatten() {
+        node(&g, n)?;
+    }
     let name = fresh(&g);
     let mut attrs: Look = label
         .map(|l| ("label".into(), l.into()))

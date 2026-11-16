@@ -21,7 +21,7 @@ qd dot show d/0 --deck talk.qmd
 ```
 
 ```bash
-qd dot add d/0 --label Quarto --at 3,0 --look tool --from n1 --deck talk.qmd
+qd dot add d/0 --label Quarto --at 4,0 --look tool --from tool --deck talk.qmd
 ```
 
 ```bash
@@ -29,11 +29,11 @@ qd dot move d/0 n1 --by 0.5,0 --deck talk.qmd
 ```
 
 ```bash
-qd dot rename d/0 n2 "This talk" --deck talk.qmd
+qd dot rename d/0 data "This talk" --deck talk.qmd
 ```
 
 ```bash
-qd dot rm d/0 n1->n3 --deck talk.qmd
+qd dot rm d/0 'tool->n1' --deck talk.qmd
 ```
 
 ```bash
@@ -41,7 +41,8 @@ qd undo --deck talk.qmd
 ```
 
 **Expected:**
-- `new` inserts a pinned two-box diagram.
+- `new` inserts a pinned two-box diagram, `data` and `tool`; `add` prints
+  `n1`.
 - `show` lists it, `editable: true`.
 - Each edit's `diff` touches one line.
 - `undo` restores the edge.
@@ -76,7 +77,7 @@ looks the same, and the drag works.
 ## 4. Pictures in boxes (US3)
 
 ```bash
-qd dot set d/0 n1 image=face.png --deck talk.qmd
+qd dot set d/0 tool image=face.png --deck talk.qmd
 ```
 
 ```bash
@@ -95,7 +96,7 @@ qd export --deck talk.qmd
 
 ## 5. Live routing (US4)
 
-Turn on Settings ▸ Diagrams ▸ "Route arrows while dragging", then drag a
+Turn on Settings ▸ "Route arrows while dragging", then drag a
 box.
 
 **Expected:** routed arrows follow while dragging. The saved text is the

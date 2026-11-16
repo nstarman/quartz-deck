@@ -219,14 +219,14 @@ or names.
 
 ## Phase 7: Polish & cross-cutting
 
-- [ ] T027 [P] Docs:
+- [X] T027 [P] Docs:
   - `skills/quartz-deck/SKILL.md`: `qd dot` commands, editing diagrams, the setting, `dot-image`;
   - `README.md`: diagrams;
   - `plugins/README.md`: `dot-image`.
-- [ ] T028 Run quickstart §1–§5 and record it in `specs/015-graphviz-diagrams/checklists/quickstart-run.md`.
+- [X] T028 Run quickstart §1–§5 and record it in `specs/015-graphviz-diagrams/checklists/quickstart-run.md`.
 - [ ] T029 With the person: rebuild their pipeline diagram as a pinned `{dot}` cell, as the proving case (SC-006), and record what needed changing. Nothing about their diagram goes into the repository.
-- [ ] T030 Final constitution re-check in `plan.md`. fmt, clippy (`--workspace --all-targets -D warnings`) and `cargo test --workspace --no-fail-fast` green.
-- [ ] T031 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
+- [X] T030 Final constitution re-check in `plan.md`. fmt, clippy (`--workspace --all-targets -D warnings`) and `cargo test --workspace --no-fail-fast` green.
+- [X] T031 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
 
 ---
 

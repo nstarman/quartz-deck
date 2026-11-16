@@ -98,9 +98,9 @@ specs/015-graphviz-diagrams/
 crates/qd/src/
 ├── dot.rs              # new: DOT reader (spans), model, patches
 ├── cli.rs              # `qd dot` subcommands; schema
-├── server.rs           # serves Quarto's graphviz-wasm for live routing; dot ops via the existing op route
+├── server.rs           # serves the pinned Graphviz for live routing (/lib/graphviz.js); dot ops via the existing op route
 ├── settings.rs         # diagrams.live-layout
-├── assets.rs           # pinned @hpcc-js/wasm-graphviz (fallback)
+├── assets.rs           # pinned @hpcc-js/wasm-graphviz (Quarto's build doesn't load in a browser, R6)
 ├── plugins.rs          # dot-image compiled in; installed when a diagram uses image=
 └── ui/
     ├── dot.js          # new: diagram overlay (select, drag, connect, rename, delete, live routing)
@@ -136,6 +136,32 @@ The PRs follow the stories, as in tasks.md:
 
 Then, with the person: their pipeline diagram rebuilt as the proving case
 (SC-006). Each PR passes `/pr-audit`.
+
+**Final re-check after the build (T030, 2026-11-16)**: pass.
+- **I.** The DOT reader, patches, overlay and `dot-image` are our own, from
+  Graphviz's public docs. Tests and examples use made-up diagrams only.
+- **II.** Every edit patches the cell's DOT text: one line for most, two
+  for `add` with an arrow. The corpus round-trips byte for byte. Pictures
+  are `image=` plus a spacer label in the cell; no sidecar.
+- **III.** Each editor gesture is a `qd dot` command with JSON and stable
+  codes, in `qd schema` and the skill. The quickstart run found that
+  `add --from` could name the new box itself and write a loop; it now fails
+  with `E_NOT_FOUND`.
+- **IV.** A drop re-renders through the preview loop. Live routing only
+  draws, and the saved text is the same with it on or off (tested).
+- **V.** Edits go through `--expect`, atomic writes and undo. The first
+  picture's `filters:` line and the image are one edit, so one undo takes
+  back both.
+- **VI.** Tests came first for each story: unit tests for the reader and
+  patches, a CLI test per command, plain-Quarto renders of the `dot-image`
+  example, and 12 browser tests for the gestures.
+- **VII.** No new crates. One render plugin. The plan was to reuse Quarto's
+  own Graphviz for live routing, but it reads its engine through Deno and
+  doesn't load in a browser (R6), so qd downloads the pinned
+  `@hpcc-js/wasm-graphviz` once, only when the setting is on, checked by
+  SHA-256.
+- **Licences.** The engine's licences (Apache-2.0 and Graphviz's EPL-1.0) are
+  checked by the licence test; EPL-1.0 is allowed for this engine only.
 
 ## Complexity Tracking
 

@@ -302,6 +302,11 @@ fn add_placed_styled_and_connected() {
         &["dot", "add", "d/0", "--look", "fancy"],
         "E_INVALID_ARG",
     );
+    // --from / --to name boxes already there, never the new box's own name
+    for side in ["--from", "--to"] {
+        common::err(t.path(), &["dot", "add", "d/0", side, "n1"], "E_NOT_FOUND");
+    }
+    assert_eq!(text(&t), UNPINNED);
 }
 
 #[test]
