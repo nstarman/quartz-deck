@@ -3,7 +3,7 @@
 
 use crate::deck::{Deck, Span};
 use crate::error::{QdError, Result};
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 
 /// Where and why the reader stopped: the cell stays editable as text only.
 #[derive(Debug, Clone)]
@@ -99,14 +99,18 @@ pub struct Node {
     pub locked: bool,
 }
 
+/// The value of `key`, the last one written winning.
+fn last(attrs: &[Attr], key: &str) -> Option<String> {
+    attrs
+        .iter()
+        .rev()
+        .find(|a| a.key == key)
+        .map(|a| a.value.clone())
+}
+
 impl Node {
-    /// The attribute's value, the last one written winning.
     pub fn attr(&self, key: &str) -> Option<String> {
-        self.attrs
-            .iter()
-            .rev()
-            .find(|a| a.key == key)
-            .map(|a| a.value.clone())
+        last(&self.attrs, key)
     }
 
     /// `pos` in inches and whether it is pinned (`!`).
@@ -166,6 +170,9 @@ fn is_id_start(c: char) -> bool {
 fn is_id_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_' || !c.is_ascii()
 }
+
+/// One-character symbols.
+const SYMS: &str = "{}[];,=:";
 
 fn tokens(text: &str) -> std::result::Result<Vec<T>, Stop> {
     let b = text.as_bytes();
@@ -261,33 +268,22 @@ fn tokens(text: &str) -> std::result::Result<Vec<T>, Stop> {
                 });
                 i = j;
             }
-            '-' if text[i..].starts_with("->") => {
-                out.push(T {
-                    tok: Tok::Sym("->"),
-                    span: Span { start, end: i + 2 },
-                });
-                i += 2;
-            }
-            '-' if text[i..].starts_with("--") => {
-                out.push(T {
-                    tok: Tok::Sym("--"),
-                    span: Span { start, end: i + 2 },
-                });
-                i += 2;
-            }
-            '{' | '}' | '[' | ']' | ';' | ',' | '=' | ':' => {
-                let sym = match c {
-                    '{' => "{",
-                    '}' => "}",
-                    '[' => "[",
-                    ']' => "]",
-                    ';' => ";",
-                    ',' => ",",
-                    '=' => "=",
-                    _ => ":",
+            '-' if text[i..].starts_with("->") || text[i..].starts_with("--") => {
+                let op = if text[i + 1..].starts_with('>') {
+                    "->"
+                } else {
+                    "--"
                 };
                 out.push(T {
-                    tok: Tok::Sym(sym),
+                    tok: Tok::Sym(op),
+                    span: Span { start, end: i + 2 },
+                });
+                i += 2;
+            }
+            _ if SYMS.contains(c) => {
+                let k = SYMS.find(c).expect("a symbol");
+                out.push(T {
+                    tok: Tok::Sym(&SYMS[k..k + 1]),
                     span: Span { start, end: i + 1 },
                 });
                 i += 1;
@@ -296,16 +292,11 @@ fn tokens(text: &str) -> std::result::Result<Vec<T>, Stop> {
                 // a numeral: -?(.[0-9]+ | [0-9]+(.[0-9]*)?)
                 let mut j = i + usize::from(c == '-');
                 let digits = |j: usize| text[j..].chars().take_while(char::is_ascii_digit).count();
-                let n = digits(j);
-                j += n;
+                j += digits(j);
                 if text[j..].starts_with('.') {
                     j += 1 + digits(j + 1);
                 }
-                if j == i + usize::from(c == '-')
-                    || &text[i..j] == "-"
-                    || &text[i..j] == "."
-                    || &text[i..j] == "-."
-                {
+                if !text[i..j].bytes().any(|b| b.is_ascii_digit()) {
                     return Err(stop(format!("unexpected '{c}'"), i));
                 }
                 out.push(T {
@@ -347,7 +338,8 @@ struct P<'a> {
     toks: &'a [T],
     i: usize,
     len: usize,
-    directed: bool,
+    /// `->` in a digraph, `--` in a graph.
+    op: &'static str,
 }
 
 impl P<'_> {
@@ -480,12 +472,7 @@ impl P<'_> {
             collect_names(&body, &mut names);
             return Ok((Operand::Group(names), span));
         }
-        let what = if self.directed {
-            "a node after ->"
-        } else {
-            "a node after --"
-        };
-        let (name, span, _) = self.id(what)?;
+        let (name, span, _) = self.id(&format!("a node after {}", self.op))?;
         let port = self.port()?;
         let end = self.toks[self.i - 1].span.end;
         Ok((
@@ -524,7 +511,6 @@ impl P<'_> {
 
     fn stmt(&mut self) -> std::result::Result<Stmt, Stop> {
         let start = self.at();
-        let edgeop = if self.directed { "->" } else { "--" };
         let span_to_here = |p: &P| Span {
             start,
             end: p.toks[p.i - 1].span.end,
@@ -564,11 +550,10 @@ impl P<'_> {
             collect_names(&body, &mut names);
             Operand::Group(names)
         } else {
-            let (name, span, quoted) = self.id("a statement")?;
+            let (name, span, _) = self.id("a statement")?;
             if self.peek_sym("=") {
                 self.i += 1;
                 let (value, value_span, vq) = self.id(&format!("a value for {name}"))?;
-                let _ = quoted;
                 let a = Attr {
                     key: name,
                     value,
@@ -595,13 +580,13 @@ impl P<'_> {
         };
         let mut ops = vec![first];
         while self.peek_sym("->") || self.peek_sym("--") {
-            if !self.peek_sym(edgeop) {
-                let kind = if self.directed {
-                    "a digraph uses ->"
+            if !self.peek_sym(self.op) {
+                let kind = if self.op == "->" {
+                    "a digraph"
                 } else {
-                    "a graph uses --"
+                    "a graph"
                 };
-                return Err(stop(kind, self.at()));
+                return Err(stop(format!("{kind} uses {}", self.op), self.at()));
             }
             self.i += 1;
             ops.push(self.operand()?.0);
@@ -646,16 +631,16 @@ pub fn parse(text: &str) -> std::result::Result<Graph, Stop> {
         toks: &toks,
         i: 0,
         len: text.len(),
-        directed: true,
+        op: "->",
     };
     let strict = p.keyword("strict");
     if strict {
         p.i += 1;
     }
-    p.directed = if p.keyword("digraph") {
-        true
+    p.op = if p.keyword("digraph") {
+        "->"
     } else if p.keyword("graph") {
-        false
+        "--"
     } else {
         return Err(stop(
             format!("expected graph or digraph but found {}", p.found()),
@@ -679,7 +664,7 @@ pub fn parse(text: &str) -> std::result::Result<Graph, Stop> {
     }
     Ok(Graph {
         strict,
-        directed: p.directed,
+        directed: p.op == "->",
         id,
         open,
         close,
@@ -699,11 +684,7 @@ impl Graph {
 
     /// A graph-level setting (`key=value` or `graph [key=value]`), the last one winning.
     pub fn setting(&self, key: &str) -> Option<String> {
-        self.settings()
-            .into_iter()
-            .rev()
-            .find(|a| a.key == key)
-            .map(|a| a.value)
+        last(&self.settings(), key)
     }
 
     pub fn settings(&self) -> Vec<Attr> {
@@ -723,18 +704,17 @@ impl Graph {
     /// Every box, merged across its statements, in order of first appearance.
     pub fn nodes(&self) -> Vec<Node> {
         fn walk(stmts: &[Stmt], locked: bool, out: &mut Vec<Node>) {
-            let touch =
-                |name: &str, locked: bool, attrs: &[Attr], out: &mut Vec<Node>| match out
-                    .iter_mut()
-                    .find(|n| n.name == name)
-                {
-                    Some(n) => n.attrs.extend(attrs.iter().cloned()),
-                    None => out.push(Node {
-                        name: name.into(),
-                        attrs: attrs.to_vec(),
-                        locked,
-                    }),
-                };
+            let touch = |name: &str, locked: bool, attrs: &[Attr], out: &mut Vec<Node>| match out
+                .iter_mut()
+                .find(|n| n.name == name)
+            {
+                Some(n) => n.attrs.extend(attrs.iter().cloned()),
+                None => out.push(Node {
+                    name: name.into(),
+                    attrs: attrs.to_vec(),
+                    locked,
+                }),
+            };
             for s in stmts {
                 match &s.kind {
                     Kind::Node { name, lists, .. } => touch(name, locked, &list_attrs(lists), out),
@@ -827,20 +807,15 @@ pub const LOOK: [&str; 7] = [
 
 /// A `{dot}` cell: its canonical ref and the span of its body (between the fences) in the deck.
 pub fn cell(d: &Deck, r: &str) -> Result<(String, Span)> {
-    let (slide, b) = d.element(r)?;
+    let (_, b) = d.element(r)?;
     if b.kind != crate::deck::BlockKind::Cell || crate::kernel::cell_lang(d, b) != "dot" {
         return Err(QdError::NotFound(format!("{r} is not a {{dot}} cell")));
     }
-    let i = slide
-        .blocks
-        .iter()
-        .position(|x| std::ptr::eq(x, b))
-        .unwrap_or(0);
     let text = d.slice(b.span);
     let start = b.span.start + text.find('\n').map_or(text.len(), |n| n + 1);
     let end = b.span.start + text.rfind('\n').map_or(text.len(), |n| n + 1);
     Ok((
-        format!("{}/{i}", slide.id),
+        crate::focus::resolve(d, r)?.1,
         Span {
             start,
             end: end.max(start),
@@ -848,12 +823,13 @@ pub fn cell(d: &Deck, r: &str) -> Result<(String, Span)> {
     ))
 }
 
-fn attrs_json(attrs: &[Attr]) -> Value {
-    let mut m = Map::new();
-    for a in attrs {
-        m.insert(a.key.clone(), json!(a.value));
-    }
-    Value::Object(m)
+fn attrs_json<'a>(attrs: impl IntoIterator<Item = &'a Attr>) -> Value {
+    Value::Object(
+        attrs
+            .into_iter()
+            .map(|a| (a.key.clone(), json!(a.value)))
+            .collect(),
+    )
 }
 
 /// `qd dot show CELL` (contracts/cli.md).
@@ -864,7 +840,10 @@ pub fn show(d: &Deck, r: &str) -> Result<Value> {
         Ok(g) => g,
         Err(s) => {
             let abs = body.start + s.at;
-            let line = d.text[..abs].matches('\n').count() + 1;
+            let line = d.lines(Span {
+                start: abs,
+                end: abs,
+            })[0];
             let col = abs - d.text[..abs].rfind('\n').map_or(0, |n| n + 1) + 1;
             return Ok(json!({"ok": true, "kind": "dot", "cell": cell,
                 "editable": {"reason": s.reason, "at": {"line": line, "column": col}}}));
@@ -874,23 +853,16 @@ pub fn show(d: &Deck, r: &str) -> Result<Value> {
         .nodes()
         .iter()
         .map(|n| {
-            let look: Vec<Attr> = n
+            let look = n.attrs.iter().filter(|a| LOOK.contains(&a.key.as_str()));
+            let size = n
                 .attrs
                 .iter()
-                .filter(|a| LOOK.contains(&a.key.as_str()))
-                .cloned()
-                .collect();
-            let size: Vec<Attr> = n
-                .attrs
-                .iter()
-                .filter(|a| matches!(a.key.as_str(), "width" | "height" | "fixedsize"))
-                .cloned()
-                .collect();
+                .filter(|a| matches!(a.key.as_str(), "width" | "height" | "fixedsize"));
             let pos = n.pos();
             json!({"name": n.name, "label": n.attr("label").unwrap_or_else(|| n.name.clone()),
-                "look": attrs_json(&look), "url": n.attr("URL"), "image": n.attr("image"),
+                "look": attrs_json(look), "url": n.attr("URL"), "image": n.attr("image"),
                 "pos": pos.map(|(x, y, _)| json!([x, y])), "pinned": pos.is_some_and(|p| p.2),
-                "size": attrs_json(&size), "locked": n.locked})
+                "size": attrs_json(size), "locked": n.locked})
         })
         .collect();
     let edges: Vec<Value> = g
@@ -908,13 +880,12 @@ pub fn show(d: &Deck, r: &str) -> Result<Value> {
 mod tests {
     use super::*;
 
+    fn dir() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/dot")
+    }
+
     fn corpus(name: &str) -> String {
-        std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("tests/fixtures/dot")
-                .join(name),
-        )
-        .unwrap()
+        std::fs::read_to_string(dir().join(name)).unwrap()
     }
 
     fn names(g: &Graph) -> Vec<String> {
@@ -932,9 +903,8 @@ mod tests {
     /// graph's braces, and each covers its own text.
     #[test]
     fn reads_the_corpus_with_spans() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/dot");
         let mut n = 0;
-        for f in std::fs::read_dir(dir).unwrap() {
+        for f in std::fs::read_dir(dir()).unwrap() {
             let f = f.unwrap().file_name().into_string().unwrap();
             if f.starts_with("bad-") {
                 continue;
