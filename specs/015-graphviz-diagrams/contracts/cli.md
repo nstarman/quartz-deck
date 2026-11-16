@@ -17,7 +17,7 @@ name. `EDGE` is `A->B` or `A--B`, optionally `#k` for the k-th such edge.
 | `qd dot set CELL (NODE\|EDGE) KEY=VALUE… [--look-of NODE \| --look NAME]` | sets attributes; `image=PATH` also writes a spacer label, `image=` (empty) removes it | |
 | `qd dot rm CELL (NODE\|EDGE)` | removes a node and its edges, or one edge | `"removed":{"nodes":[…],"edges":[…]}` |
 | `qd dot flip CELL EDGE` | reverses a directed edge | |
-| `qd dot pin CELL [--positions JSON]` | `layout=neato`, `splines=ortho`, every node's `pos` pinned | `"pinned":n` |
+| `qd dot pin CELL [--positions JSON]` | `layout=neato`, every node's `pos` pinned; `splines=ortho` only when the diagram has no `splines` and no ports; a diagram with a subgraph is refused (`E_UNSAFE_EDIT`) | `"pinned":n` |
 | `qd dot new (--after REF \| --on SLIDE)` | inserts a starter diagram cell | `"cell":"slide/i"` |
 
 **`pin` positions**, in order of preference:

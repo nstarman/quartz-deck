@@ -808,6 +808,26 @@ pub const LOOK: [&str; 7] = [
     "penwidth",
 ];
 
+/// A cell's diagram. Quarto's `//| file: x.dot` keeps it in another file,
+/// which qd doesn't edit: that is said, rather than a parse error.
+fn parse_cell(text: &str) -> std::result::Result<Graph, Stop> {
+    let mut at = 0;
+    for line in text.split_inclusive('\n') {
+        let opt = line.trim().strip_prefix("//|").map(str::trim);
+        if let Some(file) = opt.and_then(|o| o.strip_prefix("file:")) {
+            return Err(Stop {
+                reason: format!(
+                    "this diagram is in {} (`//| file:`), which qd doesn't edit",
+                    file.trim().trim_matches(['"', '\''])
+                ),
+                at,
+            });
+        }
+        at += line.len();
+    }
+    parse(text)
+}
+
 /// A `{dot}` cell: its canonical ref and the span of its body (between the fences) in the deck.
 pub fn cell(d: &Deck, r: &str) -> Result<(String, Span)> {
     let (_, b) = d.element(r)?;
@@ -839,7 +859,7 @@ fn attrs_json<'a>(attrs: impl IntoIterator<Item = &'a Attr>) -> Value {
 pub fn show(d: &Deck, r: &str) -> Result<Value> {
     let (cell, body) = cell(d, r)?;
     let text = d.slice(body);
-    let g = match parse(text) {
+    let g = match parse_cell(text) {
         Ok(g) => g,
         Err(s) => {
             let abs = body.start + s.at;
@@ -1102,7 +1122,7 @@ pub fn set_setting(text: &str, g: &Graph, key: &str, value: &str) -> (Span, Stri
 fn read<'a>(d: &'a Deck, r: &str) -> Result<(String, Span, &'a str, Graph)> {
     let (cell, body) = cell(d, r)?;
     let text = d.slice(body);
-    let g = parse(text).map_err(|s| {
+    let g = parse_cell(text).map_err(|s| {
         let line = d.lines(Span {
             start: body.start + s.at,
             end: body.start + s.at,
@@ -1174,19 +1194,34 @@ pub fn pin(
     positions: &std::collections::HashMap<String, (f64, f64)>,
 ) -> Result<(crate::ops::Patch, Value)> {
     let (cell, body, text, g) = read(d, r)?;
-    let names: Vec<String> = g
-        .nodes()
-        .into_iter()
-        .filter(|n| !n.locked)
-        .map(|n| n.name)
-        .collect();
+    // neato doesn't draw clusters, and boxes inside a subgraph can't be placed
+    if g.stmts
+        .iter()
+        .any(|s| matches!(s.kind, Kind::Subgraph { .. }))
+        || g.edges().iter().any(|e| e.locked)
+    {
+        return Err(QdError::UnsafeEdit(format!(
+            "the diagram in {cell} has a subgraph, which a pinned layout can't keep: edit it as text"
+        )));
+    }
+    let names: Vec<String> = g.nodes().into_iter().map(|n| n.name).collect();
     if let Some(missing) = names.iter().find(|n| !positions.contains_key(*n)) {
         return Err(QdError::NotFound(format!(
             "no position for '{missing}' in {cell}"
         )));
     }
+    // right angles, unless the diagram chose its own splines or uses ports
+    // (Graphviz's ortho routing ignores ports)
+    let ortho = g.setting("splines").is_none()
+        && !g
+            .edges()
+            .iter()
+            .any(|e| e.from_port.is_some() || e.to_port.is_some());
     let mut doc = Doc(text.into());
-    for (k, v) in [("layout", "neato"), ("splines", "ortho")] {
+    for (k, v) in [("layout", "neato"), ("splines", "ortho")]
+        .into_iter()
+        .filter(|(k, _)| *k != "splines" || ortho)
+    {
         let g = doc.graph()?;
         doc.apply(set_setting(&doc.0, &g, k, v));
     }

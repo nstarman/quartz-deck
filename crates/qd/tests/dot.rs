@@ -141,6 +141,22 @@ fn move_refuses_unpinned_and_unknown() {
 
 const UNPINNED: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## Flow {#d}\n\n```{dot}\ndigraph {\n  node [shape=box];\n  a -> b;\n  b -> c;\n}\n```\n";
 
+/// Quarto's `//| file:` diagrams live in another file: qd says so, and
+/// refuses to edit, instead of reporting a parse error.
+#[test]
+fn file_cells_are_named() {
+    let t = deck(&UNPINNED.replace(
+        "```{dot}\ndigraph {\n  node [shape=box];\n  a -> b;\n  b -> c;\n}\n",
+        "```{dot}\n//| file: flow.dot\n",
+    ));
+    let (_, v) = json(t.path(), &["dot", "show", "d/0"]);
+    assert_eq!(
+        v["editable"]["reason"], "this diagram is in flow.dot (`//| file:`), which qd doesn't edit",
+        "{v}"
+    );
+    common::err(t.path(), &["dot", "add", "d/0"], "E_UNSAFE_EDIT");
+}
+
 #[test]
 fn pin_with_positions() {
     let t = deck(UNPINNED);
@@ -175,6 +191,52 @@ fn pin_with_positions() {
         &["dot", "pin", "d/0", "--positions", r#"{"a":[0,0]}"#],
         "E_NOT_FOUND",
     );
+}
+
+/// A diagram with a subgraph isn't pinned: its boxes can't be placed, and
+/// neato doesn't draw clusters. The file is left as it was.
+#[test]
+fn pin_refuses_subgraphs() {
+    let deck_text = UNPINNED.replace(
+        "  a -> b;\n",
+        "  subgraph cluster_x { label=Group; a; }\n  a -> b;\n",
+    );
+    let t = deck(&deck_text);
+    common::err(
+        t.path(),
+        &[
+            "dot",
+            "pin",
+            "d/0",
+            "--positions",
+            r#"{"a":[0,0],"b":[2,0],"c":[2,1.5]}"#,
+        ],
+        "E_UNSAFE_EDIT",
+    );
+    assert_eq!(text(&t), deck_text);
+}
+
+/// Pin keeps a diagram's own `splines`, and adds `ortho` only when there is
+/// none and no arrow uses a port (Graphviz's ortho routing ignores ports).
+#[test]
+fn pin_keeps_splines_and_ports() {
+    let all = r#"{"a":[0,0],"b":[2,0],"c":[2,1.5]}"#;
+    for (from, ortho) in [
+        ("  a -> b;\n", true),
+        ("  a -> b:w;\n", false),
+        ("  splines=curved;\n  a -> b;\n", false),
+    ] {
+        let t = deck(&UNPINNED.replace("  a -> b;\n", from));
+        let (ok, v) = json(t.path(), &["dot", "pin", "d/0", "--positions", all]);
+        assert!(ok, "{v}");
+        let after = text(&t);
+        assert_eq!(after.contains("splines=ortho"), ortho, "{after}");
+        assert_eq!(
+            after.matches("splines=").count(),
+            usize::from(ortho || from.contains("splines")),
+            "{after}"
+        );
+    }
 }
 
 #[test]

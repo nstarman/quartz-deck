@@ -4667,23 +4667,6 @@ async fn diagram_properties_picture() {
     .await;
 }
 
-/// The editor's Graphviz in `ed`'s cache, from one shared download; `None` offline.
-fn live_engine(ed: &Ed) -> Option<()> {
-    use quartz_deck::assets::{GRAPHVIZ, ensure};
-    let shared = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("qd-graphviz");
-    let a = ensure(&shared, &GRAPHVIZ, true)
-        .inspect_err(|e| eprintln!("skipping: {e}"))
-        .ok()?;
-    let to = ed
-        .dir
-        .path()
-        .join(".cache")
-        .join(a.path.strip_prefix(&shared).unwrap());
-    std::fs::create_dir_all(to.parent().unwrap()).unwrap();
-    std::fs::copy(&a.path, &to).unwrap();
-    Some(())
-}
-
 /// Each routed arrow's path and offset, while dragging.
 fn routed() -> String {
     format!(
@@ -4694,15 +4677,12 @@ const PROVISIONAL: &str = "line.qd-dot-provisional";
 
 /// Spec 015 US4 (T025): with "Route arrows while dragging" on, a dragged box's
 /// arrows are routed at right angles as it moves; the drop saves the same text
-/// as with the setting off. Without the engine: straight lines, nothing else.
+/// as with the setting off. Without Quarto's Graphviz: straight lines, nothing else.
 #[tokio::test(flavor = "multi_thread")]
 async fn diagram_live_routing() {
     let Some(ed) = Ed::open(DIAGRAM).await else {
         return;
     };
-    if live_engine(&ed).is_none() {
-        return;
-    }
     ed.eval("import('/ui/settings.js').then((s) => s.set({'diagrams.live-layout': true}))")
         .await;
     ed.go("flow").await;
@@ -4745,7 +4725,15 @@ async fn diagram_live_routing() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn diagram_live_routing_without_engine() {
-    let Some(ed) = Ed::open_with_env(DIAGRAM, &[("QD_NO_DOWNLOAD", "1")]).await else {
+    // a `quarto` that renders, with no Graphviz of its own beside it
+    let Ok(real) = quartz_deck::render::quarto() else {
+        return;
+    };
+    let fake = tempfile::tempdir().unwrap();
+    let bin = fake.path().join("bin/quarto");
+    std::fs::create_dir_all(bin.parent().unwrap()).unwrap();
+    common::script(&bin, &format!("exec {real:?} \"$@\""));
+    let Some(ed) = Ed::open_with_env(DIAGRAM, &[("QD_QUARTO", bin.to_str().unwrap())]).await else {
         return;
     };
     ed.eval("import('/ui/settings.js').then((s) => s.set({'diagrams.live-layout': true}))")

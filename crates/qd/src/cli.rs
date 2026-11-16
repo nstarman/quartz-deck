@@ -2258,7 +2258,7 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
 }
 
 /// Downloads are allowed unless `--no-download` or `QD_NO_DOWNLOAD` (non-empty, not "0").
-pub(crate) fn allow_download(no_download: bool) -> bool {
+fn allow_download(no_download: bool) -> bool {
     !no_download && std::env::var("QD_NO_DOWNLOAD").map_or(true, |v| v.is_empty() || v == "0")
 }
 

@@ -105,12 +105,34 @@ function select(cell, what) {
   if (sel) api.select(cell);
 }
 
-/** Graphviz in the browser, loaded once (`null` if it can't be had: straight lines). */
+/**
+ * The Graphviz of the person's own Quarto, the build that renders the deck,
+ * loaded once (`null` if it can't be had: straight lines). Quarto made it for
+ * Deno, and it reads its engine with `Deno.readFileSync`: that one call is
+ * answered with the engine fetched beforehand (research R6).
+ */
 let engine;
-const graphviz = () => (engine ??= import('/lib/graphviz.js').then((m) => m.Graphviz.load()).catch(() => null));
+const graphviz = () => (engine ??= (async () => {
+  const r = await fetch('/lib/quarto/graphvizlib.wasm');
+  if (!r.ok) return null;
+  const wasm = new Uint8Array(await r.arrayBuffer());
+  globalThis.Deno ??= { env: { get: () => '' }, readFileSync: () => wasm };
+  return (await import('/lib/quarto/graphviz-wasm.js')).graphviz();
+})().catch(() => null));
 
 /** A label's spot (`<text x y>`), the same in two layouts of a pinned diagram where the box stayed. */
 const spot = (g) => ['x', 'y'].map((k) => Number(g?.querySelector('text')?.getAttribute(k)));
+
+/** The cell's layout with the dragged box where it is now, as an SVG document (or null). */
+async function layout(d) {
+  const gv = await graphviz();
+  const v = info.get(d.cell);
+  const at = boxInfo(d.cell, d.node)?.pos;
+  if (!gv || !v?.text || !at) return null;
+  const pos = `${at[0] + d.ux / 72},${at[1] - d.uy / 72}!`;
+  const text = v.text.replace(/\}\s*$/, `${JSON.stringify(d.node)} [pos="${pos}"];\n}\n`);
+  return new DOMParser().parseFromString(await gv.layout(text, 'svg', v.settings?.layout ?? 'neato'), 'image/svg+xml');
+}
 
 /**
  * Live routing: lay the cell out with the dragged box where it is now, and draw
@@ -119,15 +141,9 @@ const spot = (g) => ['x', 'y'].map((k) => Number(g?.querySelector('text')?.getAt
 function route(d) {
   if (d.frame || !setting('diagrams.live-layout')) return;
   d.frame = requestAnimationFrame(async () => {
-    const gv = await graphviz();
-    d.frame = 0;
-    const v = info.get(d.cell);
-    const at = boxInfo(d.cell, d.node)?.pos;
-    if (!gv || drag !== d || !v?.text || !at) return;
-    const pos = `${at[0] + d.ux / 72},${at[1] - d.uy / 72}!`;
-    const text = v.text.replace(/\}\s*$/, `${JSON.stringify(d.node)} [pos="${pos}"];\n}\n`);
-    let svg;
-    try { svg = new DOMParser().parseFromString(gv.layout(text, 'svg', v.settings?.layout ?? 'neato'), 'image/svg+xml'); } catch { return; }
+    const svg = await layout(d).catch(() => null);
+    d.frame = 0; // the next move lays out again
+    if (!svg || drag !== d) return;
     // the two layouts' frames differ by the bounding box: line them up on a box that stayed
     const other = nodes(d.cellEl).find((g) => nameOf(g) !== d.node);
     const twin = nodeNamed(svg, nameOf(other));

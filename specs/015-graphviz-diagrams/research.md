@@ -155,6 +155,22 @@ EPL-1.0), SHA-256
 Entry point: `(await Graphviz.load()).layout(text, 'svg', 'neato')`,
 synchronous after the load.
 
+**Revised after the audit (2026-11-16):** the spike stopped too early.
+Quarto's build needs only that one Deno call. In the browser, the editor
+fetches `graphvizlib.wasm`, answers `Deno.readFileSync` with it
+(`globalThis.Deno = { env: { get }, readFileSync }`) and imports
+`graphviz-wasm.js`. It lays out in about 0.5 ms (first layout 21 ms, on
+the main thread). So the editor now uses the person's own Quarto's
+Graphviz, the build that renders the deck, as first planned: live routes
+match the render and nothing is downloaded. The pinned
+`@hpcc-js/wasm-graphviz` is gone. If a later Quarto changes the file, live
+routing falls back to straight lines (FR-024).
+
+**Also measured in the audit:** Quarto turns `{dot}` cells into SVG before
+any filter runs (a `pre-ast` filter already sees a RawBlock). So a filter
+can't change the DOT before layout: the picture's spacer has to be in the
+source, and `dot-image` has to read the source to find the pictures.
+
 ## R7. Patching
 
 **Decision:**

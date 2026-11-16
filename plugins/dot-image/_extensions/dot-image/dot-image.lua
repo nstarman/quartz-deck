@@ -14,7 +14,7 @@ local function warn(msg)
   end
 end
 
---- Each {dot} cell's boxes with a picture, in order: { {name = {path, size}} }.
+--- The {dot} cells with pictures, in order: { {name = {path, size}} }.
 local function scan(src)
   local cells = {}
   for body in ('\n' .. src):gmatch('\n```+%s*{dot}[^\n]*\n(.-)\n```') do
@@ -29,7 +29,7 @@ local function scan(src)
     end
     for at, name, list in body:gmatch('()"([^"]+)"%s*(%b[])') do box(at, name, list) end
     for at, name, list in body:gmatch('()([%w_%.]+)%s*(%b[])') do box(at, name, list) end
-    cells[#cells + 1] = boxes
+    if next(boxes) then cells[#cells + 1] = boxes end
   end
   return cells
 end
@@ -54,6 +54,14 @@ end
 
 local function attr(s) return (s:gsub('&', '&amp;'):gsub('"', '&quot;'):gsub('<', '&lt;'):gsub('>', '&gt;')) end
 
+--- Where the node `name`'s `<title>` ends in `svg` (Graphviz writes `-` as `&#45;`).
+local function title(svg, name)
+  local esc = attr(name)
+  local _, at = svg:find('<title>' .. esc .. '</title>', 1, true)
+  if not at then _, at = svg:find('<title>' .. esc:gsub('%-', '&#45;') .. '</title>', 1, true) end
+  return at
+end
+
 --- `svg` with the picture of each box in `boxes` drawn into its node.
 local function draw(svg, boxes, dir)
   for name, b in pairs(boxes) do
@@ -65,9 +73,7 @@ local function draw(svg, boxes, dir)
     end
     f:close()
     do
-      local esc = attr(name)
-      local _, at = svg:find('<title>' .. esc .. '</title>', 1, true)
-      if not at then _, at = svg:find('<title>' .. esc:gsub('%-', '&#45;') .. '</title>', 1, true) end
+      local at = title(svg, name)
       if not at then goto next end
       local stop = svg:find('</g>', at, true)
       local node = svg:sub(at + 1, stop - 1)
@@ -104,15 +110,21 @@ function Pandoc(doc)
   end
   local cells = scan(src)
   local dir = pandoc.path.directory(input)
-  local k = 0
+  -- a diagram takes the first cell, in order, whose picture boxes it has: a
+  -- diagram the scan can't see (an include, pasted SVG) is passed over
+  local used = {}
   return doc:walk({
     RawBlock = function(r)
       if r.format ~= 'html' or not r.text:find('<svg') or not r.text:find('class="graph"', 1, true) then return nil end
-      k = k + 1
-      local boxes = cells[k]
-      if not boxes or next(boxes) == nil then return nil end
-      r.text = draw(r.text, boxes, dir)
-      return r
+      for i, boxes in ipairs(cells) do
+        local fits = not used[i]
+        for name in pairs(boxes) do fits = fits and title(r.text, name) ~= nil end
+        if fits then
+          used[i] = true
+          r.text = draw(r.text, boxes, dir)
+          return r
+        end
+      end
     end,
   })
 end
