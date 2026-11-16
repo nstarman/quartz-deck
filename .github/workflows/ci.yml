@@ -58,6 +58,9 @@ jobs:
       # TeX for the Beamer export (spec 011); Typst comes with Quarto
       - name: TinyTeX
         run: quarto install tinytex --no-prompt
+        env:
+          # an authenticated release lookup; anonymous ones hit GitHub's rate limit (403)
+          GH_TOKEN: ${{ github.token }}
       - name: Browser
         run: google-chrome --version
 
