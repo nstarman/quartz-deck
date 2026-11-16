@@ -1,5 +1,5 @@
-//! Pinned offline libraries (research.md R1, R2, R6): MathJax is downloaded
-//! once into qd's cache and verified by SHA-256; plotly.js comes from the
+//! Pinned offline libraries (research.md R1, R2, R6): MathJax and the editor's
+//! Graphviz are downloaded once into qd's cache and verified by SHA-256; plotly.js comes from the
 //! user's Python plotly so it matches their figures.
 
 use crate::error::{QdError, Result};
@@ -13,6 +13,8 @@ pub struct Pinned {
     pub url: &'static str,
     pub file: &'static str,
     pub sha256: &'static str,
+    /// SPDX, checked by the licence test
+    pub license: &'static str,
 }
 
 pub const MATHJAX: Pinned = Pinned {
@@ -21,6 +23,19 @@ pub const MATHJAX: Pinned = Pinned {
     url: "https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg-full.js",
     file: "tex-svg-full.js",
     sha256: "a4354ff94fd868aea0cc6eaaa79a57fda0588646fc46ee3700a349ee0a11cbe6",
+    license: "Apache-2.0",
+};
+
+/// Graphviz built for the browser (spec 015 US4, research R6): the editor
+/// routes a dragged box's arrows with it. One ES module, the engine inlined.
+/// Apache-2.0 (the wrapper) around Graphviz itself (EPL-1.0).
+pub const GRAPHVIZ: Pinned = Pinned {
+    name: "graphviz",
+    version: "1.30.0",
+    url: "https://cdn.jsdelivr.net/npm/@hpcc-js/wasm-graphviz@1.30.0/dist/index.js",
+    file: "index.js",
+    sha256: "77d45a274928484dd1daccd55ab3e41ddda5b4262e29240e205f7188839d9d5d",
+    license: "Apache-2.0 AND EPL-1.0",
 };
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -172,6 +187,7 @@ mod tests {
             url: "https://invalid.invalid/x",
             file: "x.js",
             sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            license: "MIT",
         };
         let dir = d.path().join("lib/t-1");
         std::fs::create_dir_all(&dir).unwrap();
@@ -190,6 +206,7 @@ mod tests {
             url: "https://invalid.invalid/x",
             file: "x.js",
             sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            license: "MIT",
         };
         let dir = d.path().join("lib/t-1");
         std::fs::create_dir_all(&dir).unwrap();

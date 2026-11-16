@@ -144,6 +144,17 @@ and `share/wasm/graphvizlib.wasm` (930 KB). On npm,
 - **Check:** a spike confirms that Quarto's `graphviz-wasm.js` loads as a
   browser ES module. If it doesn't, the fallback becomes the main path.
 
+**Spike result (T024, 2026-11-16):** Quarto 1.11.9's `graphviz-wasm.js`
+imports in a browser, but its loader was edited by hand for Deno: laying
+out calls `graphvizWasmModule()`, which reads the wasm with
+`Deno.readFileSync`, and fails with "Deno is not defined". So the fallback
+is the main path: `@hpcc-js/wasm-graphviz` 1.30.0, `dist/index.js`
+(820 KB, one ES module with the wasm inlined, Apache-2.0 around Graphviz's
+EPL-1.0), SHA-256
+`77d45a274928484dd1daccd55ab3e41ddda5b4262e29240e205f7188839d9d5d`.
+Entry point: `(await Graphviz.load()).layout(text, 'svg', 'neato')`,
+synchronous after the load.
+
 ## R7. Patching
 
 **Decision:**

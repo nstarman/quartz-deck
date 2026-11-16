@@ -4666,3 +4666,104 @@ async fn diagram_properties_picture() {
     ))
     .await;
 }
+
+/// The editor's Graphviz in `ed`'s cache, from one shared download; `None` offline.
+fn live_engine(ed: &Ed) -> Option<()> {
+    use quartz_deck::assets::{GRAPHVIZ, ensure};
+    let shared = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("qd-graphviz");
+    let a = ensure(&shared, &GRAPHVIZ, true)
+        .inspect_err(|e| eprintln!("skipping: {e}"))
+        .ok()?;
+    let to = ed
+        .dir
+        .path()
+        .join(".cache")
+        .join(a.path.strip_prefix(&shared).unwrap());
+    std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+    std::fs::copy(&a.path, &to).unwrap();
+    Some(())
+}
+
+/// Each routed arrow's path and offset, while dragging.
+fn routed() -> String {
+    format!(
+        "[...{FRAME}.querySelectorAll('g.qd-dot-routed path')].map((p) => p.getAttribute('d') + ' ' + p.closest('g').getAttribute('transform'))"
+    )
+}
+const PROVISIONAL: &str = "line.qd-dot-provisional";
+
+/// Spec 015 US4 (T025): with "Route arrows while dragging" on, a dragged box's
+/// arrows are routed at right angles as it moves; the drop saves the same text
+/// as with the setting off. Without the engine: straight lines, nothing else.
+#[tokio::test(flavor = "multi_thread")]
+async fn diagram_live_routing() {
+    let Some(ed) = Ed::open(DIAGRAM).await else {
+        return;
+    };
+    if live_engine(&ed).is_none() {
+        return;
+    }
+    ed.eval("import('/ui/settings.js').then((s) => s.set({'diagrams.live-layout': true}))")
+        .await;
+    ed.go("flow").await;
+    let a = ed.select_node("a").await;
+    let inch = ed.inch_px().await;
+    // a goes down an inch: a -> b now needs a bend
+    ed.press_and_move(a, (a.0, a.1 + inch)).await;
+    ed.wait(&format!("{}.length === 1", routed())).await;
+    let first = ed.eval(&routed()).await;
+    // axis-aligned: every point of the path shares x or y with the one before
+    let straight = ed.eval(&format!("(() => {{ const d = {FRAME}.querySelector('g.qd-dot-routed path').getAttribute('d'); const p = d.match(/-?[\\d.]+,-?[\\d.]+/g).map((s) => s.split(',').map(Number)); return p.length > 2 && p.slice(1).every(([x, y], i) => Math.abs(x - p[i][0]) < 0.5 || Math.abs(y - p[i][1]) < 0.5); }})()")).await;
+    assert_eq!(straight, json!(true), "routed at right angles: {first}");
+    assert_eq!(
+        ed.eval(&format!("[...{FRAME}.querySelectorAll('{PROVISIONAL}')].every((l) => l.style.display === 'none')")).await,
+        json!(true),
+        "the straight lines give way"
+    );
+    // it follows the pointer
+    use DispatchMouseEventType::*;
+    ed.mouse(MouseMoved, (a.0 + inch / 2.0, a.1 + inch), false)
+        .await;
+    ed.wait(&format!(
+        "JSON.stringify({}) !== {:?}",
+        routed(),
+        first.to_string()
+    ))
+    .await;
+    ed.mouse(MouseMoved, (a.0, a.1 + inch), false).await;
+    ed.mouse(MouseReleased, (a.0, a.1 + inch), false).await;
+    ed.wait_file(|f| f.contains("pos=\"0,0!\""), "a moved one inch down")
+        .await;
+    assert_eq!(
+        ed.file(),
+        DIAGRAM.replace(
+            "a [label=\"Data\", pos=\"0,1!\"]",
+            "a [label=\"Data\", pos=\"0,0!\"]"
+        )
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn diagram_live_routing_without_engine() {
+    let Some(ed) = Ed::open_with_env(DIAGRAM, &[("QD_NO_DOWNLOAD", "1")]).await else {
+        return;
+    };
+    ed.eval("import('/ui/settings.js').then((s) => s.set({'diagrams.live-layout': true}))")
+        .await;
+    ed.go("flow").await;
+    let a = ed.select_node("a").await;
+    let inch = ed.inch_px().await;
+    ed.press_and_move(a, (a.0, a.1 + inch)).await;
+    ed.wait(&format!("!!{FRAME}.querySelector('{PROVISIONAL}')"))
+        .await;
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    assert_eq!(
+        ed.eval(&format!("[{}.length, [...{FRAME}.querySelectorAll('{PROVISIONAL}')].every((l) => l.style.display !== 'none')]", routed())).await,
+        json!([0, true]),
+        "straight lines, nothing routed"
+    );
+    use DispatchMouseEventType::*;
+    ed.mouse(MouseReleased, (a.0, a.1 + inch), false).await;
+    ed.wait_file(|f| f.contains("pos=\"0,0!\""), "the drop still moves it")
+        .await;
+}

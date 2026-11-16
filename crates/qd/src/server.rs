@@ -242,6 +242,26 @@ async fn ui_module(UrlPath(name): UrlPath<String>) -> Response {
     }
 }
 
+/// The editor's Graphviz (spec 015 US4), fetched into qd's cache on first use.
+/// Not found when it can't be had: the editor then draws straight lines.
+async fn graphviz_js(State(app): State<Shared>) -> Response {
+    let root = app.store.root();
+    let got = tokio::task::spawn_blocking(move || {
+        crate::assets::ensure(
+            &root,
+            &crate::assets::GRAPHVIZ,
+            crate::cli::allow_download(false),
+        )
+        .ok()
+        .and_then(|a| std::fs::read(a.path).ok())
+    })
+    .await;
+    match got {
+        Ok(Some(body)) => ([(header::CONTENT_TYPE, "text/javascript")], body).into_response(),
+        _ => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
 async fn present(State(app): State<Shared>) -> Redirect {
     Redirect::to(&app.html)
 }
@@ -1235,6 +1255,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             .route("/editor.js", get(editor_js))
             .route("/editor.css", get(editor_css))
             .route("/ui/{name}", get(ui_module))
+            .route("/lib/graphviz.js", get(graphviz_js))
             .route("/present/", get(present))
             .route("/api/deck", get(api_deck))
             .route("/api/source", get(api_source))
