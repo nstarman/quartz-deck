@@ -267,6 +267,12 @@ Building a diagram:
   doesn't draw images. `rename` keeps the spacer, and `image=` puts a plain
   label back. `qd dot show` reports the label's text, not the spacer.
 
+In the editor the person does the same on the slide: drag boxes, drag from
+a box's handles to connect, double-click to rename, and View ▸ Properties
+panel for the details. Each gesture runs one of these commands. The setting
+`diagrams.live-layout` (`qd settings set diagrams.live-layout true`, when they ask) routes
+arrows while they drag; it changes nothing that's saved.
+
 Looks are written on each box, so a box renders the same everywhere.
 Boxes and arrows inside a `subgraph` are refused with `E_UNSAFE_EDIT`:
 edit those as text.
