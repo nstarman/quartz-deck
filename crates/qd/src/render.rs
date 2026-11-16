@@ -229,7 +229,7 @@ pub fn preview_copy(d: &Deck, outputs: &Value) -> String {
     out
 }
 
-fn esc(t: &str) -> String {
+pub(crate) fn esc(t: &str) -> String {
     t.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")

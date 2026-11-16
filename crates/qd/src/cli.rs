@@ -1286,7 +1286,7 @@ impl Ctx<'_> {
         self.check_expect(&d)?;
         let crate::bib::Edit { text, also, report } = f(&d)?;
         // the deck runs the extensions qd installs: name them in `filters:`
-        let text = crate::plugins::with_filters(&text)?;
+        let text = crate::plugins::with_filters(&text, crate::plugins::EXTENSIONS)?;
         let also: Vec<_> = also.into_iter().filter(|o| o.before != o.after).collect();
         let mut v = report;
         v["ok"] = json!(true);
@@ -1572,7 +1572,17 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                     look,
                     look_of,
                 } => {
-                    edit(&|d| dot::set(d, cell, target, pairs, look.as_deref(), look_of.as_deref()))
+                    let mut v = edit(&|d| {
+                        dot::set(d, cell, target, pairs, look.as_deref(), look_of.as_deref())
+                    })?;
+                    // a picture: the dot-image filter goes into the deck's _extensions/
+                    if v.get("extension").is_some() && !ctx.cli.dry_run {
+                        let store = ctx.store()?;
+                        let dir = store.path.parent().unwrap_or(Path::new("."));
+                        let x = crate::plugins::install_these(&[crate::plugins::DOT_IMAGE], dir)?;
+                        v["installed"] = x["installed"].clone();
+                    }
+                    Ok(v)
                 }
                 DotCmd::Rm { cell, target } => edit(&|d| dot::rm(d, cell, target)),
                 DotCmd::Flip { cell, edge } => edit(&|d| dot::flip(d, cell, edge)),

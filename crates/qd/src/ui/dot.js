@@ -388,6 +388,8 @@ export function panel(cell) {
     if (!seen.has(key(l))) look.append(el('option', { value: `starter:${name}`, textContent: STARTERS[name] }));
   }
   const link = row('Link', el('input', { type: 'url', name: 'link', value: n.url ?? '', placeholder: 'https://…' }));
+  // a picture at the box's left, drawn by the dot-image filter (US3)
+  const image = row('Picture', el('input', { type: 'text', name: 'image', value: n.image ?? '', placeholder: 'face.png, beside the deck' }));
   const width = row('Width (in)', el('input', { type: 'number', name: 'width', step: '0.25', min: '0', value: n.size.width ?? '' }));
   const height = row('Height (in)', el('input', { type: 'number', name: 'height', step: '0.25', min: '0', value: n.size.height ?? '' }));
   buttons.append(el('button', { type: 'submit', className: 'primary', textContent: 'Apply' }));
@@ -395,8 +397,8 @@ export function panel(cell) {
   form.addEventListener('submit', (ev) => {
     ev.preventDefault();
     const pairs = [];
-    const was = { label: n.label ?? s.node, URL: n.url ?? '', width: n.size.width ?? '', height: n.size.height ?? '' };
-    for (const [k, v] of [['label', label.value], ['URL', link.value.trim()], ['width', width.value], ['height', height.value]]) {
+    const was = { label: n.label ?? s.node, URL: n.url ?? '', image: n.image ?? '', width: n.size.width ?? '', height: n.size.height ?? '' };
+    for (const [k, v] of [['label', label.value], ['URL', link.value.trim()], ['image', image.value.trim()], ['width', width.value], ['height', height.value]]) {
       if (String(v) !== String(was[k])) pairs.push(`${k}=${v}`);
     }
     const args = { cell, target: s.node, pairs };
