@@ -163,7 +163,7 @@ or names.
 
   Add the actions `dot-new`, `dot-add`, `dot-rm`, `dot-flip` in `crates/qd/src/ui/actions.json` (Insert menu and element menu, `where: diagram`). The rest of T016 passes.
 
-  As built: the fields are in the Properties panel (`dot.panel` in `dot.js`, shown above the source form), not a sheet; rename on double-click uses the editor's sheet. Insert ▸ Diagram is `insert-diagram`, beside the other Insert items, and Insert ▸ Box in diagram is `dot-add`. Turning an arrowhead back on removes `arrowhead=none` rather than writing `arrowhead=normal`. The image field comes with US3 (T019–T023), which writes the spacer label.
+  As built: the fields are in the Properties panel (`dot.panel` in `dot.js`, shown above the source form), not a sheet; rename on double-click uses the editor's sheet. Insert ▸ Diagram is `insert-diagram`, beside the other Insert items, and Insert ▸ Box in diagram is `dot-add`. Turning an arrowhead back on removes `arrowhead=none` rather than writing `arrowhead=normal`. The image field (Picture) came with US3.
 
 **Checkpoint**: PR 3. Diagrams are built and changed on the slide, Keynote-style.
 
@@ -175,22 +175,24 @@ or names.
 
 **Independent Test**: spec US3; quickstart §4.
 
-- [ ] T019 [P] [US3] Write failing unit and CLI tests:
+- [X] T019 [P] [US3] Write failing unit and CLI tests:
   - **`crates/qd/src/dot.rs` units:** `set image=PATH` writes the spacer label (data-model "Spacer label") around the existing label text; `rename` then edits only the text cell; `set image=` clears it back to a plain label.
   - **`crates/qd/tests/dot.rs`, `image_installs_dot_image`:** the first `set image=` installs `_extensions/dot-image` and names it in the deck's `filters:`.
-- [ ] T020 [US3] Implement the spacer-label handling in `crates/qd/src/dot.rs`, and the install trigger in `crates/qd/src/cli.rs` via `crates/qd/src/plugins.rs` (an `Extension` entry for `dot-image`, installed only when a diagram uses `image=`). T019 passes.
-- [ ] T021 [P] [US3] Add `plugins/dot-image/example.qmd` and its made-up image (a small generated PNG committed as a fixture): a pinned diagram with one box using `image=` and a spacer label, and one without. Write a failing test in `crates/qd/tests/plugins.rs`, **`dot_image_example`**. Rendering with plain Quarto, it checks that:
+- [X] T020 [US3] Implement the spacer-label handling in `crates/qd/src/dot.rs`, and the install trigger in `crates/qd/src/cli.rs` via `crates/qd/src/plugins.rs` (an `Extension` entry for `dot-image`, installed only when a diagram uses `image=`). T019 passes.
+- [X] T021 [P] [US3] Add `plugins/dot-image/example.qmd` and its made-up image (a small generated PNG committed as a fixture): a pinned diagram with one box using `image=` and a spacer label, and one without. Write a failing test in `crates/qd/tests/plugins.rs`, **`dot_image_example`**. Rendering with plain Quarto, it checks that:
   - the `<image class="dot-image">` sits inside the right node's `<g>`, left of the label's `<text>`, with no overlap of their boxes;
   - a missing file gives no image and a warning naming it on stderr;
   - an `{{< include >}}`d cell gives the one-time warning.
-- [ ] T022 [US3] Write `plugins/dot-image/_extensions/dot-image/` (`_extension.yml` with a `post-quarto` filter, `dot-image.lua`) (research R5):
+- [X] T022 [US3] Write `plugins/dot-image/_extensions/dot-image/` (`_extension.yml` with a `post-quarto` filter, `dot-image.lua`) (research R5):
   - read the source via `quarto.doc.input_file`;
   - scan `{dot}` cells for node `image=`;
   - pair cells with rendered SVGs in order;
   - insert the `<image>`.
 
   Add `plugins/dot-image/README.md`. T021 passes.
-- [ ] T023 [US3] An offline check and a one-file export of the example, in `crates/qd/tests/plugins.rs`: the image is embedded, and no network is used beyond reveal.js's MathJax.
+- [X] T023 [US3] An offline check and a one-file export of the example, in `crates/qd/tests/plugins.rs`: the image is embedded, and no network is used beyond reveal.js's MathJax.
+
+  As built: the picture takes the spacer's size from the label's `WIDTH`, and sits just left of the label's text. A one-file export embeds it as a `data:` URI with no extra work.
 
 **Checkpoint**: PR 4. Boxes can carry pictures.
 

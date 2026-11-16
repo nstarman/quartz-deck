@@ -1,0 +1,18 @@
+---
+title: Pictures in boxes
+format: revealjs
+filters:
+  - dot-image
+---
+
+## A tool and its maker
+
+```{dot}
+digraph {
+  layout=neato; splines=ortho;
+  node [shape=box, style="rounded,filled", fillcolor=white];
+  data [label="Data", pos="0,0!"];
+  tool [label=<<TABLE BORDER="0" CELLPADDING="0" CELLSPACING="4"><TR><TD WIDTH="28" HEIGHT="28" FIXEDSIZE="TRUE"></TD><TD>Tool</TD></TR></TABLE>>, image="face.png", pos="2.5,0!"];
+  data -> tool;
+}
+```

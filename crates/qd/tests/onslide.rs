@@ -4634,3 +4634,35 @@ async fn diagram_keyboard_and_names() {
     let names = ed.eval(&format!("[...{FRAME}.querySelectorAll('.qd-dot-handle')].map((h) => h.getAttribute('role') + ' ' + h.getAttribute('aria-label'))")).await;
     assert_eq!(names, json!(vec!["button Connect from Tool"; 4]));
 }
+
+/// Spec 015 US3: the Properties panel's Picture field sets a box's image;
+/// the deck gains the dot-image filter and the preview shows the picture.
+#[tokio::test(flavor = "multi_thread")]
+async fn diagram_properties_picture() {
+    let Some(ed) = Ed::open(DIAGRAM).await else {
+        return;
+    };
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/dot-image/face.png"),
+        ed.dir.path().join("face.png"),
+    )
+    .unwrap();
+    ed.go("flow").await;
+    ed.select_node("b").await;
+    ed.properties().await;
+    ed.eval("(() => { const f = document.querySelector('form.dot-form'); f.image.value = 'face.png'; f.requestSubmit(); })()").await;
+    ed.wait_file(
+        |f| {
+            f.contains("filters:\n- dot-image\n")
+                && f.contains("image=\"face.png\"")
+                && f.contains("<TD>Tool</TD>")
+        },
+        "a picture with its spacer and filter",
+    )
+    .await;
+    ed.settle().await;
+    ed.wait(&format!(
+        "!!{FRAME}.querySelector('[data-qd-lang=dot] image.dot-image')"
+    ))
+    .await;
+}

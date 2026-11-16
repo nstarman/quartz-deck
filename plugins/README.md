@@ -5,7 +5,8 @@ is for what nothing provides, or to connect an existing library to Quarto and
 reveal.js (constitution, principle VII).
 
 Plugins come in two kinds (constitution 1.4.0):
-- a **render plugin** is a Quarto extension, such as `cite-links`;
+- a **render plugin** is a Quarto extension, such as `cite-links` or
+  `dot-image` (pictures in Graphviz boxes);
 - a **source plugin** feeds `qd bib` with references and renders nothing.
   It is a program `qd-NAME` on `PATH` that prints CSL-JSON, built as a
   member crate of this workspace, such as `zotero/` (`qd-zotero`).

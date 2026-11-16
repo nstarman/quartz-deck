@@ -356,7 +356,7 @@ pub fn run(store: &Store, o: &Options) -> Result<Value> {
         None => ("suppress-bibliography", serde_yaml_ng::Value::Bool(true)),
     };
     text = bib::set_front(&text, &[(key, Some(value))])?;
-    let text = crate::plugins::with_filters(&text)?;
+    let text = crate::plugins::with_filters(&text, crate::plugins::EXTENSIONS)?;
     let mut also = vec![bib::file_change(
         &path,
         bib::file_text(&entries, Format::of(&path))?,

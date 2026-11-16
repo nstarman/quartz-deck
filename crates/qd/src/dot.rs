@@ -862,7 +862,7 @@ pub fn show(d: &Deck, r: &str) -> Result<Value> {
                 .iter()
                 .filter(|a| matches!(a.key.as_str(), "width" | "height" | "fixedsize"));
             let pos = n.pos();
-            json!({"name": n.name, "label": n.attr("label").unwrap_or_else(|| n.name.clone()),
+            json!({"name": n.name, "label": label(n),
                 "look": attrs_json(look), "url": n.attr("URL"), "image": n.attr("image"),
                 "pos": pos.map(|(x, y, _)| json!([x, y])), "pinned": pos.is_some_and(|p| p.2),
                 "size": attrs_json(size), "locked": n.locked})
@@ -962,10 +962,10 @@ fn add_stmt(text: &str, g: &Graph, stmt: &str) -> (Span, String) {
     )
 }
 
-/// Set `key` in a statement's attribute lists: its value in place, else
-/// added to the last list, else a new list after the statement.
-fn set_in(lists: &[List], end: usize, key: &str, value: &str) -> (Span, String) {
-    let v = dot_value(value);
+/// Set `key` to `v` (as DOT text) in a statement's attribute lists: its value
+/// in place, else added to the last list, else a new list after the statement.
+fn set_in(lists: &[List], end: usize, key: &str, v: &str) -> (Span, String) {
+    let v = v.to_string();
     if let Some(a) = lists
         .iter()
         .rev()
@@ -999,6 +999,50 @@ fn node(g: &Graph, name: &str) -> Result<Node> {
     Ok(n)
 }
 
+/// The text of a spacer label (data-model "Spacer label"), when `label` is one.
+fn spacer_text(label: &str) -> Option<String> {
+    let re = regex::Regex::new(r#"^<TABLE BORDER="0" CELLPADDING="0" CELLSPACING="4"><TR><TD WIDTH="\d+" HEIGHT="\d+" FIXEDSIZE="TRUE"></TD><TD>(.*)</TD></TR></TABLE>$"#)
+        .expect("valid regex");
+    re.captures(label).map(|c| crate::inline::unescape(&c[1]))
+}
+
+/// A spacer label for `text` in a box `height` inches tall, as DOT text: an
+/// empty square cell, where dot-image draws the picture, then the text.
+fn spacer(text: &str, height: f64) -> String {
+    let w = (height * 72.0 - 8.0).round();
+    format!(
+        "<<TABLE BORDER=\"0\" CELLPADDING=\"0\" CELLSPACING=\"4\"><TR><TD WIDTH=\"{w}\" HEIGHT=\"{w}\" FIXEDSIZE=\"TRUE\"></TD><TD>{}</TD></TR></TABLE>>",
+        crate::render::esc(text)
+    )
+}
+
+/// A box's label as the person reads it: a spacer label's text, else its `label`, else its name.
+fn label(n: &Node) -> String {
+    let l = n.attr("label");
+    l.as_deref()
+        .and_then(spacer_text)
+        .or(l)
+        .unwrap_or_else(|| n.name.clone())
+}
+
+/// A box with a picture keeps room for it beside its label, sized by its
+/// height (default 0.5 in); without one, the label is plain again.
+fn fit_label(doc: &mut Doc, name: &str) -> Result<()> {
+    let g = doc.graph()?;
+    let n = node(&g, name)?;
+    let spaced = n.attr("label").as_deref().and_then(spacer_text).is_some();
+    let edit = if n.attr("image").is_some_and(|i| !i.is_empty()) {
+        let h = n.attr("height").and_then(|h| h.parse().ok()).unwrap_or(0.5);
+        set_node_dot(&doc.0, &g, name, "label", &spacer(&label(&n), h))?
+    } else if spaced {
+        set_node_attr(&doc.0, &g, name, "label", &label(&n))?
+    } else {
+        return Ok(());
+    };
+    doc.apply(edit);
+    Ok(())
+}
+
 /// `name [k=v, …]`, or just `name`.
 fn node_stmt(name: &str, attrs: &[(String, String)]) -> String {
     let list: Vec<String> = attrs
@@ -1020,14 +1064,19 @@ pub fn set_node_attr(
     key: &str,
     value: &str,
 ) -> Result<(Span, String)> {
+    set_node_dot(text, g, name, key, &dot_value(value))
+}
+
+/// Set a box's attribute to `v`, written as DOT text (an HTML label's `<…>` included).
+fn set_node_dot(text: &str, g: &Graph, name: &str, key: &str, v: &str) -> Result<(Span, String)> {
     node(g, name)?;
     let stmt = g.stmts.iter().rev().find_map(|s| match &s.kind {
         Kind::Node { name: n, lists, .. } if n == name => Some((lists, s.span.end)),
         _ => None,
     });
     Ok(match stmt {
-        Some((lists, end)) => set_in(lists, end, key, value),
-        None => add_stmt(text, g, &node_stmt(name, &[(key.into(), value.into())])),
+        Some((lists, end)) => set_in(lists, end, key, v),
+        None => add_stmt(text, g, &format!("{} [{key}={v}]", dot_value(name))),
     })
 }
 
@@ -1040,7 +1089,7 @@ pub fn set_setting(text: &str, g: &Graph, key: &str, value: &str) -> (Span, Stri
                 if target == "graph"
                     && lists.iter().any(|l| l.attrs.iter().any(|a| a.key == key)) =>
             {
-                return set_in(lists, s.span.end, key, value);
+                return set_in(lists, s.span.end, key, &dot_value(value));
             }
             _ => {}
         }
@@ -1532,7 +1581,7 @@ pub fn set(
             let e = if v.is_empty() {
                 unset_in(&doc.0, lists, k)
             } else {
-                Some(set_in(lists, s.span.end, k, v))
+                Some(set_in(lists, s.span.end, k, &dot_value(v)))
             };
             e.into_iter().for_each(|e| doc.apply(e));
         }
@@ -1564,9 +1613,23 @@ pub fn set(
             }
         }
     }
+    if !target.contains(g.op()) {
+        fit_label(&mut doc, target)?;
+    }
+    let p = doc.patch("dot-set", format!("{cell}:{target}"), body);
+    if !kv.iter().any(|(k, v)| k == "image" && !v.is_empty()) {
+        return Ok((p, json!({})));
+    }
+    // a picture needs the dot-image filter: named in the deck's `filters:` (research R5)
+    let after = crate::ops::apply(&d.text, &p)?;
+    let after = crate::plugins::with_filters(&after, &[crate::plugins::DOT_IMAGE])?;
+    let whole = Span {
+        start: 0,
+        end: d.text.len(),
+    };
     Ok((
-        doc.patch("dot-set", format!("{cell}:{target}"), body),
-        json!({}),
+        crate::ops::patch(&p.op, p.target, vec![(whole, after)], vec![]),
+        json!({"extension": crate::plugins::DOT_IMAGE.name}),
     ))
 }
 
@@ -1575,6 +1638,7 @@ pub fn rename(d: &Deck, r: &str, name: &str, label: &str) -> Result<(crate::ops:
     let (cell, body, text, g) = read(d, r)?;
     let mut doc = Doc(text.into());
     doc.apply(set_node_attr(text, &g, name, "label", label)?);
+    fit_label(&mut doc, name)?;
     Ok((
         doc.patch("dot-rename", format!("{cell}:{name}"), body),
         json!({}),
@@ -2154,6 +2218,42 @@ mod tests {
         assert_eq!(
             edited(t, |t, _| unset_in(t, &lists(1), "z").unwrap()),
             "digraph {\n  a [x=1, y=2];\n  b;\n}\n"
+        );
+    }
+
+    /// Spec 015 US3 (T019): a picture's spacer label wraps the label's text;
+    /// a new label keeps the spacer; no picture, a plain label again.
+    #[test]
+    fn spacer_labels() {
+        let mut doc = Doc("digraph {\n  t [label=\"A & B\", image=\"f.png\"];\n}\n".into());
+        fit_label(&mut doc, "t").unwrap();
+        assert_eq!(
+            doc.0,
+            "digraph {\n  t [label=<<TABLE BORDER=\"0\" CELLPADDING=\"0\" CELLSPACING=\"4\"><TR><TD WIDTH=\"28\" HEIGHT=\"28\" FIXEDSIZE=\"TRUE\"></TD><TD>A &amp; B</TD></TR></TABLE>>, image=\"f.png\"];\n}\n"
+        );
+        let n = || doc.graph().unwrap().nodes()[0].clone();
+        assert_eq!(label(&n()), "A & B", "the text cell");
+        // a new label keeps the spacer
+        let g = doc.graph().unwrap();
+        let e = set_node_attr(&doc.0, &g, "t", "label", "C").unwrap();
+        doc.apply(e);
+        fit_label(&mut doc, "t").unwrap();
+        assert!(doc.0.contains("<TD>C</TD>"), "{}", doc.0);
+        // taller box, bigger spacer
+        let g = doc.graph().unwrap();
+        let e = set_node_attr(&doc.0, &g, "t", "height", "1").unwrap();
+        doc.apply(e);
+        fit_label(&mut doc, "t").unwrap();
+        assert!(doc.0.contains("WIDTH=\"64\" HEIGHT=\"64\""), "{}", doc.0);
+        // no picture: plain
+        let g = doc.graph().unwrap();
+        let e = set_node_attr(&doc.0, &g, "t", "image", "").unwrap();
+        doc.apply(e);
+        fit_label(&mut doc, "t").unwrap();
+        assert!(
+            doc.0.contains("t [label=C, image=\"\", height=1]"),
+            "{}",
+            doc.0
         );
     }
 

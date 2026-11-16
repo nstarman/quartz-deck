@@ -462,3 +462,50 @@ fn built_diagram_renders_with_quarto() {
     }
     assert!(!html.contains("<title>data-&gt;tool</title>"));
 }
+
+/// Spec 015 US3 (T019): the first `set image=` writes the spacer label,
+/// installs `_extensions/dot-image` and names it in `filters:`; undo puts
+/// the deck back. `rename` then changes only the text; `image=` clears it.
+#[test]
+fn image_installs_dot_image() {
+    let t = deck(DECK);
+    let (ok, v) = json(t.path(), &["dot", "set", "d/0", "b", "image=face.png"]);
+    assert!(ok, "{v}");
+    assert_eq!(v["installed"], json!(["dot-image"]), "{v}");
+    let after = text(&t);
+    assert!(after.contains("filters:\n- dot-image\n"), "{after}");
+    assert!(
+        after.contains("b [label=<<TABLE BORDER=\"0\" CELLPADDING=\"0\" CELLSPACING=\"4\"><TR><TD WIDTH=\"28\" HEIGHT=\"28\" FIXEDSIZE=\"TRUE\"></TD><TD>Tool</TD></TR></TABLE>>, pos=\"2,1!\", URL=\"https://example.org/tool\", width=1.5, image=\"face.png\"];"),
+        "{after}"
+    );
+    for f in ["_extension.yml", "dot-image.lua"] {
+        assert!(
+            t.path().join("_extensions/dot-image").join(f).is_file(),
+            "{f}"
+        );
+    }
+    let (_, v) = json(t.path(), &["dot", "show", "d/0"]);
+    assert_eq!(
+        (
+            v["nodes"][1]["label"].clone(),
+            v["nodes"][1]["image"].clone()
+        ),
+        (json!("Tool"), json!("face.png"))
+    );
+    let (ok, _) = json(t.path(), &["dot", "rename", "d/0", "b", "Tools"]);
+    assert!(ok);
+    assert_eq!(text(&t), after.replace("<TD>Tool</TD>", "<TD>Tools</TD>"));
+    let (ok, _) = json(t.path(), &["dot", "set", "d/0", "b", "image="]);
+    assert!(ok);
+    assert!(
+        text(&t).contains(
+            "b [label=Tools, pos=\"2,1!\", URL=\"https://example.org/tool\", width=1.5];"
+        ),
+        "{}",
+        text(&t)
+    );
+    for _ in 0..3 {
+        assert!(json(t.path(), &["undo"]).0);
+    }
+    assert_eq!(text(&t), DECK, "undo restores the deck");
+}

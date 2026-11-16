@@ -260,6 +260,13 @@ Building a diagram:
   one arrow. A chain `a -> b -> c` is split, keeping its attributes.
 - `qd dot flip CELL A->B` reverses an arrow (not in an undirected `graph`).
 
+- `qd dot set CELL NODE image=face.png` gives a box a picture at its left.
+  The label becomes a spacer label (an empty square cell, then the text),
+  and the first picture installs the `dot-image` filter into the deck's
+  `_extensions/` and names it in `filters:`, because Quarto's Graphviz
+  doesn't draw images. `rename` keeps the spacer, and `image=` puts a plain
+  label back. `qd dot show` reports the label's text, not the spacer.
+
 Looks are written on each box, so a box renders the same everywhere.
 Boxes and arrows inside a `subgraph` are refused with `E_UNSAFE_EDIT`:
 edit those as text.

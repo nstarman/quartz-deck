@@ -406,3 +406,97 @@ fn long_refs_slide_scrolls_without_an_overflow_warning() {
         "{problems:#?}"
     );
 }
+
+/// The SVG of node `name` in rendered `html`: from its `<title>` to its `</g>`.
+fn node_svg<'a>(html: &'a str, name: &str) -> &'a str {
+    let at = html
+        .find(&format!("<title>{name}</title>"))
+        .unwrap_or_else(|| panic!("no node {name}"));
+    &html[at..at + html[at..].find("</g>").unwrap()]
+}
+
+fn num(s: &str, attr: &str) -> f64 {
+    let re = regex::Regex::new(&format!(r#" {attr}="(-?[\d.]+)""#)).unwrap();
+    re.captures(s).unwrap_or_else(|| panic!("no {attr} in {s}"))[1]
+        .parse()
+        .unwrap()
+}
+
+/// Spec 015 US3 (T021): the picture is inside its box, left of the label and
+/// clear of it; the other box has none. A missing file gives no picture and
+/// a warning naming it; an `include` gives the one-time warning.
+#[test]
+fn dot_image_example() {
+    if !have("quarto") {
+        return;
+    }
+    let (html, _) = render_example("dot-image", |t| t, &[]);
+    let tool = node_svg(&html, "tool");
+    let img = tool
+        .find("<image class=\"dot-image\"")
+        .expect("a picture in tool");
+    let text = tool.find("<text").unwrap();
+    assert!(
+        img < text,
+        "drawn before the label, so the text stays on top"
+    );
+    let img = &tool[img..];
+    let (x, w, y, h) = (
+        num(img, "x"),
+        num(img, "width"),
+        num(img, "y"),
+        num(img, "height"),
+    );
+    assert!(img.contains("href=\"face.png\""), "{img}");
+    let tx = num(&tool[text..], "x");
+    assert!(x + w <= tx, "left of the label: {x} + {w} <= {tx}");
+    let (lo, hi) = (-44.0, 0.0); // the box's top and bottom, from its path
+    assert!(
+        y >= lo && y + h <= hi && x >= 166.0,
+        "inside the box: {img}"
+    );
+    assert!(!node_svg(&html, "data").contains("<image"));
+
+    let (html, err) = render_example("dot-image", |t| t.replace("face.png", "nope.png"), &[]);
+    assert!(!html.contains("class=\"dot-image\""));
+    assert!(
+        err.contains("dot-image: no file nope.png for the box tool"),
+        "{err}"
+    );
+
+    let (_, err) = render_example(
+        "dot-image",
+        |t| format!("{t}\n{{{{< include more.qmd >}}}}\n"),
+        &[("more.qmd", "## More\n")],
+    );
+    assert!(err.contains("are not scanned for pictures"), "{err}");
+}
+
+/// Spec 015 US3 (T023): the example needs no network beyond reveal.js's
+/// MathJax, and its one-file export carries the picture inside it.
+#[test]
+fn dot_image_offline_and_one_file() {
+    let t = copy_plugin("dot-image");
+    let Some(problems) = offline_problems(t.path()) else {
+        return;
+    };
+    let others: Vec<_> = problems
+        .iter()
+        .filter(|p| !p["url"].as_str().unwrap_or("").contains("/mathjax@"))
+        .collect();
+    assert!(others.is_empty(), "{others:#?}");
+    let out = common::qd(t.path())
+        .args(["--deck", "example.qmd", "export"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let html = std::fs::read_to_string(t.path().join("export/example.html")).unwrap();
+    assert!(
+        html.contains("<image class=\"dot-image\" href=\"data:image/png;base64,"),
+        "the picture is inside the file"
+    );
+}
