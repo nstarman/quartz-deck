@@ -4316,15 +4316,25 @@ const DIAGRAM: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## Flow {#flow}\n
 /// A node of the diagram in the preview, by name (its `<title>`).
 fn node_js(name: &str) -> String {
     format!(
-        "[...document.querySelector('#preview').contentDocument.querySelectorAll('[data-qd-lang=dot] g.node')].find((g) => g.querySelector('title')?.textContent === {name:?})"
+        "[...{FRAME}.querySelectorAll('[data-qd-lang=dot] g.node')].find((g) => g.querySelector('title')?.textContent === {name:?})"
     )
 }
+
+const DOT_SEL: &str =
+    "!!document.querySelector('#preview').contentDocument.querySelector('.qd-dot-sel')";
 
 impl Ed {
     /// Page point of a diagram node's centre.
     async fn node_point(&self, name: &str) -> (f64, f64) {
         self.wait(&format!("!!{}", node_js(name))).await;
         self.point(&format!("(() => {{ const f = document.querySelector('#preview').getBoundingClientRect(); const r = {}.getBoundingClientRect(); return [f.left + r.left + r.width / 2, f.top + r.top + r.height / 2]; }})()", node_js(name))).await
+    }
+    /// Click a diagram node; it shows selected.
+    async fn select_node(&self, name: &str) -> (f64, f64) {
+        let p = self.node_point(name).await;
+        self.page.click(Point { x: p.0, y: p.1 }).await.unwrap();
+        self.wait(DOT_SEL).await;
+        p
     }
     /// How many page pixels one inch of the diagram is.
     async fn inch_px(&self) -> f64 {
@@ -4340,10 +4350,7 @@ async fn diagram_drag_moves_a_box() {
         return;
     };
     ed.go("flow").await;
-    let a = ed.node_point("a").await;
-    ed.page.click(Point { x: a.0, y: a.1 }).await.unwrap();
-    ed.wait("!!document.querySelector('#preview').contentDocument.querySelector('.qd-dot-sel')")
-        .await;
+    let a = ed.select_node("a").await;
     let inch = ed.inch_px().await;
     // Escape mid-drag: nothing changes
     let before = ed.file();
@@ -4359,13 +4366,7 @@ async fn diagram_drag_moves_a_box() {
     tokio::time::sleep(Duration::from_millis(500)).await;
     assert_eq!(ed.file(), before, "Escape cancels");
     // drag one inch right: only a's pos changes
-    ed.press_and_move(a, (a.0 + inch, a.1)).await;
-    ed.mouse(
-        DispatchMouseEventType::MouseReleased,
-        (a.0 + inch, a.1),
-        false,
-    )
-    .await;
+    ed.drag(a, (a.0 + inch, a.1)).await;
     ed.wait_file(|f| f.contains("pos=\"1,1!\""), "a moved one inch")
         .await;
     assert_eq!(
@@ -4377,8 +4378,7 @@ async fn diagram_drag_moves_a_box() {
     );
     // the next render shows it there, still selected
     ed.settle().await;
-    ed.wait("!!document.querySelector('#preview').contentDocument.querySelector('.qd-dot-sel')")
-        .await;
+    ed.wait(DOT_SEL).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -4387,10 +4387,7 @@ async fn diagram_arrow_keys_nudge() {
         return;
     };
     ed.go("flow").await;
-    let c = ed.node_point("c").await;
-    ed.page.click(Point { x: c.0, y: c.1 }).await.unwrap();
-    ed.wait("!!document.querySelector('#preview').contentDocument.querySelector('.qd-dot-sel')")
-        .await;
+    ed.select_node("c").await;
     ed.key("ArrowUp", "ArrowUp", 38, 0).await;
     ed.wait_file(
         |f| f.contains("c [label=\"Paper\", pos=\"2,0.25!\"]"),
@@ -4408,21 +4405,12 @@ async fn diagram_pin_prompt() {
         return;
     };
     ed.go("flow").await;
-    let before: Vec<(f64, f64)> = {
-        let mut v = vec![];
-        for n in ["a", "b", "c"] {
-            v.push(ed.node_point(n).await);
-        }
-        v
-    };
+    let mut before = vec![];
+    for n in ["a", "b", "c"] {
+        before.push(ed.node_point(n).await);
+    }
     let a = before[0];
-    ed.press_and_move(a, (a.0 + 40.0, a.1)).await;
-    ed.mouse(
-        DispatchMouseEventType::MouseReleased,
-        (a.0 + 40.0, a.1),
-        false,
-    )
-    .await;
+    ed.drag(a, (a.0 + 40.0, a.1)).await;
     ed.wait("!document.querySelector('#dotpin').hidden").await;
     ed.click_editor("#dotpin").await;
     ed.wait_file(

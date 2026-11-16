@@ -210,12 +210,10 @@ fn pin_rendered_boxes_land_where_pinned() {
 #[test]
 fn pin_without_positions() {
     let t = deck(UNPINNED);
-    let out = common::qd(t.path())
-        .env("PATH", "/usr/bin:/bin")
-        .args(["dot", "pin", "d/0"])
-        .output()
-        .unwrap();
-    let v: Value = serde_json::from_slice(&out.stderr).unwrap();
+    let mut c = common::qd(t.path());
+    c.env("PATH", "/usr/bin:/bin");
+    let (ok, v) = common::json_of(c, &["dot", "pin", "d/0"]);
+    assert!(!ok, "{v}");
     assert_eq!(v["error"]["code"], "E_NOT_FOUND", "{v}");
     assert!(
         v["error"]["message"].as_str().unwrap().contains("qd serve"),

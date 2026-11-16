@@ -646,11 +646,11 @@ enum DotCmd {
         cell: String,
         node: String,
         /// The new position X,Y
-        #[arg(long, allow_hyphen_values = true, conflicts_with = "by")]
-        at: Option<String>,
+        #[arg(long, value_parser = parse_pair, allow_hyphen_values = true, conflicts_with = "by", required_unless_present = "by")]
+        at: Option<(f64, f64)>,
         /// Move it by DX,DY
-        #[arg(long, allow_hyphen_values = true)]
-        by: Option<String>,
+        #[arg(long, value_parser = parse_pair, allow_hyphen_values = true)]
+        by: Option<(f64, f64)>,
         /// Keep the exact position (no 0.25 in grid)
         #[arg(long)]
         no_snap: bool,
@@ -662,13 +662,6 @@ enum DotCmd {
         #[arg(long)]
         positions: Option<String>,
     },
-}
-
-/// "X,Y" as two numbers.
-fn pair(s: &str) -> Result<(f64, f64)> {
-    s.split_once(',')
-        .and_then(|(x, y)| Some((x.trim().parse().ok()?, y.trim().parse().ok()?)))
-        .ok_or_else(|| QdError::InvalidArg(format!("'{s}' is not X,Y")))
 }
 
 #[derive(Subcommand)]
@@ -1464,11 +1457,9 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                     by,
                     no_snap,
                 } => {
-                    let at = at.as_deref().map(pair).transpose()?;
-                    let by = by.as_deref().map(pair).transpose()?;
                     let mut pos = (0.0, 0.0);
                     let mut v = ctx.edit(|d| {
-                        let (p, at) = crate::dot::move_node(d, cell, node, at, by, *no_snap)?;
+                        let (p, at) = crate::dot::move_node(d, cell, node, *at, *by, *no_snap)?;
                         pos = at;
                         Ok(p)
                     })?;

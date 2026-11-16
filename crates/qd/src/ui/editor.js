@@ -198,6 +198,10 @@ const PREVIEW_CSS = `html:not(.qd-present) {
   section > h1:hover, section > h2:hover, section > h3:hover, #title-slide :is(.title, .subtitle, .date):hover {
     outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; cursor: text; }
   .qd-off { outline: 2px dashed #b3261e; outline-offset: 2px; }
+  /* a diagram's boxes (spec 015) */
+  [data-qd-lang=dot] g.node { cursor: move; }
+  .qd-dot-sel > :is(polygon, ellipse, path), .qd-dot-sel a > :is(polygon, ellipse) { stroke: #2563eb !important; stroke-width: 3 !important; }
+  line.qd-dot-provisional { stroke: #6b7480; stroke-width: 1.5; stroke-dasharray: 4 3; }
   /* a cell that shows nothing (code hidden, never run; an OJS declaration): something to point at and run (spec 013) */
   .qd-cell:not(:has(.qd-output, .cell-code:not(.hidden), .cell-output-display:not(.quarto-ojs-hide)))::before {
     content: var(--qd-ph, 'Code cell, not run yet'); display: block; color: #9a9aa0;
@@ -1740,7 +1744,7 @@ if (!runExternal) {
   const selected = () => (state.session ? null : state.sel);
   run.initRun({ say, flush: pane.save, selected, changed: runslide.mark, reload: () => frameWin()?.location.reload() });
   runslide.initRunSlide({ elOf, frame, pageRect, selected }, es);
-  dot.initDot({ frame, op, pageRect });
+  dot.initDot({ elOf, frame, op, pageRect });
 }
 if (keys.framed) {
   // only the panel that framed this page, and only navigation/display — never edits or code

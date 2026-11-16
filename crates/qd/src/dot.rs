@@ -884,14 +884,10 @@ pub fn dot_value(v: &str) -> String {
     let keyword = ["node", "edge", "graph", "digraph", "subgraph", "strict"]
         .iter()
         .any(|k| v.eq_ignore_ascii_case(k));
-    let num = {
-        let d = v.strip_prefix('-').unwrap_or(v);
-        let (a, b) = d.split_once('.').unwrap_or((d, ""));
-        !d.is_empty()
-            && d.matches('.').count() <= 1
-            && (a.bytes().all(|c| c.is_ascii_digit()) && b.bytes().all(|c| c.is_ascii_digit()))
-            && (!a.is_empty() || !b.is_empty())
-    };
+    let d = v.strip_prefix('-').unwrap_or(v);
+    let num = d.bytes().all(|c| c.is_ascii_digit() || c == b'.')
+        && d.matches('.').count() <= 1
+        && d.bytes().any(|c| c.is_ascii_digit());
     if (id && !keyword) || num {
         v.to_string()
     } else {
@@ -1040,16 +1036,6 @@ fn read<'a>(d: &'a Deck, r: &str) -> Result<(String, Span, &'a str, Graph)> {
     Ok((cell, body, text, g))
 }
 
-fn shift((span, new): (Span, String), by: usize) -> (Span, String) {
-    (
-        Span {
-            start: span.start + by,
-            end: span.end + by,
-        },
-        new,
-    )
-}
-
 /// `qd dot move`: a box's pinned position, `at` or moved `by` (inches), snapped unless `exact`.
 pub fn move_node(
     d: &Deck,
@@ -1083,7 +1069,13 @@ pub fn move_node(
     let p = crate::ops::patch(
         "dot-move",
         format!("{cell}:{node}"),
-        vec![shift(edit, body.start)],
+        vec![(
+            Span {
+                start: edit.0.start + body.start,
+                end: edit.0.end + body.start,
+            },
+            edit.1,
+        )],
         vec![],
     );
     Ok((p, (x, y)))
@@ -1159,10 +1151,7 @@ pub fn positions_from_svg(
                 let pts: Vec<(f64, f64)> = p
                     .as_str()
                     .split_whitespace()
-                    .filter_map(|xy| {
-                        xy.split_once(',')
-                            .and_then(|(x, y)| Some((x.parse().ok()?, y.parse().ok()?)))
-                    })
+                    .filter_map(|xy| parse_pos(xy).map(|(x, y, _)| (x, y)))
                     .collect();
                 let (xs, ys): (Vec<f64>, Vec<f64>) = pts.into_iter().unzip();
                 let mid = |v: &[f64]| {
@@ -1200,11 +1189,8 @@ pub fn positions_from_graphviz(
         let (Some(name), Some(pos)) = (o["name"].as_str(), o["pos"].as_str()) else {
             continue;
         };
-        let (x, y) = pos.split_once(',')?;
-        m.insert(
-            name.to_string(),
-            (x.parse::<f64>().ok()? / 72.0, y.parse::<f64>().ok()? / 72.0),
-        );
+        let (x, y, _) = parse_pos(pos)?;
+        m.insert(name.to_string(), (x / 72.0, y / 72.0));
     }
     normalised(m)
 }

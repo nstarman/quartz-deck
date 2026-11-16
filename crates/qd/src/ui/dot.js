@@ -4,43 +4,26 @@
 // offers "Pin layout". Every change is a `qd dot` op (contracts/editor.md);
 // the preview's next render draws the routed arrows.
 
-import { token } from '/ui/run.js';
+import { token, el } from '/ui/run.js';
 
-let api = null; // { frame, op, pageRect }
+let api = null; // { elOf, frame, op, pageRect }
 const info = new Map(); // cell ref → `qd dot show` result
 let sel = null; // { cell, node }
 let drag = null;
 let dragged = false; // the click ending a drag lands on the svg, not the box
-const pinBtn = document.createElement('button');
-pinBtn.type = 'button';
-pinBtn.id = 'dotpin';
-pinBtn.hidden = true;
-pinBtn.textContent = 'Pin layout';
-pinBtn.title = 'Fix every box where it is now, so boxes can be placed by hand';
+const pinBtn = el('button', { type: 'button', id: 'dotpin', hidden: true, textContent: 'Pin layout', title: 'Fix every box where it is now, so boxes can be placed by hand' });
 document.body.append(pinBtn);
 
-const CSS = `.qd-dot-sel > polygon, .qd-dot-sel > ellipse, .qd-dot-sel > path, .qd-dot-sel a > polygon, .qd-dot-sel a > ellipse
-  { stroke: #2563eb !important; stroke-width: 3 !important; }
-  [data-qd-lang=dot] g.node { cursor: move; }
-  line.qd-dot-provisional { stroke: #6b7480; stroke-width: 1.5; stroke-dasharray: 4 3; }`;
-
-/** A read-only op (`dot show`), without the editor's saving status. */
-async function read(name, args) {
-  const res = await fetch('/api/op', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-QD-Token': token },
-    body: JSON.stringify({ op: name, args }),
-  });
-  return res.ok ? res.json() : null;
-}
+/** A read-only op (`dot show`), quiet: without the editor's saving status. */
+const read = (op, args) => fetch('/api/op', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-QD-Token': token }, body: JSON.stringify({ op, args }) })
+  .then((r) => (r.ok ? r.json() : null));
 
 const nameOf = (g) => g.querySelector('title')?.textContent ?? '';
 const diagramOf = (node) => node?.closest?.('[data-qd-lang=dot]');
 const nodeAt = (t) => t?.closest?.('g.node');
 
-function nodes(cellEl) {
-  return [...cellEl.querySelectorAll('svg g.node')];
-}
+const nodes = (cellEl) => [...cellEl.querySelectorAll('svg g.node')];
+const nodeNamed = (cellEl, name) => nodes(cellEl).find((g) => nameOf(g) === name);
 
 /** Centre of a node in the graph group's units. */
 function centre(g) {
@@ -63,9 +46,8 @@ function highlight() {
   const doc = api.frame.contentDocument;
   for (const g of doc?.querySelectorAll('.qd-dot-sel') || []) g.classList.remove('qd-dot-sel');
   if (!sel) return;
-  const cellEl = doc?.querySelector(`[data-qd="${sel.cell}"]`);
-  const g = cellEl && nodes(cellEl).find((n) => nameOf(n) === sel.node);
-  g?.classList.add('qd-dot-sel');
+  const cellEl = api.elOf(sel.cell);
+  if (cellEl) nodeNamed(cellEl, sel.node)?.classList.add('qd-dot-sel');
 }
 
 function select(cell, node) {
@@ -103,7 +85,7 @@ function down(e) {
   const node = nameOf(g);
   select(cell, node);
   const graph = g.closest('g.graph');
-  drag = { cell, node, g, cellEl, x: e.clientX, y: e.clientY, scale: graph.getScreenCTM().a, pinned: about.pinned, moved: false, lines: [], edges: [] };
+  drag = { cell, node, g, cellEl, x: e.clientX, y: e.clientY, scale: graph.getScreenCTM().a, pinned: about.pinned, lines: [], edges: [] };
 }
 
 function move(e) {
@@ -123,7 +105,7 @@ function move(e) {
     const ns = 'http://www.w3.org/2000/svg';
     for (const [edge, other] of drag.edges) {
       edge.style.display = 'none';
-      const o = nodes(drag.cellEl).find((n) => nameOf(n) === other);
+      const o = nodeNamed(drag.cellEl, other);
       const line = graph.ownerDocument.createElementNS(ns, 'line');
       line.setAttribute('class', 'qd-dot-provisional');
       graph.append(line);
@@ -180,9 +162,9 @@ function positions(cellEl) {
   return Object.fromEntries(pts.map(([n, x, y]) => [n, [r(x - x0), r(y - y0)]]));
 }
 
-async function pin() {
-  const cell = pinBtn.dataset.cell;
-  const cellEl = api.frame.contentDocument?.querySelector(`[data-qd="${cell}"]`);
+/** Pin layout: the prompt on a drag, and Arrange ▸ Pin layout. */
+export async function pin(cell) {
+  const cellEl = api.elOf(cell);
   pinBtn.hidden = true;
   if (cellEl) await api.op('dot pin', { cell, positions: JSON.stringify(positions(cellEl)) });
 }
@@ -196,9 +178,6 @@ export async function mark() {
   pinBtn.hidden = true;
   if (!w.__qdDot) {
     w.__qdDot = true;
-    const style = doc.createElement('style');
-    style.textContent = CSS;
-    doc.head.append(style);
     // the window sees events before the editor's document listeners
     w.addEventListener('pointerdown', down, true);
     const onBox = (e) => info.get(diagramOf(nodeAt(e.target))?.dataset.qd)?.editable === true;
@@ -224,19 +203,11 @@ export async function mark() {
 /** A diagram the editor can pin: readable, not pinned yet. */
 export const pinnable = (cell) => info.get(cell)?.editable === true && !info.get(cell).pinned;
 
-/** Arrange ▸ Pin layout, on the element menu. */
-export function pinCell(cell) {
-  pinBtn.dataset.cell = cell;
-  return pin();
-}
-
-export function selected() {
-  return sel;
-}
+export const selected = () => sel;
 
 export function initDot(a) {
   api = a;
-  pinBtn.addEventListener('click', pin);
+  pinBtn.addEventListener('click', () => pin(pinBtn.dataset.cell));
   addEventListener('keydown', key, true);
   a.frame.addEventListener('load', () => { drag = null; });
 }
