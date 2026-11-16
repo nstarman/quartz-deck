@@ -876,6 +876,356 @@ pub fn show(d: &Deck, r: &str) -> Result<Value> {
     )
 }
 
+// ---------- editing (spec 015 US1, research R7) ----------
+
+/// A value as DOT text: bare when it is an ID or a numeral, else quoted.
+pub fn dot_value(v: &str) -> String {
+    let id = v.chars().next().is_some_and(is_id_start) && v.chars().all(is_id_char);
+    let keyword = ["node", "edge", "graph", "digraph", "subgraph", "strict"]
+        .iter()
+        .any(|k| v.eq_ignore_ascii_case(k));
+    let num = {
+        let d = v.strip_prefix('-').unwrap_or(v);
+        let (a, b) = d.split_once('.').unwrap_or((d, ""));
+        !d.is_empty()
+            && d.matches('.').count() <= 1
+            && (a.bytes().all(|c| c.is_ascii_digit()) && b.bytes().all(|c| c.is_ascii_digit()))
+            && (!a.is_empty() || !b.is_empty())
+    };
+    if (id && !keyword) || num {
+        v.to_string()
+    } else {
+        format!("\"{}\"", v.replace('"', "\\\""))
+    }
+}
+
+/// Snapped to the 0.25 in grid.
+pub fn snap(v: f64) -> f64 {
+    let s = (v * 4.0).round() / 4.0;
+    if s == 0.0 { 0.0 } else { s }
+}
+
+fn num(v: f64) -> String {
+    let s = format!("{v:.2}");
+    let s = s.trim_end_matches('0').trim_end_matches('.');
+    if s == "-0" { "0".into() } else { s.into() }
+}
+
+/// `"x,y!"`: a pinned position in inches.
+pub fn pos_value(x: f64, y: f64) -> String {
+    format!("{},{}!", num(x), num(y))
+}
+
+fn newline(text: &str) -> &'static str {
+    if text.contains("\r\n") { "\r\n" } else { "\n" }
+}
+
+/// A new statement before the graph's closing `}`: on its own line, indented
+/// and terminated like its neighbours, or inline when the graph is one line.
+fn add_stmt(text: &str, g: &Graph, stmt: &str) -> (Span, String) {
+    let term = if g.stmts.iter().any(|s| s.term.is_some()) {
+        ";"
+    } else {
+        ""
+    };
+    let line = text[..g.close].rfind('\n').map_or(0, |n| n + 1);
+    if !text[line..g.close].trim().is_empty() || line <= g.open {
+        return (
+            Span {
+                start: g.close,
+                end: g.close,
+            },
+            format!("{stmt}{term} "),
+        );
+    }
+    let indent = g.stmts.last().map_or("  ", |s| {
+        let ls = text[..s.span.start].rfind('\n').map_or(0, |n| n + 1);
+        let ws = &text[ls..s.span.start];
+        if ws.trim().is_empty() { ws } else { "  " }
+    });
+    (
+        Span {
+            start: line,
+            end: line,
+        },
+        format!("{indent}{stmt}{term}{}", newline(text)),
+    )
+}
+
+/// Set `key` in a statement's attribute lists: its value in place, else
+/// added to the last list, else a new list after the statement.
+fn set_in(lists: &[List], end: usize, key: &str, value: &str) -> (Span, String) {
+    let v = dot_value(value);
+    if let Some(a) = lists
+        .iter()
+        .rev()
+        .flat_map(|l| l.attrs.iter().rev())
+        .find(|a| a.key == key)
+    {
+        return (a.value_span, v);
+    }
+    match lists.last() {
+        Some(l) => {
+            let at = l.span.end - 1;
+            let sep = if l.attrs.is_empty() { "" } else { ", " };
+            (Span { start: at, end: at }, format!("{sep}{key}={v}"))
+        }
+        None => (Span { start: end, end }, format!(" [{key}={v}]")),
+    }
+}
+
+/// Set a box's attribute (one edit, relative to `text`).
+pub fn set_node_attr(
+    text: &str,
+    g: &Graph,
+    name: &str,
+    key: &str,
+    value: &str,
+) -> Result<(Span, String)> {
+    let node = g
+        .nodes()
+        .into_iter()
+        .find(|n| n.name == name)
+        .ok_or_else(|| QdError::NotFound(format!("no box named '{name}'")))?;
+    if node.locked {
+        return Err(QdError::UnsafeEdit(format!(
+            "'{name}' is inside a subgraph; edit it as text"
+        )));
+    }
+    let stmt = g.stmts.iter().rev().find_map(|s| match &s.kind {
+        Kind::Node { name: n, lists, .. } if n == name => Some((lists, s.span.end)),
+        _ => None,
+    });
+    Ok(match stmt {
+        Some((lists, end)) => set_in(lists, end, key, value),
+        None => add_stmt(
+            text,
+            g,
+            &format!("{} [{key}={}]", dot_value(name), dot_value(value)),
+        ),
+    })
+}
+
+/// Set a graph setting: `key=value` or `graph [key=value]` in place, else a new `key=value` statement.
+pub fn set_setting(text: &str, g: &Graph, key: &str, value: &str) -> (Span, String) {
+    for s in g.stmts.iter().rev() {
+        match &s.kind {
+            Kind::Setting(a) if a.key == key => return (a.value_span, dot_value(value)),
+            Kind::Defaults { target, lists }
+                if target == "graph"
+                    && lists.iter().any(|l| l.attrs.iter().any(|a| a.key == key)) =>
+            {
+                return set_in(lists, s.span.end, key, value);
+            }
+            _ => {}
+        }
+    }
+    add_stmt(text, g, &format!("{key}={}", dot_value(value)))
+}
+
+/// The cell, its body's span, its text and its graph, or why it can't be edited.
+fn read<'a>(d: &'a Deck, r: &str) -> Result<(String, Span, &'a str, Graph)> {
+    let (cell, body) = cell(d, r)?;
+    let text = d.slice(body);
+    let g = parse(text).map_err(|s| {
+        let line = d.lines(Span {
+            start: body.start + s.at,
+            end: body.start + s.at,
+        })[0];
+        QdError::UnsafeEdit(format!(
+            "{cell}: {} (line {line}); edit it as text",
+            s.reason
+        ))
+    })?;
+    Ok((cell, body, text, g))
+}
+
+fn shift((span, new): (Span, String), by: usize) -> (Span, String) {
+    (
+        Span {
+            start: span.start + by,
+            end: span.end + by,
+        },
+        new,
+    )
+}
+
+/// `qd dot move`: a box's pinned position, `at` or moved `by` (inches), snapped unless `exact`.
+pub fn move_node(
+    d: &Deck,
+    r: &str,
+    node: &str,
+    at: Option<(f64, f64)>,
+    by: Option<(f64, f64)>,
+    exact: bool,
+) -> Result<(crate::ops::Patch, (f64, f64))> {
+    let (cell, body, text, g) = read(d, r)?;
+    if !g.pinned() {
+        return Err(QdError::InvalidArg(format!(
+            "the diagram in {cell} isn't pinned, so its boxes can't be placed: run `qd dot pin {cell}` first"
+        )));
+    }
+    let n = g
+        .nodes()
+        .into_iter()
+        .find(|n| n.name == node)
+        .ok_or_else(|| QdError::NotFound(format!("no box named '{node}' in {cell}")))?;
+    let (x, y, _) = n.pos().expect("pinned diagrams pin every box");
+    let (mut x, mut y) = match (at, by) {
+        (Some(a), _) => a,
+        (None, Some((dx, dy))) => (x + dx, y + dy),
+        (None, None) => return Err(QdError::InvalidArg("give --at X,Y or --by DX,DY".into())),
+    };
+    if !exact {
+        (x, y) = (snap(x), snap(y));
+    }
+    let edit = set_node_attr(text, &g, node, "pos", &pos_value(x, y))?;
+    let p = crate::ops::patch(
+        "dot-move",
+        format!("{cell}:{node}"),
+        vec![shift(edit, body.start)],
+        vec![],
+    );
+    Ok((p, (x, y)))
+}
+
+/// `qd dot pin`: `layout=neato`, `splines=ortho`, and every box at `positions` (inches).
+pub fn pin(
+    d: &Deck,
+    r: &str,
+    positions: &std::collections::HashMap<String, (f64, f64)>,
+) -> Result<(crate::ops::Patch, usize)> {
+    let (cell, body, text, g) = read(d, r)?;
+    let names: Vec<String> = g
+        .nodes()
+        .into_iter()
+        .filter(|n| !n.locked)
+        .map(|n| n.name)
+        .collect();
+    if let Some(missing) = names.iter().find(|n| !positions.contains_key(*n)) {
+        return Err(QdError::NotFound(format!(
+            "no position for '{missing}' in {cell}"
+        )));
+    }
+    // several edits to one body: apply them in turn, then replace the body once
+    let mut t = text.to_string();
+    type Edit<'a> = &'a dyn Fn(&str, &Graph) -> Result<(Span, String)>;
+    let mut step = |f: Edit| -> Result<()> {
+        let g = parse(&t).map_err(|s| QdError::UnsafeEdit(s.reason))?;
+        let (span, new) = f(&t, &g)?;
+        t.replace_range(span.start..span.end, &new);
+        Ok(())
+    };
+    step(&|t, g| Ok(set_setting(t, g, "layout", "neato")))?;
+    step(&|t, g| Ok(set_setting(t, g, "splines", "ortho")))?;
+    for n in &names {
+        let (x, y) = positions[n];
+        step(&|t, g| set_node_attr(t, g, n, "pos", &pos_value(x, y)))?;
+    }
+    Ok((
+        crate::ops::patch("dot-pin", cell, vec![(body, t)], vec![]),
+        names.len(),
+    ))
+}
+
+/// Box centres in inches from a rendered page: the `{dot}` cell tagged
+/// `data-qd="CELL"` in the preview (points / 72, y up, offset to 0, 0).
+pub fn positions_from_svg(
+    html: &str,
+    cell: &str,
+) -> Option<std::collections::HashMap<String, (f64, f64)>> {
+    let at = html.find(&format!("data-qd=\"{cell}\""))?;
+    let start = at + html[at..].find("<svg")?;
+    let svg = &html[start..start + html[start..].find("</svg>")?];
+    let title =
+        regex::Regex::new(r#"class="node[^"]*">\s*<title>(.*?)</title>"#).expect("valid regex");
+    let points = regex::Regex::new(r#"points="([^"]+)"|cx="([-\d.]+)" cy="([-\d.]+)""#)
+        .expect("valid regex");
+    let marks: Vec<(usize, String)> = title
+        .captures_iter(svg)
+        .map(|c| {
+            (
+                c.get(0).expect("match").end(),
+                crate::inline::unescape(&c[1].replace("&#45;", "-")),
+            )
+        })
+        .collect();
+    let mut out = std::collections::HashMap::new();
+    for (k, (from, name)) in marks.iter().enumerate() {
+        let to = marks.get(k + 1).map_or(svg.len(), |m| m.0);
+        let c = points.captures(&svg[*from..to])?;
+        let (x, y) = match (c.get(1), c.get(2), c.get(3)) {
+            (Some(p), _, _) => {
+                let pts: Vec<(f64, f64)> = p
+                    .as_str()
+                    .split_whitespace()
+                    .filter_map(|xy| {
+                        xy.split_once(',')
+                            .and_then(|(x, y)| Some((x.parse().ok()?, y.parse().ok()?)))
+                    })
+                    .collect();
+                let (xs, ys): (Vec<f64>, Vec<f64>) = pts.into_iter().unzip();
+                let mid = |v: &[f64]| {
+                    (v.iter().cloned().fold(f64::MAX, f64::min)
+                        + v.iter().cloned().fold(f64::MIN, f64::max))
+                        / 2.0
+                };
+                (mid(&xs), mid(&ys))
+            }
+            (None, Some(x), Some(y)) => (x.as_str().parse().ok()?, y.as_str().parse().ok()?),
+            _ => return None,
+        };
+        out.insert(name.clone(), (x / 72.0, -y / 72.0));
+    }
+    normalised(out)
+}
+
+/// Box centres in inches from Graphviz itself (`dot -Tjson`), when it is on PATH.
+pub fn positions_from_graphviz(
+    text: &str,
+) -> Option<std::collections::HashMap<String, (f64, f64)>> {
+    use std::io::Write;
+    let mut child = std::process::Command::new("dot")
+        .arg("-Tjson")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+    child.stdin.take()?.write_all(text.as_bytes()).ok()?;
+    let out = child.wait_with_output().ok()?;
+    let v: Value = serde_json::from_slice(&out.stdout).ok()?;
+    let mut m = std::collections::HashMap::new();
+    for o in v["objects"].as_array()? {
+        let (Some(name), Some(pos)) = (o["name"].as_str(), o["pos"].as_str()) else {
+            continue;
+        };
+        let (x, y) = pos.split_once(',')?;
+        m.insert(
+            name.to_string(),
+            (x.parse::<f64>().ok()? / 72.0, y.parse::<f64>().ok()? / 72.0),
+        );
+    }
+    normalised(m)
+}
+
+/// The lowest, leftmost box at 0, 0, two decimals.
+fn normalised(
+    m: std::collections::HashMap<String, (f64, f64)>,
+) -> Option<std::collections::HashMap<String, (f64, f64)>> {
+    if m.is_empty() {
+        return None;
+    }
+    let x0 = m.values().map(|p| p.0).fold(f64::MAX, f64::min);
+    let y0 = m.values().map(|p| p.1).fold(f64::MAX, f64::min);
+    let r = |v: f64| (v * 100.0).round() / 100.0;
+    Some(
+        m.into_iter()
+            .map(|(k, (x, y))| (k, (r(x - x0), r(y - y0))))
+            .collect(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1055,6 +1405,123 @@ mod tests {
             let stop = parse(&corpus(f)).unwrap_err();
             assert!(stop.reason.contains(says), "{f}: {stop:?}");
             assert!(stop.at <= corpus(f).len());
+        }
+    }
+
+    // ---------- patches (T007) ----------
+
+    /// `text` with one edit applied (spans relative to `text`).
+    fn applied(text: &str, (span, new): (Span, String)) -> String {
+        format!("{}{new}{}", &text[..span.start], &text[span.end..])
+    }
+
+    const PINNED: &str = "digraph {\n  layout=neato; splines=ortho;\n  a [label=\"A\", pos=\"0,1!\"];\n  b [pos=\"2,1!\"]\n  c\n  a -> b; b -> c;\n}\n";
+
+    #[test]
+    fn sets_an_attribute_in_place_or_adds_it() {
+        let g = parse(PINNED).unwrap();
+        // an existing value, quoted: only the value changes
+        let out = applied(
+            PINNED,
+            set_node_attr(PINNED, &g, "a", "pos", "1.5,1!").unwrap(),
+        );
+        assert_eq!(out, PINNED.replace("pos=\"0,1!\"", "pos=\"1.5,1!\""));
+        // a new attribute in an existing list
+        let out = applied(
+            PINNED,
+            set_node_attr(PINNED, &g, "b", "fillcolor", "white").unwrap(),
+        );
+        assert_eq!(
+            out,
+            PINNED.replace("b [pos=\"2,1!\"]", "b [pos=\"2,1!\", fillcolor=white]")
+        );
+        // a statement without a list gets one
+        let out = applied(
+            PINNED,
+            set_node_attr(PINNED, &g, "c", "pos", "4,1!").unwrap(),
+        );
+        assert_eq!(out, PINNED.replace("  c\n", "  c [pos=\"4,1!\"]\n"));
+        // bare values stay bare when they can
+        let t = "digraph { a [shape=box] }";
+        let g = parse(t).unwrap();
+        assert_eq!(
+            applied(t, set_node_attr(t, &g, "a", "shape", "ellipse").unwrap()),
+            "digraph { a [shape=ellipse] }"
+        );
+    }
+
+    #[test]
+    fn a_node_only_in_edges_gets_its_own_statement() {
+        let t = "digraph {\n  layout=neato;\n  a -> b;\n}\n";
+        let g = parse(t).unwrap();
+        let out = applied(t, set_node_attr(t, &g, "b", "pos", "1,0!").unwrap());
+        assert_eq!(
+            out,
+            "digraph {\n  layout=neato;\n  a -> b;\n  b [pos=\"1,0!\"];\n}\n"
+        );
+        // one line, no statement terminators: before the closing brace
+        let t = "digraph { a -> b }";
+        let g = parse(t).unwrap();
+        assert_eq!(
+            applied(t, set_node_attr(t, &g, "a", "pos", "0,0!").unwrap()),
+            "digraph { a -> b a [pos=\"0,0!\"] }"
+        );
+    }
+
+    #[test]
+    fn crlf_and_locked_nodes() {
+        let t = "digraph {\r\n  layout=neato;\r\n  a -> b;\r\n}\r\n";
+        let g = parse(t).unwrap();
+        let out = applied(t, set_node_attr(t, &g, "a", "pos", "0,0!").unwrap());
+        assert_eq!(
+            out,
+            "digraph {\r\n  layout=neato;\r\n  a -> b;\r\n  a [pos=\"0,0!\"];\r\n}\r\n"
+        );
+        let t = corpus("06-subgraph-cluster.dot");
+        let g = parse(&t).unwrap();
+        assert_eq!(
+            set_node_attr(&t, &g, "x", "pos", "0,0!")
+                .unwrap_err()
+                .code(),
+            "E_UNSAFE_EDIT"
+        );
+    }
+
+    #[test]
+    fn settings_replace_or_join() {
+        let t = "digraph {\n  layout=dot\n  graph [splines=true];\n  a\n}\n";
+        let g = parse(t).unwrap();
+        let out = applied(t, set_setting(t, &g, "layout", "neato"));
+        assert_eq!(out, t.replace("layout=dot", "layout=neato"));
+        let out = applied(t, set_setting(t, &g, "splines", "ortho"));
+        assert_eq!(out, t.replace("splines=true", "splines=ortho"));
+        let t = "digraph {\n  a;\n}\n";
+        let g = parse(t).unwrap();
+        assert_eq!(
+            applied(t, set_setting(t, &g, "layout", "neato")),
+            "digraph {\n  a;\n  layout=neato;\n}\n"
+        );
+    }
+
+    #[test]
+    fn positions_snap_and_print_short() {
+        assert_eq!(snap(1.13), 1.25);
+        assert_eq!(snap(-0.12), 0.0);
+        assert_eq!(pos_value(1.5, 2.0), "1.5,2!");
+        assert_eq!(pos_value(0.333, -1.0), "0.33,-1!");
+    }
+
+    #[test]
+    fn values_are_quoted_only_when_needed() {
+        for (v, want) in [
+            ("box", "box"),
+            ("12.5", "12.5"),
+            ("rounded,filled", "\"rounded,filled\""),
+            ("a \"b\"", "\"a \\\"b\\\"\""),
+            ("", "\"\""),
+            ("node", "\"node\""),
+        ] {
+            assert_eq!(dot_value(v), want, "{v}");
         }
     }
 }

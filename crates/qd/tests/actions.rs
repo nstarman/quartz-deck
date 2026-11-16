@@ -186,6 +186,7 @@ const WIDGET_KEYS: &[(&str, usize, &str)] = &[
     ),
     // form ⌘Enter submit; Esc closing a menu while focus is in the preview; the edit
     // session's commit/leave/indent keys (move with US4, T020); the splitter's arrows
+    ("dot.js", 1, "Esc cancelling a drag of a diagram's box"),
     (
         "list.js",
         5,

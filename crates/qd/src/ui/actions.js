@@ -5,6 +5,7 @@
 import * as keys from '/ui/keys.js';
 import * as settings from '/ui/settings.js';
 import { ask, confirmSheet } from '/ui/sheet.js';
+import * as dot from '/ui/dot.js';
 
 export const TRANSITIONS = ['none', 'fade', 'slide', 'convex', 'concave', 'zoom'];
 
@@ -71,6 +72,7 @@ export function makeActions(api) {
     '-',
     { id: 'place', label: 'Place freely', visible: (t) => t.block.kind !== 'box', why: (t) => UNPLACEABLE[t.block.kind], enabled: (t) => !UNPLACEABLE[t.block.kind], run: (t) => api.op('block place', api.placement(t)) },
     { id: 'unplace', label: 'Put back in the flow', visible: (t) => t.block.kind === 'box', run: (t) => api.op('block unplace', { element: t.ref }) },
+    { id: 'dot-pin', label: 'Pin layout', title: 'Fix every box where it is now, so boxes can be placed by hand', visible: (t) => dot.pinnable(t.ref), run: (t) => dot.pinCell(t.ref) },
     // stacking (US5): boxes stack in source order, later on top; a fragment's click order follows it too
     ...[['front', 'Bring to front', 1], ['forward', 'Bring forward', 1], ['backward', 'Send backward', -1], ['back', 'Send to back', -1]].map(([to, label, d]) => ({
       id: `box-${to}`, label, title: 'Changes the order in the file, which is also the order fragments appear in',

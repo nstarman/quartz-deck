@@ -107,6 +107,7 @@
 
   {"id": "place", "label": "Place freely (or ⌥-drag it)", "menu": ["Arrange"], "where": ["element"], "qd": "qd block place <ref> --at <x>,<y> --width <w>"},
   {"id": "unplace", "label": "Put back in the flow", "menu": ["Arrange"], "where": ["element"], "qd": "qd block unplace <ref>"},
+  {"id": "dot-pin", "label": "Pin layout", "menu": ["Arrange"], "where": ["element"], "qd": "qd dot pin <cell>"},
   {"separator": true, "menu": ["Arrange"]},
   {"id": "box-front", "label": "Bring to front", "menu": ["Arrange"], "key": "Alt+Mod+Shift+F", "vscode_key": null, "where": ["element"], "qd": "qd box front <ref>"},
   {"id": "box-forward", "label": "Bring forward", "menu": ["Arrange"], "key": "Alt+Mod+F", "vscode_key": null, "where": ["element"], "qd": "qd box forward <ref>"},

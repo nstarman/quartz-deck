@@ -76,7 +76,7 @@ or names.
 
 **Independent Test**: spec US1; quickstart §1 (move), §2 step 1, §3.
 
-- [ ] T007 [P] [US1] Write failing unit tests in `crates/qd/src/dot.rs` for the patches move needs (research R7):
+- [X] T007 [P] [US1] Write failing unit tests in `crates/qd/src/dot.rs` for the patches move needs (research R7):
   - set an existing attribute's value in place (quoted and bare);
   - add an attribute to an existing `[...]` list, and add `[...]` to a statement without one;
   - add a node statement for a node that appears only in edges;
@@ -84,22 +84,22 @@ or names.
   - snapping to 0.25 in;
   - CRLF kept;
   - every byte outside the patch unchanged.
-- [ ] T008 [P] [US1] Write failing CLI tests in `crates/qd/tests/dot.rs`:
+- [X] T008 [P] [US1] Write failing CLI tests in `crates/qd/tests/dot.rs`:
   - **`move_at_and_by`:** `--at` and `--by` give the same file, one line changed; `--no-snap` keeps 3.13; `--dry-run` writes nothing; a stale `--expect` gives `E_CONFLICT`; `qd undo` restores the deck.
   - **`move_unpinned_refused`:** `E_INVALID_ARG` with a hint to `qd dot pin`.
   - **`pin_with_positions`:** `qd dot pin d/0 --positions {...}` writes `layout=neato`, `splines=ortho` and every `pos`; then `quarto render` puts the nodes where pinned, with axis-aligned edge paths (skip without quarto).
   - **`pin_without_positions`:** with no preview render and no `dot` on PATH, it fails with `E_NOT_FOUND` and the hint.
-- [ ] T009 [US1] Implement the attribute patches and `qd dot move` (`--at`, `--by`, `--no-snap`) and `qd dot pin`, with positions in contract order, in `crates/qd/src/dot.rs` and `crates/qd/src/cli.rs`. Positions come from:
+- [X] T009 [US1] Implement the attribute patches and `qd dot move` (`--at`, `--by`, `--no-snap`) and `qd dot pin`, with positions in contract order, in `crates/qd/src/dot.rs` and `crates/qd/src/cli.rs`. Positions come from:
   - `--positions`;
   - else the last preview render's SVG in the store's cache: node centres in points / 72, y negated, offset to y ≥ 0 (research R2);
   - else `dot -Tjson`.
 
   T007 and T008 pass.
-- [ ] T010 [P] [US1] Write failing browser tests in `crates/qd/tests/onslide.rs`:
+- [X] T010 [P] [US1] Write failing browser tests in `crates/qd/tests/onslide.rs`:
   - **`diagram_drag_moves_a_box`:** in a deck with a pinned three-box diagram, clicking a node selects it (a selection outline); dragging it 1 in right shows it moving with straight provisional lines; dropping changes the file in that node's `pos` only (+1.0 x) and the next render shows the node there; Escape mid-drag changes nothing.
   - **`diagram_pin_prompt`:** dragging a node of an unpinned diagram offers "Pin layout"; accepting pins it and the slide looks the same (node centres within 2 px before and after).
   - **`diagram_arrow_keys_nudge`:** an arrow key moves a selected node by 0.25 in.
-- [ ] T011 [US1] Implement `crates/qd/src/ui/dot.js` (contracts/editor.md), loaded by the editor like the other modules:
+- [X] T011 [US1] Implement `crates/qd/src/ui/dot.js` (contracts/editor.md), loaded by the editor like the other modules:
   - find editable diagrams (`div[data-qd-lang=dot]` plus `qd dot show` through the op route);
   - hit-test nodes and edges by `<title>`;
   - selection outline, drag with a CSS transform and straight provisional lines;
@@ -108,7 +108,7 @@ or names.
   - the "Pin layout" prompt with positions read from the SVG.
 
   T010 passes.
-- [ ] T012 [US1] Add `dot-pin` to `crates/qd/src/ui/actions.json` (element menu, where `diagram`) and the graph's "Pin layout" button in the Properties panel (`crates/qd/src/ui/sheet.js`).
+- [X] T012 [US1] Add `dot-pin` to `crates/qd/src/ui/actions.json` (element menu, where `diagram`) and the graph's "Pin layout" button in the Properties panel (`crates/qd/src/ui/sheet.js`). Built as Arrange ▸ Pin layout on the element menu (`where: element`, shown for an unpinned diagram), since the Properties panel edits the source form and has no per-element buttons; the drag prompt is the other way in.
 
 **Checkpoint**: PR 2. Diagrams can be placed by hand, in the editor and from the CLI.
 

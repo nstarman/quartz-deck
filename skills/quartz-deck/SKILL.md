@@ -237,6 +237,13 @@ has `pos="x,y!"`, so boxes stay where they're placed. DOT that can't be
 read safely is reported in `editable` with the line, and stays editable
 as text.
 
+`qd dot pin CELL` pins a diagram where Graphviz put it: it adds
+`layout=neato; splines=ortho;` and a `pos` for every box, read from the
+preview (or from `--positions '{"a":[0,1],...}'` in inches). Then
+`qd dot move CELL NODE --at X,Y` or `--by DX,DY` (inches, y up) places one
+box; positions snap to 0.25 in unless `--no-snap`. Arrows re-route on the
+next render. A diagram that isn't pinned refuses `move` with the hint to pin.
+
 ## Errors and what to do
 
 | code | meaning | recover |
