@@ -1,0 +1,6 @@
+digraph {
+  a -> b -> c -> d [color=blue];
+  a:e -> d:w;
+  b:n:ne -> c;
+  a -> b;
+}

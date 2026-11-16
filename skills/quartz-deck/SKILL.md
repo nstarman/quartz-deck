@@ -227,6 +227,16 @@ links and their text. Any difference puts every file back and fails with
 `E_MIGRATE_DIFF`, naming a report: show it to the person, and run again with
 `--accept` only when they say so. Outside git it needs `--backup DIR`.
 
+## Diagrams
+
+A diagram is a `{dot}` (Graphviz) cell. `qd dot show CELL` lists its boxes
+(name, label, look, link, image, position in inches, size), its arrows
+(`A->B`, with `#2` for a repeat), its graph settings, and whether it can
+be edited. `pinned` is true when the cell uses `layout=neato` and every box
+has `pos="x,y!"`, so boxes stay where they're placed. DOT that can't be
+read safely is reported in `editable` with the line, and stays editable
+as text.
+
 ## Errors and what to do
 
 | code | meaning | recover |

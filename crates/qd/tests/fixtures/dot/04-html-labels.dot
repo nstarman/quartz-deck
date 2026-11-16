@@ -1,0 +1,5 @@
+digraph {
+  t [label=<<TABLE BORDER="0"><TR><TD><B>Tool</B></TD><TD>&lt;x&gt; &amp; y</TD></TR></TABLE>>];
+  u [label=<plain <I>html</I>>]
+  t -> u
+}

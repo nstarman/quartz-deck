@@ -1,0 +1,9 @@
+strict digraph "My graph" {
+  rankdir = LR
+  label="A \"quoted\" title";
+  graph [fontsize=12, bgcolor="#fafafa"];
+  node [shape=box style="rounded,filled"]; edge [color=gray40]
+  a; b; c
+  a -> b [label="first", weight=2] [color=red];
+  b -> c;
+}
