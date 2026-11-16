@@ -244,6 +244,26 @@ preview (or from `--positions '{"a":[0,1],...}'` in inches). Then
 box; positions snap to 0.25 in unless `--no-snap`. Arrows re-route on the
 next render. A diagram that isn't pinned refuses `move` with the hint to pin.
 
+Building a diagram:
+- `qd dot new --on SLIDE` (or `--after REF`, `--before REF`) inserts a
+  pinned starter diagram: two boxes, `data` and `tool`, one in each starter
+  look, joined.
+- `qd dot add CELL [--label L] [--at X,Y] [--look tool|artifact | --look-of NODE] [--from A] [--to B]`
+  adds a box named `n1`, `n2`, … and prints its name. In a pinned diagram
+  with no `--at`, it goes right of the rightmost box.
+- `qd dot connect CELL A B` adds an arrow and prints it (`A->B#k`).
+- `qd dot rename CELL NODE LABEL` changes only the label.
+- `qd dot set CELL TARGET KEY=VALUE…` sets attributes of a box or an arrow
+  (`A->B`, `A->B#2`). `KEY=` removes one. For a box, `--look` or
+  `--look-of` sets its look and removes look keys the new one doesn't have.
+- `qd dot rm CELL TARGET` removes a box with every arrow touching it, or
+  one arrow. A chain `a -> b -> c` is split, keeping its attributes.
+- `qd dot flip CELL A->B` reverses an arrow (not in an undirected `graph`).
+
+Looks are written on each box, so a box renders the same everywhere.
+Boxes and arrows inside a `subgraph` are refused with `E_UNSAFE_EDIT`:
+edit those as text.
+
 ## Errors and what to do
 
 | code | meaning | recover |

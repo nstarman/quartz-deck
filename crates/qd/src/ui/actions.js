@@ -16,6 +16,7 @@ export const INSERTS = [
   { id: 'equation', label: 'Equation', md: '$$\nx = 1\n$$', edit: 'source' },
   { id: 'image', label: 'Image…', image: true },
   { id: 'textbox', label: 'Text box', box: true },
+  { id: 'diagram', label: 'Diagram', diagram: true }, // spec 015: `qd dot new`
   // spec 008 US7: the rest a talk needs, each its markdown
   { id: 'code', label: 'Code cell', md: '```{python}\n1 + 1\n```' },
   { id: 'callout', label: 'Callout', md: '::: {.callout-note}\nA note.\n:::' },
@@ -59,7 +60,7 @@ export function makeActions(api) {
     { id: 'copy', label: 'Copy', run: (t) => api.copy(t) },
     { id: 'paste', label: 'Paste after', run: (t) => api.paste(t) },
     { id: 'dup', label: 'Duplicate', run: (t) => api.op('block dup', { element: t.ref }) },
-    { id: 'delete', label: 'Delete', run: (t) => api.op('block rm', { element: t.ref }) },
+    { id: 'delete', label: 'Delete', run: (t) => (dot.selectedIn(t.ref) ? dot.remove() : api.op('block rm', { element: t.ref })) },
     { id: 'history-restore-element', label: 'Restore from this version', visible: () => !!api.version(), run: (t) => api.op('restore', { rev: api.version().rev, element: t.ref }) },
     '-',
     { id: 'up', label: 'Move up', enabled: (t) => t.index > 0, run: (t) => api.op('block move', { element: t.ref, before: `${t.slideId}/${t.index - 1}` }) },
@@ -72,6 +73,8 @@ export function makeActions(api) {
     '-',
     { id: 'place', label: 'Place freely', visible: (t) => t.block.kind !== 'box', why: (t) => UNPLACEABLE[t.block.kind], enabled: (t) => !UNPLACEABLE[t.block.kind], run: (t) => api.op('block place', api.placement(t)) },
     { id: 'unplace', label: 'Put back in the flow', visible: (t) => t.block.kind === 'box', run: (t) => api.op('block unplace', { element: t.ref }) },
+    { id: 'dot-rm', label: 'Delete from diagram', title: 'The selected box with its arrows, or the selected arrow', visible: (t) => dot.selectedIn(t.ref), run: () => dot.remove() },
+    { id: 'dot-flip', label: 'Reverse arrow', visible: (t) => dot.flippable(t.ref), run: () => dot.flip() },
     { id: 'dot-pin', label: 'Pin layout', title: 'Fix every box where it is now, so boxes can be placed by hand', visible: (t) => dot.pinnable(t.ref), run: (t) => dot.pin(t.ref) },
     // stacking (US5): boxes stack in source order, later on top; a fragment's click order follows it too
     ...[['front', 'Bring to front', 1], ['forward', 'Bring forward', 1], ['backward', 'Send backward', -1], ['back', 'Send to back', -1]].map(([to, label, d]) => ({

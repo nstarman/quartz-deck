@@ -41,7 +41,9 @@ export function ask({ title, message = '', fields = [], ok = 'OK', cancel = 'Can
     d.style.left = Math.max(8, Math.min(r.left, innerWidth - d.offsetWidth - 8)) + 'px';
     d.style.top = Math.max(8, r.bottom + 4 + d.offsetHeight > innerHeight ? r.top - d.offsetHeight - 4 : r.bottom + 4) + 'px';
   }
-  (form.querySelector('.is-gallery input:checked') || form.querySelector('input[type=text]') || okB).focus();
+  const first = form.querySelector('.is-gallery input:checked') || form.querySelector('input[type=text]') || okB;
+  first.focus();
+  if (first.type === 'text') first.select(); // typing replaces what is there
   // a task later: the dialog puts focus back where it was first, so a caller can then move it
   return new Promise((done) => d.addEventListener('close', () => setTimeout(() => {
     done(d.returnValue === 'ok' ? Object.fromEntries(Object.entries(values).map(([k, get]) => [k, get()])) : null);

@@ -201,7 +201,11 @@ const PREVIEW_CSS = `html:not(.qd-present) {
   /* a diagram's boxes (spec 015) */
   [data-qd-lang=dot] g.node { cursor: move; }
   .qd-dot-sel > :is(polygon, ellipse, path), .qd-dot-sel a > :is(polygon, ellipse) { stroke: #2563eb !important; stroke-width: 3 !important; }
-  line.qd-dot-provisional { stroke: #6b7480; stroke-width: 1.5; stroke-dasharray: 4 3; }
+  line.qd-dot-provisional, line.qd-dot-follow { stroke: #6b7480; stroke-width: 1.5; stroke-dasharray: 4 3; pointer-events: none; }
+  [data-qd-lang=dot] g.edge { cursor: pointer; }
+  path.qd-dot-hit { stroke: transparent; stroke-width: 12; fill: none; }
+  [data-qd-lang=dot] svg { overflow: visible; }
+  .qd-dot-handle { fill: #fff; stroke: #2563eb; stroke-width: 1.5; cursor: crosshair; }
   /* a cell that shows nothing (code hidden, never run; an OJS declaration): something to point at and run (spec 013) */
   .qd-cell:not(:has(.qd-output, .cell-code:not(.hidden), .cell-output-display:not(.quarto-ojs-hide)))::before {
     content: var(--qd-ph, 'Code cell, not run yet'); display: block; color: #9a9aa0;
@@ -787,6 +791,7 @@ async function slideAction(act, slide) {
 
 async function select(ref) {
   state.sel = ref;
+  dot.follow(ref);
   highlight();
   syncFocus();
   if (ref) revealSource({ ref });
@@ -801,6 +806,8 @@ async function renderElementPanel() {
   const f = $('form.element-form', view);
   $('.kind', view).textContent = block.kind[0].toUpperCase() + block.kind.slice(1);
   $('.ref', view).textContent = ref;
+  const diagram = dot.panel(ref); // a selected box or arrow of a diagram (spec 015)
+  if (diagram) f.before(diagram);
   f.md.value = block.text;
   f.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1333,7 +1340,7 @@ function savedNote(el) {
 function pageRect(el) {
   const f = frame.getBoundingClientRect();
   const r = el.getBoundingClientRect();
-  return { left: f.left + r.left, top: f.top + r.top, width: r.width, height: r.height };
+  return { left: f.left + r.left, top: f.top + r.top, width: r.width, height: r.height, bottom: f.top + r.bottom };
 }
 
 function startSourceSession(s, text) {
@@ -1744,7 +1751,7 @@ if (!runExternal) {
   const selected = () => (state.session ? null : state.sel);
   run.initRun({ say, flush: pane.save, selected, changed: runslide.mark, reload: () => frameWin()?.location.reload() });
   runslide.initRunSlide({ elOf, frame, pageRect, selected }, es);
-  dot.initDot({ elOf, frame, op, pageRect });
+  dot.initDot({ elOf, frame, op, pageRect, select, panelChanged: renderPanel });
 }
 if (keys.framed) {
   // only the panel that framed this page, and only navigation/display — never edits or code
@@ -1879,6 +1886,7 @@ async function dropImage(file, on, y) {
 /** Insert a new element of `kind` on a slide; it opens for editing once rendered. */
 async function insertBlock(slideId, where, kind) {
   if (kind.box) return newBox({ id: slideId }, { text: 'Text' });
+  if (kind.diagram) return op('dot new', where.end ? { on: slideId } : where); // spec 015
   let md = kind.md;
   if (kind.image) {
     const v = await ask({ title: 'Image', fields: [{ name: 'src', kind: 'files', label: 'Path (beside the deck) or URL', validate: (x) => (x ? '' : 'Choose an image or type its path') }] });
@@ -2063,7 +2071,7 @@ menuButton('#present-more', () => ['present', 'present-start', 'preview'].map((i
 keys.on('undo', () => undoRedo('undo'));
 keys.on('redo', () => undoRedo('redo'));
 // element and slide actions: the right-click menus' own (actions.js), on what is selected / shown
-const ELEMENT = ['edit', 'source', 'cut', 'copy', 'paste', 'dup', 'delete', 'history-restore-element', 'up', 'down', 'fragment', 'class-smaller', 'class-incremental', 'class-custom', 'place', 'unplace', 'dot-pin', 'box-front', 'box-forward', 'box-backward', 'box-back'];
+const ELEMENT = ['edit', 'source', 'cut', 'copy', 'paste', 'dup', 'delete', 'history-restore-element', 'up', 'down', 'fragment', 'class-smaller', 'class-incremental', 'class-custom', 'place', 'unplace', 'dot-pin', 'dot-rm', 'dot-flip', 'box-front', 'box-forward', 'box-backward', 'box-back'];
 const SLIDE = ['slide-before', 'slide-after', 'slide-dup', 'slide-cut', 'slide-copy', 'slide-paste', 'slide-hide', 'slide-rm', 'history-restore-slide', 'slide-bg', 'slide-bgimg', 'slide-notes', 'slide-source', 'slide-link', 'layout-save'];
 for (const [ids, on, table] of [[ELEMENT, 'el', 'element'], [SLIDE, 'slide', 'slide']]) {
   for (const id of ids) {
@@ -2094,6 +2102,7 @@ const inSlide = (e) => e.target.ownerDocument === frame.contentDocument && !!fra
 keys.on('next-element', { key: inSlide, enabled: (ctx) => !!ctx.slide, run: () => stepSelection(false) });
 keys.on('prev-element', { key: inSlide, enabled: (ctx) => !!ctx.slide, run: () => stepSelection(true) });
 keys.on('deselect', { enabled: () => !!state.sel, run: () => select(null) });
+keys.on('dot-add', { enabled: (ctx) => dot.diagram(ctx.el?.ref), run: (ctx) => dot.addBox(ctx.el.ref) });
 keys.on('actions-menu', keyboardMenu);
 keys.on('focus-text', () => window.parent.postMessage({ type: 'focusText' }, '*')); // VS Code's panel only
 for (const kind of INSERTS) {

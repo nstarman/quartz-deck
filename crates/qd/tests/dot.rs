@@ -103,11 +103,11 @@ fn move_at_and_by() {
     );
     assert!(ok && v["dry_run"] == true, "{v}");
     assert_eq!(text(&t), at);
-    let (ok, v) = json(
+    common::err(
         t.path(),
         &["--expect", "0000", "dot", "move", "d/0", "b", "--by", "0,1"],
+        "E_CONFLICT",
     );
-    assert!(!ok && v["error"]["code"] == "E_CONFLICT", "{v}");
     let (ok, _) = json(t.path(), &["undo"]);
     assert!(ok);
     assert_eq!(text(&t), DECK);
@@ -126,11 +126,17 @@ fn move_refuses_unpinned_and_unknown() {
         "{v}"
     );
     let t = deck(DECK);
-    let (ok, v) = json(t.path(), &["dot", "move", "d/0", "zz", "--at", "1,1"]);
-    assert!(!ok && v["error"]["code"] == "E_NOT_FOUND", "{v}");
+    common::err(
+        t.path(),
+        &["dot", "move", "d/0", "zz", "--at", "1,1"],
+        "E_NOT_FOUND",
+    );
     let t = deck(&DECK.replace("  a -> b;\n", "  a -> ;\n"));
-    let (ok, v) = json(t.path(), &["dot", "move", "d/0", "a", "--at", "1,1"]);
-    assert!(!ok && v["error"]["code"] == "E_UNSAFE_EDIT", "{v}");
+    common::err(
+        t.path(),
+        &["dot", "move", "d/0", "a", "--at", "1,1"],
+        "E_UNSAFE_EDIT",
+    );
 }
 
 const UNPINNED: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## Flow {#d}\n\n```{dot}\ndigraph {\n  node [shape=box];\n  a -> b;\n  b -> c;\n}\n```\n";
@@ -164,11 +170,11 @@ fn pin_with_positions() {
     assert_eq!(v["pinned"], true, "{v}");
     // missing a box
     let t = deck(UNPINNED);
-    let (ok, v) = json(
+    common::err(
         t.path(),
         &["dot", "pin", "d/0", "--positions", r#"{"a":[0,0]}"#],
+        "E_NOT_FOUND",
     );
-    assert!(!ok && v["error"]["code"] == "E_NOT_FOUND", "{v}");
 }
 
 #[test]
@@ -219,4 +225,240 @@ fn pin_without_positions() {
         v["error"]["message"].as_str().unwrap().contains("qd serve"),
         "{v}"
     );
+}
+
+// ---------- spec 015 US2 (T014) ----------
+
+/// Run an edit; it succeeds, changes only lines matching `changed`, and `qd undo` restores the deck.
+fn edit_ok(t: &tempfile::TempDir, args: &[&str]) -> (Value, String) {
+    let before = text(t);
+    let (ok, v) = json(t.path(), args);
+    assert!(ok, "{args:?}: {v}");
+    let after = text(t);
+    let (ok, _) = json(t.path(), &["undo"]);
+    assert!(ok);
+    assert_eq!(text(t), before, "{args:?}: undo restores");
+    (v, after)
+}
+
+/// The lines added and removed between two texts.
+fn changed(before: &str, after: &str) -> (Vec<String>, Vec<String>) {
+    use similar::ChangeTag::*;
+    let line = |c: similar::Change<&str>| c.value().trim_end().to_string();
+    let diff = similar::TextDiff::from_lines(before, after);
+    let (added, removed): (Vec<_>, Vec<_>) = diff
+        .iter_all_changes()
+        .filter(|c| c.tag() != Equal)
+        .partition(|c| c.tag() == Insert);
+    (
+        added.into_iter().map(line).collect(),
+        removed.into_iter().map(line).collect(),
+    )
+}
+
+#[test]
+fn add_placed_styled_and_connected() {
+    let t = deck(DECK);
+    let (v, after) = edit_ok(
+        &t,
+        &[
+            "dot",
+            "add",
+            "d/0",
+            "--label",
+            "New",
+            "--at",
+            "1.1,0",
+            "--look-of",
+            "a",
+            "--from",
+            "a",
+            "--to",
+            "b",
+        ],
+    );
+    assert_eq!(v["node"], "n1", "{v}");
+    let (added, removed) = changed(DECK, &after);
+    assert!(removed.is_empty(), "{removed:?}");
+    assert_eq!(
+        added,
+        [
+            "  n1 [label=New, style=\"rounded,filled\", fillcolor=white, pos=\"1,0!\"];",
+            "  a -> n1;",
+            "  n1 -> b;"
+        ]
+    );
+    // a starter look; unpinned diagrams take no --at
+    let (_, after) = edit_ok(&t, &["dot", "add", "d/0", "--look", "tool"]);
+    assert!(after.contains("n1 [shape=box, style=\"rounded,filled\", fillcolor=\"#3d4a5c\", color=\"#3d4a5c\", fontcolor=white, pos=\"4,1!\"];"), "{after}");
+    let t = deck(UNPINNED);
+    common::err(
+        t.path(),
+        &["dot", "add", "d/0", "--at", "1,1"],
+        "E_INVALID_ARG",
+    );
+    common::err(
+        t.path(),
+        &["dot", "add", "d/0", "--look", "fancy"],
+        "E_INVALID_ARG",
+    );
+}
+
+#[test]
+fn connect_and_repeat() {
+    let t = deck(DECK);
+    let (v, after) = edit_ok(&t, &["dot", "connect", "d/0", "b", "a"]);
+    assert_eq!(v["edge"], "b->a#1");
+    assert_eq!(changed(DECK, &after).0, ["  b -> a;"]);
+    let (v, _) = edit_ok(&t, &["dot", "connect", "d/0", "a", "b"]);
+    assert_eq!(v["edge"], "a->b#3", "the third a->b");
+    common::err(
+        t.path(),
+        &["dot", "connect", "d/0", "a", "zz"],
+        "E_NOT_FOUND",
+    );
+}
+
+#[test]
+fn rename_changes_only_the_label() {
+    let t = deck(DECK);
+    let (_, after) = edit_ok(&t, &["dot", "rename", "d/0", "a", "Raw data"]);
+    assert_eq!(after, DECK.replace("label=\"Data\"", "label=\"Raw data\""));
+}
+
+#[test]
+fn set_attributes_and_looks() {
+    let t = deck(DECK);
+    let (_, after) = edit_ok(
+        &t,
+        &[
+            "dot",
+            "set",
+            "d/0",
+            "b",
+            "URL=https://example.org/new",
+            "height=0.75",
+            "width=",
+        ],
+    );
+    assert_eq!(
+        after,
+        DECK.replace(
+            "URL=\"https://example.org/tool\", width=1.5]",
+            "URL=\"https://example.org/new\", height=0.75]"
+        )
+    );
+    // b takes a's look: a's keys set, b's other look keys removed
+    let (_, after) = edit_ok(&t, &["dot", "set", "d/0", "b", "--look-of", "a"]);
+    assert!(
+        after.contains("b [label=\"Tool\", pos=\"2,1!\", URL=\"https://example.org/tool\", width=1.5, style=\"rounded,filled\", fillcolor=white];"),
+        "{after}"
+    );
+    // an arrow: the second a->b
+    let (_, after) = edit_ok(&t, &["dot", "set", "d/0", "a->b#2", "arrowhead=none"]);
+    assert_eq!(
+        after,
+        DECK.replace("[color=red]", "[color=red, arrowhead=none]")
+    );
+    common::err(
+        t.path(),
+        &["dot", "set", "d/0", "a", "bad key=1"],
+        "E_INVALID_ARG",
+    );
+}
+
+const CHAIN: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## Flow {#d}\n\n```{dot}\ndigraph {\n  a -> b -> c [color=red];\n  c -> d;\n}\n```\n";
+
+#[test]
+fn rm_a_box_takes_its_arrows() {
+    let t = deck(CHAIN);
+    let (v, after) = edit_ok(&t, &["dot", "rm", "d/0", "c"]);
+    assert_eq!(
+        v["removed"],
+        json!({"nodes": ["c"], "edges": ["b->c#1", "c->d#1"]})
+    );
+    assert!(
+        after.contains("digraph {\n  a -> b [color=red];\n  d;\n}"),
+        "d stays as a box: {after}"
+    );
+}
+
+#[test]
+fn rm_an_arrow_from_a_chain() {
+    let t = deck(CHAIN);
+    let (v, after) = edit_ok(&t, &["dot", "rm", "d/0", "a->b"]);
+    assert_eq!(v["removed"], json!({"nodes": [], "edges": ["a->b#1"]}));
+    assert!(after.contains("  a; b -> c [color=red];\n"), "{after}");
+}
+
+#[test]
+fn flip_an_arrow() {
+    let t = deck(CHAIN);
+    let (_, after) = edit_ok(&t, &["dot", "flip", "d/0", "c->d"]);
+    assert_eq!(after, CHAIN.replace("c -> d;", "d -> c;"));
+    let (_, after) = edit_ok(&t, &["dot", "flip", "d/0", "b->c"]);
+    assert!(
+        after.contains("  a -> b [color=red];\n  c -> d;\n  c -> b [color=red];\n"),
+        "{after}"
+    );
+    let t = deck(&CHAIN.replace("digraph", "graph").replace("->", "--"));
+    common::err(t.path(), &["dot", "flip", "d/0", "c--d"], "E_INVALID_ARG");
+}
+
+#[test]
+fn new_on_a_slide_and_after_a_block() {
+    let t = deck(&format!("{DECK}\n## Empty {{#e}}\n"));
+    let (v, after) = edit_ok(&t, &["dot", "new", "--on", "e"]);
+    assert_eq!(v["cell"], "e/0", "{v}");
+    assert!(
+        after.ends_with(&format!(
+            "## Empty {{#e}}\n\n{}\n",
+            quartz_deck::dot::starter_diagram()
+        )),
+        "{after}"
+    );
+    let (v, _) = edit_ok(&t, &["dot", "new", "--after", "d/0"]);
+    assert_eq!(v["cell"], "d/1", "{v}");
+    let (_, v) = json(t.path(), &["dot", "show", "d/0"]);
+    assert_eq!(v["pinned"], true);
+}
+
+#[test]
+fn built_diagram_renders_with_quarto() {
+    if !common::have("quarto") {
+        return;
+    }
+    let t = deck("---\ntitle: T\nformat: revealjs\n---\n\n## Flow {#d}\n");
+    for args in [
+        &["dot", "new", "--on", "d"][..],
+        &[
+            "dot", "add", "d/0", "--label", "Paper", "--look", "artifact", "--from", "tool",
+        ],
+        &["dot", "rename", "d/0", "data", "Inputs"],
+        &["dot", "set", "d/0", "tool", "URL=https://example.org"],
+        &["dot", "rm", "d/0", "data->tool"],
+    ] {
+        let (ok, v) = json(t.path(), args);
+        assert!(ok, "{args:?}: {v}");
+    }
+    let out = std::process::Command::new("quarto")
+        .args(["render", "talk.qmd", "--to", "revealjs"])
+        .current_dir(t.path())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let html = fs::read_to_string(t.path().join("talk.html")).unwrap();
+    for want in [
+        ">Inputs<",
+        ">Paper<",
+        "https://example.org",
+        "<title>tool-&gt;n1</title>",
+    ] {
+        assert!(html.contains(want), "{want}");
+    }
+    assert!(!html.contains("<title>data-&gt;tool</title>"));
 }

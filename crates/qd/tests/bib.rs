@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::{have, json as run, with_path};
+use common::{err, have, json as run, with_path};
 use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
@@ -16,12 +16,6 @@ fn ok(dir: &Path, args: &[&str]) -> Value {
     let (good, v) = run(dir, args);
     assert!(good, "{args:?}: {v}");
     v
-}
-
-fn err(dir: &Path, args: &[&str], code: &str) {
-    let (good, v) = run(dir, args);
-    assert!(!good, "{args:?} should fail: {v}");
-    assert_eq!(v["error"]["code"], code, "{args:?}: {v}");
 }
 
 fn deck(dir: &Path) -> String {

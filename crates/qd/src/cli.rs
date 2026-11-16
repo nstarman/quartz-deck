@@ -662,6 +662,69 @@ enum DotCmd {
         #[arg(long)]
         positions: Option<String>,
     },
+    /// Add a box (named n1, n2, …), optionally placed, styled and connected
+    Add {
+        cell: String,
+        #[arg(long)]
+        label: Option<String>,
+        /// Its position X,Y in inches, snapped to 0.25 in (pinned diagrams)
+        #[arg(long, value_parser = parse_pair, allow_hyphen_values = true)]
+        at: Option<(f64, f64)>,
+        /// A starter look: tool or artifact
+        #[arg(long, conflicts_with = "look_of")]
+        look: Option<String>,
+        /// The look of another box
+        #[arg(long)]
+        look_of: Option<String>,
+        /// Add an arrow from this box to the new one
+        #[arg(long)]
+        from: Option<String>,
+        /// Add an arrow from the new box to this one
+        #[arg(long)]
+        to: Option<String>,
+    },
+    /// Add an arrow from one box to another
+    Connect {
+        cell: String,
+        from: String,
+        to: String,
+    },
+    /// Set a box's label
+    Rename {
+        cell: String,
+        node: String,
+        label: String,
+    },
+    /// Set attributes of a box or an arrow (A->B, A->B#2); KEY= removes one
+    Set {
+        cell: String,
+        /// A box's name, or an arrow A->B (A--B in a graph), #k for the k-th
+        target: String,
+        /// KEY=VALUE
+        pairs: Vec<String>,
+        /// A starter look for a box: tool or artifact
+        #[arg(long, conflicts_with = "look_of")]
+        look: Option<String>,
+        /// The look of another box
+        #[arg(long)]
+        look_of: Option<String>,
+    },
+    /// Remove a box and its arrows, or one arrow
+    Rm { cell: String, target: String },
+    /// Reverse an arrow
+    Flip { cell: String, edge: String },
+    /// Insert a starter diagram: two placed boxes, joined
+    New {
+        /// At the end of this slide
+        #[arg(long, required_unless_present_any = ["after", "before"])]
+        on: Option<String>,
+        /// After this block
+        #[arg(long, conflicts_with_all = ["on", "before"])]
+        after: Option<String>,
+        /// Before this block
+        #[arg(long, conflicts_with = "on")]
+        before: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1278,6 +1341,13 @@ const API_OPS: &[&str] = &[
     "dot show",
     "dot move",
     "dot pin",
+    "dot add",
+    "dot connect",
+    "dot rename",
+    "dot set",
+    "dot rm",
+    "dot flip",
+    "dot new",
     "export",
     "pdf",
     "render",
@@ -1448,23 +1518,66 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
         } => ctx.edit(|d| ops::meta_unset(d, key)),
         Cmd::Dot { action } => {
             let d = read()?.1;
+            // an edit, with what the command adds to its output
+            let edit = |f: &dyn Fn(&Deck) -> Result<(Patch, Value)>| -> Result<Value> {
+                let mut extra = Value::Null;
+                let mut v = ctx.edit(|d| {
+                    let (p, x) = f(d)?;
+                    extra = x;
+                    Ok(p)
+                })?;
+                if let (Some(v), Value::Object(x)) = (v.as_object_mut(), extra) {
+                    v.extend(x);
+                }
+                Ok(v)
+            };
+            use crate::dot;
             match action {
-                DotCmd::Show { cell } => crate::dot::show(&d, cell),
+                DotCmd::Show { cell } => dot::show(&d, cell),
                 DotCmd::Move {
                     cell,
                     node,
                     at,
                     by,
                     no_snap,
+                } => edit(&|d| dot::move_node(d, cell, node, *at, *by, *no_snap)),
+                DotCmd::Add {
+                    cell,
+                    label,
+                    at,
+                    look,
+                    look_of,
+                    from,
+                    to,
+                } => edit(&|d| {
+                    dot::add(
+                        d,
+                        cell,
+                        label.as_deref(),
+                        *at,
+                        look.as_deref(),
+                        look_of.as_deref(),
+                        from.as_deref(),
+                        to.as_deref(),
+                    )
+                }),
+                DotCmd::Connect { cell, from, to } => edit(&|d| dot::connect(d, cell, from, to)),
+                DotCmd::Rename { cell, node, label } => {
+                    edit(&|d| dot::rename(d, cell, node, label))
+                }
+                DotCmd::Set {
+                    cell,
+                    target,
+                    pairs,
+                    look,
+                    look_of,
                 } => {
-                    let mut pos = (0.0, 0.0);
-                    let mut v = ctx.edit(|d| {
-                        let (p, at) = crate::dot::move_node(d, cell, node, *at, *by, *no_snap)?;
-                        pos = at;
-                        Ok(p)
-                    })?;
-                    v["pos"] = json!([pos.0, pos.1]);
-                    Ok(v)
+                    edit(&|d| dot::set(d, cell, target, pairs, look.as_deref(), look_of.as_deref()))
+                }
+                DotCmd::Rm { cell, target } => edit(&|d| dot::rm(d, cell, target)),
+                DotCmd::Flip { cell, edge } => edit(&|d| dot::flip(d, cell, edge)),
+                DotCmd::New { on, after, before } => {
+                    edit(&|d| dot::new(d, on.as_deref(), at(after, before)))
                 }
                 DotCmd::Pin { cell, positions } => {
                     let positions = match positions {
@@ -1503,14 +1616,7 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                                 })?
                         }
                     };
-                    let mut n = 0;
-                    let mut v = ctx.edit(|d| {
-                        let (p, k) = crate::dot::pin(d, cell, &positions)?;
-                        n = k;
-                        Ok(p)
-                    })?;
-                    v["pinned"] = json!(n);
-                    Ok(v)
+                    edit(&|d| dot::pin(d, cell, &positions))
                 }
             }
         }
