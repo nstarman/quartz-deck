@@ -9,6 +9,7 @@ import * as settings from '/ui/settings.js';
 import { submenu } from '/ui/menubar.js';
 import * as hist from '/ui/history.js';
 import * as runslide from '/ui/runslide.js';
+import * as dot from '/ui/dot.js';
 import { openMenu, closeMenu, menuOpen } from '/ui/menu.js';
 import { makeList } from '/ui/list.js';
 import * as pane from '/ui/pane.js';
@@ -197,6 +198,10 @@ const PREVIEW_CSS = `html:not(.qd-present) {
   section > h1:hover, section > h2:hover, section > h3:hover, #title-slide :is(.title, .subtitle, .date):hover {
     outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; cursor: text; }
   .qd-off { outline: 2px dashed #b3261e; outline-offset: 2px; }
+  /* a diagram's boxes (spec 015) */
+  [data-qd-lang=dot] g.node { cursor: move; }
+  .qd-dot-sel > :is(polygon, ellipse, path), .qd-dot-sel a > :is(polygon, ellipse) { stroke: #2563eb !important; stroke-width: 3 !important; }
+  line.qd-dot-provisional { stroke: #6b7480; stroke-width: 1.5; stroke-dasharray: 4 3; }
   /* a cell that shows nothing (code hidden, never run; an OJS declaration): something to point at and run (spec 013) */
   .qd-cell:not(:has(.qd-output, .cell-code:not(.hidden), .cell-output-display:not(.quarto-ojs-hide)))::before {
     content: var(--qd-ph, 'Code cell, not run yet'); display: block; color: #9a9aa0;
@@ -574,6 +579,7 @@ function hookFrame() {
     slideList.refresh();
     hist.mark();
     runslide.mark();
+    dot.mark();
     markOffSlide(w);
     w.MathJax?.startup?.promise?.then(() => slideList.refresh()); // math typesets after ready
     onSlide();
@@ -999,7 +1005,8 @@ function onKey(e) {
   if (menuOpen()) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeMenu(); } return; }
   if (state.session || editing()) return; // edits and form fields handle their own keys
   // every other key is an action from the list (spec 007): the selected element first, then the slide
-  keys.dispatch(e, state.sel ? ['element', 'slide'] : [e.target.closest?.('nav') ? 'slides' : 'slide']);
+  // a diagram's selected box counts as an element (spec 015)
+  keys.dispatch(e, state.sel || dot.selected() ? ['element', 'slide'] : [e.target.closest?.('nav') ? 'slides' : 'slide']);
 }
 document.addEventListener('keydown', onKey);
 
@@ -1737,6 +1744,7 @@ if (!runExternal) {
   const selected = () => (state.session ? null : state.sel);
   run.initRun({ say, flush: pane.save, selected, changed: runslide.mark, reload: () => frameWin()?.location.reload() });
   runslide.initRunSlide({ elOf, frame, pageRect, selected }, es);
+  dot.initDot({ elOf, frame, op, pageRect });
 }
 if (keys.framed) {
   // only the panel that framed this page, and only navigation/display — never edits or code
@@ -2055,7 +2063,7 @@ menuButton('#present-more', () => ['present', 'present-start', 'preview'].map((i
 keys.on('undo', () => undoRedo('undo'));
 keys.on('redo', () => undoRedo('redo'));
 // element and slide actions: the right-click menus' own (actions.js), on what is selected / shown
-const ELEMENT = ['edit', 'source', 'cut', 'copy', 'paste', 'dup', 'delete', 'history-restore-element', 'up', 'down', 'fragment', 'class-smaller', 'class-incremental', 'class-custom', 'place', 'unplace', 'box-front', 'box-forward', 'box-backward', 'box-back'];
+const ELEMENT = ['edit', 'source', 'cut', 'copy', 'paste', 'dup', 'delete', 'history-restore-element', 'up', 'down', 'fragment', 'class-smaller', 'class-incremental', 'class-custom', 'place', 'unplace', 'dot-pin', 'box-front', 'box-forward', 'box-backward', 'box-back'];
 const SLIDE = ['slide-before', 'slide-after', 'slide-dup', 'slide-cut', 'slide-copy', 'slide-paste', 'slide-hide', 'slide-rm', 'history-restore-slide', 'slide-bg', 'slide-bgimg', 'slide-notes', 'slide-source', 'slide-link', 'layout-save'];
 for (const [ids, on, table] of [[ELEMENT, 'el', 'element'], [SLIDE, 'slide', 'slide']]) {
   for (const id of ids) {
@@ -2073,9 +2081,10 @@ for (const [ids, on, table] of [[ELEMENT, 'el', 'element'], [SLIDE, 'slide', 'sl
 const boxSelected = () => !!state.sel && !!state.selBox;
 for (const [dir, dx, dy] of [['left', -1, 0], ['right', 1, 0], ['up', 0, -1], ['down', 0, 1]]) {
   keys.on(`box-nudge-${dir}`, {
-    key: boxSelected,
-    enabled: (ctx) => ctx.el?.block.kind === 'box',
+    key: () => boxSelected() || dot.nudgeable(),
+    enabled: (ctx) => ctx.el?.block.kind === 'box' || dot.nudgeable(),
     run: async (ctx) => {
+      if (dot.nudgeable()) return dot.nudge(dx, dy); // a box of a diagram (spec 015)
       const n = ctx.e?.shiftKey ? 10 : 1;
       if (await op('box move', { box: ctx.el.ref, by: `${dx * n},${dy * n}` })) { await fetchDeck(); await renderPanel(); }
     },

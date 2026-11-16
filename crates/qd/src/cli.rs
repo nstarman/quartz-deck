@@ -641,6 +641,27 @@ fn parse_pair(s: &str) -> std::result::Result<(f64, f64), String> {
 enum DotCmd {
     /// The diagram in a `{dot}` cell: boxes, arrows, settings, and whether qd can edit it
     Show { cell: String },
+    /// Place a box: its pinned position, in inches, snapped to 0.25 in
+    Move {
+        cell: String,
+        node: String,
+        /// The new position X,Y
+        #[arg(long, value_parser = parse_pair, allow_hyphen_values = true, conflicts_with = "by", required_unless_present = "by")]
+        at: Option<(f64, f64)>,
+        /// Move it by DX,DY
+        #[arg(long, value_parser = parse_pair, allow_hyphen_values = true)]
+        by: Option<(f64, f64)>,
+        /// Keep the exact position (no 0.25 in grid)
+        #[arg(long)]
+        no_snap: bool,
+    },
+    /// Make the diagram placeable: layout=neato, splines=ortho, every box pinned where it is
+    Pin {
+        cell: String,
+        /// Positions as JSON {"NODE":[x,y],…} in inches (default: the last preview render, else Graphviz on PATH)
+        #[arg(long)]
+        positions: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1254,6 +1275,9 @@ impl Ctx<'_> {
 /// Commands the HTTP API may run (FR-010). No server control, no file I/O
 /// beyond the deck itself.
 const API_OPS: &[&str] = &[
+    "dot show",
+    "dot move",
+    "dot pin",
     "export",
     "pdf",
     "render",
@@ -1426,6 +1450,68 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             let d = read()?.1;
             match action {
                 DotCmd::Show { cell } => crate::dot::show(&d, cell),
+                DotCmd::Move {
+                    cell,
+                    node,
+                    at,
+                    by,
+                    no_snap,
+                } => {
+                    let mut pos = (0.0, 0.0);
+                    let mut v = ctx.edit(|d| {
+                        let (p, at) = crate::dot::move_node(d, cell, node, *at, *by, *no_snap)?;
+                        pos = at;
+                        Ok(p)
+                    })?;
+                    v["pos"] = json!([pos.0, pos.1]);
+                    Ok(v)
+                }
+                DotCmd::Pin { cell, positions } => {
+                    let positions = match positions {
+                        Some(j) => {
+                            let m: std::collections::HashMap<String, [f64; 2]> =
+                                serde_json::from_str(j).map_err(|e| {
+                                    QdError::InvalidArg(format!("--positions: {e}"))
+                                })?;
+                            m.into_iter().map(|(k, [x, y])| (k, (x, y))).collect()
+                        }
+                        None => {
+                            let store = ctx.store()?;
+                            let stem = store
+                                .path
+                                .file_stem()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .to_string();
+                            let html = std::fs::read_to_string(
+                                store
+                                    .cache_dir()
+                                    .join("preview")
+                                    .join(format!("{stem}.qd-preview.html")),
+                            )
+                            .ok();
+                            let canon = crate::focus::resolve(&d, cell)?.1;
+                            html.and_then(|h| crate::dot::positions_from_svg(&h, &canon))
+                                .or_else(|| {
+                                    let (_, body) = crate::dot::cell(&d, cell).ok()?;
+                                    crate::dot::positions_from_graphviz(d.slice(body))
+                                })
+                                .ok_or_else(|| {
+                                    QdError::NotFound(
+                                        "no positions to pin: open the deck once with `qd serve` (its preview has them), or install Graphviz (`dot`)".into(),
+                                    )
+                                })?
+                        }
+                    };
+                    let mut n = 0;
+                    let mut v = ctx.edit(|d| {
+                        let (p, k) = crate::dot::pin(d, cell, &positions)?;
+                        n = k;
+                        Ok(p)
+                    })?;
+                    v["pinned"] = json!(n);
+                    Ok(v)
+                }
             }
         }
         Cmd::Bib { action } => {

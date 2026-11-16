@@ -329,6 +329,8 @@ main:not(.panel-open) > #panel { display: none; }
 #hoverbar { padding: 2px; box-shadow: none; }
 /* run on the slide (spec 013): ▶ / ■ at the cell's top right */
 #runbtn { position: fixed; z-index: 15; }
+/* diagrams on the slide (spec 015): Pin layout over an unpinned diagram */
+#dotpin { position: fixed; z-index: 15; }
 #hoverbar [data-act=drag] { cursor: grab; }
 #dropline { position: fixed; z-index: 16; height: 3px; background: var(--drop); border-radius: 2px; pointer-events: none; }
 #emptyadd { position: fixed; z-index: 15; }
