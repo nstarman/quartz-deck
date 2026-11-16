@@ -38,6 +38,7 @@ III).
 - `dot-new`, `dot-add` (Insert);
 - `dot-rm`, `dot-flip`, `dot-pin` (element menu, where `diagram`).
 
-**Setting:** Settings ▸ Diagrams ▸ "Route arrows while dragging"
-(`diagrams.live-layout`, off), with a note that the first use may download
-the layout engine when the person's Quarto has none the browser can load.
+**Setting:** Settings ▸ "Route arrows while dragging"
+(`diagrams.live-layout`, off), with a note that the first use downloads the
+layout engine (Quarto's own build doesn't load in a browser, research R6).
+qd serves it at `/lib/graphviz.js`; not found when it can't be had.

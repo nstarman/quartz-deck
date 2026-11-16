@@ -885,7 +885,7 @@ pub fn show(d: &Deck, r: &str) -> Result<Value> {
         .collect();
     Ok(
         json!({"ok": true, "kind": "dot", "cell": cell, "directed": g.directed, "pinned": g.pinned(),
-        "editable": true, "settings": attrs_json(&g.settings()), "nodes": nodes, "edges": edges,
+        "editable": true, "text": text, "settings": attrs_json(&g.settings()), "nodes": nodes, "edges": edges,
         "starters": starters}),
     )
 }

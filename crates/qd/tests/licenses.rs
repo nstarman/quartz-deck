@@ -32,6 +32,21 @@ fn allowed(expr: &str) -> bool {
     })
 }
 
+/// The libraries qd downloads (`assets::Pinned`). Graphviz's EPL-1.0 is
+/// allowed for the editor's engine only (spec 015 FR-023), not for crates.
+#[test]
+fn downloaded_asset_licenses_are_allowed() {
+    use quartz_deck::assets::{GRAPHVIZ, MATHJAX};
+    for a in [MATHJAX, GRAPHVIZ] {
+        let ok = a
+            .license
+            .split(" AND ")
+            .all(|p| p == "EPL-1.0" && a.name == "graphviz" || allowed(p));
+        assert!(ok, "{} {}: {}", a.name, a.version, a.license);
+    }
+    assert_eq!(GRAPHVIZ.license, "Apache-2.0 AND EPL-1.0");
+}
+
 #[test]
 fn spdx_expressions() {
     assert!(allowed("MIT OR Apache-2.0"));

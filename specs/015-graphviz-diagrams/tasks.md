@@ -204,12 +204,14 @@ or names.
 
 **Independent Test**: spec US4; quickstart §5.
 
-- [ ] T024 [US4] Spike (research R6): does Quarto's `share/js/graphviz-wasm.js` load as a browser ES module served by qd, and lay out a cell to SVG? Record the result and the entry point in `specs/015-graphviz-diagrams/research.md` R6. If it doesn't load, record the pinned `@hpcc-js/wasm-graphviz` version and SHA-256 as the main path.
-- [ ] T025 [P] [US4] Write failing tests:
+- [X] T024 [US4] Spike (research R6): does Quarto's `share/js/graphviz-wasm.js` load as a browser ES module served by qd, and lay out a cell to SVG? Record the result and the entry point in `specs/015-graphviz-diagrams/research.md` R6. If it doesn't load, record the pinned `@hpcc-js/wasm-graphviz` version and SHA-256 as the main path.
+- [X] T025 [P] [US4] Write failing tests:
   - **`crates/qd/src/settings.rs` unit:** `diagrams.live-layout` defaults to `false`.
   - **`crates/qd/tests/licenses.rs`:** the downloaded-asset list includes the engine with EPL-1.0 (Graphviz) and its wrapper's licence, both allowed.
   - **`crates/qd/tests/onslide.rs`, `diagram_live_routing`:** with the setting on, dragging a node shows routed (axis-aligned) edge paths that change during the drag; on drop the saved text equals the result with the setting off; with the engine made unavailable, dragging shows straight lines and no error.
-- [ ] T026 [US4] Implement the setting in `crates/qd/src/settings.rs` and Settings ▸ Diagrams in `crates/qd/src/ui/settings.js`. In `crates/qd/src/server.rs`, serve the engine from the Quarto install that `render::quarto()` finds, or from the pinned fallback in `crates/qd/src/assets.rs`. Add the per-frame layout and the fallback in `crates/qd/src/ui/dot.js`. T025 passes.
+- [X] T026 [US4] Implement the setting in `crates/qd/src/settings.rs` and Settings ▸ Diagrams in `crates/qd/src/ui/settings.js`. In `crates/qd/src/server.rs`, serve the engine from the Quarto install that `render::quarto()` finds, or from the pinned fallback in `crates/qd/src/assets.rs`. Add the per-frame layout and the fallback in `crates/qd/src/ui/dot.js`. T025 passes.
+
+  **As built:** Quarto's build doesn't load in a browser (R6), so the server's `/lib/graphviz.js` always serves the pinned `assets::GRAPHVIZ`, fetched into qd's cache on first use (`QD_NO_DOWNLOAD` respected; not found otherwise). `Pinned` gained a `license` field, which the licence test checks. `qd dot show` returns the cell's `text`; while dragging, the editor appends the box's provisional `pos` to it, lays it out at most once a frame, and lines the new layout up with the live one on a box that stayed. The setting appears in the Settings window's list; that window has no sections, so there's no "Diagrams" heading.
 
 **Checkpoint**: PR 5. Live routing on demand.
 

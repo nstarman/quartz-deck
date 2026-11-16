@@ -9,7 +9,7 @@ name. `EDGE` is `A->B` or `A--B`, optionally `#k` for the k-th such edge.
 
 | Command | Does | Output beyond the edit fields |
 |---|---|---|
-| `qd dot show CELL` | reads the diagram | `{"ok","kind":"dot","cell","directed","pinned","editable":true\|{"reason","at"},"settings":{…},"nodes":[{"name","label","look":{…},"url","image","pos":[x,y],"pinned","size":{…}}],"edges":[{"from","to","index","attrs":{…}}]}` |
+| `qd dot show CELL` | reads the diagram | `{"ok","kind":"dot","cell","directed","pinned","editable":true\|{"reason","at"},"text","settings":{…},"nodes":[{"name","label","look":{…},"url","image","pos":[x,y],"pinned","size":{…}}],"edges":[{"from","to","index","attrs":{…}}]}` |
 | `qd dot move CELL NODE (--at X,Y \| --by DX,DY) [--no-snap]` | sets `pos="X,Y!"` (inches, snapped to 0.25) | `"pos":[x,y]` |
 | `qd dot add CELL [--label L] [--at X,Y] [--look-of NODE \| --look tool\|artifact] [--from NODE] [--to NODE]` | adds a node, optionally connected | `"node":"n3"` |
 | `qd dot connect CELL A B` | adds an edge A→B (or A--B) | `"edge":"A->B#k"` |

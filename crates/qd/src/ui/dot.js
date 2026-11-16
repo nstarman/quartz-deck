@@ -5,9 +5,12 @@
 // handles onto another box, or onto empty space for a new box. An unpinned
 // diagram offers "Pin layout". Every change is a `qd dot` op
 // (contracts/editor.md); the preview's next render draws the routed arrows.
+// With "Route arrows while dragging" on (US4), the arrows are routed live by
+// Graphviz in the browser instead; without the engine, straight lines.
 
 import { token, el } from '/ui/run.js';
 import { ask } from '/ui/sheet.js';
+import { get as setting } from '/ui/settings.js';
 
 let api = null; // { elOf, frame, op, pageRect, select, panelChanged }
 const info = new Map(); // cell ref → `qd dot show` result
@@ -102,9 +105,55 @@ function select(cell, what) {
   if (sel) api.select(cell);
 }
 
+/** Graphviz in the browser, loaded once (`null` if it can't be had: straight lines). */
+let engine;
+const graphviz = () => (engine ??= import('/lib/graphviz.js').then((m) => m.Graphviz.load()).catch(() => null));
+
+/** A label's spot (`<text x y>`), the same in two layouts of a pinned diagram where the box stayed. */
+const spot = (g) => ['x', 'y'].map((k) => Number(g?.querySelector('text')?.getAttribute(k)));
+
+/**
+ * Live routing: lay the cell out with the dragged box where it is now, and draw
+ * its arrows as routed there, at most once a frame. The saved text is untouched.
+ */
+function route(d) {
+  if (d.frame || !setting('diagrams.live-layout')) return;
+  d.frame = requestAnimationFrame(async () => {
+    const gv = await graphviz();
+    d.frame = 0;
+    const v = info.get(d.cell);
+    const at = boxInfo(d.cell, d.node)?.pos;
+    if (!gv || drag !== d || !v?.text || !at) return;
+    const pos = `${at[0] + d.ux / 72},${at[1] - d.uy / 72}!`;
+    const text = v.text.replace(/\}\s*$/, `${JSON.stringify(d.node)} [pos="${pos}"];\n}\n`);
+    let svg;
+    try { svg = new DOMParser().parseFromString(gv.layout(text, 'svg', v.settings?.layout ?? 'neato'), 'image/svg+xml'); } catch { return; }
+    // the two layouts' frames differ by the bounding box: line them up on a box that stayed
+    const other = nodes(d.cellEl).find((g) => nameOf(g) !== d.node);
+    const twin = nodeNamed(svg, nameOf(other));
+    const [x0, y0] = spot(other);
+    const [x1, y1] = spot(twin);
+    if (![x0, y0, x1, y1].every(Number.isFinite)) return;
+    const all = edges(d.cellEl);
+    const routed = edges(svg);
+    const graph = d.g.closest('g.graph');
+    for (const r of d.routed) r.remove();
+    d.routed = d.edges.map(([e]) => {
+      const r = routed[all.indexOf(e)];
+      r.classList.add('qd-dot-routed');
+      r.setAttribute('transform', `translate(${x0 - x1} ${y0 - y1})`);
+      graph.insertBefore(r, graph.querySelector('g.node'));
+      return r;
+    });
+    for (const { line: l } of d.lines) l.style.display = 'none';
+  });
+}
+
 /** Undo the provisional look of a drag. */
 function restore(d) {
   d.g?.removeAttribute('transform');
+  cancelAnimationFrame(d.frame);
+  for (const r of d.routed) r.remove();
   for (const l of d.lines) l.line.remove();
   for (const [e] of d.edges) e.style.display = '';
 }
@@ -144,7 +193,7 @@ function down(e) {
   e.stopImmediatePropagation();
   e.preventDefault();
   const graph = cellEl.querySelector('svg g.graph');
-  const base = { cell, cellEl, x: e.clientX, y: e.clientY, scale: graph.getScreenCTM().a, pinned: info.get(cell).pinned, lines: [], edges: [] };
+  const base = { cell, cellEl, x: e.clientX, y: e.clientY, scale: graph.getScreenCTM().a, pinned: info.get(cell).pinned, lines: [], edges: [], routed: [] };
   if (handle) { // connect: a line follows the pointer
     const from = sel.node;
     const l = line(graph, 'qd-dot-follow');
@@ -155,6 +204,7 @@ function down(e) {
   }
   select(cell, what);
   if (g) drag = { ...base, node: what.node, g };
+  if (g && setting('diagrams.live-layout')) graphviz(); // ready by the first move
 }
 
 function move(e) {
@@ -195,6 +245,7 @@ function move(e) {
   }
   drag.ux = ux;
   drag.uy = uy;
+  route(drag);
 }
 
 /** A connect drag's drop: on a box, an arrow to it; on empty space in the diagram, a new box there. */
