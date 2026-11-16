@@ -77,6 +77,13 @@ pub fn json(dir: &Path, args: &[&str]) -> (bool, serde_json::Value) {
     json_of(qd(dir), args)
 }
 
+/// The command fails with this error code.
+pub fn err(dir: &Path, args: &[&str], code: &str) {
+    let (good, v) = json(dir, args);
+    assert!(!good, "{args:?} should fail: {v}");
+    assert_eq!(v["error"]["code"], code, "{args:?}: {v}");
+}
+
 /// `json`, with `bin` first on `PATH` (stub plugins).
 pub fn with_path(dir: &Path, bin: &Path, args: &[&str]) -> (bool, serde_json::Value) {
     let mut c = qd(dir);

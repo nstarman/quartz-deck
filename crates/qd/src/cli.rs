@@ -1576,14 +1576,9 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                 }
                 DotCmd::Rm { cell, target } => edit(&|d| dot::rm(d, cell, target)),
                 DotCmd::Flip { cell, edge } => edit(&|d| dot::flip(d, cell, edge)),
-                DotCmd::New { on, after, before } => edit(&|d| {
-                    let at = match (after, before) {
-                        (Some(r), _) => Some(crate::ops::Pos::After(r)),
-                        (None, Some(r)) => Some(crate::ops::Pos::Before(r)),
-                        (None, None) => None,
-                    };
-                    dot::new(d, on.as_deref(), at)
-                }),
+                DotCmd::New { on, after, before } => {
+                    edit(&|d| dot::new(d, on.as_deref(), at(after, before)))
+                }
                 DotCmd::Pin { cell, positions } => {
                     let positions = match positions {
                         Some(j) => {

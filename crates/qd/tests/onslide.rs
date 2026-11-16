@@ -463,6 +463,17 @@ impl Ed {
         right: bool,
         mods: i64,
     ) {
+        self.mouse_n(t, (x, y), right, mods, 1).await;
+    }
+    /// A mouse event that is click number `count` (2 for a double-click's second).
+    async fn mouse_n(
+        &self,
+        t: DispatchMouseEventType,
+        (x, y): (f64, f64),
+        right: bool,
+        mods: i64,
+        count: i64,
+    ) {
         let up = matches!(t, DispatchMouseEventType::MouseReleased);
         let p = DispatchMouseEventParams::builder()
             .r#type(t)
@@ -480,7 +491,7 @@ impl Ed {
             } else {
                 1
             })
-            .click_count(1)
+            .click_count(count)
             .modifiers(mods)
             .build()
             .unwrap();
@@ -4437,9 +4448,8 @@ async fn diagram_pin_prompt() {
 impl Ed {
     /// Page point of a selected box's connect handle (`right`, `left`, `top`, `bottom`).
     async fn handle_point(&self, side: &str) -> (f64, f64) {
-        let h = format!("{FRAME}.querySelector('.qd-dot-handle[data-side={side}]')");
-        self.wait(&format!("!!{h}")).await;
-        self.point(&format!("(() => {{ const f = document.querySelector('#preview').getBoundingClientRect(); const r = {h}.getBoundingClientRect(); return [f.left + r.left + r.width / 2, f.top + r.top + r.height / 2]; }})()")).await
+        self.slide_point(&format!(".qd-dot-handle[data-side={side}]"))
+            .await
     }
     /// Page point halfway along the arrow titled `title` (`a->b`).
     async fn edge_point(&self, title: &str) -> (f64, f64) {
@@ -4449,21 +4459,19 @@ impl Ed {
         self.wait(&format!("!!{e}")).await;
         self.point(&format!("(() => {{ const f = document.querySelector('#preview').getBoundingClientRect(); const p = {e}.querySelector('path'); const q = p.getPointAtLength(p.getTotalLength() / 2).matrixTransform(p.getScreenCTM()); return [f.left + q.x, f.top + q.y]; }})()")).await
     }
-    async fn double_click(&self, (x, y): (f64, f64)) {
+    async fn double_click(&self, at: (f64, f64)) {
         use DispatchMouseEventType::*;
         for n in [1, 2] {
             for t in [MousePressed, MouseReleased] {
-                let p = DispatchMouseEventParams::builder()
-                    .r#type(t)
-                    .x(x)
-                    .y(y)
-                    .button(MouseButton::Left)
-                    .click_count(n)
-                    .build()
-                    .unwrap();
-                self.page.execute(p).await.unwrap();
+                self.mouse_n(t, at, false, 0, n).await;
             }
         }
+    }
+    /// Click an arrow of the diagram (`a->b`); it shows selected.
+    async fn select_edge(&self, title: &str) {
+        let e = self.edge_point(title).await;
+        self.page.click(Point { x: e.0, y: e.1 }).await.unwrap();
+        self.wait(DOT_SEL).await;
     }
     /// View ▸ Properties panel, open.
     async fn properties(&self) {
@@ -4549,9 +4557,7 @@ async fn diagram_delete_and_edge_properties() {
     ed.wait_file(|f| !f.contains("Paper"), "c deleted").await;
     assert!(ed.file().contains("  a -> b;\n}"), "{}", ed.file());
     ed.settle().await;
-    let e = ed.edge_point("a->b").await;
-    ed.page.click(Point { x: e.0, y: e.1 }).await.unwrap();
-    ed.wait(DOT_SEL).await;
+    ed.select_edge("a->b").await;
     ed.properties().await;
     // the panel's own controls (the element bar can float over them in a small window)
     ed.eval("[...document.querySelectorAll('form.dot-form button')].find((b) => b.textContent === 'Reverse').click()").await;

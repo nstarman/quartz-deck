@@ -1188,17 +1188,6 @@ fn look_of(n: &Node) -> Look {
         .collect()
 }
 
-/// The distinct looks among a diagram's boxes, in order of first use.
-pub fn looks(g: &Graph) -> Vec<Look> {
-    let mut out: Vec<Look> = Vec::new();
-    for l in g.nodes().iter().map(look_of) {
-        if !l.is_empty() && !out.contains(&l) {
-            out.push(l);
-        }
-    }
-    out
-}
-
 /// `--look NAME` or `--look-of NODE`.
 fn chosen_look(g: &Graph, look: Option<&str>, look_of_node: Option<&str>) -> Result<Option<Look>> {
     match (look, look_of_node) {
@@ -1408,11 +1397,10 @@ fn cut(text: &str, g: &Graph, e: &Edge) -> (Span, String) {
 
 /// An arrow as its own statement (out of its chain), returning that statement's index.
 fn isolate(doc: &mut Doc, e: &Edge) -> Result<usize> {
-    let g = doc.graph()?;
-    if e.chain.is_none() {
+    let Some((k, _)) = e.chain else {
         return Ok(e.stmt);
-    }
-    let k = e.chain.map_or(0, |c| c.0);
+    };
+    let g = doc.graph()?;
     let (r, attrs) = operands(&doc.0, &g, &g.stmts[e.stmt]);
     let alone = format!(
         "{} {} {}{attrs}",
@@ -1424,6 +1412,16 @@ fn isolate(doc: &mut Doc, e: &Edge) -> Result<usize> {
     let g = doc.graph()?;
     doc.apply(add_stmt(&doc.0, &g, &alone));
     Ok(doc.graph()?.stmts.len() - 1)
+}
+
+/// An arrow from `a` to `b` added at the end.
+fn link(doc: &mut Doc, a: &str, b: &str) -> Result<()> {
+    let g = doc.graph()?;
+    node(&g, a)?;
+    node(&g, b)?;
+    let s = format!("{} {} {}", dot_value(a), g.op(), dot_value(b));
+    doc.apply(add_stmt(&doc.0, &g, &s));
+    Ok(())
 }
 
 /// `qd dot add`: a new box, optionally placed, styled and connected.
@@ -1458,7 +1456,7 @@ pub fn add(
             .iter()
             .filter_map(|n| n.pos())
             .map(|(x, y, _)| (x + 2.0, y))
-            .reduce(|a, b| if b.0 > a.0 { b } else { a }),
+            .max_by(|a, b| a.0.total_cmp(&b.0)),
         None => None,
     };
     if let Some((x, y)) = at {
@@ -1468,11 +1466,7 @@ pub fn add(
     doc.apply(add_stmt(text, &g, &node_stmt(&name, &attrs)));
     for (a, b) in [(from, Some(name.as_str())), (Some(name.as_str()), to)] {
         if let (Some(a), Some(b)) = (a, b) {
-            let g = doc.graph()?;
-            node(&g, a)?;
-            node(&g, b)?;
-            let s = format!("{} {} {}", dot_value(a), g.op(), dot_value(b));
-            doc.apply(add_stmt(&doc.0, &g, &s));
+            link(&mut doc, a, b)?;
         }
     }
     Ok((
@@ -1484,16 +1478,13 @@ pub fn add(
 /// `qd dot connect`: an arrow from `a` to `b`.
 pub fn connect(d: &Deck, r: &str, a: &str, b: &str) -> Result<(crate::ops::Patch, Value)> {
     let (cell, body, text, g) = read(d, r)?;
-    node(&g, a)?;
-    node(&g, b)?;
     let k = 1 + g
         .edges()
         .iter()
         .filter(|e| e.from == a && e.to == b)
         .count();
     let mut doc = Doc(text.into());
-    let s = format!("{} {} {}", dot_value(a), g.op(), dot_value(b));
-    doc.apply(add_stmt(text, &g, &s));
+    link(&mut doc, a, b)?;
     let e = format!("{a}{}{b}#{k}", g.op());
     Ok((
         doc.patch("dot-connect", format!("{cell}:{e}"), body),
@@ -1517,12 +1508,7 @@ pub fn set(
         let (k, v) = p
             .split_once('=')
             .ok_or_else(|| QdError::InvalidArg(format!("'{p}': write KEY=VALUE")))?;
-        if !(k
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-            && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
-        {
+        if !(k.chars().next().is_some_and(is_id_start) && k.chars().all(is_id_char)) {
             return Err(QdError::InvalidArg(format!(
                 "'{k}' isn't an attribute name"
             )));
@@ -1679,18 +1665,13 @@ pub fn flip(d: &Deck, r: &str, target: &str) -> Result<(crate::ops::Patch, Value
     ))
 }
 
-/// `qd dot new`: the starter diagram at the end of slide `on`, or before or after a block.
-pub fn new(
-    d: &Deck,
-    on: Option<&str>,
-    at: Option<crate::ops::Pos>,
-) -> Result<(crate::ops::Patch, Value)> {
-    let (slide, at) = match (at, on) {
-        (Some(p @ (crate::ops::Pos::After(r) | crate::ops::Pos::Before(r))), _) => {
-            (d.element(r)?.0.id.clone(), p)
-        }
-        (_, Some(s)) => (s.to_string(), crate::ops::Pos::End),
-        _ => {
+/// `qd dot new`: the starter diagram before or after a block, else at the end of slide `on`.
+pub fn new(d: &Deck, on: Option<&str>, at: crate::ops::Pos) -> Result<(crate::ops::Patch, Value)> {
+    use crate::ops::Pos;
+    let slide = match (&at, on) {
+        (Pos::After(r) | Pos::Before(r), _) => d.element(r)?.0.id.clone(),
+        (Pos::End, Some(s)) => s.to_string(),
+        (Pos::End, None) => {
             return Err(QdError::InvalidArg(
                 "give --on SLIDE, --after REF or --before REF".into(),
             ));
@@ -2180,8 +2161,6 @@ mod tests {
     fn fresh_names_looks_and_the_starter() {
         let g = parse("digraph { n1; n3; x [shape=box]; y [shape=box]; z [shape=oval] }").unwrap();
         assert_eq!(fresh(&g), "n2");
-        let shapes: Vec<String> = looks(&g).iter().map(|l| l[0].1.clone()).collect();
-        assert_eq!(shapes, ["box", "oval"]);
         assert_eq!(
             starter("tool").unwrap()[2],
             ("fillcolor".into(), "#3d4a5c".into())
@@ -2195,8 +2174,9 @@ mod tests {
         assert!(cell.starts_with("```{dot}\n") && cell.ends_with("\n```"));
         let g = parse(&cell[9..cell.len() - 4]).unwrap();
         assert!(g.pinned());
+        let looks: Vec<Look> = g.nodes().iter().map(look_of).collect();
         assert_eq!(
-            looks(&g),
+            looks,
             [starter("artifact").unwrap(), starter("tool").unwrap()]
         );
         assert_eq!(edges(&g), ["data->tool#1"]);

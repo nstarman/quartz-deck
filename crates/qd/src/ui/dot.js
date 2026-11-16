@@ -31,6 +31,10 @@ const editable = (cellEl) => !!cellEl && info.get(cellEl.dataset.qd)?.editable =
 
 const nodes = (cellEl) => [...cellEl.querySelectorAll('svg g.node')];
 const nodeNamed = (cellEl, name) => nodes(cellEl).find((g) => nameOf(g) === name);
+const edges = (cellEl) => [...cellEl.querySelectorAll('svg g.edge')];
+/** `a->b#k` (`a--b#k` in an undirected graph). */
+const op = (d) => (d?.directed === false ? '--' : '->');
+const refOf = (d, e) => `${e.from}${op(d)}${e.to}#${e.index}`;
 const boxInfo = (cell, name) => info.get(cell)?.nodes?.find((n) => n.name === name);
 
 /** An edge's ends from its title (`a:p->b`), ports dropped. */
@@ -39,13 +43,12 @@ const ends = (g) => nameOf(g).split(/->|--/).map((s) => s.replace(/:[^:]*$/, '')
 /** `a->b#k`: the k-th edge with these ends, in the SVG's order (the source's). */
 function edgeRef(cellEl, g) {
   const t = nameOf(g);
-  const same = [...cellEl.querySelectorAll('svg g.edge')].filter((e) => nameOf(e) === t);
-  const op = info.get(cellEl.dataset.qd)?.directed === false ? '--' : '->';
-  return `${ends(g).join(op)}#${same.indexOf(g) + 1}`;
+  const same = edges(cellEl).filter((e) => nameOf(e) === t);
+  return `${ends(g).join(op(info.get(cellEl.dataset.qd)))}#${same.indexOf(g) + 1}`;
 }
 
 function edgeNamed(cellEl, ref) {
-  return [...cellEl.querySelectorAll('svg g.edge')].find((g) => edgeRef(cellEl, g) === ref);
+  return edges(cellEl).find((g) => edgeRef(cellEl, g) === ref);
 }
 
 /** Centre of a node in the graph group's units. */
@@ -62,7 +65,7 @@ function toGraph(graph, x, y) {
 /** The edges touching `name`, with the name at their other end. */
 function edgesOf(cellEl, name) {
   const out = [];
-  for (const e of cellEl.querySelectorAll('svg g.edge')) {
+  for (const e of edges(cellEl)) {
     const [a, b] = ends(e);
     if (a === name) out.push([e, b]);
     else if (b === name) out.push([e, a]);
@@ -145,7 +148,8 @@ function down(e) {
   if (handle) { // connect: a line follows the pointer
     const from = sel.node;
     const l = line(graph, 'qd-dot-follow');
-    ['x1', 'y1'].forEach((k, i) => l.setAttribute(k, handle.getAttribute(['cx', 'cy'][i])));
+    l.setAttribute('x1', handle.getAttribute('cx'));
+    l.setAttribute('y1', handle.getAttribute('cy'));
     drag = { ...base, connect: true, from, graph, lines: [{ line: l }] };
     return;
   }
@@ -305,16 +309,15 @@ export async function mark() {
   }
   // the box or arrow is gone (deleted, undone, reversed elsewhere)
   const d = sel && info.get(sel.cell);
-  const op = d?.directed === false ? '--' : '->';
-  if (sel && !(sel.node ? d?.nodes?.some((n) => n.name === sel.node) : d?.edges?.some((e) => `${e.from}${op}${e.to}#${e.index}` === sel.edge))) sel = null;
+  if (sel && !(sel.node ? d?.nodes?.some((n) => n.name === sel.node) : d?.edges?.some((e) => refOf(d, e) === sel.edge))) sel = null;
   highlight();
   if (sel) api.panelChanged(); // the Properties panel shows the box as it is now
 }
 
-/** A diagram the editor can pin: readable, not pinned yet. */
-export const pinnable = (cell) => info.get(cell)?.editable === true && !info.get(cell).pinned;
 /** A diagram qd can edit. */
 export const diagram = (cell) => info.get(cell)?.editable === true;
+/** A diagram the editor can pin: readable, not pinned yet. */
+export const pinnable = (cell) => diagram(cell) && !info.get(cell).pinned;
 
 export const selected = () => sel;
 /** A box or arrow of `cell` is selected. */
@@ -324,14 +327,13 @@ export const flippable = (cell) => selectedIn(cell) && !!sel.edge && info.get(ce
 
 /** The editor selected something else: the box or arrow is no longer selected. */
 export function follow(ref) {
-  if (sel && sel.cell !== ref) { sel = null; highlight(); }
+  if (sel && sel.cell !== ref) select(null);
 }
 
 /** Delete the selected box (with its arrows) or arrow. */
 export async function remove() {
   const s = sel;
-  sel = null;
-  highlight();
+  select(null);
   return api.op('dot rm', { cell: s.cell, target: s.node ?? s.edge });
 }
 
@@ -358,7 +360,7 @@ export function panel(cell) {
   const button = (text, run, cls = '') => { const b = el('button', { type: 'button', textContent: text, className: cls }); b.addEventListener('click', run); buttons.append(b); };
   form.append(fs, buttons);
   if (s.edge) {
-    const e = d.edges.find((x) => `${x.from}${d.directed ? '->' : '--'}${x.to}#${x.index}` === s.edge);
+    const e = d.edges.find((x) => refOf(d, x) === s.edge);
     fs.append(el('legend', { textContent: `Arrow ${s.edge.replace(/#1$/, '')}` }));
     if (d.directed) {
       const head = row('Arrowhead ', el('input', { type: 'checkbox', name: 'head', checked: e?.attrs?.arrowhead !== 'none' }));

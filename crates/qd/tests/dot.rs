@@ -103,11 +103,11 @@ fn move_at_and_by() {
     );
     assert!(ok && v["dry_run"] == true, "{v}");
     assert_eq!(text(&t), at);
-    let (ok, v) = json(
+    common::err(
         t.path(),
         &["--expect", "0000", "dot", "move", "d/0", "b", "--by", "0,1"],
+        "E_CONFLICT",
     );
-    assert!(!ok && v["error"]["code"] == "E_CONFLICT", "{v}");
     let (ok, _) = json(t.path(), &["undo"]);
     assert!(ok);
     assert_eq!(text(&t), DECK);
@@ -126,11 +126,17 @@ fn move_refuses_unpinned_and_unknown() {
         "{v}"
     );
     let t = deck(DECK);
-    let (ok, v) = json(t.path(), &["dot", "move", "d/0", "zz", "--at", "1,1"]);
-    assert!(!ok && v["error"]["code"] == "E_NOT_FOUND", "{v}");
+    common::err(
+        t.path(),
+        &["dot", "move", "d/0", "zz", "--at", "1,1"],
+        "E_NOT_FOUND",
+    );
     let t = deck(&DECK.replace("  a -> b;\n", "  a -> ;\n"));
-    let (ok, v) = json(t.path(), &["dot", "move", "d/0", "a", "--at", "1,1"]);
-    assert!(!ok && v["error"]["code"] == "E_UNSAFE_EDIT", "{v}");
+    common::err(
+        t.path(),
+        &["dot", "move", "d/0", "a", "--at", "1,1"],
+        "E_UNSAFE_EDIT",
+    );
 }
 
 const UNPINNED: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## Flow {#d}\n\n```{dot}\ndigraph {\n  node [shape=box];\n  a -> b;\n  b -> c;\n}\n```\n";
@@ -164,11 +170,11 @@ fn pin_with_positions() {
     assert_eq!(v["pinned"], true, "{v}");
     // missing a box
     let t = deck(UNPINNED);
-    let (ok, v) = json(
+    common::err(
         t.path(),
         &["dot", "pin", "d/0", "--positions", r#"{"a":[0,0]}"#],
+        "E_NOT_FOUND",
     );
-    assert!(!ok && v["error"]["code"] == "E_NOT_FOUND", "{v}");
 }
 
 #[test]
@@ -237,17 +243,16 @@ fn edit_ok(t: &tempfile::TempDir, args: &[&str]) -> (Value, String) {
 
 /// The lines added and removed between two texts.
 fn changed(before: &str, after: &str) -> (Vec<String>, Vec<String>) {
-    let b: Vec<&str> = before.lines().collect();
-    let a: Vec<&str> = after.lines().collect();
+    use similar::ChangeTag::*;
+    let line = |c: similar::Change<&str>| c.value().trim_end().to_string();
+    let diff = similar::TextDiff::from_lines(before, after);
+    let (added, removed): (Vec<_>, Vec<_>) = diff
+        .iter_all_changes()
+        .filter(|c| c.tag() != Equal)
+        .partition(|c| c.tag() == Insert);
     (
-        a.iter()
-            .filter(|l| !b.contains(l))
-            .map(|l| l.to_string())
-            .collect(),
-        b.iter()
-            .filter(|l| !a.contains(l))
-            .map(|l| l.to_string())
-            .collect(),
+        added.into_iter().map(line).collect(),
+        removed.into_iter().map(line).collect(),
     )
 }
 
@@ -287,10 +292,16 @@ fn add_placed_styled_and_connected() {
     let (_, after) = edit_ok(&t, &["dot", "add", "d/0", "--look", "tool"]);
     assert!(after.contains("n1 [shape=box, style=\"rounded,filled\", fillcolor=\"#3d4a5c\", color=\"#3d4a5c\", fontcolor=white, pos=\"4,1!\"];"), "{after}");
     let t = deck(UNPINNED);
-    let (ok, v) = json(t.path(), &["dot", "add", "d/0", "--at", "1,1"]);
-    assert!(!ok && v["error"]["code"] == "E_INVALID_ARG", "{v}");
-    let (ok, v) = json(t.path(), &["dot", "add", "d/0", "--look", "fancy"]);
-    assert!(!ok && v["error"]["code"] == "E_INVALID_ARG", "{v}");
+    common::err(
+        t.path(),
+        &["dot", "add", "d/0", "--at", "1,1"],
+        "E_INVALID_ARG",
+    );
+    common::err(
+        t.path(),
+        &["dot", "add", "d/0", "--look", "fancy"],
+        "E_INVALID_ARG",
+    );
 }
 
 #[test]
@@ -301,8 +312,11 @@ fn connect_and_repeat() {
     assert_eq!(changed(DECK, &after).0, ["  b -> a;"]);
     let (v, _) = edit_ok(&t, &["dot", "connect", "d/0", "a", "b"]);
     assert_eq!(v["edge"], "a->b#3", "the third a->b");
-    let (ok, v) = json(t.path(), &["dot", "connect", "d/0", "a", "zz"]);
-    assert!(!ok && v["error"]["code"] == "E_NOT_FOUND", "{v}");
+    common::err(
+        t.path(),
+        &["dot", "connect", "d/0", "a", "zz"],
+        "E_NOT_FOUND",
+    );
 }
 
 #[test]
@@ -346,8 +360,11 @@ fn set_attributes_and_looks() {
         after,
         DECK.replace("[color=red]", "[color=red, arrowhead=none]")
     );
-    let (ok, v) = json(t.path(), &["dot", "set", "d/0", "a", "bad key=1"]);
-    assert!(!ok && v["error"]["code"] == "E_INVALID_ARG", "{v}");
+    common::err(
+        t.path(),
+        &["dot", "set", "d/0", "a", "bad key=1"],
+        "E_INVALID_ARG",
+    );
 }
 
 const CHAIN: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## Flow {#d}\n\n```{dot}\ndigraph {\n  a -> b -> c [color=red];\n  c -> d;\n}\n```\n";
@@ -385,8 +402,7 @@ fn flip_an_arrow() {
         "{after}"
     );
     let t = deck(&CHAIN.replace("digraph", "graph").replace("->", "--"));
-    let (ok, v) = json(t.path(), &["dot", "flip", "d/0", "c--d"]);
-    assert!(!ok && v["error"]["code"] == "E_INVALID_ARG", "{v}");
+    common::err(t.path(), &["dot", "flip", "d/0", "c--d"], "E_INVALID_ARG");
 }
 
 #[test]
