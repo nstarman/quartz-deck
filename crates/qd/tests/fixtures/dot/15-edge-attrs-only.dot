@@ -1,0 +1,4 @@
+digraph {
+  edge [arrowhead=none]
+  a -> b -> c
+}

@@ -74,6 +74,11 @@ enum Cmd {
         #[command(subcommand)]
         action: Option<BibCmd>,
     },
+    /// Diagrams: read and edit a `{dot}` (Graphviz) cell
+    Dot {
+        #[command(subcommand)]
+        action: DotCmd,
+    },
     /// Print front matter, or set/unset a top-level key
     Meta {
         #[command(subcommand)]
@@ -633,6 +638,12 @@ fn parse_pair(s: &str) -> std::result::Result<(f64, f64), String> {
 }
 
 #[derive(Subcommand)]
+enum DotCmd {
+    /// The diagram in a `{dot}` cell: boxes, arrows, settings, and whether qd can edit it
+    Show { cell: String },
+}
+
+#[derive(Subcommand)]
 enum BibCmd {
     /// Merge a .bib (BibTeX/BibLaTeX) or CSL-JSON file, or a source plugin's
     /// references (`--from zotero KEY` runs `qd-zotero KEY`), keeping cited keys
@@ -706,6 +717,9 @@ fn output_of(cmd: &str) -> &'static str {
             r#"{"version","slide":{"id","explicit","index","kind","level","title","attrs":{"id","classes","kv"},"opaque","source","blocks":[{"id","explicit","kind","text","attrs","geom"?}]}}"#
         }
         "meta" => r#"{"version","front_matter":{...}}"#,
+        "dot" => {
+            r#"show: {"ok","kind":"dot","cell","directed","pinned","editable":true|{"reason","at":{"line","column"}},"settings":{...},"nodes":[{"name","label","look":{...},"url","image","pos":[x,y]|null,"pinned","size":{...},"locked"}],"edges":[{"from","to","index","attrs":{...},"locked"}]}"#
+        }
         "bib" => {
             r#"bare: {"ok","kind":"bib","where":"none|companion|embedded|both","files":[{"path","format","inside"}],"embedded","entries","missing":[{"key","slides"}]}; pull: {"ok","op":"bib-pull","version","diff","file"?,"created"?,"embedded"?,"added","changed":[{"id","fields"}],"merged":[{"id","from"}],"gone","warnings"}; embed: {...,"entries","left"}; extract: {...,"file","entries"}; convert: {...,"file","from"} — every write is an edit of the deck and its companion file together (--dry-run, --expect, one qd undo)"#
         }
@@ -1408,6 +1422,12 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
         Cmd::Meta {
             action: Some(MetaCmd::Unset { key }),
         } => ctx.edit(|d| ops::meta_unset(d, key)),
+        Cmd::Dot { action } => {
+            let d = read()?.1;
+            match action {
+                DotCmd::Show { cell } => crate::dot::show(&d, cell),
+            }
+        }
         Cmd::Bib { action } => {
             let store = ctx.store()?;
             let d = store.read()?;

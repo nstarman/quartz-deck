@@ -1,0 +1,5 @@
+digraph {
+  1 -> -2.5 -> .5;
+  _x9 -> "with space";
+  node_é -> 1;
+}

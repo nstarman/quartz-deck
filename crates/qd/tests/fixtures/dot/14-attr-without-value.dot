@@ -1,0 +1,6 @@
+digraph {
+  node [shape=box];
+  a [label=A, xlabel=""]
+  b
+  a -> b
+}

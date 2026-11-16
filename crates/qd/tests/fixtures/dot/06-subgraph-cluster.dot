@@ -1,0 +1,10 @@
+digraph {
+  start -> mid;
+  subgraph cluster_left {
+    label = "Left";
+    x -> y;
+  }
+  subgraph { rank=same; mid; end }
+  { p q } -> r;
+  mid -> end;
+}

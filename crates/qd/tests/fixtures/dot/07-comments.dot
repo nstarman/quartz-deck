@@ -1,0 +1,8 @@
+// a leading comment
+# a preprocessor-style line
+digraph {
+  /* block
+     comment */ a -> b; // trailing
+  # another line comment
+  c [label="not // a comment"];
+}

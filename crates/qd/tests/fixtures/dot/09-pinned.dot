@@ -1,0 +1,12 @@
+//| label: fig-pipeline
+digraph pipeline {
+  layout=neato; splines=ortho;
+  node [shape=box, style="rounded,filled", fontname="Helvetica"];
+  data   [label="Data",   pos="0,2!", fillcolor="white"];
+  code   [label="Code",   pos="0,1!", fillcolor="white"];
+  tool   [label="Tool ↗", pos="2.5,1.5!", fillcolor="#3d4a5c", fontcolor="white", URL="https://example.org/tool"];
+  out    [label="Paper",  pos="5,1.5!", width=1.5, height=0.6, fixedsize=true];
+  j      [shape=point, width=0.01, pos="1.25,1.5!"];
+  data -> j [arrowhead=none]; code -> j [arrowhead=none];
+  j -> tool; tool -> out;
+}
