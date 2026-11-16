@@ -450,9 +450,9 @@ fn dot_image_example() {
     assert!(img.contains("href=\"face.png\""), "{img}");
     let tx = num(&tool[text..], "x");
     assert!(x + w <= tx, "left of the label: {x} + {w} <= {tx}");
-    let (lo, hi) = (-44.0, 0.0); // the box's top and bottom, from its path
+    // the box, from its path: x from 166, y from -44 to 0
     assert!(
-        y >= lo && y + h <= hi && x >= 166.0,
+        y >= -44.0 && y + h <= 0.0 && x >= 166.0,
         "inside the box: {img}"
     );
     assert!(!node_svg(&html, "data").contains("<image"));
@@ -485,15 +485,8 @@ fn dot_image_offline_and_one_file() {
         .filter(|p| !p["url"].as_str().unwrap_or("").contains("/mathjax@"))
         .collect();
     assert!(others.is_empty(), "{others:#?}");
-    let out = common::qd(t.path())
-        .args(["--deck", "example.qmd", "export"])
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+    let (ok, v) = common::json(t.path(), &["--deck", "example.qmd", "export"]);
+    assert!(ok, "{v}");
     let html = std::fs::read_to_string(t.path().join("export/example.html")).unwrap();
     assert!(
         html.contains("<image class=\"dot-image\" href=\"data:image/png;base64,"),

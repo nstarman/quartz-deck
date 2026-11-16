@@ -965,14 +965,13 @@ fn add_stmt(text: &str, g: &Graph, stmt: &str) -> (Span, String) {
 /// Set `key` to `v` (as DOT text) in a statement's attribute lists: its value
 /// in place, else added to the last list, else a new list after the statement.
 fn set_in(lists: &[List], end: usize, key: &str, v: &str) -> (Span, String) {
-    let v = v.to_string();
     if let Some(a) = lists
         .iter()
         .rev()
         .flat_map(|l| l.attrs.iter().rev())
         .find(|a| a.key == key)
     {
-        return (a.value_span, v);
+        return (a.value_span, v.into());
     }
     match lists.last() {
         Some(l) => {
@@ -1001,9 +1000,11 @@ fn node(g: &Graph, name: &str) -> Result<Node> {
 
 /// The text of a spacer label (data-model "Spacer label"), when `label` is one.
 fn spacer_text(label: &str) -> Option<String> {
-    let re = regex::Regex::new(r#"^<TABLE BORDER="0" CELLPADDING="0" CELLSPACING="4"><TR><TD WIDTH="\d+" HEIGHT="\d+" FIXEDSIZE="TRUE"></TD><TD>(.*)</TD></TR></TABLE>$"#)
-        .expect("valid regex");
-    re.captures(label).map(|c| crate::inline::unescape(&c[1]))
+    static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r#"^<TABLE BORDER="0" CELLPADDING="0" CELLSPACING="4"><TR><TD WIDTH="\d+" HEIGHT="\d+" FIXEDSIZE="TRUE"></TD><TD>(.*)</TD></TR></TABLE>$"#)
+            .expect("valid regex")
+    });
+    RE.captures(label).map(|c| crate::inline::unescape(&c[1]))
 }
 
 /// A spacer label for `text` in a box `height` inches tall, as DOT text: an

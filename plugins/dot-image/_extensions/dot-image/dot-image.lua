@@ -52,12 +52,12 @@ local function bounds(shape)
   return { math.min(table.unpack(xs)), math.min(table.unpack(ys)), math.max(table.unpack(xs)), math.max(table.unpack(ys)) }
 end
 
-local function attr(s) return (s:gsub('&', '&amp;'):gsub('"', '&quot;'):gsub('<', '&lt;')) end
+local function attr(s) return (s:gsub('&', '&amp;'):gsub('"', '&quot;'):gsub('<', '&lt;'):gsub('>', '&gt;')) end
 
 --- `svg` with the picture of each box in `boxes` drawn into its node.
 local function draw(svg, boxes, dir)
   for name, b in pairs(boxes) do
-    local file = pandoc.path.is_absolute(b.path) and b.path or pandoc.path.join({ dir, b.path })
+    local file = pandoc.path.join({ dir, b.path }) -- an absolute path stays as it is
     local f = io.open(file, 'r')
     if not f then
       warn('no file ' .. b.path .. ' for the box ' .. name)
@@ -65,9 +65,9 @@ local function draw(svg, boxes, dir)
     end
     f:close()
     do
-      local esc = name:gsub('&', '&amp;'):gsub('<', '&lt;'):gsub('>', '&gt;')
-      local _, at = svg:find('<title>' .. esc:gsub('%p', '%%%0') .. '</title>')
-      if not at then _, at = svg:find('<title>' .. esc:gsub('%-', '&#45;'):gsub('%p', '%%%0') .. '</title>') end
+      local esc = attr(name)
+      local _, at = svg:find('<title>' .. esc .. '</title>', 1, true)
+      if not at then _, at = svg:find('<title>' .. esc:gsub('%-', '&#45;') .. '</title>', 1, true) end
       if not at then goto next end
       local stop = svg:find('</g>', at, true)
       local node = svg:sub(at + 1, stop - 1)
@@ -103,9 +103,6 @@ function Pandoc(doc)
     warn('cells pulled in with {{< include >}} are not scanned for pictures')
   end
   local cells = scan(src)
-  local any = false
-  for _, c in ipairs(cells) do any = any or next(c) ~= nil end
-  if not any then return nil end
   local dir = pandoc.path.directory(input)
   local k = 0
   return doc:walk({

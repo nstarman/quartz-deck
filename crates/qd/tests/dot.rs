@@ -485,24 +485,17 @@ fn image_installs_dot_image() {
         );
     }
     let (_, v) = json(t.path(), &["dot", "show", "d/0"]);
-    assert_eq!(
-        (
-            v["nodes"][1]["label"].clone(),
-            v["nodes"][1]["image"].clone()
-        ),
-        (json!("Tool"), json!("face.png"))
-    );
+    assert_eq!(v["nodes"][1]["label"], "Tool");
+    assert_eq!(v["nodes"][1]["image"], "face.png");
     let (ok, _) = json(t.path(), &["dot", "rename", "d/0", "b", "Tools"]);
     assert!(ok);
     assert_eq!(text(&t), after.replace("<TD>Tool</TD>", "<TD>Tools</TD>"));
     let (ok, _) = json(t.path(), &["dot", "set", "d/0", "b", "image="]);
     assert!(ok);
+    let now = text(&t);
     assert!(
-        text(&t).contains(
-            "b [label=Tools, pos=\"2,1!\", URL=\"https://example.org/tool\", width=1.5];"
-        ),
-        "{}",
-        text(&t)
+        now.contains("b [label=Tools, pos=\"2,1!\", URL=\"https://example.org/tool\", width=1.5];"),
+        "{now}"
     );
     for _ in 0..3 {
         assert!(json(t.path(), &["undo"]).0);
