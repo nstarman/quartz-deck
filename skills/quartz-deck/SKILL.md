@@ -287,8 +287,8 @@ An arrow on a slide is one line of Emil Hvitfeldt's quarto-arrows shortcode,
 slide's own pixels (on a 1600×900 deck, `0,0` is the top-left corner and
 `1600,900` the bottom-right). `qd arrow list SLIDE` and `qd arrow show REF`
 read them; an arrow without `position="absolute"` (in the text's flow), or
-one qd can't read safely, is reported in `editable` with the reason and
-stays editable as text.
+one that can't be read safely, is reported in `editable` with the reason
+and stays editable as text.
 
 - `qd arrow add SLIDE --from X,Y --to X,Y [--color C] [--width N] [--dash true|A,B] [--head H] [--heads end|start|both|none] [--label T] [--label-position start|middle|end] [--fragment]`
   adds one after the slide's content, before its notes, and prints its ref.
