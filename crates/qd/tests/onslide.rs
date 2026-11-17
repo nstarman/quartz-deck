@@ -872,7 +872,9 @@ async fn source_editor_opens_over_math_and_refuses_new_slides() {
         return;
     };
     ed.go("eq").await;
-    ed.click_in_slide("[data-qd=\"eq/0\"]").await;
+    // a click selects math; a double-click opens its source
+    ed.double_click(ed.slide_point("[data-qd=\"eq/0\"]").await)
+        .await;
     ed.wait(&format!("{SRC}?.value === '$$\\nE = mc^2\\n$$'"))
         .await;
     // drawn over the element it edits
@@ -888,7 +890,8 @@ async fn source_editor_opens_over_math_and_refuses_new_slides() {
     // a slide heading in the source is refused; the text stays for fixing
     ed.idle().await;
     ed.go("eq").await;
-    ed.click_in_slide("[data-qd=\"eq/0\"]").await;
+    ed.double_click(ed.slide_point("[data-qd=\"eq/0\"]").await)
+        .await;
     ed.src_open().await;
     let before = ed.file();
     ed.set_source("Text.\n\n## Sneaky\n\nMore.").await;
@@ -4850,18 +4853,19 @@ async fn diagram_snap_guides() {
     );
 }
 
-/// A click on code (a code cell, a `{dot}` diagram, a fenced code block)
-/// selects it; its source opens on request: Enter, or the element bar's
-/// Markdown button.
+/// A click on code (a code cell, a `{dot}` diagram, a fenced code block), math
+/// or a callout selects it; its source opens on request: Enter, or the element
+/// bar's Markdown button.
 #[tokio::test(flavor = "multi_thread")]
 async fn code_click_selects_source_on_request() {
-    let deck = "---\ntitle: T\nformat: revealjs\n---\n\n## Code {#c}\n\n```{python}\nx = 1\n```\n\n```js\nlet y = 2;\n```\n";
+    let deck = "---\ntitle: T\nformat: revealjs\n---\n\n## Code {#c}\n\n```{python}\nx = 1\n```\n\n```js\nlet y = 2;\n```\n\n$$\nx^2\n$$\n\n::: {.callout-note}\nA note.\n:::\n";
     let Some(ed) = Ed::open(deck).await else {
         return;
     };
     ed.go("c").await;
     let closed = "document.querySelector('#srcedit').hidden";
-    for el in ["[data-qd=\"c/0\"]", "[data-qd=\"c/1\"]"] {
+    for el in ["c/0", "c/1", "c/2", "c/3"].map(|r| format!("[data-qd=\"{r}\"]")) {
+        let el = el.as_str();
         ed.click_in_slide(el).await;
         ed.wait("!document.querySelector('#elbar').hidden").await;
         tokio::time::sleep(Duration::from_millis(300)).await;

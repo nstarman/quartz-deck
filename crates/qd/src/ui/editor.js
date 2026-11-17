@@ -503,11 +503,12 @@ function hookFrame() {
     const point = { x: e.clientX, y: e.clientY };
     (target ? beginEdit(target, point) : Promise.resolve(false)).then(async (ok) => {
       if (ok || !el) return;
-      // a positioned box selects for dragging, and code selects (its source opens with
-      // Enter, ⌥Enter, a double-click or the bar's Markdown button); anything else
-      // opens its source
-      const code = ['cell', 'code'].includes((await elementTarget(el.dataset.qd))?.block.kind);
-      if (code || el.classList.contains('absolute')) select(el.dataset.qd); else beginSource(el);
+      // a positioned box selects for dragging, and so do code, math and callouts (their
+      // source opens with Enter, ⌥Enter, a double-click or the bar's Markdown button);
+      // anything else opens its source
+      const b = (await elementTarget(el.dataset.qd))?.block;
+      const quiet = ['cell', 'code', 'math'].includes(b?.kind) || !!b?.attrs?.classes?.some((c) => c.startsWith('callout'));
+      if (quiet || el.classList.contains('absolute')) select(el.dataset.qd); else beginSource(el);
     });
   }, true);
   doc.addEventListener('pointerdown', placeDrag, true);
