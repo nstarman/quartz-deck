@@ -689,6 +689,21 @@ enum ArrowCmd {
         #[arg(long, value_parser = parse_pair, allow_hyphen_values = true, conflicts_with_all = ["from", "to"])]
         by: Option<(f64, f64)>,
     },
+    /// Bend an arrow so it passes through a point (control points), or straighten it
+    Bend {
+        arrow: String,
+        /// The point the curve passes through at its middle, X,Y in slide pixels
+        #[arg(long, value_parser = parse_pair, allow_hyphen_values = true, conflicts_with = "straight", required_unless_present = "straight")]
+        through: Option<(f64, f64)>,
+        #[arg(long)]
+        straight: bool,
+    },
+    /// Set an arrow's options (color, width, dash, line, head, head-start, head-end, label, label-position, fragment…); KEY= removes one
+    Set {
+        arrow: String,
+        #[arg(required = true, value_parser = parse_kv)]
+        pairs: Vec<(String, String)>,
+    },
     /// Remove an arrow
     Rm { arrow: String },
     /// One arrow: its start, end, control points and options, and whether qd can edit it
@@ -1418,6 +1433,8 @@ const API_OPS: &[&str] = &[
     "arrow add",
     "arrow move",
     "arrow rm",
+    "arrow bend",
+    "arrow set",
     "arrow show",
     "arrow list",
     "dot show",
@@ -1672,6 +1689,10 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                     to,
                     by,
                 } => ctx.edit_with(|d| arrows::move_arrow(d, arrow, *from, *to, *by)),
+                ArrowCmd::Bend { arrow, through, .. } => {
+                    ctx.edit_with(|d| arrows::bend(d, arrow, *through))
+                }
+                ArrowCmd::Set { arrow, pairs } => ctx.edit_with(|d| arrows::set(d, arrow, pairs)),
                 ArrowCmd::Rm { arrow } => ctx.edit(|d| arrows::rm(d, arrow)),
                 ArrowCmd::Show { arrow } => crate::arrows::show(&d, arrow),
                 ArrowCmd::List { slide } => crate::arrows::list(&d, slide),

@@ -181,37 +181,25 @@ fn quoted(v: &str, quote: Option<char>) -> Result<String> {
     })
 }
 
-/// The change to `text` (an arrow's paragraph) that sets `key` to `v`, or
-/// removes it (`None`): the value in place, a new option after the last one,
-/// or the option and its space gone. Offsets are in `text`.
-pub fn set_opt(text: &str, a: &Arrow, key: &str, v: Option<&str>) -> Result<(Span, String)> {
-    let had = a.opts.iter().rev().find(|o| o.key == key);
-    Ok(match (had, v) {
-        (Some(o), Some(v)) => (
+/// The change to `text` (an arrow's paragraph) that sets its option `o` to
+/// `v` in place, keeping its quote, or (`None`) removes it and its space.
+/// Offsets are in `text`.
+fn change(text: &str, o: &Opt, v: Option<&str>) -> Result<(Span, String)> {
+    Ok(match v {
+        Some(v) => (
             Span {
                 start: o.span.0,
                 end: o.span.1,
             },
-            format!("{key}={}", quoted(v, o.quote)?),
+            format!("{}={}", o.key, quoted(v, o.quote)?),
         ),
-        (Some(o), None) => {
-            let start = text[..o.span.0].trim_end().len();
-            (
-                Span {
-                    start,
-                    end: o.span.1,
-                },
-                String::new(),
-            )
-        }
-        (None, Some(v)) => {
-            let at = a.opts.last().map_or(a.close, |o| o.span.1);
-            (
-                Span { start: at, end: at },
-                format!(" {key}={}", quoted(v, Some('"'))?),
-            )
-        }
-        (None, None) => (Span { start: 0, end: 0 }, String::new()),
+        None => (
+            Span {
+                start: text[..o.span.0].trim_end().len(),
+                end: o.span.1,
+            },
+            String::new(),
+        ),
     })
 }
 
@@ -245,7 +233,12 @@ pub fn add(
 ) -> Result<(crate::ops::Patch, Value)> {
     use crate::ops::{Pos, block_add};
     let s = d.slide(slide)?;
-    let text = line(from, to, opts)?;
+    // checked as `set` checks them; defaults aren't written
+    let opts: Vec<_> = set_changes(opts.iter().copied())?
+        .into_iter()
+        .filter_map(|(k, v)| Some((k, v?)))
+        .collect();
+    let text = line(from, to, &opts)?;
     let notes = s
         .blocks
         .iter()
@@ -289,21 +282,168 @@ pub fn move_arrow(
         }
     }
     let (from, to) = (from.unwrap_or(a.from), to.unwrap_or(a.to));
-    let reps = changes
+    let changes: Vec<_> = changes
         .iter()
-        .map(|(k, v)| {
-            let (s, new) = set_opt(text, &a, k, Some(v))?;
-            Ok((
+        .map(|(k, v)| (*k, Some(v.as_str())))
+        .collect();
+    let p = patch("arrow move", &r, span, text, &a, &changes)?;
+    Ok((p, json!({"ref": r, "from": from, "to": to})))
+}
+
+/// The patch making `changes` (`None` removes) to the arrow `a`, whose
+/// paragraph `text` is at `span`. New options go in together after the last
+/// one, in the order given.
+fn patch(
+    op: &str,
+    r: &str,
+    span: Span,
+    text: &str,
+    a: &Arrow,
+    changes: &[(&str, Option<&str>)],
+) -> Result<crate::ops::Patch> {
+    let mut reps = vec![];
+    let mut added = String::new();
+    for (k, v) in changes {
+        match (a.opts.iter().rev().find(|o| o.key == *k), v) {
+            (Some(o), v) => reps.push(change(text, o, *v)?),
+            (None, Some(v)) => added.push_str(&format!(" {k}={}", quoted(v, Some('"'))?)),
+            (None, None) => {}
+        }
+    }
+    if !added.is_empty() {
+        let at = a.opts.last().map_or(a.close, |o| o.span.1);
+        reps.push((Span { start: at, end: at }, added));
+    }
+    let reps = reps
+        .into_iter()
+        .map(|(s, new)| {
+            (
                 Span {
                     start: span.start + s.start,
                     end: span.start + s.end,
                 },
                 new,
-            ))
+            )
         })
-        .collect::<Result<Vec<_>>>()?;
-    let p = crate::ops::patch("arrow move", r.clone(), reps, vec![]);
-    Ok((p, json!({"ref": r, "from": from, "to": to})))
+        .collect();
+    Ok(crate::ops::patch(op, r.to_string(), reps, vec![]))
+}
+
+/// A value `qd arrow set` accepts.
+enum Val {
+    Text,
+    Number,
+    Bool,
+    OneOf(&'static [&'static str]),
+}
+
+/// The options `set` changes, with quarto-arrows' default (not written).
+/// Ends, curve and placement have their own commands.
+const OPTIONS: &[(&str, Val, Option<&str>)] = &[
+    ("color", Val::Text, Some("black")),
+    ("width", Val::Number, Some("2")),
+    ("dash", Val::Text, None),
+    (
+        "line",
+        Val::OneOf(&["single", "dot", "double", "triple"]),
+        Some("single"),
+    ),
+    (
+        "head",
+        Val::OneOf(&[
+            "arrow", "stealth", "diamond", "circle", "dot", "square", "bar", "barbed", "none",
+        ]),
+        Some("arrow"),
+    ),
+    ("head-start", Val::Bool, Some("false")),
+    ("head-end", Val::Bool, Some("true")),
+    ("head-fill", Val::Bool, Some("true")),
+    ("size", Val::Number, Some("10")),
+    ("head-size", Val::Number, None),
+    ("opacity", Val::Number, Some("1")),
+    ("label", Val::Text, None),
+    (
+        "label-position",
+        Val::OneOf(&["start", "middle", "end"]),
+        Some("middle"),
+    ),
+    ("label-offset", Val::Number, Some("10")),
+    ("fragment", Val::OneOf(&["true", "draw"]), None),
+    ("fragment-index", Val::Number, None),
+    ("aria-label", Val::Text, None),
+    ("alt", Val::Text, None),
+    ("title", Val::Text, None),
+];
+
+/// `KEY=VALUE` pairs as changes: checked, and a default value removes the option.
+fn set_changes<'a>(
+    pairs: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> Result<Vec<(&'static str, Option<&'a str>)>> {
+    pairs
+        .into_iter()
+        .map(|(k, v)| {
+            let bad = |why: String| QdError::InvalidArg(format!("{k}={v}: {why}"));
+            let (k, val, default) = OPTIONS
+                .iter()
+                .find(|o| o.0 == k)
+                .ok_or_else(|| bad("not an option qd arrow set changes (ends: qd arrow move; curve: qd arrow bend)".into()))?;
+            if v.is_empty() || Some(v) == *default {
+                return Ok((*k, None));
+            }
+            let why = match val {
+                Val::Number if v.parse::<f64>().is_err() => Some("a number".into()),
+                Val::Bool if v != "true" && v != "false" => Some("true or false".into()),
+                Val::OneOf(xs) if !xs.contains(&v) => Some(format!("one of {}", xs.join(", "))),
+                _ => None,
+            };
+            match why {
+                Some(w) => Err(bad(w)),
+                None => Ok((*k, Some(v))),
+            }
+        })
+        .collect()
+}
+
+/// `qd arrow set REF KEY=VALUE…`.
+pub fn set(d: &Deck, r: &str, pairs: &[(String, String)]) -> Result<(crate::ops::Patch, Value)> {
+    let (r, span, text, a) = editable(d, r)?;
+    let pairs = pairs.iter().map(|(k, v)| (k.as_str(), v.as_str()));
+    let p = patch("arrow set", &r, span, text, &a, &set_changes(pairs)?)?;
+    Ok((p, json!({"ref": r})))
+}
+
+/// The one control point, written as both `control1` and `control2`, that
+/// makes the curve from `p0` to `p1` pass through `m` at its middle
+/// (research R6); `None` when `m` is within 4 px of the straight line.
+pub fn bend_through(p0: (f64, f64), p1: (f64, f64), m: (f64, f64)) -> Option<(f64, f64)> {
+    let (dx, dy) = (p1.0 - p0.0, p1.1 - p0.1);
+    let len = dx.hypot(dy);
+    let off = if len == 0.0 {
+        (m.0 - p0.0).hypot(m.1 - p0.1)
+    } else {
+        ((m.0 - p0.0) * dy - (m.1 - p0.1) * dx).abs() / len
+    };
+    (off >= 4.0).then(|| {
+        (
+            (8.0 * m.0 - p0.0 - p1.0) / 6.0,
+            (8.0 * m.1 - p0.1 - p1.1) / 6.0,
+        )
+    })
+}
+
+/// `qd arrow bend REF --through X,Y | --straight`: a hand-written `curve` or
+/// `bend` gives way to the control points.
+pub fn bend(d: &Deck, r: &str, through: Option<(f64, f64)>) -> Result<(crate::ops::Patch, Value)> {
+    let (r, span, text, a) = editable(d, r)?;
+    let c = through.and_then(|m| bend_through(a.from, a.to, m)).map(pt);
+    let changes = [
+        ("control1", c.as_deref()),
+        ("control2", c.as_deref()),
+        ("curve", None),
+        ("bend", None),
+    ];
+    let p = patch("arrow bend", &r, span, text, &a, &changes)?;
+    Ok((p, json!({"ref": r, "straight": c.is_none()})))
 }
 
 /// `qd arrow rm REF`.
@@ -425,10 +565,23 @@ mod tests {
         );
     }
 
-    /// Apply one patch to `t`.
+    /// `changes` made to `t`, as a command makes them.
+    fn applied(t: &str, changes: &[(&str, Option<&str>)]) -> Result<String> {
+        let p = patch(
+            "t",
+            "t",
+            Span {
+                start: 0,
+                end: t.len(),
+            },
+            t,
+            &ok(t),
+            changes,
+        )?;
+        crate::ops::apply(t, &p)
+    }
     fn patched(t: &str, key: &str, v: Option<&str>) -> String {
-        let (s, new) = set_opt(t, &ok(t), key, v).unwrap();
-        format!("{}{new}{}", &t[..s.start], &t[s.end..])
+        applied(t, &[(key, v)]).unwrap()
     }
 
     #[test]
@@ -463,8 +616,8 @@ mod tests {
             patched(t, "label", Some(r#"say "hi""#)),
             t.replace("color=red", r#"color=red label='say "hi"'"#)
         );
-        assert!(set_opt(t, &ok(t), "label", Some(r#"it's "x""#)).is_err());
-        assert!(set_opt(t, &ok(t), "label", Some("a >}} b")).is_err());
+        assert!(applied(t, &[("label", Some(r#"it's "x""#))]).is_err());
+        assert!(applied(t, &[("label", Some("a >}} b"))]).is_err());
     }
 
     #[test]
@@ -481,6 +634,64 @@ mod tests {
         let a = ok(&line((0.0, 0.0), (10.0, -5.0), &[]).unwrap());
         assert!(line((0.0, 0.0), (1.0, 1.0), &[("label", "a >}} b")]).is_err());
         assert_eq!((a.from, a.to), ((0.0, 0.0), (10.0, -5.0)));
+    }
+
+    #[test]
+    fn bend_passes_through_the_point() {
+        let c = bend_through((0.0, 0.0), (100.0, 0.0), (50.0, 50.0)).unwrap();
+        // a cubic with both controls at c passes (p0 + 6c + p1) / 8 at its middle
+        let mid = |a: f64, b: f64, c: f64| (a + 6.0 * c + b) / 8.0;
+        assert!(
+            (mid(0.0, 100.0, c.0) - 50.0).abs() < 1e-9 && (mid(0.0, 0.0, c.1) - 50.0).abs() < 1e-9,
+            "{c:?}"
+        );
+        assert!(
+            bend_through((0.0, 0.0), (100.0, 0.0), (50.0, 3.0)).is_none(),
+            "near the line: straight"
+        );
+        assert!(bend_through((0.0, 0.0), (100.0, 100.0), (52.0, 48.0)).is_none());
+    }
+
+    fn set(t: &str, pairs: &[&str]) -> Result<String> {
+        let pairs = pairs.iter().map(|p| p.split_once('=').unwrap_or((p, "")));
+        applied(t, &set_changes(pairs)?)
+    }
+
+    #[test]
+    fn set_style() {
+        let t = r#"{{< arrow from="0,0" to="10,10" position="absolute" color=red >}}"#;
+        // a default isn't written: color=black removes it, width=2 adds nothing
+        assert_eq!(
+            set(t, &["color=black", "width=2"]).unwrap(),
+            t.replace(" color=red", "")
+        );
+        assert_eq!(
+            set(t, &["width=4", "head=stealth", "dash=true"]).unwrap(),
+            t.replace(
+                "color=red",
+                r#"color=red width="4" head="stealth" dash="true""#
+            )
+        );
+        assert_eq!(set(t, &["color="]).unwrap(), t.replace(" color=red", ""));
+        assert_eq!(
+            set(t, &["head-start=true", "head-end=false"]).unwrap(),
+            t.replace(
+                "color=red",
+                r#"color=red head-start="true" head-end="false""#
+            )
+        );
+        for bad in [
+            "head=spiral",
+            "width=wide",
+            "head-start=yes",
+            "label-position=left",
+            "nope=1",
+            "from=1,2",
+            "position=fixed",
+            "noequals",
+        ] {
+            assert!(set(t, &[bad]).is_err(), "{bad}");
+        }
     }
 
     #[test]

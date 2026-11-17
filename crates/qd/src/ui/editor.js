@@ -196,7 +196,7 @@ const PREVIEW_CSS = `html:not(.qd-present) {
   .qd-arrow.qd-sel, .qd-arrow:hover { outline: none !important; }
   .qd-arrow-hit { pointer-events: stroke; cursor: pointer; }
   .qd-arrow-handle { fill: #fff; stroke: #2a5bd7; stroke-width: 2px; vector-effect: non-scaling-stroke; pointer-events: all; cursor: grab; }
-  line.qd-arrow-provisional { stroke: #2a5bd7; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
+  .qd-arrow-provisional { stroke: #2a5bd7; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; fill: none; }
   .qd-drawing, .qd-drawing * { cursor: crosshair !important; }
   .qd-editing, .qd-editing:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 4px; cursor: text; }
   .qd-editing:focus { outline-style: solid; }
@@ -812,7 +812,7 @@ async function renderElementPanel() {
   const f = $('form.element-form', view);
   $('.kind', view).textContent = block.kind[0].toUpperCase() + block.kind.slice(1);
   $('.ref', view).textContent = ref;
-  const diagram = dot.panel(ref); // a selected box or arrow of a diagram (spec 015)
+  const diagram = dot.panel(ref) || arrows.panel(ref); // a diagram's box or arrow (015), an arrow (016)
   if (diagram) f.before(diagram);
   f.md.value = block.text;
   f.addEventListener('submit', async (e) => {
