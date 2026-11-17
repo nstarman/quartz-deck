@@ -352,7 +352,11 @@ export async function mark() {
     const onBox = (e) => editable(diagramOf(e.target)) && !!(nodeAt(e.target) || edgeAt(e.target) || e.target.closest('.qd-dot-handle'));
     for (const t of ['mousedown', 'click', 'dblclick']) {
       w.addEventListener(t, (e) => {
-        if (onBox(e) || (t === 'click' && dragged)) e.stopImmediatePropagation();
+        if (onBox(e) || (t === 'click' && dragged)) {
+          e.stopImmediatePropagation();
+          // a box with a link (URL=) sits in an <a>: in the editor a click selects it, never follows the link
+          if (t === 'click') e.preventDefault();
+        }
         if (t === 'click') dragged = false;
         if (t === 'dblclick' && onBox(e) && nodeAt(e.target)) rename(diagramOf(e.target), nodeAt(e.target));
       }, true);
