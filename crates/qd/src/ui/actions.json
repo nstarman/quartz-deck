@@ -76,6 +76,7 @@
   {"id": "insert-notes", "label": "Speaker notes", "menu": ["Insert"], "where": ["slide", "element"], "qd": "qd block add <slide> --md -"},
   {"id": "insert-table", "label": "Table", "menu": ["Insert"], "where": ["slide", "element"], "qd": "qd block add <slide> --md -"},
   {"id": "insert-diagram", "label": "Diagram", "menu": ["Insert"], "where": ["slide", "element"], "qd": "qd dot new --on <slide>"},
+  {"id": "insert-arrow", "label": "Arrow", "menu": ["Insert"], "where": ["slide", "element"], "qd": "qd arrow add <slide> --from X,Y --to X,Y"},
   {"id": "dot-add", "label": "Box in diagram", "menu": ["Insert"], "where": ["element"], "qd": "qd dot add <cell> --look-of <node>"},
   {"id": "insert-quote", "label": "Quote", "menu": ["Insert"], "where": ["slide", "element"], "qd": "qd block add <slide> --md -"},
   {"separator": true, "menu": ["Insert"]},

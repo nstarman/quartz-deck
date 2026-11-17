@@ -644,6 +644,53 @@ fn parse_pair(s: &str) -> std::result::Result<(f64, f64), String> {
 
 #[derive(Subcommand)]
 enum ArrowCmd {
+    /// Add an arrow to a slide, in slide pixels; the first installs quarto-arrows into the deck
+    Add {
+        slide: String,
+        /// Start, X,Y in slide pixels
+        #[arg(long, value_parser = parse_pair, allow_hyphen_values = true)]
+        from: (f64, f64),
+        /// End, X,Y in slide pixels
+        #[arg(long, value_parser = parse_pair, allow_hyphen_values = true)]
+        to: (f64, f64),
+        #[arg(long)]
+        color: Option<String>,
+        #[arg(long)]
+        width: Option<String>,
+        /// true, or a dash pattern such as 5,5
+        #[arg(long)]
+        dash: Option<String>,
+        /// arrow, stealth, diamond, circle, dot, square, bar, barbed, none
+        #[arg(long)]
+        head: Option<String>,
+        /// Which ends have heads
+        #[arg(long, value_parser = ["start", "end", "both", "none"])]
+        heads: Option<String>,
+        #[arg(long)]
+        label: Option<String>,
+        /// start, middle, end
+        #[arg(long, value_parser = ["start", "middle", "end"])]
+        label_position: Option<String>,
+        /// Appears on click, drawn in
+        #[arg(long)]
+        fragment: bool,
+        /// Never download quarto-arrows (also QD_NO_DOWNLOAD=1)
+        #[arg(long)]
+        no_download: bool,
+    },
+    /// Move an arrow's start, end, both, or the whole arrow (slide pixels)
+    Move {
+        arrow: String,
+        #[arg(long, value_parser = parse_pair, allow_hyphen_values = true)]
+        from: Option<(f64, f64)>,
+        #[arg(long, value_parser = parse_pair, allow_hyphen_values = true)]
+        to: Option<(f64, f64)>,
+        /// Move the whole arrow (control points too) by DX,DY
+        #[arg(long, value_parser = parse_pair, allow_hyphen_values = true, conflicts_with_all = ["from", "to"])]
+        by: Option<(f64, f64)>,
+    },
+    /// Remove an arrow
+    Rm { arrow: String },
     /// One arrow: its start, end, control points and options, and whether qd can edit it
     Show { arrow: String },
     /// The slide's arrows, in order
@@ -1263,6 +1310,20 @@ impl Ctx<'_> {
         }
     }
 
+    /// An edit whose function also returns what the command adds to its output.
+    fn edit_with(&self, f: impl FnOnce(&Deck) -> Result<(Patch, Value)>) -> Result<Value> {
+        let mut extra = Value::Null;
+        let mut v = self.edit(|d| {
+            let (p, x) = f(d)?;
+            extra = x;
+            Ok(p)
+        })?;
+        if let (Some(v), Value::Object(x)) = (v.as_object_mut(), extra) {
+            v.extend(x);
+        }
+        Ok(v)
+    }
+
     fn edit(&self, f: impl FnOnce(&Deck) -> Result<Patch>) -> Result<Value> {
         let store = self.store()?;
         let d = store.read()?;
@@ -1354,6 +1415,9 @@ impl Ctx<'_> {
 /// Commands the HTTP API may run (FR-010). No server control, no file I/O
 /// beyond the deck itself.
 const API_OPS: &[&str] = &[
+    "arrow add",
+    "arrow move",
+    "arrow rm",
     "arrow show",
     "arrow list",
     "dot show",
@@ -1536,7 +1600,79 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
         } => ctx.edit(|d| ops::meta_unset(d, key)),
         Cmd::Arrow { action } => {
             let d = read()?.1;
+            use crate::arrows;
             match action {
+                ArrowCmd::Add {
+                    slide,
+                    from,
+                    to,
+                    color,
+                    width,
+                    dash,
+                    head,
+                    heads,
+                    label,
+                    label_position,
+                    fragment,
+                    no_download,
+                } => {
+                    let heads = match heads.as_deref() {
+                        Some("start") => vec![("head-start", "true"), ("head-end", "false")],
+                        Some("both") => vec![("head-start", "true")],
+                        Some("none") => vec![("head-end", "false")],
+                        _ => vec![],
+                    };
+                    let given = [
+                        ("color", color),
+                        ("width", width),
+                        ("dash", dash),
+                        ("head", head),
+                        ("label", label),
+                        ("label-position", label_position),
+                    ];
+                    let mut opts: Vec<(&str, &str)> = given
+                        .iter()
+                        .filter_map(|(k, v)| Some((*k, v.as_deref()?)))
+                        .collect();
+                    opts.extend(heads);
+                    if *fragment {
+                        opts.push(("fragment", "true"));
+                    }
+                    arrows::add(&d, slide, *from, *to, &opts)?; // a bad slide or value changes nothing
+                    // quarto-arrows into the deck first (research R3): offline with
+                    // nothing cached, the edit isn't made; a deck that has a copy keeps it
+                    let installed = if ctx.cli.dry_run {
+                        json!([])
+                    } else {
+                        let store = ctx.store()?;
+                        let dir = store.path.parent().unwrap_or(Path::new("."));
+                        let present = dir
+                            .join("_extensions")
+                            .join(crate::plugins::ARROWS)
+                            .join("_extension.yml")
+                            .exists();
+                        match crate::plugins::quarto_arrows(
+                            &store.root(),
+                            allow_download(*no_download),
+                        ) {
+                            Ok(ext) => {
+                                crate::plugins::install_these(&[ext], dir)?["installed"].take()
+                            }
+                            Err(_) if present => json!([]),
+                            Err(e) => return Err(e),
+                        }
+                    };
+                    let mut v = ctx.edit_with(|d| arrows::add(d, slide, *from, *to, &opts))?;
+                    v["installed"] = installed;
+                    Ok(v)
+                }
+                ArrowCmd::Move {
+                    arrow,
+                    from,
+                    to,
+                    by,
+                } => ctx.edit_with(|d| arrows::move_arrow(d, arrow, *from, *to, *by)),
+                ArrowCmd::Rm { arrow } => ctx.edit(|d| arrows::rm(d, arrow)),
                 ArrowCmd::Show { arrow } => crate::arrows::show(&d, arrow),
                 ArrowCmd::List { slide } => crate::arrows::list(&d, slide),
             }
@@ -1544,18 +1680,6 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
         Cmd::Dot { action } => {
             let d = read()?.1;
             // an edit, with what the command adds to its output
-            let edit = |f: &dyn Fn(&Deck) -> Result<(Patch, Value)>| -> Result<Value> {
-                let mut extra = Value::Null;
-                let mut v = ctx.edit(|d| {
-                    let (p, x) = f(d)?;
-                    extra = x;
-                    Ok(p)
-                })?;
-                if let (Some(v), Value::Object(x)) = (v.as_object_mut(), extra) {
-                    v.extend(x);
-                }
-                Ok(v)
-            };
             use crate::dot;
             match action {
                 DotCmd::Show { cell } => dot::show(&d, cell),
@@ -1565,7 +1689,7 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                     at,
                     by,
                     no_snap,
-                } => edit(&|d| dot::move_node(d, cell, node, *at, *by, *no_snap)),
+                } => ctx.edit_with(|d| dot::move_node(d, cell, node, *at, *by, *no_snap)),
                 DotCmd::Add {
                     cell,
                     label,
@@ -1574,7 +1698,7 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                     look_of,
                     from,
                     to,
-                } => edit(&|d| {
+                } => ctx.edit_with(|d| {
                     dot::add(
                         d,
                         cell,
@@ -1586,9 +1710,11 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                         to.as_deref(),
                     )
                 }),
-                DotCmd::Connect { cell, from, to } => edit(&|d| dot::connect(d, cell, from, to)),
+                DotCmd::Connect { cell, from, to } => {
+                    ctx.edit_with(|d| dot::connect(d, cell, from, to))
+                }
                 DotCmd::Rename { cell, node, label } => {
-                    edit(&|d| dot::rename(d, cell, node, label))
+                    ctx.edit_with(|d| dot::rename(d, cell, node, label))
                 }
                 DotCmd::Set {
                     cell,
@@ -1597,7 +1723,7 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                     look,
                     look_of,
                 } => {
-                    let mut v = edit(&|d| {
+                    let mut v = ctx.edit_with(|d| {
                         dot::set(d, cell, target, pairs, look.as_deref(), look_of.as_deref())
                     })?;
                     // a picture: the dot-image filter goes into the deck's _extensions/
@@ -1609,10 +1735,10 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                     }
                     Ok(v)
                 }
-                DotCmd::Rm { cell, target } => edit(&|d| dot::rm(d, cell, target)),
-                DotCmd::Flip { cell, edge } => edit(&|d| dot::flip(d, cell, edge)),
+                DotCmd::Rm { cell, target } => ctx.edit_with(|d| dot::rm(d, cell, target)),
+                DotCmd::Flip { cell, edge } => ctx.edit_with(|d| dot::flip(d, cell, edge)),
                 DotCmd::New { on, after, before } => {
-                    edit(&|d| dot::new(d, on.as_deref(), at(after, before)))
+                    ctx.edit_with(|d| dot::new(d, on.as_deref(), at(after, before)))
                 }
                 DotCmd::Pin { cell, positions } => {
                     let positions = match positions {
@@ -1651,7 +1777,7 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                                 })?
                         }
                     };
-                    edit(&|d| dot::pin(d, cell, &positions))
+                    ctx.edit_with(|d| dot::pin(d, cell, &positions))
                 }
             }
         }

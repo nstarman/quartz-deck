@@ -111,3 +111,39 @@ pub fn json_of(mut c: Command, args: &[&str]) -> (bool, serde_json::Value) {
     });
     (out.status.success(), v)
 }
+
+/// A deck `talk.qmd` holding `text`, in a new folder.
+pub fn deck(text: &str) -> tempfile::TempDir {
+    let t = tempfile::tempdir().unwrap();
+    std::fs::write(t.path().join("talk.qmd"), text).unwrap();
+    t
+}
+
+/// The deck `talk.qmd` in `t` now.
+pub fn text(t: &tempfile::TempDir) -> String {
+    std::fs::read_to_string(t.path().join("talk.qmd")).unwrap()
+}
+
+/// quarto-arrows (spec 016) from one shared download, in `dir`'s qd cache
+/// and, with `in_deck`, in its `_extensions/` too; `None` offline.
+pub fn seed_arrows(dir: &Path, in_deck: bool) -> Option<()> {
+    use quartz_deck::assets::{QUARTO_ARROWS, ensure};
+    let shared = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("qd-arrows");
+    for f in QUARTO_ARROWS {
+        let a = ensure(&shared, f, true)
+            .inspect_err(|e| eprintln!("skipping: {e}"))
+            .ok()?;
+        let mut to = vec![
+            dir.join(".cache")
+                .join(a.path.strip_prefix(&shared).unwrap()),
+        ];
+        if in_deck {
+            to.push(dir.join("_extensions/emilhvitfeldt/arrows").join(f.file));
+        }
+        for to in to {
+            std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+            std::fs::copy(&a.path, &to).unwrap();
+        }
+    }
+    Some(())
+}

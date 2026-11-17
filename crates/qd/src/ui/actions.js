@@ -17,6 +17,7 @@ export const INSERTS = [
   { id: 'image', label: 'Image…', image: true },
   { id: 'textbox', label: 'Text box', box: true },
   { id: 'diagram', label: 'Diagram', diagram: true }, // spec 015: `qd dot new`
+  { id: 'arrow', label: 'Arrow', arrow: true }, // spec 016: drag on the slide, `qd arrow add`
   // spec 008 US7: the rest a talk needs, each its markdown
   { id: 'code', label: 'Code cell', md: '```{python}\n1 + 1\n```' },
   { id: 'callout', label: 'Callout', md: '::: {.callout-note}\nA note.\n:::' },

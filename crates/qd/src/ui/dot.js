@@ -8,7 +8,7 @@
 // With "Route arrows while dragging" on (US4), the arrows are routed live by
 // Graphviz in the browser instead; without the engine, straight lines.
 
-import { token, el } from '/ui/run.js';
+import { el, read } from '/ui/run.js';
 import { ask } from '/ui/sheet.js';
 import { get as setting } from '/ui/settings.js';
 import { SNAP_PX, nearest } from '/ui/guides.js';
@@ -22,10 +22,6 @@ let dragged = false; // the click ending a drag lands on the svg, not the box
 const pinBtn = el('button', { type: 'button', id: 'dotpin', hidden: true, textContent: 'Pin layout', title: 'Fix every box where it is now, so boxes can be placed by hand' });
 document.body.append(pinBtn);
 const NS = 'http://www.w3.org/2000/svg';
-
-/** A read-only op (`dot show`), quiet: without the editor's saving status. */
-const read = (op, args) => fetch('/api/op', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-QD-Token': token }, body: JSON.stringify({ op, args }) })
-  .then((r) => (r.ok ? r.json() : null));
 
 const nameOf = (g) => g.querySelector('title')?.textContent ?? '';
 const diagramOf = (node) => node?.closest?.('[data-qd-lang=dot]');
