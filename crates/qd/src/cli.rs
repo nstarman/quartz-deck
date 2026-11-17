@@ -701,8 +701,8 @@ enum ArrowCmd {
     /// Set an arrow's options (color, width, dash, line, head, head-start, head-end, label, label-position, fragment…); KEY= removes one
     Set {
         arrow: String,
-        #[arg(required = true)]
-        pairs: Vec<String>,
+        #[arg(required = true, value_parser = parse_kv)]
+        pairs: Vec<(String, String)>,
     },
     /// Remove an arrow
     Rm { arrow: String },

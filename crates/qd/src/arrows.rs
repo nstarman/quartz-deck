@@ -181,37 +181,25 @@ fn quoted(v: &str, quote: Option<char>) -> Result<String> {
     })
 }
 
-/// The change to `text` (an arrow's paragraph) that sets `key` to `v`, or
-/// removes it (`None`): the value in place, a new option after the last one,
-/// or the option and its space gone. Offsets are in `text`.
-pub fn set_opt(text: &str, a: &Arrow, key: &str, v: Option<&str>) -> Result<(Span, String)> {
-    let had = a.opts.iter().rev().find(|o| o.key == key);
-    Ok(match (had, v) {
-        (Some(o), Some(v)) => (
+/// The change to `text` (an arrow's paragraph) that sets its option `o` to
+/// `v` in place, keeping its quote, or (`None`) removes it and its space.
+/// Offsets are in `text`.
+fn change(text: &str, o: &Opt, v: Option<&str>) -> Result<(Span, String)> {
+    Ok(match v {
+        Some(v) => (
             Span {
                 start: o.span.0,
                 end: o.span.1,
             },
-            format!("{key}={}", quoted(v, o.quote)?),
+            format!("{}={}", o.key, quoted(v, o.quote)?),
         ),
-        (Some(o), None) => {
-            let start = text[..o.span.0].trim_end().len();
-            (
-                Span {
-                    start,
-                    end: o.span.1,
-                },
-                String::new(),
-            )
-        }
-        (None, Some(v)) => {
-            let at = a.opts.last().map_or(a.close, |o| o.span.1);
-            (
-                Span { start: at, end: at },
-                format!(" {key}={}", quoted(v, Some('"'))?),
-            )
-        }
-        (None, None) => (Span { start: 0, end: 0 }, String::new()),
+        None => (
+            Span {
+                start: text[..o.span.0].trim_end().len(),
+                end: o.span.1,
+            },
+            String::new(),
+        ),
     })
 }
 
@@ -246,8 +234,7 @@ pub fn add(
     use crate::ops::{Pos, block_add};
     let s = d.slide(slide)?;
     // checked as `set` checks them; defaults aren't written
-    let pairs: Vec<String> = opts.iter().map(|(k, v)| format!("{k}={v}")).collect();
-    let opts: Vec<_> = set_changes(&pairs)?
+    let opts: Vec<_> = set_changes(opts.iter().copied())?
         .into_iter()
         .filter_map(|(k, v)| Some((k, v?)))
         .collect();
@@ -317,10 +304,10 @@ fn patch(
     let mut reps = vec![];
     let mut added = String::new();
     for (k, v) in changes {
-        match (a.opts.iter().any(|o| o.key == *k), v) {
-            (false, Some(v)) => added.push_str(&format!(" {k}={}", quoted(v, Some('"'))?)),
-            (false, None) => {}
-            _ => reps.push(set_opt(text, a, k, *v)?),
+        match (a.opts.iter().rev().find(|o| o.key == *k), v) {
+            (Some(o), v) => reps.push(change(text, o, *v)?),
+            (None, Some(v)) => added.push_str(&format!(" {k}={}", quoted(v, Some('"'))?)),
+            (None, None) => {}
         }
     }
     if !added.is_empty() {
@@ -389,12 +376,13 @@ const OPTIONS: &[(&str, Val, Option<&str>)] = &[
 ];
 
 /// `KEY=VALUE` pairs as changes: checked, and a default value removes the option.
-fn set_changes(pairs: &[String]) -> Result<Vec<(&str, Option<&str>)>> {
+fn set_changes<'a>(
+    pairs: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> Result<Vec<(&'static str, Option<&'a str>)>> {
     pairs
-        .iter()
-        .map(|p| {
-            let bad = |why: String| QdError::InvalidArg(format!("{p}: {why}"));
-            let (k, v) = p.split_once('=').ok_or_else(|| bad("give KEY=VALUE (KEY= removes it)".into()))?;
+        .into_iter()
+        .map(|(k, v)| {
+            let bad = |why: String| QdError::InvalidArg(format!("{k}={v}: {why}"));
             let (k, val, default) = OPTIONS
                 .iter()
                 .find(|o| o.0 == k)
@@ -402,45 +390,24 @@ fn set_changes(pairs: &[String]) -> Result<Vec<(&str, Option<&str>)>> {
             if v.is_empty() || Some(v) == *default {
                 return Ok((*k, None));
             }
-            let ok = match val {
-                Val::Text => true,
-                Val::Number => v.parse::<f64>().is_ok(),
-                Val::Bool => v == "true" || v == "false",
-                Val::OneOf(xs) => xs.contains(&v),
+            let why = match val {
+                Val::Number if v.parse::<f64>().is_err() => Some("a number".into()),
+                Val::Bool if v != "true" && v != "false" => Some("true or false".into()),
+                Val::OneOf(xs) if !xs.contains(&v) => Some(format!("one of {}", xs.join(", "))),
+                _ => None,
             };
-            if !ok {
-                return Err(bad(match val {
-                    Val::Number => "a number".into(),
-                    Val::Bool => "true or false".into(),
-                    Val::OneOf(xs) => format!("one of {}", xs.join(", ")),
-                    Val::Text => unreachable!(),
-                }));
+            match why {
+                Some(w) => Err(bad(w)),
+                None => Ok((*k, Some(v))),
             }
-            Ok((*k, Some(v)))
         })
         .collect()
 }
 
-/// `set_changes` as edits to an arrow's paragraph `text` (for tests).
-#[cfg(test)]
-fn set_pairs(text: &str, a: &Arrow, pairs: &[String]) -> Result<Vec<(Span, String)>> {
-    let p = patch(
-        "arrow set",
-        "t",
-        Span {
-            start: 0,
-            end: text.len(),
-        },
-        text,
-        a,
-        &set_changes(pairs)?,
-    )?;
-    Ok(p.replacements)
-}
-
 /// `qd arrow set REF KEY=VALUE…`.
-pub fn set(d: &Deck, r: &str, pairs: &[String]) -> Result<(crate::ops::Patch, Value)> {
+pub fn set(d: &Deck, r: &str, pairs: &[(String, String)]) -> Result<(crate::ops::Patch, Value)> {
     let (r, span, text, a) = editable(d, r)?;
+    let pairs = pairs.iter().map(|(k, v)| (k.as_str(), v.as_str()));
     let p = patch("arrow set", &r, span, text, &a, &set_changes(pairs)?)?;
     Ok((p, json!({"ref": r})))
 }
@@ -598,10 +565,23 @@ mod tests {
         );
     }
 
-    /// Apply one patch to `t`.
+    /// `changes` made to `t`, as a command makes them.
+    fn applied(t: &str, changes: &[(&str, Option<&str>)]) -> Result<String> {
+        let p = patch(
+            "t",
+            "t",
+            Span {
+                start: 0,
+                end: t.len(),
+            },
+            t,
+            &ok(t),
+            changes,
+        )?;
+        crate::ops::apply(t, &p)
+    }
     fn patched(t: &str, key: &str, v: Option<&str>) -> String {
-        let (s, new) = set_opt(t, &ok(t), key, v).unwrap();
-        format!("{}{new}{}", &t[..s.start], &t[s.end..])
+        applied(t, &[(key, v)]).unwrap()
     }
 
     #[test]
@@ -636,8 +616,8 @@ mod tests {
             patched(t, "label", Some(r#"say "hi""#)),
             t.replace("color=red", r#"color=red label='say "hi"'"#)
         );
-        assert!(set_opt(t, &ok(t), "label", Some(r#"it's "x""#)).is_err());
-        assert!(set_opt(t, &ok(t), "label", Some("a >}} b")).is_err());
+        assert!(applied(t, &[("label", Some(r#"it's "x""#))]).is_err());
+        assert!(applied(t, &[("label", Some("a >}} b"))]).is_err());
     }
 
     #[test]
@@ -673,18 +653,8 @@ mod tests {
     }
 
     fn set(t: &str, pairs: &[&str]) -> Result<String> {
-        let a = ok(t);
-        let mut out = t.to_string();
-        let mut reps = set_pairs(
-            t,
-            &a,
-            &pairs.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
-        )?;
-        reps.sort_by_key(|(s, _)| std::cmp::Reverse(s.start));
-        for (s, new) in reps {
-            out.replace_range(s.start..s.end, &new);
-        }
-        Ok(out)
+        let pairs = pairs.iter().map(|p| p.split_once('=').unwrap_or((p, "")));
+        applied(t, &set_changes(pairs)?)
     }
 
     #[test]

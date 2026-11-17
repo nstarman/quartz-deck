@@ -247,7 +247,9 @@ export async function mark() {
   follow(sel);
 }
 
-const HEADS = ['arrow', 'stealth', 'diamond', 'circle', 'square', 'bar', 'barbed', 'none'];
+const HEADS = ['arrow', 'stealth', 'diamond', 'circle', 'dot', 'square', 'bar', 'barbed', 'none'];
+/** "Heads at", as quarto-arrows' head-start and head-end. */
+const AT = { end: [false, true], start: [true, false], both: [true, true], none: [false, false] };
 
 /** The Properties panel's fields for the selected arrow `ref`, or null (US2). */
 export function panel(ref) {
@@ -264,19 +266,19 @@ export function panel(ref) {
     s.value = value;
     return s;
   };
-  const heads = { 'true,true': 'both', 'true,false': 'start', 'false,false': 'none' }[`${o['head-start'] ?? 'false'},${o['head-end'] ?? 'true'}`] ?? 'end';
+  const heads = Object.keys(AT).find((k) => `${AT[k]}` === `${o['head-start'] ?? false},${o['head-end'] ?? true}`) ?? 'end';
   row('Colour', html('input', { type: 'text', name: 'color', value: o.color ?? '', placeholder: 'black' }));
   row('Width', html('input', { type: 'number', name: 'width', min: '0', step: '0.5', value: o.width ?? '', placeholder: '2' }));
   row('Dashed', html('input', { type: 'checkbox', name: 'dash', checked: !!o.dash }));
   row('Head', choose('head', HEADS, o.head ?? 'arrow'));
-  row('Heads at', choose('heads', ['end', 'start', 'both', 'none'], heads));
+  row('Heads at', choose('heads', Object.keys(AT), heads));
   const buttons = html('div', { className: 'buttons' });
   buttons.append(html('button', { type: 'submit', className: 'primary', textContent: 'Apply' }));
   form.append(fs, buttons);
   form.addEventListener('submit', (ev) => {
     ev.preventDefault();
     const f = form.elements;
-    const [start, end] = { end: [false, true], start: [true, false], both: [true, true], none: [false, false] }[f.heads.value];
+    const [start, end] = AT[f.heads.value];
     // every field, as `qd arrow set` takes it: a default or empty value removes the option
     const pairs = [`color=${f.color.value.trim()}`, `width=${f.width.value}`, `dash=${f.dash.checked ? (o.dash || 'true') : ''}`,
       `head=${f.head.value}`, `head-start=${start}`, `head-end=${end}`];
