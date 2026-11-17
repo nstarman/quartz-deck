@@ -248,6 +248,7 @@ two bugs and three improvements:
 - [X] T034 Live routing uses the person's own Quarto's Graphviz through a one-call Deno shim (research R6, revised): `/lib/quarto/{graphviz-wasm.js,graphvizlib.wasm}` in `crates/qd/src/server.rs`; `assets::GRAPHVIZ` and the EPL-1.0 exemption removed. The no-engine browser test uses a `quarto` wrapper with no `share/` beside it.
 - [X] T035 A `//| file: x.dot` cell is named as such in `qd dot show` and refused by edits, rather than reported as a parse error (`file_cells_are_named`).
 - [X] T036 `dot-image` 1.1.0 gives each rendered diagram the first cell whose picture boxes it has, rather than pairing by order, so a diagram from an include doesn't shift the rest (`dot_image_example`).
+- [X] T037 Snap guides for diagram boxes, asked for while rebuilding the person's diagram: a dragged box's edges and centre snap to the other boxes' with a guide line, as for placed boxes (spec 009), under the same `placement.snap` setting, with ⌘/Ctrl to place freely. `nearest` and `SNAP_PX` moved from `editor.js` into a shared `crates/qd/src/ui/guides.js`. A snapped drop sends an exact `--at` with `--no-snap` (`diagram_snap_guides`).
 
 ## Dependencies & Execution Order
 

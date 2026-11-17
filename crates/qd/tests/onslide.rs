@@ -4806,3 +4806,46 @@ async fn diagram_linked_box_never_navigates() {
         "the drag's click didn't navigate"
     );
 }
+
+/// Snap guides for diagram boxes, as for placed boxes (spec 009): a box
+/// dragged near another's edge or centre lines up with it exactly, off the
+/// 0.25 in grid, with a guide shown; with ⌘/Ctrl held it doesn't, and the
+/// grid applies.
+#[tokio::test(flavor = "multi_thread")]
+async fn diagram_snap_guides() {
+    // a's left edge (x − 0.5) lines up with b's (3 − 1.15 = 1.85) at x = 2.35
+    let deck = "---\ntitle: T\nformat: revealjs\n---\n\n## Flow {#flow}\n\n```{dot}\ndigraph {\n  layout=neato; splines=ortho;\n  node [shape=box];\n  a [label=\"A\", pos=\"0,0!\", width=1, fixedsize=true];\n  b [label=\"Wide\", pos=\"3,1!\", width=2.3, fixedsize=true];\n}\n```\n";
+    let Some(ed) = Ed::open(deck).await else {
+        return;
+    };
+    ed.go("flow").await;
+    let a = ed.select_node("a").await;
+    let inch = ed.inch_px().await;
+    let to = (a.0 + 2.35 * inch + 2.0, a.1);
+    let guide = format!("!!{FRAME}.querySelector('line.qd-dot-guide')");
+    use DispatchMouseEventType::*;
+    // ⌘ held: no guide, the grid (2.25)
+    ed.press_and_move_with(a, to, 4).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(ed.eval(&guide).await, json!(false), "⌘: no guide");
+    ed.mouse_with(MouseReleased, to, false, 4).await;
+    ed.wait_file(|f| f.contains("pos=\"2.25,0!\""), "on the grid")
+        .await;
+    ed.cli(&["undo"]);
+    ed.wait_file(|f| f.contains("pos=\"0,0!\", width=1"), "back")
+        .await;
+    ed.settle().await;
+    // a guide: exactly lined up
+    let a = ed.select_node("a").await;
+    let to = (a.0 + 2.35 * inch + 2.0, a.1);
+    ed.press_and_move(a, to).await;
+    ed.wait(&guide).await;
+    ed.mouse(MouseReleased, to, false).await;
+    ed.wait_file(|f| f.contains("pos=\"2.35,0!\""), "left edges lined up")
+        .await;
+    assert_eq!(
+        ed.eval(&guide).await,
+        json!(false),
+        "the guide goes on drop"
+    );
+}

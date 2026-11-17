@@ -11,6 +11,7 @@
 import { token, el } from '/ui/run.js';
 import { ask } from '/ui/sheet.js';
 import { get as setting } from '/ui/settings.js';
+import { SNAP_PX, nearest } from '/ui/guides.js';
 
 let api = null; // { elOf, frame, op, pageRect, select, panelChanged }
 const info = new Map(); // cell ref → `qd dot show` result
@@ -168,11 +169,21 @@ function route(d) {
 
 /** Undo the provisional look of a drag. */
 function restore(d) {
+  unguide(d);
   d.g?.removeAttribute('transform');
   cancelAnimationFrame(d.frame);
   for (const r of d.routed) r.remove();
   for (const l of d.lines) l.line.remove();
   for (const [e] of d.edges) e.style.display = '';
+}
+
+const unguide = (d) => d.cellEl.querySelectorAll('line.qd-dot-guide').forEach((l) => l.remove());
+
+/** A guide line across the diagram, at `at` (graph units), vertical or not. */
+function guide(d, at, vertical) {
+  const s = d.span;
+  const [x1, y1, x2, y2] = vertical ? [at, s.y, at, s.y + s.height] : [s.x, at, s.x + s.width, at];
+  line(d.g.closest('g.graph'), 'qd-dot-guide', { x1, y1, x2, y2 });
 }
 
 function showPin(cellEl) {
@@ -183,9 +194,9 @@ function showPin(cellEl) {
   pinBtn.style.top = r.top + 4 + 'px';
 }
 
-function line(graph, cls) {
+function line(graph, cls, attrs = {}) {
   const l = graph.ownerDocument.createElementNS(NS, 'line');
-  l.setAttribute('class', cls);
+  Object.entries({ class: cls, ...attrs }).forEach(([k, v]) => l.setAttribute(k, v));
   graph.append(l);
   return l;
 }
@@ -245,14 +256,37 @@ function move(e) {
     for (const h of drag.cellEl.querySelectorAll('.qd-dot-handle')) h.remove(); // they'd stay behind
     drag.edges = edgesOf(drag.cellEl, drag.node);
     const graph = drag.g.closest('g.graph');
+    // snap guides (as for placed boxes, spec 009): the other boxes' edges and centres
+    if (setting('placement.snap')) {
+      const xs = [];
+      const ys = [];
+      for (const o of nodes(drag.cellEl)) {
+        if (o === drag.g) continue;
+        const b = o.getBBox();
+        xs.push(b.x, b.x + b.width / 2, b.x + b.width);
+        ys.push(b.y, b.y + b.height / 2, b.y + b.height);
+      }
+      Object.assign(drag, { guides: { xs, ys }, box: drag.g.getBBox(), span: graph.getBBox() });
+    }
     for (const [edge, other] of drag.edges) {
       edge.style.display = 'none';
       const o = nodeNamed(drag.cellEl, other);
       drag.lines.push({ line: line(graph, 'qd-dot-provisional'), to: o ? centre(o) : centre(drag.g) });
     }
   }
-  const ux = dx / drag.scale;
-  const uy = dy / drag.scale;
+  let ux = dx / drag.scale;
+  let uy = dy / drag.scale;
+  unguide(drag);
+  drag.snapped = [false, false];
+  if (drag.guides && !e.metaKey && !e.ctrlKey) { // ⌘/Ctrl: place freely
+    const b = drag.box;
+    const reach = SNAP_PX / drag.scale;
+    const x = nearest([b.x + ux, b.x + b.width / 2 + ux, b.x + b.width + ux], drag.guides.xs, reach);
+    const y = nearest([b.y + uy, b.y + b.height / 2 + uy, b.y + b.height + uy], drag.guides.ys, reach);
+    if (x) { ux += x[0]; guide(drag, x[1], true); }
+    if (y) { uy += y[0]; guide(drag, y[1], false); }
+    drag.snapped = [!!x, !!y];
+  }
   drag.g.setAttribute('transform', `translate(${ux} ${uy})`);
   const [cx, cy] = centre(drag.g);
   for (const { line: l, to } of drag.lines) {
@@ -293,9 +327,15 @@ async function up(e) {
   if (d) dragged = d.far;
   if (d?.connect) { await drop(d, e); return; }
   if (!d?.moved || d.cancelled) return;
+  unguide(d);
   // graph units are points; Graphviz's y grows upward
-  const by = `${(d.ux / 72).toFixed(3)},${(-d.uy / 72).toFixed(3)}`;
-  const r = await api.op('dot move', { cell: d.cell, node: d.node, by });
+  const by = [d.ux / 72, -d.uy / 72];
+  const at = boxInfo(d.cell, d.node)?.pos;
+  const args = d.snapped.some(Boolean) && at
+    // lined up with a guide: exactly there, the other axis on the 0.25 in grid
+    ? { at: [0, 1].map((i) => { const v = at[i] + by[i]; return (d.snapped[i] ? v : Math.round(v * 4) / 4).toFixed(3); }).join(','), 'no-snap': true }
+    : { by: by.map((v) => v.toFixed(3)).join(',') }; // the grid
+  const r = await api.op('dot move', { cell: d.cell, node: d.node, ...args });
   if (!r) { restore(d); highlight(); }
 }
 

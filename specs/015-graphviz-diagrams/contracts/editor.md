@@ -26,6 +26,11 @@ III).
   centre;
 - with `diagrams.live-layout` on, a routed layout replaces them each
   frame instead (falling back to straight lines on any failure);
+- with `placement.snap` on (Settings ▸ "Snap to guides"), the box's edges
+  and centre snap to the other boxes' within 6 screen px, with a guide
+  line across the diagram; ⌘/Ctrl places it freely. A snapped drop runs
+  `move --at X,Y --no-snap`, exact on the snapped axis and on the 0.25 in
+  grid on the other; otherwise `move --by`, on the grid;
 - on drop, the command runs and the next preview render replaces
   everything.
 

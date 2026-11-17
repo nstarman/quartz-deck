@@ -1,5 +1,6 @@
 // quartz-deck editor. Every change is a CLI op sent to POST /api/op, so the GUI
 // can do nothing the CLI cannot (FR-010). The .qmd file stays the only state.
+import { SNAP_PX, nearest } from '/ui/guides.js';
 import { region, hintsFor, gate, reserialize, splice } from '/ui/inline.js';
 import { showToolbar, hideToolbar, place as placeToolbar, placeNear } from '/ui/toolbar.js';
 import { openSource, closeSource, sourceError, sourceText } from '/ui/source.js';
@@ -201,6 +202,7 @@ const PREVIEW_CSS = `html:not(.qd-present) {
   /* a diagram's boxes (spec 015) */
   [data-qd-lang=dot] g.node { cursor: move; }
   .qd-dot-sel > :is(polygon, ellipse, path), .qd-dot-sel a > :is(polygon, ellipse) { stroke: #2563eb !important; stroke-width: 3 !important; }
+  line.qd-dot-guide { stroke: #d6249f; stroke-width: 1; vector-effect: non-scaling-stroke; pointer-events: none; }
   line.qd-dot-provisional, line.qd-dot-follow { stroke: #6b7480; stroke-width: 1.5; stroke-dasharray: 4 3; pointer-events: none; }
   [data-qd-lang=dot] g.edge { cursor: pointer; }
   path.qd-dot-hit { stroke: transparent; stroke-width: 12; fill: none; }
@@ -318,8 +320,6 @@ function markOffSlide(w) {
 
 // ---------- guides and snapping (spec 009 US4) ----------
 
-const SNAP_PX = 6; // screen px
-
 /**
  * The lines a box dragged on `sec` can snap to, in slide px: the slide's edges and
  * centre and every other element's, measured once when the drag starts.
@@ -335,13 +335,6 @@ function guideLines(sec, box) {
     ys.push(t, t + h / 2, t + h);
   }
   return { xs, ys, width, height };
-}
-
-/** The nearest line to any of `edges` within `reach`: [shift, line], or null. */
-function nearest(edges, lines, reach) {
-  let best = null;
-  for (const e of edges) for (const x of lines) if (Math.abs(x - e) <= reach && (!best || Math.abs(x - e) < Math.abs(best[0]))) best = [x - e, x];
-  return best;
 }
 
 const clearGuides = (sec) => sec.querySelectorAll('.qd-guide').forEach((g) => g.remove());
