@@ -188,7 +188,9 @@ line or two of the cell's DOT text.
   boxes. Insert ▸ Box in diagram adds a box in the look of the one you
   selected last.
 - **Place boxes:** click a box to select it, then drag it or nudge it with the
-  arrow keys (0.25 in steps). Its arrows re-route after the drop. A diagram
+  arrow keys (0.25 in steps). While you drag, its edges and centre snap to
+  the other boxes' with a guide line, as on slides (hold ⌘ to place it on
+  the 0.25 in grid instead). Its arrows re-route after the drop. A diagram
   Graphviz laid out itself offers **Pin layout** when you drag it, which
   fixes every box where it is now.
 - **Connect:** drag from one of a selected box's four handles onto another
