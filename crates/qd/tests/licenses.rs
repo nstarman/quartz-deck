@@ -35,8 +35,13 @@ fn allowed(expr: &str) -> bool {
 /// The libraries qd downloads (`assets::Pinned`).
 #[test]
 fn downloaded_asset_licenses_are_allowed() {
-    let m = quartz_deck::assets::MATHJAX;
-    assert!(allowed(m.license), "{}", m.license);
+    use quartz_deck::assets::{MATHJAX, QUARTO_ARROWS};
+    for m in std::iter::once(&MATHJAX).chain(QUARTO_ARROWS) {
+        assert!(allowed(m.license), "{} {}: {}", m.name, m.file, m.license);
+    }
+    // quarto-arrows says MIT in its README; it has no licence file, so qd
+    // downloads it rather than shipping it (spec 016, research R3)
+    assert!(QUARTO_ARROWS.iter().all(|f| f.license == "MIT"));
 }
 
 #[test]

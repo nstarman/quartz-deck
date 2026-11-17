@@ -26,6 +26,32 @@ pub const MATHJAX: Pinned = Pinned {
     license: "Apache-2.0",
 };
 
+/// One file of quarto-arrows v0.3.0, from its commit (a tag can move).
+macro_rules! quarto_arrows {
+    ($($file:literal $sha:literal),+) => {
+        &[$(Pinned {
+            name: "quarto-arrows",
+            version: "0.3.0",
+            url: concat!("https://raw.githubusercontent.com/EmilHvitfeldt/quarto-arrows/957a61bc1ef13ec913baefce0f7eee61226c140d/_extensions/arrows/", $file),
+            file: $file,
+            sha256: $sha,
+            license: "MIT",
+        }),+]
+    };
+}
+
+/// Emil Hvitfeldt's quarto-arrows (spec 016, research R3): the arrows on a
+/// slide. Its README says MIT but it has no licence file, so qd downloads
+/// it file by file, checked, rather than shipping it.
+pub const QUARTO_ARROWS: &[Pinned] = quarto_arrows!(
+    "_extension.yml" "aa4ebbf40f589bef7817229de8e9cbe9af331f959bf84656ca8a05fcfa8c2f4f",
+    "_schema.yml" "c21dbf10e0e7e64f8dce62783e7901f54800f4a6cb23b48a3c7e9fdc81a230c3",
+    "_snippets.json" "a90a57a8a18e7634c583dbe0dacc7efcffacc431b0fc3c36a77b30a6f93dc8f5",
+    "arrows.lua" "bb67c703f9a984f4b519d8278670181e12d1930efb9458a456b564d8edced398",
+    "utils.lua" "fa1219cc57f1017a38fe493f19cbf3db70d9fa3d20dcbbcf6fbfab05a99544e5",
+    "resources/arrows-fragment.js" "a794e3cda99717107cc84d9a93d16a056664827338e2d26325126e91b423148b"
+);
+
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct Asset {
     pub name: String,
@@ -153,6 +179,53 @@ mod tests {
             .is_some_and(|a| {
                 std::net::TcpStream::connect_timeout(&a, std::time::Duration::from_secs(3)).is_ok()
             })
+    }
+
+    /// Spec 016 (research R3): quarto-arrows' six files, pinned to the
+    /// v0.3.0 commit; offline with nothing cached, nothing is written.
+    #[test]
+    fn quarto_arrows_pinned() {
+        assert_eq!(QUARTO_ARROWS.len(), 6);
+        for f in QUARTO_ARROWS {
+            assert!(
+                f.url
+                    .contains("/957a61bc1ef13ec913baefce0f7eee61226c140d/_extensions/arrows/"),
+                "{}",
+                f.url
+            );
+            assert!(f.url.ends_with(f.file));
+            assert_eq!(
+                (f.name, f.version, f.sha256.len()),
+                ("quarto-arrows", "0.3.0", 64)
+            );
+        }
+        let d = tempfile::tempdir().unwrap();
+        let e = QUARTO_ARROWS
+            .iter()
+            .try_for_each(|f| ensure(d.path(), f, false).map(drop));
+        assert_eq!(e.unwrap_err().code(), "E_DOWNLOAD");
+        assert_eq!(
+            std::fs::read_dir(d.path()).unwrap().count(),
+            0,
+            "nothing written"
+        );
+    }
+
+    #[test]
+    fn quarto_arrows_downloads() {
+        if !online() {
+            eprintln!("offline: skipping");
+            return;
+        }
+        let d = tempfile::tempdir().unwrap();
+        for f in QUARTO_ARROWS {
+            assert_eq!(ensure(d.path(), f, true).unwrap().source, "download");
+        }
+        assert!(
+            d.path()
+                .join("lib/quarto-arrows-0.3.0/resources/arrows-fragment.js")
+                .exists()
+        );
     }
 
     #[test]
