@@ -76,9 +76,11 @@ stderr with a stable `code` and a `hint`. Decks inside a Quarto project
   toolbar (⌘B/⌘I/⌘U/⌘K…) formats. Enter (titles), ⌘Enter, Esc or clicking
   elsewhere saves; Undo takes it back. Only the bytes you changed are written: line
   wrapping, quotes, indentation and untouched markup stay as they were.
-- **Source in place:** math, code, callouts and anything else that can't be
+- **Source in place:** math, callouts and anything else that can't be
   typed into open their markdown over the element (or Alt+click any element;
   Alt+click the slide background for the whole slide; ⌥Enter while typing).
+  Code (a code cell, a diagram, a code block) is only selected by a click:
+  Enter, ⌥Enter, a double-click or the element bar's **Markdown** opens it.
   ⌘Enter or Esc saves it; its **Cancel** button discards.
 - **Actions:** right-click an element, a slide in the list or an empty slide
   area for the full menu (Shift+F10 from the keyboard); the slide bar above

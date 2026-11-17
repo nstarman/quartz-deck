@@ -501,10 +501,13 @@ function hookFrame() {
     // Alt+click: always the source (an element's, or the whole slide's)
     if (e.altKey) { (el ? beginSource(el) : beginSlideSource(sec)); return; }
     const point = { x: e.clientX, y: e.clientY };
-    (target ? beginEdit(target, point) : Promise.resolve(false)).then((ok) => {
+    (target ? beginEdit(target, point) : Promise.resolve(false)).then(async (ok) => {
       if (ok || !el) return;
-      // a positioned box selects for dragging; anything else opens its source
-      if (el.classList.contains('absolute')) select(el.dataset.qd); else beginSource(el);
+      // a positioned box selects for dragging, and code selects (its source opens with
+      // Enter, ⌥Enter, a double-click or the bar's Markdown button); anything else
+      // opens its source
+      const code = ['cell', 'code'].includes((await elementTarget(el.dataset.qd))?.block.kind);
+      if (code || el.classList.contains('absolute')) select(el.dataset.qd); else beginSource(el);
     });
   }, true);
   doc.addEventListener('pointerdown', placeDrag, true);
