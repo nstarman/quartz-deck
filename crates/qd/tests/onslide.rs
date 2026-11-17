@@ -872,7 +872,9 @@ async fn source_editor_opens_over_math_and_refuses_new_slides() {
         return;
     };
     ed.go("eq").await;
-    ed.click_in_slide("[data-qd=\"eq/0\"]").await;
+    // a click selects math; a double-click opens its source
+    ed.double_click(ed.slide_point("[data-qd=\"eq/0\"]").await)
+        .await;
     ed.wait(&format!("{SRC}?.value === '$$\\nE = mc^2\\n$$'"))
         .await;
     // drawn over the element it edits
@@ -888,7 +890,8 @@ async fn source_editor_opens_over_math_and_refuses_new_slides() {
     // a slide heading in the source is refused; the text stays for fixing
     ed.idle().await;
     ed.go("eq").await;
-    ed.click_in_slide("[data-qd=\"eq/0\"]").await;
+    ed.double_click(ed.slide_point("[data-qd=\"eq/0\"]").await)
+        .await;
     ed.src_open().await;
     let before = ed.file();
     ed.set_source("Text.\n\n## Sneaky\n\nMore.").await;
@@ -4848,4 +4851,36 @@ async fn diagram_snap_guides() {
         json!(false),
         "the guide goes on drop"
     );
+}
+
+/// A click on code (a code cell, a `{dot}` diagram, a fenced code block), math,
+/// a callout or raw HTML selects it; its source opens on request: Enter, or the element
+/// bar's Markdown button.
+#[tokio::test(flavor = "multi_thread")]
+async fn code_click_selects_source_on_request() {
+    let deck = "---\ntitle: T\nformat: revealjs\n---\n\n## Code {#c}\n\n```{python}\nx = 1\n```\n\n```js\nlet y = 2;\n```\n\n$$\nx^2\n$$\n\n::: {.callout-note}\nA note.\n:::\n\n```{=html}\n<div class=\"x\">Hi</div>\n```\n";
+    let Some(ed) = Ed::open(deck).await else {
+        return;
+    };
+    ed.go("c").await;
+    let closed = "document.querySelector('#srcedit').hidden";
+    for el in ["c/0", "c/1", "c/2", "c/3", "c/4"].map(|r| format!("[data-qd=\"{r}\"]")) {
+        let el = el.as_str();
+        ed.click_in_slide(el).await;
+        ed.wait("!document.querySelector('#elbar').hidden").await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(
+            ed.eval(closed).await,
+            json!(true),
+            "{el}: a click only selects"
+        );
+        ed.key("Enter", "Enter", 13, 0).await;
+        ed.src_open().await;
+        ed.key("Escape", "Escape", 27, 0).await;
+        ed.wait(closed).await;
+    }
+    ed.click_in_slide("[data-qd=\"c/0\"]").await;
+    ed.wait("!document.querySelector('#elbar').hidden").await;
+    ed.click_editor("#elbar [data-act=source]").await;
+    ed.src_open().await;
 }
