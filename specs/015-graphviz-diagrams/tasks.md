@@ -224,7 +224,15 @@ or names.
   - `README.md`: diagrams;
   - `plugins/README.md`: `dot-image`.
 - [X] T028 Run quickstart §1–§5 and record it in `specs/015-graphviz-diagrams/checklists/quickstart-run.md`.
-- [ ] T029 With the person: rebuild their pipeline diagram as a pinned `{dot}` cell, as the proving case (SC-006), and record what needed changing. Nothing about their diagram goes into the repository.
+- [X] T029 With the person: rebuild their pipeline diagram as a pinned `{dot}` cell, as the proving case (SC-006), and record what needed changing. Nothing about their diagram goes into the repository.
+
+  **As built (2026-11-16):** done with the person on a copy of their talk, then moved into the talk on their acceptance. Their hand-drawn SVG diagram became a pinned `{dot}` cell, and its pictures were added with `qd dot set … image=`. What needed changing or doing:
+  - The DOT was transcribed by hand from the SVG's coordinates; qd has no import from SVG.
+  - `bgcolor=transparent`, or Graphviz paints a white panel over the slide's background.
+  - Round pictures need one CSS rule, `image.dot-image { clip-path: circle(50%); }`.
+  - A picture beside free text (a legend) needs a box with a transparent outline, because `dot-image` places the picture inside a box's outline.
+  - Right-angle routing can't merge arrows into one or send one round the outside, so two routes differ from the drawing; the person accepted that.
+  - Editing it found three editor bugs, fixed in #81: a click on a linked box followed the link, routed arrows piled up across drags, and connect handles stayed behind during a drag.
 - [X] T030 Final constitution re-check in `plan.md`. fmt, clippy (`--workspace --all-targets -D warnings`) and `cargo test --workspace --no-fail-fast` green.
 - [X] T031 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
 
