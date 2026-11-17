@@ -1596,7 +1596,7 @@ async function placeElbar() {
   if (!el) { elbar.hidden = true; return; }
   const t = await elementTarget(state.sel);
   $('[data-act=run]', elbar).hidden = t?.block.kind !== 'cell';
-  $('[data-act=fragment]', elbar).setAttribute('aria-pressed', String(!!t?.block.attrs?.classes?.includes('fragment')));
+  $('[data-act=fragment]', elbar).setAttribute('aria-pressed', String(!!(t && actions.checked('fragment', t))));
   elbar.hidden = false;
   placeNear(elbar, el.querySelector('.qd-arrow-hit') || el, frame); // an arrow: beside its line
 }
@@ -1758,7 +1758,7 @@ if (!runExternal) {
   run.initRun({ say, flush: pane.save, selected, changed: runslide.mark, reload: () => frameWin()?.location.reload() });
   runslide.initRunSlide({ elOf, frame, pageRect, selected }, es);
   dot.initDot({ elOf, frame, op, pageRect, select, panelChanged: renderPanel });
-  arrows.initArrows({ frame, op, select, guideLines, snap, clearGuides });
+  arrows.initArrows({ frame, op, select, guideLines, snap, clearGuides, pageRect, changed: () => { placeElbar(); renderPanel(); } });
 }
 if (keys.framed) {
   // only the panel that framed this page, and only navigation/display — never edits or code

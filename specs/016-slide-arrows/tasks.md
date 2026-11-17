@@ -97,8 +97,8 @@ text use made-up slides only, never the person's own talks, paths or names.
 
 ## Phase 5: User Stories 3 and 4 — Labels and appearing on click (P2/P3, PR 4)
 
-- [ ] T015 [P] [US3] [US4] Write failing tests: CLI tests for `label`, `label-position` and `fragment`; browser tests **`arrow_label_by_double_click`** (the sheet sets and clears the label) and **`arrow_appears_on_click`** (the element bar's toggle writes `fragment="true"`, and presenting hides it until the click).
-- [ ] T016 [US3] [US4] Implement the label sheet on double-click, the label-position field, and the element bar's "Appears on click" for arrows. T015 passes.
+- [X] T015 [P] [US3] [US4] Write failing tests: CLI tests for `label`, `label-position` and `fragment`; browser tests **`arrow_label_by_double_click`** (the sheet sets and clears the label) and **`arrow_appears_on_click`** (the element bar's toggle writes `fragment="true"`, and presenting hides it until the click).
+- [X] T016 [US3] [US4] Implement the label sheet on double-click, the label-position field, and the element bar's "Appears on click" for arrows. T015 passes.
 
 ---
 

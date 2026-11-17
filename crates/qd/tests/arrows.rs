@@ -326,3 +326,50 @@ fn set_style() {
         "E_UNSAFE_EDIT",
     );
 }
+
+// ---------- labels and appearing on click (US3, US4) ----------
+
+#[test]
+fn label_and_fragment() {
+    let t = deck(DECK);
+    let (ok, v) = json(
+        t.path(),
+        &[
+            "arrow",
+            "set",
+            "a/1",
+            "label=the peak",
+            "label-position=end",
+            "fragment=true",
+        ],
+    );
+    assert!(ok, "{v}");
+    assert_eq!(
+        text(&t),
+        DECK.replace(
+            "color=red",
+            "color=red label=\"the peak\" label-position=\"end\" fragment=\"true\""
+        )
+    );
+    // middle is the default; empty removes
+    assert!(
+        json(
+            t.path(),
+            &[
+                "arrow",
+                "set",
+                "a/1",
+                "label-position=middle",
+                "fragment=",
+                "label="
+            ]
+        )
+        .0
+    );
+    assert_eq!(text(&t), DECK);
+    common::err(
+        t.path(),
+        &["arrow", "set", "a/1", "label-position=left"],
+        "E_INVALID_ARG",
+    );
+}

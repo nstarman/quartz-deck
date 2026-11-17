@@ -5191,3 +5191,87 @@ async fn arrow_properties_style() {
     ed.settle().await;
     ed.wait(&format!("[...{FRAME}.querySelectorAll('[data-qd=\"a/1\"] svg > path')].some((p) => p.getAttribute('stroke') === 'crimson')")).await;
 }
+
+/// Spec 016 US3: double-clicking an arrow opens its label; Enter sets it,
+/// an empty label removes it, Escape changes nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn arrow_label_by_double_click() {
+    let Some(ed) = arrow_ed(&arrow_deck(true)).await else {
+        return;
+    };
+    ed.go("a").await;
+    ed.settle().await;
+    let on_line = ed.slide_px(350.0, 510.0).await; // off the middle (the bend handle)
+    ed.double_click(on_line).await;
+    ed.wait(
+        "document.activeElement?.closest('dialog.sheet') && document.activeElement.value === ''",
+    )
+    .await;
+    ed.type_text("the peak").await;
+    ed.key("Enter", "Enter", 13, 0).await;
+    ed.wait_file(|f| f.contains("label=\"the peak\""), "labelled")
+        .await;
+    ed.settle().await;
+    ed.wait(&format!(
+        "{FRAME}.querySelector('[data-qd=\"a/1\"]')?.textContent.includes('the peak')"
+    ))
+    .await;
+    // Escape: nothing
+    let before = ed.file();
+    ed.double_click(on_line).await;
+    ed.wait("document.activeElement?.closest('dialog.sheet') && document.activeElement.value === 'the peak'").await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("!document.querySelector('dialog.sheet')").await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(ed.file(), before, "Escape cancels");
+    // the Properties panel: label position; an empty label removes it
+    ed.select_arrow_at(350.0, 512.5).await;
+    ed.properties().await;
+    ed.eval("(() => { const f = document.querySelector('form.arrow-form'); f.elements['label-position'].value = 'end'; f.requestSubmit(); })()").await;
+    ed.wait_file(|f| f.contains("label-position=\"end\""), "at the end")
+        .await;
+    ed.settle().await;
+    let on_line = ed.slide_px(350.0, 510.0).await; // the panel narrowed the slide
+    ed.double_click(on_line).await;
+    ed.wait("document.activeElement?.closest('dialog.sheet') && document.activeElement.value === 'the peak'").await;
+    ed.key("a", "KeyA", 65, 4).await; // ⌘A, then delete
+    ed.key("Backspace", "Backspace", 8, 0).await;
+    ed.key("Enter", "Enter", 13, 0).await;
+    ed.wait_file(|f| !f.contains("label="), "unlabelled").await;
+}
+
+/// Spec 016 US4: the element bar's "Appears on click" turns an arrow's
+/// draw-in on and off (`fragment="true"`, quarto-arrows' own), not a class.
+#[tokio::test(flavor = "multi_thread")]
+async fn arrow_appears_on_click() {
+    let Some(ed) = arrow_ed(&arrow_deck(true)).await else {
+        return;
+    };
+    ed.go("a").await;
+    ed.settle().await;
+    ed.select_arrow_at(350.0, 512.5).await;
+    ed.wait("!document.querySelector('#elbar').hidden").await;
+    assert_eq!(
+        ed.eval(
+            "document.querySelector('#elbar [data-act=fragment]').getAttribute('aria-pressed')"
+        )
+        .await,
+        json!("false")
+    );
+    ed.click_editor("#elbar [data-act=fragment]").await;
+    ed.wait_file(
+        |f| f.contains("position=\"absolute\" fragment=\"true\" >}}"),
+        "appears on click",
+    )
+    .await;
+    assert!(!ed.file().contains(".fragment"), "no class");
+    ed.settle().await;
+    ed.wait(&format!(
+        "!!{FRAME}.querySelector('[data-qd=\"a/1\"] .fragment')"
+    ))
+    .await;
+    ed.select_arrow_at(350.0, 512.5).await;
+    ed.wait("document.querySelector('#elbar [data-act=fragment]')?.getAttribute('aria-pressed') === 'true'").await;
+    ed.click_editor("#elbar [data-act=fragment]").await;
+    ed.wait_file(|f| !f.contains("fragment"), "off again").await;
+}
