@@ -79,6 +79,11 @@ enum Cmd {
         #[command(subcommand)]
         action: DotCmd,
     },
+    /// Arrows on a slide: quarto-arrows shortcodes placed in slide pixels
+    Arrow {
+        #[command(subcommand)]
+        action: ArrowCmd,
+    },
     /// Print front matter, or set/unset a top-level key
     Meta {
         #[command(subcommand)]
@@ -638,6 +643,14 @@ fn parse_pair(s: &str) -> std::result::Result<(f64, f64), String> {
 }
 
 #[derive(Subcommand)]
+enum ArrowCmd {
+    /// One arrow: its start, end, control points and options, and whether qd can edit it
+    Show { arrow: String },
+    /// The slide's arrows, in order
+    List { slide: String },
+}
+
+#[derive(Subcommand)]
 enum DotCmd {
     /// The diagram in a `{dot}` cell: boxes, arrows, settings, and whether qd can edit it
     Show { cell: String },
@@ -801,6 +814,9 @@ fn output_of(cmd: &str) -> &'static str {
             r#"{"version","slide":{"id","explicit","index","kind","level","title","attrs":{"id","classes","kv"},"opaque","source","blocks":[{"id","explicit","kind","text","attrs","geom"?}]}}"#
         }
         "meta" => r#"{"version","front_matter":{...}}"#,
+        "arrow" => {
+            r#"show: {"ok","ref","from":[x,y],"to":[x,y],"control":[[x,y],...]|null,"options":{...},"editable":true} or {"ok","ref","editable":{"reason","at":{"line","column"}}}; list: {"ok","arrows":[<show>...]}"#
+        }
         "dot" => {
             r#"show: {"ok","kind":"dot","cell","directed","pinned","editable":true|{"reason","at":{"line","column"}},"settings":{...},"nodes":[{"name","label","look":{...},"url","image","pos":[x,y]|null,"pinned","size":{...},"locked"}],"edges":[{"from","to","index","attrs":{...},"locked"}]}"#
         }
@@ -1338,6 +1354,8 @@ impl Ctx<'_> {
 /// Commands the HTTP API may run (FR-010). No server control, no file I/O
 /// beyond the deck itself.
 const API_OPS: &[&str] = &[
+    "arrow show",
+    "arrow list",
     "dot show",
     "dot move",
     "dot pin",
@@ -1516,6 +1534,13 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
         Cmd::Meta {
             action: Some(MetaCmd::Unset { key }),
         } => ctx.edit(|d| ops::meta_unset(d, key)),
+        Cmd::Arrow { action } => {
+            let d = read()?.1;
+            match action {
+                ArrowCmd::Show { arrow } => crate::arrows::show(&d, arrow),
+                ArrowCmd::List { slide } => crate::arrows::list(&d, slide),
+            }
+        }
         Cmd::Dot { action } => {
             let d = read()?.1;
             // an edit, with what the command adds to its output

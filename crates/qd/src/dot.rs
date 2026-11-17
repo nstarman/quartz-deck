@@ -158,7 +158,7 @@ struct T {
     span: Span,
 }
 
-fn stop(reason: impl Into<String>, at: usize) -> Stop {
+pub(crate) fn stop(reason: impl Into<String>, at: usize) -> Stop {
     Stop {
         reason: reason.into(),
         at,
@@ -855,6 +855,17 @@ fn attrs_json<'a>(attrs: impl IntoIterator<Item = &'a Attr>) -> Value {
     )
 }
 
+/// Why text from `start` in the deck can't be edited, and where (`{reason, at: {line, column}}`).
+pub(crate) fn stopped_at(d: &Deck, start: usize, s: Stop) -> Value {
+    let abs = start + s.at;
+    let line = d.lines(Span {
+        start: abs,
+        end: abs,
+    })[0];
+    let col = abs - d.text[..abs].rfind('\n').map_or(0, |n| n + 1) + 1;
+    json!({"reason": s.reason, "at": {"line": line, "column": col}})
+}
+
 /// `qd dot show CELL` (contracts/cli.md).
 pub fn show(d: &Deck, r: &str) -> Result<Value> {
     let (cell, body) = cell(d, r)?;
@@ -862,14 +873,8 @@ pub fn show(d: &Deck, r: &str) -> Result<Value> {
     let g = match parse_cell(text) {
         Ok(g) => g,
         Err(s) => {
-            let abs = body.start + s.at;
-            let line = d.lines(Span {
-                start: abs,
-                end: abs,
-            })[0];
-            let col = abs - d.text[..abs].rfind('\n').map_or(0, |n| n + 1) + 1;
             return Ok(json!({"ok": true, "kind": "dot", "cell": cell,
-                "editable": {"reason": s.reason, "at": {"line": line, "column": col}}}));
+                "editable": stopped_at(d, body.start, s)}));
         }
     };
     let nodes: Vec<Value> = g

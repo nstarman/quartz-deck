@@ -1,3 +1,4 @@
+pub mod arrows;
 pub mod assets;
 pub mod attrs;
 pub mod bib;

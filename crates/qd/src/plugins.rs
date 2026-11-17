@@ -7,7 +7,9 @@ use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
 
-/// A Quarto extension compiled into `qd` from `plugins/<name>/_extensions/<name>/`.
+/// A Quarto extension compiled into `qd` from `plugins/<name>/_extensions/<name>/`
+/// (or read from disk, `from_dir`).
+#[derive(Clone, Copy)]
 pub struct Extension {
     pub name: &'static str,
     /// `(path inside the extension's folder, contents)`; `_extension.yml` among them.
@@ -31,6 +33,20 @@ pub const EXTENSIONS: &[Extension] = &[
 
 /// Pictures in diagram boxes (spec 015 US3): installed by the first `qd dot set … image=`.
 pub const DOT_IMAGE: Extension = extension!("dot-image": "_extension.yml", "dot-image.lua");
+
+/// An extension read from files on disk (one qd downloads, spec 016), to
+/// install under `name` (`org/name`, as `quarto add` lays it out).
+/// ponytail: the files are read once and kept for the process's life.
+pub fn from_dir(name: &'static str, dir: &Path, files: &[&'static str]) -> Result<Extension> {
+    let files: Vec<_> = files
+        .iter()
+        .map(|p| Ok((*p, &*String::leak(fs::read_to_string(dir.join(p))?))))
+        .collect::<Result<_>>()?;
+    Ok(Extension {
+        name,
+        files: Vec::leak(files),
+    })
+}
 
 /// A deck's copy compared with qd's.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -193,6 +209,39 @@ mod tests {
             all,
             "already named: unchanged"
         );
+    }
+
+    /// Spec 016: an extension read from files on disk (the downloaded
+    /// quarto-arrows) installs under its own path, version-aware.
+    #[test]
+    fn installs_from_disk() {
+        let src = tempfile::tempdir().unwrap();
+        fs::create_dir_all(src.path().join("resources")).unwrap();
+        fs::write(
+            src.path().join("_extension.yml"),
+            "title: A\nversion: 0.3.0\n",
+        )
+        .unwrap();
+        fs::write(src.path().join("resources/a.js"), "// a\n").unwrap();
+        let ext = from_dir(
+            "emilhvitfeldt/arrows",
+            src.path(),
+            &["_extension.yml", "resources/a.js"],
+        )
+        .unwrap();
+        let deck = tempfile::tempdir().unwrap();
+        let v = install_these(&[ext], deck.path()).unwrap();
+        assert_eq!(v["installed"], json!(["emilhvitfeldt/arrows"]));
+        let js = deck
+            .path()
+            .join("_extensions/emilhvitfeldt/arrows/resources/a.js");
+        assert_eq!(fs::read_to_string(&js).unwrap(), "// a\n");
+        fs::write(&js, "// mine\n").unwrap();
+        assert_eq!(
+            install_these(&[ext], deck.path()).unwrap()["kept"][0]["code"],
+            "W_EDITED"
+        );
+        assert!(from_dir("x", src.path(), &["missing.lua"]).is_err());
     }
 
     #[test]
