@@ -34,7 +34,8 @@ const editable = (cellEl) => !!cellEl && info.get(cellEl.dataset.qd)?.editable =
 
 const nodes = (cellEl) => [...cellEl.querySelectorAll('svg g.node')];
 const nodeNamed = (cellEl, name) => nodes(cellEl).find((g) => nameOf(g) === name);
-const edges = (cellEl) => [...cellEl.querySelectorAll('svg g.edge')];
+/** The diagram's arrows, not the routed copies a drag drew (they stay until the re-render). */
+const edges = (cellEl) => [...cellEl.querySelectorAll('svg g.edge:not(.qd-dot-routed)')];
 /** `a->b#k` (`a--b#k` in an undirected graph). */
 const op = (d) => (d?.directed === false ? '--' : '->');
 const refOf = (d, e) => `${e.from}${op(d)}${e.to}#${e.index}`;
@@ -153,7 +154,7 @@ function route(d) {
     const all = edges(d.cellEl);
     const routed = edges(svg);
     const graph = d.g.closest('g.graph');
-    for (const r of d.routed) r.remove();
+    for (const r of d.cellEl.querySelectorAll('g.qd-dot-routed')) r.remove(); // this drag's, and any left by the last one
     d.routed = d.edges.map(([e]) => {
       const r = routed[all.indexOf(e)];
       r.classList.add('qd-dot-routed');
@@ -241,6 +242,7 @@ function move(e) {
   }
   if (!drag.moved) {
     drag.moved = true;
+    for (const h of drag.cellEl.querySelectorAll('.qd-dot-handle')) h.remove(); // they'd stay behind
     drag.edges = edgesOf(drag.cellEl, drag.node);
     const graph = drag.g.closest('g.graph');
     for (const [edge, other] of drag.edges) {
@@ -294,7 +296,7 @@ async function up(e) {
   // graph units are points; Graphviz's y grows upward
   const by = `${(d.ux / 72).toFixed(3)},${(-d.uy / 72).toFixed(3)}`;
   const r = await api.op('dot move', { cell: d.cell, node: d.node, by });
-  if (!r) restore(d);
+  if (!r) { restore(d); highlight(); }
 }
 
 /** Double-click a box: rename it in a sheet beside it (Enter renames, Escape cancels). */
@@ -317,6 +319,7 @@ function key(e) {
   drag.cancelled = true;
   restore(drag);
   drag = null;
+  highlight(); // the handles again
 }
 
 /** Positions read from the rendered SVG: centres in inches, lowest-left at 0, 0. */

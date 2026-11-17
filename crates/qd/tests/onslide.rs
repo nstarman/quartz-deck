@@ -4700,6 +4700,12 @@ async fn diagram_live_routing() {
         json!(true),
         "the straight lines give way"
     );
+    let handles = format!("{FRAME}.querySelectorAll('.qd-dot-handle').length");
+    assert_eq!(
+        ed.eval(&handles).await,
+        json!(0),
+        "no handles left behind while dragging"
+    );
     // it follows the pointer
     use DispatchMouseEventType::*;
     ed.mouse(MouseMoved, (a.0 + inch / 2.0, a.1 + inch), false)
@@ -4712,6 +4718,18 @@ async fn diagram_live_routing() {
     .await;
     ed.mouse(MouseMoved, (a.0, a.1 + inch), false).await;
     ed.mouse(MouseReleased, (a.0, a.1 + inch), false).await;
+    // drag b straight away, before the re-render: the arrows drawn for a's
+    // drag are not b's arrows; b has two (a -> b, b -> c)
+    let b = ed.node_point("b").await;
+    ed.press_and_move(b, (b.0, b.1 + inch)).await;
+    ed.wait(&format!("{}.length === 2", routed())).await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.mouse(MouseReleased, (b.0, b.1 + inch), false).await;
+    assert_eq!(
+        ed.eval(&handles).await,
+        json!(4),
+        "Escape: b's handles are back"
+    );
     ed.wait_file(|f| f.contains("pos=\"0,0!\""), "a moved one inch down")
         .await;
     assert_eq!(
