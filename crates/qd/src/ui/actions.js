@@ -6,6 +6,7 @@ import * as keys from '/ui/keys.js';
 import * as settings from '/ui/settings.js';
 import { ask, confirmSheet } from '/ui/sheet.js';
 import * as dot from '/ui/dot.js';
+import * as arrows from '/ui/arrows.js';
 
 export const TRANSITIONS = ['none', 'fade', 'slide', 'convex', 'concave', 'zoom'];
 
@@ -54,7 +55,7 @@ export function makeActions(api) {
   ];
   const element = [
     { id: 'run', label: 'Run cell', visible: (t) => t.block.kind === 'cell', run: (t) => api.runCells([t.ref]) },
-    { id: 'edit', label: 'Edit text', run: (t) => api.beginEditRef(t) },
+    { id: 'edit', label: 'Edit text', run: (t) => (arrows.is(t.ref) ? arrows.label(t.ref) : api.beginEditRef(t)) }, // an arrow: its label (016)
     { id: 'source', label: 'Edit markdown', run: (t) => api.beginSourceEl(t) },
     '-',
     { id: 'cut', label: 'Cut', run: async (t) => { await api.copy(t); return api.op('block rm', { element: t.ref }); } },
@@ -69,7 +70,7 @@ export function makeActions(api) {
     { id: 'insert-before', label: 'Insert before', items: (t) => insertMenu(t, { before: t.ref }) },
     { id: 'insert-after', label: 'Insert after', items: (t) => insertMenu(t, { after: t.ref }) },
     '-',
-    { id: 'fragment', label: 'Appears on click', checked: (t) => classesOf(t).includes('fragment'), run: (t) => toggleClass(t, 'fragment') },
+    { id: 'fragment', label: 'Appears on click', checked: (t) => (arrows.is(t.ref) ? arrows.appears(t.ref) : classesOf(t).includes('fragment')), run: (t) => (arrows.is(t.ref) ? arrows.toggleAppears(t.ref) : toggleClass(t, 'fragment')) },
     { id: 'appearance', label: 'Appearance', items: (t) => resolve(classes, t) },
     '-',
     { id: 'place', label: 'Place freely', visible: (t) => t.block.kind !== 'box', why: (t) => UNPLACEABLE[t.block.kind], enabled: (t) => !UNPLACEABLE[t.block.kind], run: (t) => api.op('block place', api.placement(t)) },

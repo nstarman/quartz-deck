@@ -2,15 +2,17 @@
 // pixels. A click on an arrow's line selects it; its start and end handles
 // drag one end, its line drags the whole arrow, with the editor's snap
 // guides (⌘/Ctrl places freely), and its middle handle bends it (US2);
-// Insert ▸ Arrow draws a new one; Properties sets its style. Every
+// a double-click (or Edit) sets its label (US3); "Appears on click" draws it
+// in (US4); Insert ▸ Arrow draws a new one; Properties sets its style. Every
 // change is a `qd arrow` command (contracts/editor.md); the preview's next
 // render draws the result.
 
 import { read, el as html } from '/ui/run.js';
+import { ask } from '/ui/sheet.js';
 import { get as setting } from '/ui/settings.js';
 import { SNAP_PX } from '/ui/guides.js';
 
-let api = null; // { frame, op, select, guideLines, snap, clearGuides }
+let api = null; // { frame, op, select, guideLines, snap, clearGuides, pageRect, changed }
 const info = new Map(); // ref → `qd arrow show` result
 let sel = null; // the selected arrow's ref
 let drag = null;
@@ -79,6 +81,20 @@ export function follow(ref) {
 }
 
 export const nudgeable = () => !!sel && editable(sel) && !drag;
+
+/** An arrow qd edits on the slide (the element bar's Edit and Appears on click act on it). */
+export const is = (ref) => !!ref && editable(ref);
+export const appears = (ref) => !!info.get(ref)?.options.fragment;
+/** Appears on click: quarto-arrows draws the arrow in (`fragment="true"`), US4. */
+export const toggleAppears = (ref) => api.op('arrow set', { arrow: ref, pairs: [`fragment=${appears(ref) ? '' : 'true'}`] });
+
+/** The arrow's label, in a sheet beside it (US3): Enter sets it, an empty one removes it, Escape cancels. */
+export async function label(ref) {
+  const was = info.get(ref)?.options.label ?? '';
+  const anchor = api.pageRect(doc().querySelector(`.qd-arrow-hit[data-ref="${CSS.escape(ref)}"]`) || wrapper(ref));
+  const v = await ask({ title: 'Arrow label', fields: [{ name: 'label', kind: 'text', label: 'Label', value: was }], ok: 'Set', anchor });
+  if (v && v.label !== was) await api.op('arrow set', { arrow: ref, pairs: [`label=${v.label}`] });
+}
 export const nudge = (dx, dy) => api.op('arrow move', { arrow: sel, by: `${dx},${dy}` });
 
 /** Insert ▸ Arrow: the next drag on the slide draws one (a click: 200 px to the right). */
@@ -218,10 +234,12 @@ export async function mark() {
     // a click on an arrow selects it: the editor would start typing in its paragraph
     for (const t of ['mousedown', 'click', 'dblclick']) {
       w.addEventListener(t, (e) => {
-        if (e.target.closest?.('.qd-arrow-hit, .qd-arrow-handle') || drag || pressed || (drawing && t !== 'dblclick')) {
+        const on = e.target.closest?.('.qd-arrow-hit, .qd-arrow-handle');
+        if (on || drag || pressed || (drawing && t !== 'dblclick')) {
           e.stopImmediatePropagation();
           e.preventDefault();
         }
+        if (t === 'dblclick' && on) label(on.dataset.ref || sel);
         if (t === 'click') pressed = false;
       }, true);
     }
@@ -245,6 +263,7 @@ export async function mark() {
     line.after(hit);
   }
   follow(sel);
+  if (sel) api.changed(); // the element bar and Properties, now that the arrows are read
 }
 
 const HEADS = ['arrow', 'stealth', 'diamond', 'circle', 'dot', 'square', 'bar', 'barbed', 'none'];
@@ -272,6 +291,8 @@ export function panel(ref) {
   row('Dashed', html('input', { type: 'checkbox', name: 'dash', checked: !!o.dash }));
   row('Head', choose('head', HEADS, o.head ?? 'arrow'));
   row('Heads at', choose('heads', Object.keys(AT), heads));
+  row('Label', html('input', { type: 'text', name: 'label', value: o.label ?? '' }));
+  row('Label at', choose('label-position', ['start', 'middle', 'end'], o['label-position'] ?? 'middle'));
   const buttons = html('div', { className: 'buttons' });
   buttons.append(html('button', { type: 'submit', className: 'primary', textContent: 'Apply' }));
   form.append(fs, buttons);
@@ -281,7 +302,7 @@ export function panel(ref) {
     const [start, end] = AT[f.heads.value];
     // every field, as `qd arrow set` takes it: a default or empty value removes the option
     const pairs = [`color=${f.color.value.trim()}`, `width=${f.width.value}`, `dash=${f.dash.checked ? (o.dash || 'true') : ''}`,
-      `head=${f.head.value}`, `head-start=${start}`, `head-end=${end}`];
+      `head=${f.head.value}`, `head-start=${start}`, `head-end=${end}`, `label=${f.label.value}`, `label-position=${f['label-position'].value}`];
     api.op('arrow set', { arrow: ref, pairs });
   });
   return form;
