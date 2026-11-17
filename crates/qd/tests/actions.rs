@@ -188,6 +188,11 @@ const WIDGET_KEYS: &[(&str, usize, &str)] = &[
     // session's commit/leave/indent keys (move with US4, T020); the splitter's arrows
     ("dot.js", 1, "Esc cancelling a drag of a diagram's box"),
     (
+        "arrows.js",
+        1,
+        "Esc cancelling a drag of an arrow, or drawing one (016)",
+    ),
+    (
         "list.js",
         5,
         "moving along the slide list (↑ ↓), Enter adding a slide there, Esc cancelling a drag",

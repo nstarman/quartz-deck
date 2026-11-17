@@ -11,6 +11,7 @@ import { submenu } from '/ui/menubar.js';
 import * as hist from '/ui/history.js';
 import * as runslide from '/ui/runslide.js';
 import * as dot from '/ui/dot.js';
+import * as arrows from '/ui/arrows.js';
 import { openMenu, closeMenu, menuOpen } from '/ui/menu.js';
 import { makeList } from '/ui/list.js';
 import * as pane from '/ui/pane.js';
@@ -191,6 +192,12 @@ const PREVIEW_CSS = `html:not(.qd-present) {
   .qd-ph[data-ph=image]:not(:has(*)) { cursor: copy; }
   [data-qd]:hover { outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; }
   .qd-sel, .qd-sel:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 2px; }
+  /* an arrow (spec 016): its line is the hit area, its handles show the selection */
+  .qd-arrow.qd-sel, .qd-arrow:hover { outline: none !important; }
+  .qd-arrow-hit { pointer-events: stroke; cursor: pointer; }
+  .qd-arrow-handle { fill: #fff; stroke: #2a5bd7; stroke-width: 2px; vector-effect: non-scaling-stroke; pointer-events: all; cursor: grab; }
+  line.qd-arrow-provisional { stroke: #2a5bd7; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
+  .qd-drawing, .qd-drawing * { cursor: crosshair !important; }
   .qd-editing, .qd-editing:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 4px; cursor: text; }
   .qd-editing:focus { outline-style: solid; }
   /* every fragment is shown (and reachable) in the editor; the marker says it appears on click */
@@ -329,7 +336,7 @@ function guideLines(sec, box) {
   const xs = [0, width / 2, width];
   const ys = [0, height / 2, height];
   for (const el of sec.querySelectorAll(':scope > [data-qd]')) {
-    if (el === box) continue;
+    if (el === box || el.classList.contains('qd-arrow')) continue; // an arrow's paragraph has no box
     const [l, t, w, h] = slideRect(el);
     xs.push(l, l + w / 2, l + w);
     ys.push(t, t + h / 2, t + h);
@@ -581,6 +588,7 @@ function hookFrame() {
     hist.mark();
     runslide.mark();
     dot.mark();
+    arrows.mark();
     markOffSlide(w);
     w.MathJax?.startup?.promise?.then(() => slideList.refresh()); // math typesets after ready
     onSlide();
@@ -789,6 +797,7 @@ async function slideAction(act, slide) {
 async function select(ref) {
   state.sel = ref;
   dot.follow(ref);
+  arrows.follow(ref);
   highlight();
   syncFocus();
   if (ref) revealSource({ ref });
@@ -1508,8 +1517,8 @@ const actions = makeActions({
     const r = await op(name, args);
     if (!r) return null;
     if (name === 'dup') { state.goAfterRender = r.target; copiedFrom.set(r.target, slideById(args.slide)?.anchor); }
-    if (/^(block|box) /.test(name) && name !== 'block rm' && r.target?.includes('/')) state.sel = r.target; // the element at its new place
-    if (name === 'block rm' || name === 'rm') state.sel = null;
+    if (/^(block|box|arrow) /.test(name) && !/ rm$/.test(name) && r.target?.includes('/')) state.sel = r.target; // the element at its new place
+    if (/^(block |arrow )?rm$/.test(name)) state.sel = null;
     if (name === 'block place') state.sel = args.element; // the box is where the element was
     await fetchDeck();
     await renderPanel();
@@ -1589,7 +1598,7 @@ async function placeElbar() {
   $('[data-act=run]', elbar).hidden = t?.block.kind !== 'cell';
   $('[data-act=fragment]', elbar).setAttribute('aria-pressed', String(!!t?.block.attrs?.classes?.includes('fragment')));
   elbar.hidden = false;
-  placeNear(elbar, el, frame);
+  placeNear(elbar, el.querySelector('.qd-arrow-hit') || el, frame); // an arrow: beside its line
 }
 
 // the preview resized (source pane, panels, window): follow the element, or the bar
@@ -1749,6 +1758,7 @@ if (!runExternal) {
   run.initRun({ say, flush: pane.save, selected, changed: runslide.mark, reload: () => frameWin()?.location.reload() });
   runslide.initRunSlide({ elOf, frame, pageRect, selected }, es);
   dot.initDot({ elOf, frame, op, pageRect, select, panelChanged: renderPanel });
+  arrows.initArrows({ frame, op, select, guideLines, snap, clearGuides });
 }
 if (keys.framed) {
   // only the panel that framed this page, and only navigation/display — never edits or code
@@ -1884,6 +1894,7 @@ async function dropImage(file, on, y) {
 async function insertBlock(slideId, where, kind) {
   if (kind.box) return newBox({ id: slideId }, { text: 'Text' });
   if (kind.diagram) return op('dot new', where.end ? { on: slideId } : where); // spec 015
+  if (kind.arrow) return arrows.startDraw(slideId); // spec 016: the next drag draws it
   let md = kind.md;
   if (kind.image) {
     const v = await ask({ title: 'Image', fields: [{ name: 'src', kind: 'files', label: 'Path (beside the deck) or URL', validate: (x) => (x ? '' : 'Choose an image or type its path') }] });
@@ -2086,11 +2097,12 @@ for (const [ids, on, table] of [[ELEMENT, 'el', 'element'], [SLIDE, 'slide', 'sl
 const boxSelected = () => !!state.sel && !!state.selBox;
 for (const [dir, dx, dy] of [['left', -1, 0], ['right', 1, 0], ['up', 0, -1], ['down', 0, 1]]) {
   keys.on(`box-nudge-${dir}`, {
-    key: () => boxSelected() || dot.nudgeable(),
-    enabled: (ctx) => ctx.el?.block.kind === 'box' || dot.nudgeable(),
+    key: () => boxSelected() || dot.nudgeable() || arrows.nudgeable(),
+    enabled: (ctx) => ctx.el?.block.kind === 'box' || dot.nudgeable() || arrows.nudgeable(),
     run: async (ctx) => {
       if (dot.nudgeable()) return dot.nudge(dx, dy); // a box of a diagram (spec 015)
       const n = ctx.e?.shiftKey ? 10 : 1;
+      if (arrows.nudgeable()) return arrows.nudge(dx * n, dy * n); // an arrow (spec 016)
       if (await op('box move', { box: ctx.el.ref, by: `${dx * n},${dy * n}` })) { await fetchDeck(); await renderPanel(); }
     },
   });

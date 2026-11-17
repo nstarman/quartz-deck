@@ -2,17 +2,11 @@
 
 mod common;
 
-use common::json;
+use common::{deck, json, text};
 use serde_json::{Value, json};
 use std::fs;
 
 const DECK: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## Flow {#d}\n\n```{dot}\ndigraph {\n  layout=neato; splines=ortho;\n  node [shape=box];\n  a [label=\"Data\", pos=\"0,1!\", fillcolor=white, style=\"rounded,filled\"];\n  b [label=\"Tool\", pos=\"2,1!\", URL=\"https://example.org/tool\", width=1.5];\n  a -> b;\n  a -> b [color=red];\n}\n```\n\n```{python}\nx = 1\n```\n";
-
-fn deck(text: &str) -> tempfile::TempDir {
-    let t = tempfile::tempdir().unwrap();
-    fs::write(t.path().join("talk.qmd"), text).unwrap();
-    t
-}
 
 #[test]
 fn show_lists_the_diagram() {
@@ -65,10 +59,6 @@ fn show_refuses_what_is_not_a_diagram() {
         assert!(!ok, "{r}: {v}");
         assert_eq!(v["error"]["code"], "E_NOT_FOUND", "{r}: {v}");
     }
-}
-
-fn text(t: &tempfile::TempDir) -> String {
-    fs::read_to_string(t.path().join("talk.qmd")).unwrap()
 }
 
 /// Spec 015 US1 (T008): `move --at` and `--by` give the same file, one line

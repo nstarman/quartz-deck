@@ -68,21 +68,21 @@ text use made-up slides only, never the person's own talks, paths or names.
 
 **Independent Test**: spec US1; quickstart §1 (add, move, undo) and §2.
 
-- [ ] T008 [P] [US1] Write failing unit tests in `crates/qd/src/arrows.rs` for the patches: set an option's value in place (each quoting kept); add an option before `>}}`; remove an option and its spacing; a new arrow's line (options in a fixed order, defaults left out); its place in the slide (after the last content block, before notes); CRLF kept; every other byte unchanged.
-- [ ] T009 [P] [US1] Write failing CLI tests in `crates/qd/tests/arrows.rs`:
+- [X] T008 [P] [US1] Write failing unit tests in `crates/qd/src/arrows.rs` for the patches: set an option's value in place (each quoting kept); add an option before `>}}`; remove an option and its spacing; a new arrow's line (options in a fixed order, defaults left out); its place in the slide (after the last content block, before notes); CRLF kept; every other byte unchanged.
+- [X] T009 [P] [US1] Write failing CLI tests in `crates/qd/tests/arrows.rs`:
   - **`add_installs_and_adds`:** the first `add` installs `_extensions/emilhvitfeldt/arrows/` from the shared download and adds one line before the notes; `--dry-run` writes nothing; undo removes the line;
   - **`add_offline_changes_nothing`:** with `QD_NO_DOWNLOAD=1` and an empty cache, `E_DOWNLOAD`, deck and folder unchanged;
   - **`move_from_to_by`:** `--from`, `--to` and `--by` each change only those options (`--by` also moves control points); a stale `--expect` gives `E_CONFLICT`;
   - **`move_refuses_read_only`:** an inline arrow gives `E_UNSAFE_EDIT`;
   - **`rm_removes`:** the line goes, undo brings it back;
   - **`rendered_where_given`:** `quarto render` of a deck with an arrow puts its line's ends within 1 px of `from`/`to` in slide pixels (skip without quarto or the network).
-- [ ] T010 [US1] Implement `qd arrow add`, `move` and `rm` in `crates/qd/src/arrows.rs` and `crates/qd/src/cli.rs`, with the install on the first `add`. T008 and T009 pass.
-- [ ] T011 [P] [US1] Write failing browser tests in `crates/qd/tests/onslide.rs`:
+- [X] T010 [US1] Implement `qd arrow add`, `move` and `rm` in `crates/qd/src/arrows.rs` and `crates/qd/src/cli.rs`, with the install on the first `add`. T008 and T009 pass.
+- [X] T011 [P] [US1] Write failing browser tests in `crates/qd/tests/onslide.rs`:
   - **`arrow_draw`:** Insert ▸ Arrow and a drag add an arrow with the dragged ends; an end near a box's edge snaps exactly, with a guide; ⌘ held places freely;
   - **`arrow_select_and_drag`:** a click on the line selects it (handles shown); dragging an end changes only that end; dragging the line moves both; Escape mid-drag changes nothing;
   - **`arrow_keys_and_delete`:** arrow keys nudge 1 px (⇧ 10 px); Delete removes; undo brings it back;
   - **`arrow_click_beside_line`:** a click beside the line selects the element underneath, not the arrow.
-- [ ] T012 [US1] Implement the overlay in `crates/qd/src/ui/arrows.js` (hit path, handles, drawing mode, drags with provisional drawing, snapping via `ui/guides.js` and the editor's guide lines, keys), Insert ▸ Arrow in `crates/qd/src/ui/actions.json`, and its wiring in `crates/qd/src/ui/editor.js` and `UI_MODULES`. T011 passes.
+- [X] T012 [US1] Implement the overlay in `crates/qd/src/ui/arrows.js` (hit path, handles, drawing mode, drags with provisional drawing, snapping via `ui/guides.js` and the editor's guide lines, keys), Insert ▸ Arrow in `crates/qd/src/ui/actions.json`, and its wiring in `crates/qd/src/ui/editor.js` and `UI_MODULES`. T011 passes.
 
 **Checkpoint**: PR 2. Arrows are drawn and placed on the slide.
 

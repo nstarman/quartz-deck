@@ -150,6 +150,170 @@ fn arrow(text: &str, opts: Vec<Opt>, close: usize) -> std::result::Result<Arrow,
     })
 }
 
+// ---------- editing (spec 016 US1, research R4) ----------
+
+/// `x,y` in whole slide pixels.
+pub fn pt(p: (f64, f64)) -> String {
+    format!("{},{}", p.0.round() as i64, p.1.round() as i64)
+}
+
+/// `v` quoted for a shortcode, keeping `quote` (the one it was written with,
+/// `None` for bare) where the value allows it.
+fn quoted(v: &str, quote: Option<char>) -> Result<String> {
+    if v.contains(">}}") {
+        return Err(QdError::InvalidArg(format!(
+            "{v:?}: a value can't hold >}}}}"
+        )));
+    }
+    let bare = !v.is_empty()
+        && v.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "#.,_-%".contains(c));
+    Ok(match quote {
+        None if bare => v.to_string(),
+        Some('\'') if !v.contains('\'') => format!("'{v}'"),
+        _ if !v.contains('"') => format!("\"{v}\""),
+        _ if !v.contains('\'') => format!("'{v}'"),
+        _ => {
+            return Err(QdError::InvalidArg(format!(
+                "{v:?} holds both kinds of quote, which a shortcode can't"
+            )));
+        }
+    })
+}
+
+/// The change to `text` (an arrow's paragraph) that sets `key` to `v`, or
+/// removes it (`None`): the value in place, a new option after the last one,
+/// or the option and its space gone. Offsets are in `text`.
+pub fn set_opt(text: &str, a: &Arrow, key: &str, v: Option<&str>) -> Result<(Span, String)> {
+    let had = a.opts.iter().rev().find(|o| o.key == key);
+    Ok(match (had, v) {
+        (Some(o), Some(v)) => (
+            Span {
+                start: o.span.0,
+                end: o.span.1,
+            },
+            format!("{key}={}", quoted(v, o.quote)?),
+        ),
+        (Some(o), None) => {
+            let start = text[..o.span.0].trim_end().len();
+            (
+                Span {
+                    start,
+                    end: o.span.1,
+                },
+                String::new(),
+            )
+        }
+        (None, Some(v)) => {
+            let at = a.opts.last().map_or(a.close, |o| o.span.1);
+            (
+                Span { start: at, end: at },
+                format!(" {key}={}", quoted(v, Some('"'))?),
+            )
+        }
+        (None, None) => (Span { start: 0, end: 0 }, String::new()),
+    })
+}
+
+/// A new arrow's line: start and end in slide pixels, then `opts` in order.
+pub fn line(from: (f64, f64), to: (f64, f64), opts: &[(&str, &str)]) -> Result<String> {
+    let mut s = format!(
+        "{{{{< arrow from=\"{}\" to=\"{}\" position=\"absolute\"",
+        pt(from),
+        pt(to)
+    );
+    for (k, v) in opts {
+        s.push_str(&format!(" {k}={}", quoted(v, Some('"'))?));
+    }
+    Ok(s + " >}}")
+}
+
+/// The editable arrow at `r`: its ref, paragraph span and text, and the arrow.
+fn editable<'a>(d: &'a Deck, r: &str) -> Result<(String, Span, &'a str, Arrow)> {
+    let (r, span, a) = block(d, r)?;
+    let a = a.map_err(|s| QdError::UnsafeEdit(format!("{r}: {}; edit it as text", s.reason)))?;
+    Ok((r, span, d.slice(span), a))
+}
+
+/// `qd arrow add SLIDE`: after the slide's content, before its notes.
+pub fn add(
+    d: &Deck,
+    slide: &str,
+    from: (f64, f64),
+    to: (f64, f64),
+    opts: &[(&str, &str)],
+) -> Result<(crate::ops::Patch, Value)> {
+    use crate::ops::{Pos, block_add};
+    let s = d.slide(slide)?;
+    let text = line(from, to, opts)?;
+    let notes = s
+        .blocks
+        .iter()
+        .position(|b| b.kind == BlockKind::Notes)
+        .map(|i| format!("{}/{i}", s.id));
+    let mut p = block_add(
+        d,
+        slide,
+        notes.as_deref().map_or(Pos::End, Pos::Before),
+        &text,
+    )?;
+    p.op = "arrow add".into();
+    let r = p.target.clone();
+    Ok((p, json!({"ref": r})))
+}
+
+/// `qd arrow move REF`: the start, the end, both, or (`by`) the whole arrow,
+/// control points included.
+pub fn move_arrow(
+    d: &Deck,
+    r: &str,
+    from: Option<(f64, f64)>,
+    to: Option<(f64, f64)>,
+    by: Option<(f64, f64)>,
+) -> Result<(crate::ops::Patch, Value)> {
+    let (r, span, text, a) = editable(d, r)?;
+    if (from, to, by) == (None, None, None) {
+        return Err(QdError::InvalidArg("give --from, --to or --by".into()));
+    }
+    let shift = |p: (f64, f64)| by.map_or(p, |b| (p.0 + b.0, p.1 + b.1));
+    let from = from.or(by.map(|_| shift(a.from)));
+    let to = to.or(by.map(|_| shift(a.to)));
+    // only what moves is written: the other end keeps its bytes
+    let mut changes: Vec<(&str, String)> = [("from", from), ("to", to)]
+        .into_iter()
+        .filter_map(|(k, p)| Some((k, pt(p?))))
+        .collect();
+    if by.is_some() {
+        for (k, c) in ["control1", "control2"].into_iter().zip(&a.control) {
+            changes.push((k, pt(shift(*c))));
+        }
+    }
+    let (from, to) = (from.unwrap_or(a.from), to.unwrap_or(a.to));
+    let reps = changes
+        .iter()
+        .map(|(k, v)| {
+            let (s, new) = set_opt(text, &a, k, Some(v))?;
+            Ok((
+                Span {
+                    start: span.start + s.start,
+                    end: span.start + s.end,
+                },
+                new,
+            ))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let p = crate::ops::patch("arrow move", r.clone(), reps, vec![]);
+    Ok((p, json!({"ref": r, "from": from, "to": to})))
+}
+
+/// `qd arrow rm REF`.
+pub fn rm(d: &Deck, r: &str) -> Result<crate::ops::Patch> {
+    let _ = block(d, r)?; // an arrow, editable or not
+    let mut p = crate::ops::block_rm(d, r)?;
+    p.op = "arrow rm".into();
+    Ok(p)
+}
+
 /// The arrow at `r`: its canonical ref, its paragraph's span, and what was read.
 fn block(d: &Deck, r: &str) -> Result<(String, Span, std::result::Result<Arrow, Stop>)> {
     let (_, b) = d.element(r)?;
@@ -259,6 +423,64 @@ mod tests {
         assert!(
             why(r#"{{< arrow from="0,0" to="1,1" position="absolute" curvy >}}"#).contains("name")
         );
+    }
+
+    /// Apply one patch to `t`.
+    fn patched(t: &str, key: &str, v: Option<&str>) -> String {
+        let (s, new) = set_opt(t, &ok(t), key, v).unwrap();
+        format!("{}{new}{}", &t[..s.start], &t[s.end..])
+    }
+
+    #[test]
+    fn patches_keep_the_rest() {
+        let t = r#"{{< arrow from="100,200" to='300, 50' position="absolute" color=red >}}"#;
+        // in place, each quote kept; a bare value stays bare while it can
+        assert_eq!(
+            patched(t, "to", Some("310,60")),
+            t.replace("'300, 50'", "'310,60'")
+        );
+        assert_eq!(
+            patched(t, "color", Some("blue")),
+            t.replace("color=red", "color=blue")
+        );
+        assert_eq!(
+            patched(t, "color", Some("light blue")),
+            t.replace("color=red", r#"color="light blue""#)
+        );
+        // added after the last option; removed with its space
+        assert_eq!(
+            patched(t, "width", Some("4")),
+            t.replace("color=red", r#"color=red width="4""#)
+        );
+        assert_eq!(patched(t, "color", None), t.replace(" color=red", ""));
+        assert_eq!(
+            patched(t, "dash", None),
+            t,
+            "removing an absent option changes nothing"
+        );
+        // a value with a double quote is written with single quotes
+        assert_eq!(
+            patched(t, "label", Some(r#"say "hi""#)),
+            t.replace("color=red", r#"color=red label='say "hi"'"#)
+        );
+        assert!(set_opt(t, &ok(t), "label", Some(r#"it's "x""#)).is_err());
+        assert!(set_opt(t, &ok(t), "label", Some("a >}} b")).is_err());
+    }
+
+    #[test]
+    fn new_arrow_line() {
+        assert_eq!(
+            line(
+                (100.4, 199.6),
+                (300.0, 50.0),
+                &[("color", "red"), ("label", "the peak")]
+            )
+            .unwrap(),
+            r#"{{< arrow from="100,200" to="300,50" position="absolute" color="red" label="the peak" >}}"#
+        );
+        let a = ok(&line((0.0, 0.0), (10.0, -5.0), &[]).unwrap());
+        assert!(line((0.0, 0.0), (1.0, 1.0), &[("label", "a >}} b")]).is_err());
+        assert_eq!((a.from, a.to), ((0.0, 0.0), (10.0, -5.0)));
     }
 
     #[test]

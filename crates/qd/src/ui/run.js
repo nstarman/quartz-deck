@@ -17,6 +17,10 @@ if (given) {
   history.replaceState(null, '', location.pathname + location.search + location.hash.replace(given[0], ''));
 }
 export const token = given?.[1] || store((s) => s.getItem('qd-token')) || '';
+
+/** A read-only op (`dot show`, `arrow list`), quiet: without the editor's saving status. */
+export const read = (op, args) => fetch('/api/op', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-QD-Token': token }, body: JSON.stringify({ op, args }) })
+  .then((r) => (r.ok ? r.json() : null));
 const pane = document.querySelector('#srcpane');
 const ta = pane.querySelector('textarea');
 const gutter = pane.querySelector('.gutter');

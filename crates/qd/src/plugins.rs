@@ -48,6 +48,27 @@ pub fn from_dir(name: &'static str, dir: &Path, files: &[&'static str]) -> Resul
     })
 }
 
+/// Where quarto-arrows goes in a deck's `_extensions/`, as `quarto add` lays it out.
+pub const ARROWS: &str = "emilhvitfeldt/arrows";
+
+/// quarto-arrows (spec 016): downloaded into qd's cache under `root` if need
+/// be (research R3), then ready to install into a deck.
+pub fn quarto_arrows(root: &Path, allow_download: bool) -> Result<Extension> {
+    static EXT: std::sync::OnceLock<Extension> = std::sync::OnceLock::new();
+    if let Some(e) = EXT.get() {
+        return Ok(*e);
+    }
+    let arrows = crate::assets::QUARTO_ARROWS;
+    let paths = arrows
+        .iter()
+        .map(|f| Ok(crate::assets::ensure(root, f, allow_download)?.path))
+        .collect::<Result<Vec<_>>>()?;
+    let files: Vec<_> = arrows.iter().map(|f| f.file).collect();
+    // `_extension.yml`, first, sits at the top of the extension's folder
+    let e = from_dir(ARROWS, paths[0].parent().expect("in a folder"), &files)?;
+    Ok(*EXT.get_or_init(|| e))
+}
+
 /// A deck's copy compared with qd's.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum State {

@@ -128,16 +128,22 @@ impl Drop for Ed {
 
 impl Ed {
     async fn open(deck: &str) -> Option<Ed> {
-        Self::open_with_env(deck, &[]).await
+        Self::open_with(deck, &[], |_| {}).await
     }
 
-    /// [`Ed::open`] with the server started under extra environment variables.
-    async fn open_with_env(deck: &str, env: &[(&str, &str)]) -> Option<Ed> {
+    /// [`Ed::open`] with the server started under extra environment variables, and
+    /// `setup` run on the deck's folder before it starts.
+    async fn open_with(
+        deck: &str,
+        env: &[(&str, &str)],
+        setup: impl FnOnce(&std::path::Path),
+    ) -> Option<Ed> {
         let chrome = chrome()?;
         let slot = slot().await;
         let watchdog = Watchdog::start();
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("deck.qmd"), deck).unwrap();
+        setup(dir.path());
         let out = qd(dir.path())
             .args(["serve", "--detach"])
             .envs(env.iter().copied())
@@ -4035,9 +4041,10 @@ async fn export_menu_disables_missing_tools() {
     };
     let path = format!("{}:/usr/bin:/bin", quarto.parent().unwrap().display());
     let home = tempfile::tempdir().unwrap();
-    let Some(ed) = Ed::open_with_env(
+    let Some(ed) = Ed::open_with(
         EXPORTS,
         &[("PATH", &path), ("HOME", home.path().to_str().unwrap())],
+        |_| {},
     )
     .await
     else {
@@ -4754,7 +4761,8 @@ async fn diagram_live_routing_without_engine() {
     let bin = fake.path().join("bin/quarto");
     std::fs::create_dir_all(bin.parent().unwrap()).unwrap();
     common::script(&bin, &format!("exec {real:?} \"$@\""));
-    let Some(ed) = Ed::open_with_env(DIAGRAM, &[("QD_QUARTO", bin.to_str().unwrap())]).await else {
+    let Some(ed) = Ed::open_with(DIAGRAM, &[("QD_QUARTO", bin.to_str().unwrap())], |_| {}).await
+    else {
         return;
     };
     ed.eval("import('/ui/settings.js').then((s) => s.set({'diagrams.live-layout': true}))")
@@ -4883,4 +4891,223 @@ async fn code_click_selects_source_on_request() {
     ed.wait("!document.querySelector('#elbar').hidden").await;
     ed.click_editor("#elbar [data-act=source]").await;
     ed.src_open().await;
+}
+
+// ---------- arrows on the slide (spec 016) ----------
+
+/// A 1600×900 slide with a placed box (left 600, top 100, 300×200) and, with
+/// `arrow`, an arrow from 200,600 to 700,300.
+fn arrow_deck(arrow: bool) -> String {
+    let a = if arrow {
+        "\n{{< arrow from=\"200,600\" to=\"700,300\" position=\"absolute\" >}}\n"
+    } else {
+        ""
+    };
+    format!(
+        "---\ntitle: T\nformat:\n  revealjs:\n    width: 1600\n    height: 900\n---\n\n## A {{#a}}\n\n::: {{.absolute top=100 left=600 width=300 height=200}}\nBox\n:::\n{a}"
+    )
+}
+
+/// The editor on `deck`, with quarto-arrows in place before it starts; `None` without a browser or offline.
+async fn arrow_ed(deck: &str) -> Option<Ed> {
+    let mut seeded = false;
+    let ed = Ed::open_with(deck, &[], |d| {
+        seeded = common::seed_arrows(d, true).is_some()
+    })
+    .await?;
+    seeded.then_some(ed)
+}
+
+impl Ed {
+    /// Click slide pixel `(x, y)` on an arrow's line and wait for its handles.
+    async fn select_arrow_at(&self, x: f64, y: f64) {
+        let (px, py) = self.slide_px(x, y).await;
+        self.page.click(Point { x: px, y: py }).await.unwrap();
+        self.wait(&format!("{ARROW_HANDLES} === 2")).await;
+    }
+
+    /// The page point of slide pixel `(x, y)` on the current slide.
+    async fn slide_px(&self, x: f64, y: f64) -> (f64, f64) {
+        self.point(&format!("(() => {{ const f = document.querySelector('#preview'); const w = f.contentWindow; const s = w.Reveal.getScale(); const sec = w.Reveal.getCurrentSlide().getBoundingClientRect(); const r = f.getBoundingClientRect(); return [r.left + f.clientLeft + sec.left + {x} * s, r.top + f.clientTop + sec.top + {y} * s]; }})()")).await
+    }
+}
+
+/// The arrow line in the file: its start and end.
+fn arrow_ends(file: &str) -> Vec<(f64, f64, f64, f64)> {
+    let re =
+        regex::Regex::new(r#"\{\{< arrow from="(-?\d+),(-?\d+)" to="(-?\d+),(-?\d+)""#).unwrap();
+    re.captures_iter(file)
+        .map(|c| {
+            let n = |i: usize| c[i].parse::<f64>().unwrap();
+            (n(1), n(2), n(3), n(4))
+        })
+        .collect()
+}
+
+const ARROW_HANDLES: &str = "document.querySelector('#preview').contentDocument.querySelectorAll('.qd-arrow-handle').length";
+
+/// Spec 016 US1: Insert ▸ Arrow and a drag draw an arrow; an end near an
+/// element's edge snaps to it exactly; with ⌘ held it doesn't.
+#[tokio::test(flavor = "multi_thread")]
+async fn arrow_draw() {
+    let Some(ed) = arrow_ed(&arrow_deck(false)).await else {
+        return;
+    };
+    use DispatchMouseEventType::*;
+    ed.go("a").await;
+    ed.settle().await;
+    // 3 slide px short of the box's left edge (600): it snaps there
+    ed.menu("Insert", "Arrow").await;
+    let (from, to) = (
+        ed.slide_px(200.0, 700.0).await,
+        ed.slide_px(597.0, 700.0).await,
+    );
+    ed.press_and_move(from, to).await;
+    ed.wait(&format!("!!{FRAME}.querySelector('.qd-guide')"))
+        .await;
+    ed.mouse(MouseReleased, to, false).await;
+    ed.wait_file(|f| !arrow_ends(f).is_empty(), "an arrow")
+        .await;
+    let (x0, y0, x1, y1) = arrow_ends(&ed.file())[0];
+    assert!(
+        (x0 - 200.0).abs() <= 1.0 && (y0 - 700.0).abs() <= 1.0,
+        "{x0},{y0}"
+    );
+    assert_eq!((x1, y1), (600.0, 700.0), "snapped to the box's left edge");
+    assert!(
+        ed.dir
+            .path()
+            .join("_extensions/emilhvitfeldt/arrows/arrows.lua")
+            .exists()
+    );
+    // ⌘ held: placed where dropped
+    ed.settle().await;
+    ed.menu("Insert", "Arrow").await;
+    let (from, to) = (
+        ed.slide_px(200.0, 800.0).await,
+        ed.slide_px(597.0, 800.0).await,
+    );
+    ed.press_and_move_with(from, to, 4).await;
+    ed.mouse_with(MouseReleased, to, false, 4).await;
+    ed.wait_file(|f| arrow_ends(f).len() == 2, "a second arrow")
+        .await;
+    let (_, _, x1, _) = arrow_ends(&ed.file())[1];
+    assert!((x1 - 597.0).abs() <= 1.0, "⌘: no snap, {x1}");
+}
+
+/// Spec 016 US1: a click on an arrow's line selects it (start and end
+/// handles); dragging an end changes only that end; dragging the line moves
+/// both; Escape mid-drag changes nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn arrow_select_and_drag() {
+    let deck = arrow_deck(true);
+    let Some(ed) = arrow_ed(&deck).await else {
+        return;
+    };
+    use DispatchMouseEventType::*;
+    ed.go("a").await;
+    ed.settle().await;
+    ed.select_arrow_at(450.0, 450.0).await;
+    // the end, to 800,250 (away from any guide)
+    let (a, b) = (
+        ed.slide_px(700.0, 300.0).await,
+        ed.slide_px(800.0, 250.0).await,
+    );
+    ed.press_and_move_with(a, b, 4).await;
+    ed.mouse_with(MouseReleased, b, false, 4).await;
+    ed.wait_file(
+        |f| arrow_ends(f).first().is_some_and(|e| e.2 != 700.0),
+        "the end moved",
+    )
+    .await;
+    let (x0, y0, x1, y1) = arrow_ends(&ed.file())[0];
+    assert_eq!((x0, y0), (200.0, 600.0), "the start kept");
+    assert!(
+        (x1 - 800.0).abs() <= 1.0 && (y1 - 250.0).abs() <= 1.0,
+        "{x1},{y1}"
+    );
+    assert!(
+        ed.file().contains("from=\"200,600\""),
+        "the start's bytes kept"
+    );
+    // Escape mid-drag: nothing
+    ed.settle().await;
+    ed.select_arrow_at(450.0, 450.0).await;
+    let before = ed.file();
+    let (a, b) = (
+        ed.slide_px(500.0, 425.0).await,
+        ed.slide_px(560.0, 485.0).await,
+    );
+    ed.press_and_move_with(a, b, 4).await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.mouse_with(MouseReleased, b, false, 4).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(ed.file(), before, "Escape cancels");
+    // the line: both ends by 60,60
+    ed.settle().await;
+    ed.select_arrow_at(450.0, 450.0).await;
+    ed.press_and_move_with(a, b, 4).await;
+    ed.mouse_with(MouseReleased, b, false, 4).await;
+    ed.wait_file(
+        |f| arrow_ends(f).first().is_some_and(|e| e.0 != 200.0),
+        "the arrow moved",
+    )
+    .await;
+    let (x0, y0, x1, y1) = arrow_ends(&ed.file())[0];
+    assert!(
+        (x0 - 260.0).abs() <= 1.0 && (y0 - 660.0).abs() <= 1.0,
+        "{x0},{y0}"
+    );
+    assert!(
+        (x1 - 860.0).abs() <= 1.0 && (y1 - 310.0).abs() <= 1.0,
+        "{x1},{y1}"
+    );
+}
+
+/// Spec 016 US1: arrow keys nudge a selected arrow (⇧ by 10); Delete removes it.
+#[tokio::test(flavor = "multi_thread")]
+async fn arrow_keys_and_delete() {
+    let deck = arrow_deck(true);
+    let Some(ed) = arrow_ed(&deck).await else {
+        return;
+    };
+    ed.go("a").await;
+    ed.settle().await;
+    ed.select_arrow_at(450.0, 450.0).await;
+    ed.key("ArrowRight", "ArrowRight", 39, 0).await;
+    ed.wait_file(
+        |f| f.contains("from=\"201,600\" to=\"701,300\""),
+        "nudged right",
+    )
+    .await;
+    ed.settle().await;
+    ed.select_arrow_at(451.0, 450.0).await; // the line's middle, moved
+    ed.key("ArrowDown", "ArrowDown", 40, 8).await;
+    ed.wait_file(
+        |f| f.contains("from=\"201,610\" to=\"701,310\""),
+        "⇧: by 10",
+    )
+    .await;
+    ed.settle().await;
+    ed.select_arrow_at(451.0, 460.0).await;
+    ed.key("Delete", "Delete", 46, 0).await;
+    ed.wait_file(|f| arrow_ends(f).is_empty(), "deleted").await;
+}
+
+/// Spec 016 US1: a click beside an arrow's line reaches what's underneath.
+#[tokio::test(flavor = "multi_thread")]
+async fn arrow_click_beside_line() {
+    let deck = arrow_deck(true);
+    let Some(ed) = arrow_ed(&deck).await else {
+        return;
+    };
+    ed.go("a").await;
+    ed.settle().await;
+    let (x, y) = ed.slide_px(750.0, 200.0).await; // the box's centre, off the line
+    ed.page.click(Point { x, y }).await.unwrap();
+    ed.wait(&format!(
+        "{FRAME}.querySelector('.qd-sel')?.dataset.qd === 'a/0'"
+    ))
+    .await;
+    assert_eq!(ed.eval(ARROW_HANDLES).await, json!(0));
 }
