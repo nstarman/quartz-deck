@@ -90,8 +90,8 @@ text use made-up slides only, never the person's own talks, paths or names.
 
 ## Phase 4: User Story 2 — Curve and style (P2, PR 3)
 
-- [ ] T013 [P] [US2] Write failing tests: unit tests for the bend formula (research R6) and `set` (a default value removes the option); CLI tests **`bend_through_and_straight`** and **`set_style`**; browser tests **`arrow_bend_handle`** (the curve passes through the drop point; dropping near the line straightens it) and **`arrow_properties_style`** (colour, width, dash, head, heads).
-- [ ] T014 [US2] Implement `qd arrow bend` and `qd arrow set`, the middle handle, and the Properties fields for an arrow. T013 passes.
+- [X] T013 [P] [US2] Write failing tests: unit tests for the bend formula (research R6) and `set` (a default value removes the option); CLI tests **`bend_through_and_straight`** and **`set_style`**; browser tests **`arrow_bend_handle`** (the curve passes through the drop point; dropping near the line straightens it) and **`arrow_properties_style`** (colour, width, dash, head, heads).
+- [X] T014 [US2] Implement `qd arrow bend` and `qd arrow set`, the middle handle, and the Properties fields for an arrow. T013 passes.
 
 ---
 

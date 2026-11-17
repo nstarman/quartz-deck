@@ -1,11 +1,12 @@
 // Arrows on the slide (spec 016): quarto-arrows shortcodes placed in slide
 // pixels. A click on an arrow's line selects it; its start and end handles
 // drag one end, its line drags the whole arrow, with the editor's snap
-// guides (⌘/Ctrl places freely); Insert ▸ Arrow draws a new one. Every
+// guides (⌘/Ctrl places freely), and its middle handle bends it (US2);
+// Insert ▸ Arrow draws a new one; Properties sets its style. Every
 // change is a `qd arrow` command (contracts/editor.md); the preview's next
 // render draws the result.
 
-import { read } from '/ui/run.js';
+import { read, el as html } from '/ui/run.js';
 import { get as setting } from '/ui/settings.js';
 import { SNAP_PX } from '/ui/guides.js';
 
@@ -14,6 +15,9 @@ const info = new Map(); // ref → `qd arrow show` result
 let sel = null; // the selected arrow's ref
 let drag = null;
 let drawing = null; // the slide id Insert ▸ Arrow draws on
+// the click ending a press on an arrow: its target can be the slide (a handle appears under
+// the pointer), which the editor would take as a click elsewhere
+let pressed = false;
 const NS = 'http://www.w3.org/2000/svg';
 
 const win = () => api.frame.contentWindow;
@@ -54,9 +58,18 @@ function handles() {
   const a = sel && editable(sel) && info.get(sel);
   if (!a || !wrapper(sel)?.closest('section')?.classList.contains('present')) return;
   const r = 7 / win().Reveal.getScale(); // 7 screen px
-  for (const [end, [x, y], label] of [['from', a.from, 'Arrow start'], ['to', a.to, 'Arrow end']]) {
+  for (const [end, [x, y], label] of [['from', a.from, 'Arrow start'], ['to', a.to, 'Arrow end'], ['mid', middle(a), 'Bend arrow']]) {
     el('circle', { class: 'qd-arrow-handle', cx: x, cy: y, r, 'data-end': end, role: 'button', 'aria-label': label }, overlay());
   }
+}
+
+/** The arrow's middle: on its curve when it has control points (research R6). */
+function middle(a) {
+  const [p, q] = [a.from, a.to];
+  const c = a.control || [];
+  if (c.length === 2) return [0, 1].map((i) => (p[i] + 3 * c[0][i] + 3 * c[1][i] + q[i]) / 8);
+  if (c.length === 1) return [0, 1].map((i) => (p[i] + 2 * c[0][i] + q[i]) / 4);
+  return [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
 }
 
 /** Select an arrow (`ref`), or nothing; called by the editor's own selection too. */
@@ -134,6 +147,16 @@ function move(e) {
     clearUI();
     return;
   }
+  if (drag.kind === 'mid') { // a curve through the pointer, as `arrow bend --through` writes it
+    const [p0, p1] = [drag.a.from, drag.a.to];
+    const c = [0, 1].map((i) => (8 * p[i] - p0[i] - p1[i]) / 6);
+    drag.at = p;
+    drag.curve ??= el('path', { class: 'qd-arrow-provisional' }, overlay());
+    drag.curve.setAttribute('d', `M ${p0} C ${c} ${c} ${p1}`);
+    drawn(drag.el).style.visibility = 'hidden';
+    for (const h of doc().querySelectorAll('.qd-arrow-handle')) h.remove();
+    return;
+  }
   // an end, or the new arrow's end: snapped to the guides
   const [sx, sy] = snapped(drag, [p], e);
   drag.at = [p[0] + sx, p[1] + sy];
@@ -147,6 +170,7 @@ function move(e) {
 function restore(d) {
   api.clearGuides(d.sec);
   d.line?.remove();
+  d.curve?.remove();
   const a = d.el && drawn(d.el);
   if (a) Object.assign(a.style, { transform: '', visibility: '' });
   handles();
@@ -156,6 +180,7 @@ async function up(e) {
   const d = drag;
   drag = null;
   if (!d) return;
+  pressed = true;
   e.stopImmediatePropagation();
   if (d.kind === 'draw') {
     const slide = drawing;
@@ -168,8 +193,9 @@ async function up(e) {
   }
   if (!d.far) { restore(d); return; }
   api.clearGuides(d.sec);
-  const args = d.kind === 'move' ? { by: xy(d.by) } : { [d.kind]: xy(d.at) };
-  if (!(await api.op('arrow move', { arrow: d.ref, ...args }))) restore(d);
+  const ok = d.kind === 'mid' ? await api.op('arrow bend', { arrow: d.ref, through: xy(d.at) })
+    : await api.op('arrow move', { arrow: d.ref, ...(d.kind === 'move' ? { by: xy(d.by) } : { [d.kind]: xy(d.at) }) });
+  if (!ok) restore(d);
 }
 
 /** Escape: a drag puts things back; drawing stops. */
@@ -192,10 +218,11 @@ export async function mark() {
     // a click on an arrow selects it: the editor would start typing in its paragraph
     for (const t of ['mousedown', 'click', 'dblclick']) {
       w.addEventListener(t, (e) => {
-        if (e.target.closest?.('.qd-arrow-hit, .qd-arrow-handle') || drag || (drawing && t !== 'dblclick')) {
+        if (e.target.closest?.('.qd-arrow-hit, .qd-arrow-handle') || drag || pressed || (drawing && t !== 'dblclick')) {
           e.stopImmediatePropagation();
           e.preventDefault();
         }
+        if (t === 'click') pressed = false;
       }, true);
     }
     w.addEventListener('pointermove', move, true);
@@ -218,6 +245,44 @@ export async function mark() {
     line.after(hit);
   }
   follow(sel);
+}
+
+const HEADS = ['arrow', 'stealth', 'diamond', 'circle', 'square', 'bar', 'barbed', 'none'];
+
+/** The Properties panel's fields for the selected arrow `ref`, or null (US2). */
+export function panel(ref) {
+  const a = ref === sel && editable(ref) && info.get(ref);
+  if (!a) return null;
+  const o = a.options;
+  const form = html('form', { className: 'arrow-form' });
+  const fs = html('fieldset');
+  fs.append(html('legend', { textContent: 'Arrow' }));
+  const row = (label, input) => { const l = html('label', { textContent: label }); l.append(input); fs.append(l); return input; };
+  const choose = (name, values, value) => {
+    const s = html('select', { name });
+    s.append(...values.map((v) => new Option(v, v)));
+    s.value = value;
+    return s;
+  };
+  const heads = { 'true,true': 'both', 'true,false': 'start', 'false,false': 'none' }[`${o['head-start'] ?? 'false'},${o['head-end'] ?? 'true'}`] ?? 'end';
+  row('Colour', html('input', { type: 'text', name: 'color', value: o.color ?? '', placeholder: 'black' }));
+  row('Width', html('input', { type: 'number', name: 'width', min: '0', step: '0.5', value: o.width ?? '', placeholder: '2' }));
+  row('Dashed', html('input', { type: 'checkbox', name: 'dash', checked: !!o.dash }));
+  row('Head', choose('head', HEADS, o.head ?? 'arrow'));
+  row('Heads at', choose('heads', ['end', 'start', 'both', 'none'], heads));
+  const buttons = html('div', { className: 'buttons' });
+  buttons.append(html('button', { type: 'submit', className: 'primary', textContent: 'Apply' }));
+  form.append(fs, buttons);
+  form.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const f = form.elements;
+    const [start, end] = { end: [false, true], start: [true, false], both: [true, true], none: [false, false] }[f.heads.value];
+    // every field, as `qd arrow set` takes it: a default or empty value removes the option
+    const pairs = [`color=${f.color.value.trim()}`, `width=${f.width.value}`, `dash=${f.dash.checked ? (o.dash || 'true') : ''}`,
+      `head=${f.head.value}`, `head-start=${start}`, `head-end=${end}`];
+    api.op('arrow set', { arrow: ref, pairs });
+  });
+  return form;
 }
 
 export function initArrows(a) {

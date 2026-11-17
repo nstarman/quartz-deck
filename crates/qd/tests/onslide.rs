@@ -4493,7 +4493,8 @@ impl Ed {
         {
             self.menu("View", "Properties panel").await;
         }
-        self.wait("!!document.querySelector('form.dot-form')").await;
+        self.wait("!!document.querySelector('form.dot-form, form.arrow-form')")
+            .await;
     }
 }
 
@@ -4923,7 +4924,7 @@ impl Ed {
     async fn select_arrow_at(&self, x: f64, y: f64) {
         let (px, py) = self.slide_px(x, y).await;
         self.page.click(Point { x: px, y: py }).await.unwrap();
-        self.wait(&format!("{ARROW_HANDLES} === 2")).await;
+        self.wait(&format!("{ARROW_HANDLES} === 3")).await;
     }
 
     /// The page point of slide pixel `(x, y)` on the current slide.
@@ -5035,8 +5036,9 @@ async fn arrow_select_and_drag() {
     ed.select_arrow_at(450.0, 450.0).await;
     let before = ed.file();
     let (a, b) = (
-        ed.slide_px(500.0, 425.0).await,
-        ed.slide_px(560.0, 485.0).await,
+        // a quarter of the way along the line (its middle is the bend handle)
+        ed.slide_px(350.0, 512.5).await,
+        ed.slide_px(410.0, 572.5).await,
     );
     ed.press_and_move_with(a, b, 4).await;
     ed.key("Escape", "Escape", 27, 0).await;
@@ -5110,4 +5112,82 @@ async fn arrow_click_beside_line() {
     ))
     .await;
     assert_eq!(ed.eval(ARROW_HANDLES).await, json!(0));
+}
+
+/// Spec 016 US2: a selected arrow's middle handle bends it so the curve
+/// passes through the drop point; dropping it back near the line straightens it.
+#[tokio::test(flavor = "multi_thread")]
+async fn arrow_bend_handle() {
+    let Some(ed) = arrow_ed(&arrow_deck(true)).await else {
+        return;
+    };
+    use DispatchMouseEventType::*;
+    ed.go("a").await;
+    ed.settle().await;
+    ed.select_arrow_at(450.0, 450.0).await;
+    ed.wait(&format!(
+        "!!{FRAME}.querySelector('.qd-arrow-handle[data-end=mid]')"
+    ))
+    .await;
+    // the middle (450,450) dragged to 400,400
+    let (a, b) = (
+        ed.slide_px(450.0, 450.0).await,
+        ed.slide_px(400.0, 400.0).await,
+    );
+    ed.press_and_move(a, b).await;
+    ed.wait(&format!(
+        "!!{FRAME}.querySelector('path.qd-arrow-provisional')"
+    ))
+    .await;
+    ed.mouse(MouseReleased, b, false).await;
+    ed.wait_file(|f| f.contains("control1="), "bent").await;
+    let v = ed.cli(&["arrow", "show", "a/1"]);
+    let c = (
+        v["control"][0][0].as_f64().unwrap(),
+        v["control"][0][1].as_f64().unwrap(),
+    );
+    let mid = (
+        (200.0 + 6.0 * c.0 + 700.0) / 8.0,
+        (600.0 + 6.0 * c.1 + 300.0) / 8.0,
+    );
+    assert!(
+        (mid.0 - 400.0).abs() <= 2.0 && (mid.1 - 400.0).abs() <= 2.0,
+        "the curve passes the drop point: {mid:?}"
+    );
+    // back onto the line: straight again
+    ed.settle().await;
+    ed.select_arrow_at(450.0, 450.0).await;
+    let m = ed.eval(&format!("(() => {{ const h = {FRAME}.querySelector('.qd-arrow-handle[data-end=mid]'); return [+h.getAttribute('cx'), +h.getAttribute('cy')]; }})()")).await;
+    let (mx, my) = (m[0].as_f64().unwrap(), m[1].as_f64().unwrap());
+    assert!(
+        (mx - 400.0).abs() <= 2.0 && (my - 400.0).abs() <= 2.0,
+        "the handle sits on the curve: {m}"
+    );
+    let (a, b) = (ed.slide_px(mx, my).await, ed.slide_px(450.0, 451.0).await);
+    ed.press_and_move(a, b).await;
+    ed.mouse(MouseReleased, b, false).await;
+    ed.wait_file(|f| !f.contains("control1="), "straightened")
+        .await;
+}
+
+/// Spec 016 US2: colour, width, dash, head and heads from the Properties panel.
+#[tokio::test(flavor = "multi_thread")]
+async fn arrow_properties_style() {
+    let Some(ed) = arrow_ed(&arrow_deck(true)).await else {
+        return;
+    };
+    ed.go("a").await;
+    ed.settle().await;
+    ed.select_arrow_at(450.0, 450.0).await;
+    ed.properties().await;
+    ed.eval("(() => { const f = document.querySelector('form.arrow-form'); f.color.value = 'crimson'; f.width.value = '4'; f.dash.checked = true; f.head.value = 'stealth'; f.heads.value = 'both'; f.requestSubmit(); })()").await;
+    ed.wait_file(|f| f.contains("crimson"), "set").await;
+    assert!(
+        ed.file().contains("{{< arrow from=\"200,600\" to=\"700,300\" position=\"absolute\" color=\"crimson\" width=\"4\" dash=\"true\" head=\"stealth\" head-start=\"true\" >}}"),
+        "{}",
+        ed.file()
+    );
+    // the rendered arrow is crimson
+    ed.settle().await;
+    ed.wait(&format!("[...{FRAME}.querySelectorAll('[data-qd=\"a/1\"] svg > path')].some((p) => p.getAttribute('stroke') === 'crimson')")).await;
 }

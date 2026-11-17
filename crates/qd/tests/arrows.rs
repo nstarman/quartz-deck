@@ -229,3 +229,100 @@ fn rendered_where_given() {
         "{end:?}"
     );
 }
+
+// ---------- curve and style (US2) ----------
+
+#[test]
+fn bend_through_and_straight() {
+    let t = deck(DECK);
+    let (ok, v) = json(t.path(), &["arrow", "bend", "a/1", "--through", "200,200"]);
+    assert!(ok, "{v}");
+    assert_eq!(v["straight"], false);
+    let (_, s) = json(t.path(), &["arrow", "show", "a/1"]);
+    let c = s["control"].clone();
+    assert_eq!(c[0], c[1], "both controls at the one point");
+    // the curve's middle is the given point, to the pixel
+    let (p0, p1) = ((100.0, 200.0), (300.0, 50.0));
+    let cx = c[0][0].as_f64().unwrap();
+    let cy = c[0][1].as_f64().unwrap();
+    assert!(
+        ((p0.0 + 6.0 * cx + p1.0) / 8.0 - 200.0).abs() <= 1.0
+            && ((p0.1 + 6.0 * cy + p1.1) / 8.0 - 200.0).abs() <= 1.0,
+        "{c}"
+    );
+    // only control points were added
+    assert_eq!(
+        text(&t).replace(
+            &format!(" control1=\"{cx},{cy}\" control2=\"{cx},{cy}\""),
+            ""
+        ),
+        DECK
+    );
+    let (ok, v) = json(t.path(), &["arrow", "bend", "a/1", "--straight"]);
+    assert!(ok, "{v}");
+    assert_eq!(text(&t), DECK);
+    // a hand-written curve gives way
+    let t = deck(&DECK.replace("color=red", "color=red curve=0.4"));
+    assert!(json(t.path(), &["arrow", "bend", "a/1", "--through", "200,200"]).0);
+    assert!(!text(&t).contains("curve="));
+}
+
+#[test]
+fn set_style() {
+    let t = deck(DECK);
+    let (ok, v) = json(
+        t.path(),
+        &[
+            "arrow",
+            "set",
+            "a/1",
+            "color=crimson",
+            "width=4",
+            "dash=true",
+            "head=stealth",
+            "head-start=true",
+        ],
+    );
+    assert!(ok, "{v}");
+    assert_eq!(
+        text(&t),
+        DECK.replace(
+            "color=red",
+            "color=crimson width=\"4\" dash=\"true\" head=\"stealth\" head-start=\"true\""
+        )
+    );
+    // a default value removes the option
+    assert!(
+        json(
+            t.path(),
+            &[
+                "arrow",
+                "set",
+                "a/1",
+                "width=2",
+                "head-start=false",
+                "head="
+            ]
+        )
+        .0
+    );
+    assert_eq!(
+        text(&t),
+        DECK.replace("color=red", "color=crimson dash=\"true\"")
+    );
+    common::err(
+        t.path(),
+        &["arrow", "set", "a/1", "head=spiral"],
+        "E_INVALID_ARG",
+    );
+    common::err(
+        t.path(),
+        &["arrow", "set", "a/1", "from=0,0"],
+        "E_INVALID_ARG",
+    );
+    common::err(
+        t.path(),
+        &["arrow", "set", "a/2", "color=red"],
+        "E_UNSAFE_EDIT",
+    );
+}
