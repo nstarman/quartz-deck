@@ -1596,8 +1596,7 @@ async function placeElbar() {
   if (!el) { elbar.hidden = true; return; }
   const t = await elementTarget(state.sel);
   $('[data-act=run]', elbar).hidden = t?.block.kind !== 'cell';
-  const appears = arrows.is(state.sel) ? arrows.appears(state.sel) : !!t?.block.attrs?.classes?.includes('fragment');
-  $('[data-act=fragment]', elbar).setAttribute('aria-pressed', String(appears));
+  $('[data-act=fragment]', elbar).setAttribute('aria-pressed', String(!!(t && actions.checked('fragment', t))));
   elbar.hidden = false;
   placeNear(elbar, el.querySelector('.qd-arrow-hit') || el, frame); // an arrow: beside its line
 }

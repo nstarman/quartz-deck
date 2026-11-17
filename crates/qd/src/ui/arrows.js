@@ -83,7 +83,7 @@ export function follow(ref) {
 export const nudgeable = () => !!sel && editable(sel) && !drag;
 
 /** An arrow qd edits on the slide (the element bar's Edit and Appears on click act on it). */
-export const is = (ref) => !!ref && editable(ref);
+export const is = editable;
 export const appears = (ref) => !!info.get(ref)?.options.fragment;
 /** Appears on click: quarto-arrows draws the arrow in (`fragment="true"`), US4. */
 export const toggleAppears = (ref) => api.op('arrow set', { arrow: ref, pairs: [`fragment=${appears(ref) ? '' : 'true'}`] });
@@ -91,7 +91,8 @@ export const toggleAppears = (ref) => api.op('arrow set', { arrow: ref, pairs: [
 /** The arrow's label, in a sheet beside it (US3): Enter sets it, an empty one removes it, Escape cancels. */
 export async function label(ref) {
   const was = info.get(ref)?.options.label ?? '';
-  const anchor = api.pageRect(doc().querySelector(`.qd-arrow-hit[data-ref="${CSS.escape(ref)}"]`) || wrapper(ref));
+  const w = wrapper(ref);
+  const anchor = api.pageRect(w.querySelector('.qd-arrow-hit') || w);
   const v = await ask({ title: 'Arrow label', fields: [{ name: 'label', kind: 'text', label: 'Label', value: was }], ok: 'Set', anchor });
   if (v && v.label !== was) await api.op('arrow set', { arrow: ref, pairs: [`label=${v.label}`] });
 }
