@@ -86,7 +86,7 @@ sub-slides and keep their level until outdented.
   places. On the command line, `qd move` does what the file then means.
 
 **Alternatives considered**: a `--group` flag on `move`/`rm` (rejected:
-the members are in `qd show`, and two ways to say the same thing is one
+the members are in `qd slides`, and two ways to say the same thing is one
 too many); two ops per drop (rejected: two undo steps).
 
 ## R5. Collapse state

@@ -20,7 +20,7 @@ Two derived fields, computed in one pass in deck order:
 A slide with `head` has no `parent`. A head with no slide after it before
 the next head is a group of one.
 
-## Deck JSON (`qd show`, the editor)
+## Deck JSON (`qd slides`, the editor)
 
 Each slide gains:
 

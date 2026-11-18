@@ -16,7 +16,7 @@ qd add --title "Intro" && qd add --title "Methods" && qd add --title "M1" \
 ```bash
 qd indent m1        # Methods becomes `#`, M1 its sub-slide; M2 follows (R3)
 qd indent r1        # Results becomes `#`, R1 its sub-slide
-qd show | jq '.slides[] | {id, head, in}'
+qd slides | jq '.slides[] | {id, head, in}'
 ```
 
 Expected: `methods` and `results` have `head: true`; `m1`, `m2` are `in:
