@@ -204,9 +204,11 @@ line or two of the cell's DOT text.
 - **Pictures:** a box can show a picture at its left. The first one adds the
   `dot-image` filter to the deck, because Quarto's Graphviz doesn't draw
   pictures.
-- **Live routing:** with Settings ▸ "Route arrows while dragging" on, a box's
-  arrows re-route while you drag it, laid out by your Quarto's own Graphviz,
-  so they match the render. Nothing is downloaded.
+- **Live routing:** a box's arrows re-route while you drag it, and the
+  diagram is redrawn as soon as you let go, laid out by your Quarto's own
+  Graphviz, so it matches the render without waiting for it. Nothing is
+  downloaded. Settings ▸ "Route arrows while dragging" off: straight lines
+  until the drop.
 - **CLI:** `qd dot show`, `pin`, `move`, `new`, `add`, `connect`, `rename`,
   `set`, `rm`, `flip`. DOT that qd can't read safely stays editable as text.
 

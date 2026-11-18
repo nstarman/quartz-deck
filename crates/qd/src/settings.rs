@@ -117,7 +117,7 @@ const DEFS: &[Def] = &[
         "Route arrows while dragging",
         "While you drag a box in a diagram, its arrows re-route as they will be drawn, by your Quarto's own Graphviz. Off: straight lines until the drop.",
         Kind::Bool,
-        || json!(false),
+        || json!(true), // spec 020 US2: a layout takes milliseconds
     ),
     ui("ui.source_width", Kind::Number, || Value::Null),
     ui("ui.source_was_open", Kind::Bool, || json!(false)),
@@ -273,7 +273,7 @@ mod tests {
         assert_eq!(v["theme"], "system");
         assert_eq!(v["confirm.slide_delete"], true);
         assert_eq!(v["placement.snap"], true);
-        assert_eq!(v["diagrams.live-layout"], false);
+        assert_eq!(v["diagrams.live-layout"], true, "spec 020 US2");
         assert!(notices.is_empty());
         assert_eq!(defs().as_array().unwrap().len(), 10, "ui.* are not shown");
     }

@@ -5014,6 +5014,69 @@ async fn dot_other_edits_still_reload() {
         .await;
 }
 
+/// Spec 020 US2 (T009): arrows are routed live by default, and on a 20-box
+/// diagram the dragged box stays under the pointer at every move of a fast drag.
+#[tokio::test(flavor = "multi_thread")]
+async fn dot_live_routing_keeps_up() {
+    let mut body = String::new();
+    for i in 0..20 {
+        body += &format!("  n{i} [pos=\"{},{}!\"];\n", (i % 5) * 2, i / 5);
+    }
+    for i in 0..19 {
+        body += &format!("  n{i} -> n{};\n", i + 1);
+    }
+    let deck = format!(
+        "---\ntitle: T\nformat: revealjs\n---\n\n## Big {{#big}}\n\n```{{dot}}\ndigraph {{\n  layout=neato; splines=ortho;\n  node [shape=box];\n{body}}}\n```\n"
+    );
+    let Some(ed) = Ed::open(&deck).await else {
+        return;
+    };
+    // the boxes go exactly where the pointer goes: no snapping to the others
+    ed.eval("import('/ui/settings.js').then((s) => s.set({'placement.snap': false}))")
+        .await;
+    ed.go("big").await;
+    let p = ed.select_node("n7").await;
+    let scale = ed.inch_px().await / 72.0; // page pixels per graph unit
+    use DispatchMouseEventType::*;
+    ed.mouse(MousePressed, p, false).await;
+    let transform = format!("{}.getAttribute('transform')", node_js("n7"));
+    for k in 1..=30 {
+        let at = (p.0 + k as f64 * 3.0, p.1 + k as f64 * 2.0);
+        ed.mouse(MouseMoved, at, false).await;
+        tokio::time::sleep(Duration::from_millis(16)).await;
+        let t = ed.eval(&transform).await;
+        let xy: Vec<f64> = t
+            .as_str()
+            .unwrap_or("")
+            .trim_start_matches("translate(")
+            .trim_end_matches(')')
+            .split(' ')
+            .filter_map(|v| v.parse().ok())
+            .collect();
+        if k > 1 {
+            assert!(
+                xy.len() == 2
+                    && (xy[0] * scale - k as f64 * 3.0).abs() < 1.0
+                    && (xy[1] * scale - k as f64 * 2.0).abs() < 1.0,
+                "move {k}: the box at {t}, the pointer {} px across",
+                k * 3
+            );
+        }
+    }
+    let routed_now = ed.eval(&format!("{}.length", routed())).await;
+    let routed_n = routed_now.as_u64().unwrap_or(0);
+    let engine = ed
+        .eval("fetch('/lib/quarto/graphvizlib.wasm').then((r) => r.ok)")
+        .await;
+    if engine == json!(true) {
+        ed.wait(&format!("{}.length === 2", routed())).await; // n7 -> n8 and n6 -> n7, by default
+    } else {
+        assert_eq!(routed_n, 0);
+    }
+    ed.mouse(MouseReleased, (p.0 + 90.0, p.1 + 60.0), false)
+        .await;
+}
+
 /// A box with a link is selected and dragged like any other: in the editor
 /// neither a click nor the click ending a drag follows its link.
 #[tokio::test(flavor = "multi_thread")]
