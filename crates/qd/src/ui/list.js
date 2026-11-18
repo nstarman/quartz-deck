@@ -1,10 +1,14 @@
 // The slide list (spec 001; spec 008 US1): a thumbnail of every slide, the
 // title slide first, a slide menu on right-click, and a drag you can see (a picture of
 // the slide under the pointer, the others parting where it will land). Every
-// change is a qd op (add, move) through `api.op`.
+// change is a qd op (add, move) through `api.op`. Groups (spec 018): a sub-slide
+// sits indented under its head, and a head folds its sub-slides away; which
+// heads are folded is view state, kept by qd beside the deck, never in it.
+
+import { token } from '/ui/run.js';
 
 /**
- * `api`: {state, frame, go(anchor), op(name, args), fetchDeck(),
+ * `api`: {state, frame, go(anchor), op(name, args), fetchDeck(), addSlide, say(msg, isError),
  * slideMenu(id) → menu items, openMenu(items, x, y)}.
  */
 export function makeList(api) {
@@ -14,6 +18,20 @@ export function makeList(api) {
   const visible = new Set();
   let justDragged = false; // the click that ends a drag isn't a click on the slide
   let shown; // the slide (and its place) the list last scrolled to
+  let folded = new Set(); // the heads whose sub-slides are hidden (spec 018 US1)
+  let folds = 0; // the person's folds before the stored state arrives win over it
+  fetch('/api/view').then((r) => r.json()).then((v) => { if (!folds) { folded = new Set(v.collapsed || []); render(); } }).catch(() => {});
+  /** Keep `folded` (only heads still there), and redraw. */
+  function fold(id, on) {
+    folds += 1;
+    if (on) folded.add(id); else folded.delete(id);
+    const heads = new Set((api.state.deck?.slides || []).filter((s) => s.head).map((s) => s.id));
+    folded = new Set([...folded].filter((h) => heads.has(h)));
+    fetch('/api/view', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-QD-Token': token }, body: JSON.stringify({ collapsed: [...folded] }) })
+      .then((r) => { if (!r.ok) throw new Error(); }).catch(() => api.say('Could not keep which groups are folded', true));
+    render();
+  }
+  const subsOf = (id) => (api.state.deck?.slides || []).filter((s) => s.in === id);
 
   const el = (tag, cls, text) => Object.assign(document.createElement(tag), cls ? { className: cls } : {}, text ? { textContent: text } : {});
   const frameDoc = () => { try { return api.frame.contentDocument?.querySelector('.reveal .slides') ? api.frame.contentDocument : null; } catch { return null; } };
@@ -31,7 +49,7 @@ export function makeList(api) {
   const picker = document.querySelector('#slide-picker');
   const pickable = () => [
     ...(api.state.deck?.title_slide ? [{ label: titleText(), anchor: 'title-slide' }] : []),
-    ...(api.state.deck?.slides || []).map((s) => ({ label: `${s.index} ${nameOf(s)}`, anchor: s.anchor })),
+    ...(api.state.deck?.slides || []).map((s) => ({ label: `${s.in ? '\u2003' : ''}${s.index} ${nameOf(s)}`, anchor: s.anchor })),
   ];
   picker.addEventListener('click', () => {
     const r = picker.getBoundingClientRect();
@@ -160,6 +178,22 @@ export function makeList(api) {
     meta.append(el('span', 'idx', isTitle ? '' : String(s.index)), el('span', 'name', isTitle ? titleText() : nameOf(s)));
     if (s.hidden) meta.append(el('span', 'tag', 'hidden'));
     b.append(hostFor(s.anchor), meta);
+    if (s.in) li.classList.add('sub');
+    const subs = s.head ? subsOf(s.id).length : 0;
+    if (subs) {
+      const shut = folded.has(s.id);
+      li.classList.add('head');
+      const t = el('button', 'disclose', shut ? '▸' : '▾');
+      t.type = 'button';
+      t.tabIndex = -1; // ← → on the row do the same from the keyboard
+      t.setAttribute('aria-expanded', String(!shut));
+      t.setAttribute('aria-label', `${shut ? 'Expand' : 'Collapse'} ${nameOf(s)}`);
+      t.addEventListener('pointerdown', (e) => e.stopPropagation()); // not a drag
+      t.addEventListener('click', () => fold(s.id, !shut));
+      li.append(t);
+      b.setAttribute('aria-expanded', String(!shut));
+      if (shut) meta.append(el('span', 'tag count', `+${subs}`));
+    }
     if (cur) b.setAttribute('aria-current', 'true');
     b.addEventListener('click', (e) => {
       if (justDragged || (!isTitle && pick(e, s.id))) return;
@@ -189,6 +223,9 @@ export function makeList(api) {
   function render() {
     const deck = api.state.deck;
     if (!deck) return;
+    // the shown slide is never folded away (FR-008)
+    const showing = deck.slides.find((s) => s.anchor === api.state.anchor);
+    if (showing?.in && folded.has(showing.in)) { fold(showing.in, false); return; }
     // redrawing must not move the keyboard: back to the same slide afterwards
     const focused = list.contains(document.activeElement) && document.activeElement.closest('li')?.dataset.id;
     // building items moves the thumbnails out of the old ones, and the list's
@@ -198,7 +235,7 @@ export function makeList(api) {
     // under a press loses the click (the release lands on a new button)
     const old = new Map([...list.children].map((li) => [li.dataset.id, li]));
     const keep = (s, isTitle) => {
-      const sig = JSON.stringify([s, s.anchor === api.state.anchor || (!api.state.anchor && isTitle), isTitle && titleText()]);
+      const sig = JSON.stringify([s, s.anchor === api.state.anchor || (!api.state.anchor && isTitle), isTitle && titleText(), folded.has(s.id), s.head && subsOf(s.id).length]);
       const li = old.get(s.id);
       if (li?.dataset.sig === sig) return li;
       const fresh = item(s, isTitle);
@@ -210,6 +247,7 @@ export function makeList(api) {
     // only what changed moves: an item already in its place isn't touched
     items.forEach((li, i) => { if (list.children[i] !== li) list.insertBefore(li, list.children[i] ?? null); });
     while (list.children.length > items.length) list.lastChild.remove();
+    for (const li of items) li.hidden = !!deck.slides.find((s) => s.id === li.dataset.id && folded.has(s.in));
     Object.assign(nav, { scrollLeft, scrollTop });
     const current = list.querySelector('li.current');
     // only when the shown slide changed or moved (undo, an agent's edit): a redraw
@@ -245,19 +283,30 @@ export function makeList(api) {
     api.addSlide(last ? { after: last.id } : {}, document.querySelector('#add-slide'));
   });
 
-  // widget keys: ↑/↓ move the focus along the list, Enter adds a slide after the
+  // widget keys: ↑/↓ move the focus along the visible rows, ← folds a head (or goes
+  // up to it from a sub-slide) and → unfolds it, Enter adds a slide after the
   // focused one (⌥↑/⌥↓ and Delete are actions: keys.dispatch handles them)
   list.addEventListener('keydown', (e) => {
     const li = e.target.closest('li');
     if (!li || e.altKey || e.metaKey || e.ctrlKey || e.shiftKey) return;
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      e.preventDefault();
-      const next = e.key === 'ArrowDown' ? li.nextElementSibling : li.previousElementSibling;
-      next?.querySelector(':scope > button')?.focus();
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
+    const s = api.state.deck?.slides.find((x) => x.id === li.dataset.id);
+    const way = { ArrowUp: 'previousElementSibling', ArrowDown: 'nextElementSibling', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'add' }[e.key];
+    const turn = way === 'left' || way === 'right';
+    // ← → act only on a group (elsewhere they keep scrolling a narrow window's strip)
+    const folds = turn && s?.head && subsOf(s.id).length && folded.has(s.id) === (way === 'right');
+    if (!way || (turn && !folds && !(way === 'left' && s?.in))) return;
+    e.preventDefault();
+    if (way === 'add') {
       e.stopPropagation();
       addAfter(li.dataset.id, li);
+    } else if (folds) {
+      fold(s.id, way === 'left');
+    } else if (turn) {
+      list.querySelector(`li[data-id="${CSS.escape(s.in)}"] > button`)?.focus();
+    } else {
+      let next = li[way];
+      while (next?.hidden) next = next[way];
+      next?.querySelector(':scope > button')?.focus();
     }
   });
 
@@ -273,7 +322,8 @@ export function makeList(api) {
     let frameReq = 0;
 
     const begin = () => {
-      const items = [...list.querySelectorAll('li[data-id]:not([data-id=title-slide])')];
+      // ponytail: a folded head drags alone for now; its group moves with it in US3
+      const items = [...list.querySelectorAll('li[data-id]:not([data-id=title-slide]):not([hidden])')];
       const from = items.indexOf(li);
       const r = li.getBoundingClientRect();
       const ghost = el('div', 'drag-ghost');

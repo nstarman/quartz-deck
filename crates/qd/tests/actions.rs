@@ -194,8 +194,8 @@ const WIDGET_KEYS: &[(&str, usize, &str)] = &[
     ),
     (
         "list.js",
-        5,
-        "moving along the slide list (↑ ↓), Enter adding a slide there, Esc cancelling a drag",
+        2,
+        "moving along the slide list (↑ ↓), folding a group (← →, spec 018), Enter adding a slide there, Esc cancelling a drag",
     ),
     (
         "editor.js",

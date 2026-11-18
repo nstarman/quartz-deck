@@ -5593,3 +5593,128 @@ async fn arrow_appears_on_click() {
     ed.click_editor("#elbar [data-act=fragment]").await;
     ed.wait_file(|f| !f.contains("fragment"), "off again").await;
 }
+
+/// Spec 018's made-up deck: a slide before any section, then two sections.
+const GROUPS: &str = "---\ntitle: Groups\nformat: revealjs\n---\n\n## Intro {#intro}\n\nx\n\n# Part A {#part-a}\n\n## A1 {#a1}\n\n## A2 {#a2}\n\n## A3 {#a3}\n\n# Part B {#part-b}\n\n## B1 {#b1}\n";
+
+/// The visible rows of the slide list: id, indented, and the head's control state.
+const ROWS: &str = "[...document.querySelectorAll('#slides li:not([hidden])')].map((li) => [li.dataset.id, li.classList.contains('sub'), li.querySelector('.disclose')?.getAttribute('aria-expanded') ?? null, li.querySelector('.idx')?.textContent ?? '', li.querySelector('.count')?.textContent ?? null])";
+
+/// Spec 018 US1: sub-slides sit indented under their head; a head collapses and
+/// expands by its button and by ← →; ↑/↓ skip what's folded; the numbers run
+/// 1, 2, 3 over every slide; the state outlives a reload and a new server, and
+/// the deck's file never changes (SC-001).
+#[tokio::test(flavor = "multi_thread")]
+async fn list_shows_and_collapses_groups() {
+    let Some(ed) = Ed::open(GROUPS).await else {
+        return;
+    };
+    ed.settle().await;
+    let open = json!([
+        ["title-slide", false, null, "", null],
+        ["intro", false, null, "1", null],
+        ["part-a", false, "true", "2", null],
+        ["a1", true, null, "3", null],
+        ["a2", true, null, "4", null],
+        ["a3", true, null, "5", null],
+        ["part-b", false, "true", "6", null],
+        ["b1", true, null, "7", null]
+    ]);
+    ed.wait(&format!(
+        "JSON.stringify({ROWS}) === {:?}",
+        open.to_string()
+    ))
+    .await;
+    let folded = json!([
+        ["title-slide", false, null, "", null],
+        ["intro", false, null, "1", null],
+        ["part-a", false, "false", "2", "+3"],
+        ["part-b", false, "true", "6", null],
+        ["b1", true, null, "7", null]
+    ]);
+
+    // the button
+    ed.click_editor("#slides li[data-id=part-a] .disclose")
+        .await;
+    ed.wait(&format!(
+        "JSON.stringify({ROWS}) === {:?}",
+        folded.to_string()
+    ))
+    .await;
+    ed.click_editor("#slides li[data-id=part-a] .disclose")
+        .await;
+    ed.wait(&format!(
+        "JSON.stringify({ROWS}) === {:?}",
+        open.to_string()
+    ))
+    .await;
+
+    // the keys, on the focused head; ↓ from it then skips the folded rows
+    ed.eval("document.querySelector('#slides li[data-id=part-a] > button').focus()")
+        .await;
+    ed.key("ArrowLeft", "ArrowLeft", 37, 0).await;
+    ed.wait(&format!(
+        "JSON.stringify({ROWS}) === {:?}",
+        folded.to_string()
+    ))
+    .await;
+    ed.key("ArrowDown", "ArrowDown", 40, 0).await;
+    ed.wait("document.activeElement?.closest('#slides li')?.dataset.id === 'part-b'")
+        .await;
+    ed.key("ArrowUp", "ArrowUp", 38, 0).await;
+    ed.wait("document.activeElement?.closest('#slides li')?.dataset.id === 'part-a'")
+        .await;
+    ed.key("ArrowRight", "ArrowRight", 39, 0).await;
+    ed.wait(&format!(
+        "JSON.stringify({ROWS}) === {:?}",
+        open.to_string()
+    ))
+    .await;
+    // ← on a sub-slide goes to its head
+    ed.eval("document.querySelector('#slides li[data-id=a2] > button').focus()")
+        .await;
+    ed.key("ArrowLeft", "ArrowLeft", 37, 0).await;
+    ed.wait("document.activeElement?.closest('#slides li')?.dataset.id === 'part-a'")
+        .await;
+
+    // kept: a reload, then a new server (a new port)
+    ed.key("ArrowLeft", "ArrowLeft", 37, 0).await;
+    ed.wait(&format!(
+        "JSON.stringify({ROWS}) === {:?}",
+        folded.to_string()
+    ))
+    .await;
+    ed.eval("window.__left = true; setTimeout(() => location.reload(), 0)")
+        .await;
+    ed.wait_secs(&format!("!window.__left && {READY}"), 60)
+        .await;
+    ed.wait(&format!(
+        "JSON.stringify({ROWS}) === {:?}",
+        folded.to_string()
+    ))
+    .await;
+    ed.cli(&["stop"]);
+    let info = ed.cli(&["serve", "--detach"]);
+    ed.visit(info["url"].as_str().unwrap()).await;
+    ed.wait(&format!(
+        "JSON.stringify({ROWS}) === {:?}",
+        folded.to_string()
+    ))
+    .await;
+    assert_eq!(ed.file(), GROUPS);
+}
+
+/// Spec 018 FR-008: showing a slide inside a folded group opens the group.
+#[tokio::test(flavor = "multi_thread")]
+async fn shown_slide_opens_its_group() {
+    let Some(ed) = Ed::open(GROUPS).await else {
+        return;
+    };
+    ed.settle().await;
+    ed.click_editor("#slides li[data-id=part-a] .disclose")
+        .await;
+    ed.wait("document.querySelector('#slides li[data-id=a2]')?.hidden === true")
+        .await;
+    ed.cli(&["focus", "--set", "a2"]);
+    ed.wait("document.querySelector('#slides li[data-id=a2]')?.hidden === false && document.querySelector('#slides li[data-id=part-a] .disclose')?.getAttribute('aria-expanded') === 'true'").await;
+}

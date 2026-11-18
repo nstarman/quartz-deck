@@ -160,6 +160,12 @@ nav li.current .meta { color: var(--accent); font-weight: 600; }
 nav .idx { color: var(--muted); flex: none; }
 nav .idx:empty { display: none; }
 nav .tag { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+/* groups (spec 018): a sub-slide one step in; a head's disclosure triangle beside its name */
+nav li.sub { margin-left: 16px; }
+nav li.head .meta { padding-left: 22px; }
+nav .disclose { position: absolute; left: 4px; bottom: 2px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px;
+  background: none; color: var(--muted); font-size: 14px; line-height: 20px; }
+nav .disclose:hover { color: var(--text); background: var(--bg); }
 /* the drag handle: shown on hover, a 20 px target */
 nav .handle { position: absolute; top: 8px; right: 8px; width: 20px; height: 24px; display: grid; place-items: center;
   border-radius: 4px; background: var(--panel); color: var(--muted); border: 1px solid var(--line); cursor: grab; opacity: 0; }
@@ -212,6 +218,7 @@ aside .status.fail { color: var(--danger); }
   nav ol { display: flex; gap: 0; flex: none; align-items: flex-start; }
   nav li { flex: none; width: 120px; }
   nav li + li { margin: 0 0 0 8px; }
+  nav li.sub { margin-left: 8px; } /* the strip has no room for an indent: the triangle and +N show the groups */
   /* the + after the last slide, level with the thumbnails */
   nav button.wide { flex: none; width: 28px; height: 28px; padding: 0; border-radius: 50%; align-self: center;
     position: relative; top: -10px; margin: 0 12px 0 16px; } /* -10px: level with the thumbnails, not their titles */
