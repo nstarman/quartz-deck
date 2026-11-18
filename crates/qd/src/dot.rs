@@ -889,6 +889,7 @@ pub fn show(d: &Deck, r: &str) -> Result<Value> {
             let pos = n.pos();
             json!({"name": n.name, "label": label(n),
                 "look": attrs_json(look), "url": n.attr("URL"), "image": n.attr("image"),
+                "spacer": n.attr("label").as_deref().and_then(spacer_width),
                 "pos": pos.map(|(x, y, _)| json!([x, y])), "pinned": pos.is_some_and(|p| p.2),
                 "size": attrs_json(size), "locked": n.locked})
         })
@@ -1030,6 +1031,15 @@ fn spacer_text(label: &str) -> Option<String> {
             .expect("valid regex")
     });
     RE.captures(label).map(|c| crate::inline::unescape(&c[1]))
+}
+
+/// The width of the picture's cell in a box's label, as dot-image finds it
+/// (its first `<TD WIDTH="…">`): where the editor draws the picture (spec 020).
+fn spacer_width(label: &str) -> Option<u32> {
+    static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r#"<TD WIDTH="(\d+)""#).expect("valid regex")
+    });
+    RE.captures(label)?[1].parse().ok()
 }
 
 /// A spacer label for `text` in a box `height` inches tall, as DOT text: an

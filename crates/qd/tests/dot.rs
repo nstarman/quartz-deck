@@ -26,7 +26,7 @@ fn show_lists_the_diagram() {
     assert_eq!(
         v["nodes"][0],
         json!({"name": "a", "label": "Data", "look": {"fillcolor": "white", "style": "rounded,filled"},
-               "url": null, "image": null, "pos": [0.0, 1.0], "pinned": true, "size": {}, "locked": false})
+               "url": null, "image": null, "spacer": null, "pos": [0.0, 1.0], "pinned": true, "size": {}, "locked": false})
     );
     assert_eq!(v["nodes"][1]["url"], "https://example.org/tool");
     assert_eq!(v["nodes"][1]["size"], json!({"width": "1.5"}));
@@ -544,6 +544,10 @@ fn image_installs_dot_image() {
     let (_, v) = json(t.path(), &["dot", "show", "d/0"]);
     assert_eq!(v["nodes"][1]["label"], "Tool");
     assert_eq!(v["nodes"][1]["image"], "face.png");
+    assert!(
+        v["nodes"][1]["spacer"].is_u64(),
+        "the picture's cell, for the editor: {v}"
+    );
     let (ok, _) = json(t.path(), &["dot", "rename", "d/0", "b", "Tools"]);
     assert!(ok);
     assert_eq!(text(&t), after.replace("<TD>Tool</TD>", "<TD>Tools</TD>"));

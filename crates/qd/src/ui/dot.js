@@ -128,9 +128,11 @@ async function layout(d) {
   const at = boxInfo(d.cell, d.node)?.pos;
   if (!gv || !v?.text || !at) return null;
   const pos = `${at[0] + d.ux / 72},${at[1] - d.uy / 72}!`;
-  const text = v.text.replace(/\}\s*$/, `${JSON.stringify(d.node)} [pos="${pos}"];\n}\n`);
-  return new DOMParser().parseFromString(await gv.layout(text, 'svg', v.settings?.layout ?? 'neato'), 'image/svg+xml');
+  return laidOut(gv, v, v.text.replace(/\}\s*$/, `${JSON.stringify(d.node)} [pos="${pos}"];\n}\n`));
 }
+
+/** `text` (the cell's, by default) laid out by Graphviz with the cell's engine, as an SVG document. */
+const laidOut = async (gv, v, text = v.text) => new DOMParser().parseFromString(await gv.layout(text, 'svg', v.settings?.layout ?? 'neato'), 'image/svg+xml');
 
 /**
  * Live routing: lay the cell out with the dragged box where it is now, and draw
@@ -431,20 +433,6 @@ function reselect() {
   if (sel) api.panelChanged(); // the Properties panel shows the box as it is now
 }
 
-/** The node statement's attribute list for `name` in a cell's text (not an arrow's), or ''. */
-function attrsOf(text, name) {
-  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  for (const m of text.matchAll(new RegExp(`(?:"${esc}"|(?<![\\w.])${esc}(?![\\w.]))\\s*\\[`, 'g'))) {
-    if (/-[->]\s*$/.test(text.slice(0, m.index))) continue; // `a -> b [ … ]` is an arrow
-    let depth = 0;
-    for (let i = m.index + m[0].length - 1; i < text.length; i++) {
-      if (text[i] === '[') depth++;
-      else if (text[i] === ']' && --depth === 0) return text.slice(m.index, i + 1);
-    }
-  }
-  return '';
-}
-
 /**
  * The boxes' pictures, drawn into `svg` as the dot-image filter draws them
  * (plugins/dot-image, spec 015 US3; keep the two in step): at the label's
@@ -456,22 +444,24 @@ function pictures(svg, v, shown) {
   let all = true;
   for (const n of v.nodes || []) {
     if (!n.image) continue;
-    const g = [...svg.querySelectorAll('g.node')].find((x) => nameOf(x) === n.name);
-    const had = shown && [...shown.querySelectorAll('g.node')].find((x) => nameOf(x) === n.name)?.querySelector('image.dot-image');
+    const g = nodeNamed(svg, n.name);
+    const had = shown && nodeNamed(shown, n.name)?.querySelector('image.dot-image');
     if (!g || !had) { all = false; continue; }
     const shape = g.querySelector('polygon') || g.querySelector('path') || g.querySelector('ellipse'); // the filter's order
     const nums = (shape?.getAttribute('points') || shape?.getAttribute('d') || '').match(/-?[\d.]+,-?[\d.]+/g)?.map((p) => p.split(',').map(Number));
     let box;
-    if (nums?.length) box = [Math.min(...nums.map((p) => p[0])), Math.min(...nums.map((p) => p[1])), Math.max(...nums.map((p) => p[0])), Math.max(...nums.map((p) => p[1]))];
+    if (nums?.length) {
+      const [xs, ys] = [nums.map((p) => p[0]), nums.map((p) => p[1])];
+      box = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+    }
     else if (shape?.tagName === 'ellipse') { const [cx, cy, rx, ry] = ['cx', 'cy', 'rx', 'ry'].map((k) => Number(shape.getAttribute(k))); box = [cx - rx, cy - ry, cx + rx, cy + ry]; }
     if (!box) { all = false; continue; }
-    const size = Number(attrsOf(v.text, n.name).match(/<TD WIDTH="(\d+)"/)?.[1]) || box[3] - box[1] - 16;
+    const size = n.spacer || box[3] - box[1] - 16;
     const tx = g.querySelector('text[text-anchor="start"]')?.getAttribute('x');
     const x = tx ? Number(tx) - 4 - size : box[0] + 4;
     const y = (box[1] + box[3]) / 2 - size / 2;
     const img = svg.ownerDocument.createElementNS(NS, 'image');
     for (const [k, val] of Object.entries({ class: 'dot-image', href: n.image, x: x.toFixed(2), y: y.toFixed(2), width: size.toFixed(2), height: size.toFixed(2), preserveAspectRatio: 'xMidYMid slice' })) img.setAttribute(k, val);
-    img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', n.image);
     g.insertBefore(img, g.querySelector('text'));
   }
   return all;
@@ -492,7 +482,7 @@ export async function drawCell(ref) {
   try {
     const gv = await graphviz();
     if (!gv) throw new Error('no Graphviz engine');
-    const out = new DOMParser().parseFromString(await gv.layout(v.text, 'svg', v.settings?.layout ?? 'neato'), 'image/svg+xml').documentElement;
+    const out = (await laidOut(gv, v)).documentElement;
     if (out.querySelector('parsererror')) throw new Error('Graphviz gave no SVG');
     const whole = pictures(out, v, svg);
     svg.setAttribute('viewBox', out.getAttribute('viewBox'));

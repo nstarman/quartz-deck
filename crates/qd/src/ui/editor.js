@@ -180,8 +180,8 @@ async function alreadyShown(version) {
   const bodies = (t) => [...t.matchAll(DOT_CELL)].map((m) => m[3]);
   const rest = (t) => t.replace(DOT_CELL, '$1');
   const [was, now] = [bodies(shown.source), bodies(s.text)];
-  const drawnNow = (i) => (shown.drawn.has(i) ? shown.drawn.get(i) : was[i]);
-  if (rest(s.text) !== rest(shown.source) || was.length !== now.length || !now.every((b, i) => b === drawnNow(i))) return false;
+  // (rest() keeps each cell's fence line: a cell added or removed differs there)
+  if (rest(s.text) !== rest(shown.source) || !now.every((b, i) => b === (shown.drawn.get(i) ?? was[i]))) return false;
   shown.source = s.text;
   shown.drawn.clear();
   return true;

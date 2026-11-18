@@ -4793,11 +4793,7 @@ async fn diagram_live_routing_without_engine() {
 /// finds its Graphviz there. None without Quarto.
 fn slow_quarto(dir: &Path, secs: u32) -> Option<PathBuf> {
     use std::os::unix::fs::PermissionsExt;
-    let out = std::process::Command::new("sh")
-        .args(["-c", "command -v quarto"])
-        .output()
-        .ok()?;
-    let real = std::fs::canonicalize(String::from_utf8(out.stdout).ok()?.trim()).ok()?;
+    let real = which_quarto()?;
     std::fs::create_dir_all(dir.join("bin")).ok()?;
     std::os::unix::fs::symlink(real.parent()?.parent()?.join("share"), dir.join("share")).ok()?;
     let q = dir.join("bin/quarto");
@@ -4823,21 +4819,16 @@ fn drawing() -> String {
     )
 }
 
-/// Spec 020 T002: the editor's own drawing of a cell is Quarto's render, shape for shape.
-#[tokio::test(flavor = "multi_thread")]
-async fn dot_instant_matches_render() {
-    let Some(ed) = Ed::open(DIAGRAM).await else {
-        return;
-    };
-    ed.go("flow").await;
-    ed.select_node("a").await; // marked: the diagram is known
+/// The editor's own drawing of the diagram on the shown slide is its render,
+/// shape for shape (nothing to compare without Quarto's Graphviz).
+async fn draws_like_render(ed: &Ed) {
     let rendered = ed.eval(&drawing()).await;
     if ed
         .eval("fetch('/lib/quarto/graphvizlib.wasm').then((r) => r.ok)")
         .await
         != json!(true)
     {
-        return; // no Graphviz in this Quarto: nothing to compare
+        return;
     }
     let drew = ed
         .eval(&format!(
@@ -4846,6 +4837,17 @@ async fn dot_instant_matches_render() {
         .await;
     assert_eq!(drew, json!(true), "drawn in the page");
     assert_eq!(ed.eval(&drawing()).await, rendered);
+}
+
+/// Spec 020 T002: the editor's own drawing of a cell is Quarto's render, shape for shape.
+#[tokio::test(flavor = "multi_thread")]
+async fn dot_instant_matches_render() {
+    let Some(ed) = Ed::open(DIAGRAM).await else {
+        return;
+    };
+    ed.go("flow").await;
+    ed.select_node("a").await; // marked: the diagram is known
+    draws_like_render(&ed).await;
 }
 
 /// Spec 020 T004: pictures drawn in the page sit where the dot-image filter puts them.
@@ -4869,27 +4871,19 @@ async fn dot_image_js_matches_lua() {
         .await;
     ed.go("a-tool-and-its-maker").await;
     ed.select_node("tool").await;
-    let rendered = ed.eval(&drawing()).await;
-    if ed
-        .eval("fetch('/lib/quarto/graphvizlib.wasm').then((r) => r.ok)")
-        .await
-        != json!(true)
-    {
-        return; // no Graphviz in this Quarto: nothing to compare
-    }
-    let drew = ed
-        .eval(&format!(
-            "import('/ui/dot.js').then((m) => m.drawCell({CELL_REF}))"
-        ))
-        .await;
-    assert_eq!(drew, json!(true), "drawn in the page");
-    // the same, to the filter's two decimals
-    assert_eq!(ed.eval(&drawing()).await, rendered);
+    draws_like_render(&ed).await; // pictures too, to the filter's two decimals
+}
+
+/// JS: note in `window.__drawn` when the diagram is next drawn again (`Date.now()`).
+fn watch_drawing() -> String {
+    format!(
+        "(() => {{ window.__drawn = 0; new MutationObserver((_, o) => {{ window.__drawn = Date.now(); o.disconnect(); }}).observe({FRAME}.querySelector('[data-qd-lang=dot] svg'), {{ childList: true }}); }})()"
+    )
 }
 
 /// The time from the release of a drag to the cell's new drawing, in ms.
 async fn drop_to_drawing(ed: &Ed, from: (f64, f64), to: (f64, f64)) -> f64 {
-    ed.eval(&format!("(() => {{ window.__drawn = 0; const s = {FRAME}.querySelector('[data-qd-lang=dot] svg'); new MutationObserver((_, o) => {{ window.__drawn = Date.now(); o.disconnect(); }}).observe(s, {{ childList: true }}); }})()")).await;
+    ed.eval(&watch_drawing()).await;
     ed.drag(from, to).await;
     let up = ed.eval("Date.now()").await.as_f64().unwrap();
     ed.wait("window.__drawn > 0").await;
@@ -4953,9 +4947,9 @@ async fn dot_drop_draws_at_once() {
         "the render landed without a reload"
     );
     // undo puts b back at once, and its render needs no reload either
-    ed.eval(&format!("(() => {{ window.__drawn = 0; new MutationObserver((_, o) => {{ window.__drawn = 1; o.disconnect(); }}).observe({FRAME}.querySelector('[data-qd-lang=dot] svg'), {{ childList: true }}); }})()")).await;
+    ed.eval(&watch_drawing()).await;
     ed.key("z", "KeyZ", 90, 4).await;
-    ed.wait("window.__drawn === 1").await;
+    ed.wait("window.__drawn > 0").await;
     assert_eq!(
         ed.eval(up_to_date).await,
         json!(false),
@@ -4971,9 +4965,9 @@ async fn dot_drop_draws_at_once() {
     );
     // a nudge too
     ed.select_node("c").await;
-    ed.eval(&format!("(() => {{ window.__drawn = 0; new MutationObserver((_, o) => {{ window.__drawn = 1; o.disconnect(); }}).observe({FRAME}.querySelector('[data-qd-lang=dot] svg'), {{ childList: true }}); }})()")).await;
+    ed.eval(&watch_drawing()).await;
     ed.key("ArrowUp", "ArrowUp", 38, 0).await;
-    ed.wait("window.__drawn === 1").await;
+    ed.wait("window.__drawn > 0").await;
     assert_eq!(
         ed.eval(up_to_date).await,
         json!(false),

@@ -880,7 +880,7 @@ fn output_of(cmd: &str) -> &'static str {
             r#"show: {"ok","ref","from":[x,y],"to":[x,y],"control":[[x,y],...]|null,"options":{...},"editable":true} or {"ok","ref","editable":{"reason","at":{"line","column"}}}; list: {"ok","arrows":[<show>...]}"#
         }
         "dot" => {
-            r#"show: {"ok","kind":"dot","cell","directed","pinned","editable":true|{"reason","at":{"line","column"}},"settings":{...},"nodes":[{"name","label","look":{...},"url","image","pos":[x,y]|null,"pinned","size":{...},"locked"}],"edges":[{"from","to","index","attrs":{...},"locked"}]}"#
+            r#"show: {"ok","kind":"dot","cell","directed","pinned","editable":true|{"reason","at":{"line","column"}},"settings":{...},"nodes":[{"name","label","look":{...},"url","image","spacer","pos":[x,y]|null,"pinned","size":{...},"locked"}],"edges":[{"from","to","index","attrs":{...},"locked"}]}"#
         }
         "bib" => {
             r#"bare: {"ok","kind":"bib","where":"none|companion|embedded|both","files":[{"path","format","inside"}],"embedded","entries","missing":[{"key","slides"}]}; pull: {"ok","op":"bib-pull","version","diff","file"?,"created"?,"embedded"?,"added","changed":[{"id","fields"}],"merged":[{"id","from"}],"gone","warnings"}; embed: {...,"entries","left"}; extract: {...,"file","entries"}; convert: {...,"file","from"} — every write is an edit of the deck and its companion file together (--dry-run, --expect, one qd undo)"#
