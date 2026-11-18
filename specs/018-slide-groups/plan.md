@@ -80,7 +80,7 @@ specs/018-slide-groups/
 
 ```text
 crates/qd/src/
-├── deck.rs             # group_level; Slide.head, Slide.parent; navigation_mode read
+├── deck.rs             # group_level; Slide.is_head, Slide.parent; navigation_mode read
 ├── ops.rs              # level patch; indent, outdent; mv's depth flag; dup of several slides; navigation
 ├── cli.rs              # Indent, Outdent, Navigation subcommands; Move flags; Dup takes several slides; slides_json fields; schema; API_OPS
 └── ui/

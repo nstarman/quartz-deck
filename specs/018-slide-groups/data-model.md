@@ -13,11 +13,11 @@ Nothing new is stored in the `.qmd`. Groups are read from heading levels
 
 Two derived fields, computed in one pass in deck order:
 
-- `head: bool`: a heading slide at `group_level`.
+- `is_head: bool`: a heading slide at `group_level` (`Slide.head` is already the heading's byte span).
 - `parent: Option<usize>`: the index of the nearest head above it, if any.
   Slides before the first head have none.
 
-A slide with `head` has no `parent`. A head with no slide after it before
+A slide with `is_head` has no `parent`. A head with no slide after it before
 the next head is a group of one.
 
 ## Deck JSON (`qd slides`, the editor)

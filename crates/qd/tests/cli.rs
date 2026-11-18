@@ -1304,3 +1304,30 @@ fn box_stacking() {
     assert!(e.text().find("Two").unwrap() < e.text().find("One").unwrap());
     e.err(&["box", "forward", "b-1"], "E_INVALID_ARG", 1);
 }
+
+/// Spec 018: `qd slides` reports each slide's group (data-model "Deck JSON").
+#[test]
+fn slides_report_groups() {
+    let e = Env::with(
+        "---\ntitle: T\n---\n\n## Intro\n\n# Part A\n\n## A1\n\n## A2\n\n# Part B {#pb}\n\n## B1\n",
+    );
+    let v = e.ok(&["slides"]);
+    assert_eq!(v["group_level"], 1);
+    let got: Vec<Value> = v["slides"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| json!([s["id"], s["head"], s.get("in")]))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            json!(["intro", false, null]),
+            json!(["part-a", true, null]),
+            json!(["a1", false, "part-a"]),
+            json!(["a2", false, "part-a"]),
+            json!(["pb", true, null]),
+            json!(["b1", false, "pb"]),
+        ]
+    );
+}

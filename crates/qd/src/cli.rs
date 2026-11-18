@@ -870,7 +870,7 @@ fn parse_kv(s: &str) -> std::result::Result<(String, String), String> {
 fn output_of(cmd: &str) -> &'static str {
     match cmd {
         "slides" => {
-            r#"{"version","slide_level","width","height","title_slide","slides":[{"id","explicit","index","kind","title","summary","blocks","boxes","opaque","anchor","hidden"}]}"#
+            r#"{"version","slide_level","group_level","width","height","title_slide","slides":[{"id","explicit","index","kind","title","summary","blocks","boxes","opaque","anchor","hidden","head","in"?}]}"#
         }
         "show" => {
             r#"{"version","slide":{"id","explicit","index","kind","level","title","attrs":{"id","classes","kv"},"opaque","source","blocks":[{"id","explicit","kind","text","attrs","geom"?}]}}"#
@@ -1225,17 +1225,22 @@ pub fn slides_json(d: &Deck) -> Value {
         .slides
         .iter()
         .map(|s| {
-            json!({
+            let mut v = json!({
                 "id": s.id, "explicit": s.id_explicit, "index": s.index, "kind": s.kind, "title": s.title,
                 "summary": summary(d, s), "blocks": s.blocks.len(), "lines": d.lines(s.span),
                 "boxes": s.blocks.iter().filter(|b| b.kind == BlockKind::Box).count(), "opaque": s.opaque,
                 "anchor": crate::render::preview_id(s),
                 "hidden": s.attrs.as_ref().and_then(|a| a.get("visibility")) == Some("hidden"),
-            })
+                "head": s.is_head,
+            });
+            if let Some(p) = s.parent {
+                v["in"] = json!(d.slides[p].id);
+            }
+            v
         })
         .collect();
-    json!({"version": d.version, "slide_level": d.slide_level, "width": d.width, "height": d.height,
-        "title_slide": d.has_title_slide(), "slides": slides})
+    json!({"version": d.version, "slide_level": d.slide_level, "group_level": d.group_level(),
+        "width": d.width, "height": d.height, "title_slide": d.has_title_slide(), "slides": slides})
 }
 
 pub fn show_json(d: &Deck, s: &Slide) -> Value {

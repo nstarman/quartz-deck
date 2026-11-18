@@ -38,12 +38,12 @@ text use made-up slides only, never the person's own talks, paths or names.
 
 ## Phase 2: Foundational: reading groups (PR 1, blocks every story)
 
-- [ ] T002 [P] Write failing unit tests in `crates/qd/src/deck.rs`:
+- [X] T002 [P] Write failing unit tests in `crates/qd/src/deck.rs`:
   - `group_level`: `slide-level: 2` with `#` → 1; `slide-level: 2` with no `#` → 1 (the default for new heads, `slide_level - 1`); `slide-level: 3` with `#` and `##` → 1; `slide-level: 3` with only `##` → 2; `slide-level: 1` → `None` (research R1, data-model "Deck");
   - `head`/`parent`: slides before the first head have no parent; a head has `head: true` and no parent; `##`, `---` and (at slide-level 3) `##` section slides after a head have it as parent; a head followed by a head is a group of one.
-- [ ] T003 Implement `Deck::group_level` and `Slide.head`, `Slide.parent` in one pass in `crates/qd/src/deck.rs`, computed after segmentation. T002 passes; `crates/qd/tests/roundtrip.rs` still passes byte-identical.
-- [ ] T004 [P] Write a failing CLI test in `crates/qd/tests/cli.rs`, **`slides_report_groups`**: `qd slides` on a made-up deck with two sections gives each slide `head` and, for sub-slides, `in` (the head's id), and the deck `group_level` (data-model "Deck JSON").
-- [ ] T005 Add `head`, `in` and `group_level` to `slides_json` and its schema string in `crates/qd/src/cli.rs`. T004 passes.
+- [X] T003 Implement `Deck::group_level` and `Slide.is_head`, `Slide.parent` in one pass in `crates/qd/src/deck.rs`, computed after segmentation. T002 passes; `crates/qd/tests/roundtrip.rs` still passes byte-identical.
+- [X] T004 [P] Write a failing CLI test in `crates/qd/tests/cli.rs`, **`slides_report_groups`**: `qd slides` on a made-up deck with two sections gives each slide `head` and, for sub-slides, `in` (the head's id), and the deck `group_level` (data-model "Deck JSON").
+- [X] T005 Add `head`, `in` and `group_level` to `slides_json` and its schema string in `crates/qd/src/cli.rs`. T004 passes.
 
 **Checkpoint**: the editor receives the groups; nothing visible changes yet.
 

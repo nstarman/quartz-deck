@@ -74,6 +74,10 @@ pub struct Slide {
     pub blocks: Vec<Block>,
     /// Segmentation was unsure here (e.g. unterminated fence): structural edits are refused.
     pub opaque: bool,
+    /// A group head: a section slide at the deck's `group_level` (spec 018).
+    pub is_head: bool,
+    /// The position in `Deck::slides` of the group head above, if any.
+    pub parent: Option<usize>,
 }
 
 impl Slide {
@@ -628,8 +632,11 @@ impl Deck {
                 setext,
                 blocks,
                 opaque,
+                is_head: false,
+                parent: None,
             });
         }
+        group(&mut slides, slide_level);
 
         Deck {
             version: version_of(text.as_bytes()),
@@ -650,6 +657,13 @@ impl Deck {
 
     pub fn slice(&self, s: Span) -> &str {
         &self.text[s.start..s.end]
+    }
+
+    /// The heading level of group heads (spec 018, research R1): the smallest
+    /// section level present, else the level above `slide-level`; `None` at
+    /// `slide-level: 1`, where every `#` is a plain slide.
+    pub fn group_level(&self) -> Option<u8> {
+        group_level(&self.slides, self.slide_level)
     }
 
     pub fn has_title_slide(&self) -> bool {
@@ -852,6 +866,30 @@ fn classify(chunk: Chunk, text: &str, used: &mut HashSet<String>) -> (BlockKind,
     }
 }
 
+fn group_level(slides: &[Slide], slide_level: u8) -> Option<u8> {
+    let sections = slides.iter().filter(|s| s.kind == SlideKind::Section);
+    sections
+        .map(|s| s.level)
+        .min()
+        .or((slide_level > 1).then(|| slide_level - 1))
+}
+
+/// Mark the heads and give every slide after one its head, as Quarto stacks them.
+fn group(slides: &mut [Slide], slide_level: u8) {
+    let Some(top) = group_level(slides, slide_level) else {
+        return;
+    };
+    let mut head = None;
+    for (i, s) in slides.iter_mut().enumerate() {
+        s.is_head = s.kind == SlideKind::Section && s.level == top;
+        if s.is_head {
+            head = Some(i);
+        } else {
+            s.parent = head;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -871,6 +909,56 @@ mod tests {
         assert_eq!(d.slides[1].kind, SlideKind::Rule);
         assert!(d.slides[2].id_explicit);
         assert!(d.has_title_slide());
+    }
+
+    /// Each slide's id, `H` for a head, and its head's id (spec 018, research R1).
+    fn groups(d: &Deck) -> Vec<String> {
+        d.slides
+            .iter()
+            .map(|s| match (s.is_head, s.parent) {
+                (true, _) => format!("{}:H", s.id),
+                (false, Some(p)) => format!("{}<{}", s.id, d.slides[p].id),
+                (false, None) => s.id.clone(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn groups_follow_top_level_sections() {
+        let d = deck("## Intro\n\n# A\n\n## A1\n\n---\n\nruled\n\n# B\n\n# C\n\n## C1\n");
+        assert_eq!(d.group_level(), Some(1));
+        assert_eq!(
+            groups(&d),
+            ["intro", "a:H", "a1<a", "@4<a", "b:H", "c:H", "c1<c"]
+        );
+    }
+
+    #[test]
+    fn group_level_without_sections() {
+        let d = deck("## A\n\n## B\n");
+        assert_eq!(d.group_level(), Some(1));
+        assert_eq!(groups(&d), ["a", "b"]);
+        let d = deck("---\nslide-level: 1\n---\n\n# A\n\n# B\n");
+        assert_eq!(d.group_level(), None);
+        assert_eq!(groups(&d), ["a", "b"]);
+    }
+
+    #[test]
+    fn groups_at_deeper_slide_levels() {
+        // the stacks are the smallest section level present (checked with Quarto 1.11)
+        let lv3 = "---\nslide-level: 3\n---\n\n";
+        let d = deck(&format!("{lv3}# P\n\n## S\n\n### s1\n\n# Q\n\n### q1\n"));
+        assert_eq!(d.group_level(), Some(1));
+        assert_eq!(groups(&d), ["p:H", "s<p", "s1<p", "q:H", "q1<q"]);
+        let d = deck(&format!("{lv3}## P\n\n### p1\n\n## Q\n"));
+        assert_eq!(d.group_level(), Some(2));
+        assert_eq!(groups(&d), ["p:H", "p1<p", "q:H"]);
+    }
+
+    #[test]
+    fn implicit_first_slide_is_top_level() {
+        let d = deck("---\nformat: revealjs\n---\n\nPreamble.\n\n# A\n\n## a\n");
+        assert_eq!(groups(&d), ["@1", "a:H", "a-1<a"]);
     }
 
     #[test]
