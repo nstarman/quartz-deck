@@ -128,9 +128,11 @@ async function layout(d) {
   const at = boxInfo(d.cell, d.node)?.pos;
   if (!gv || !v?.text || !at) return null;
   const pos = `${at[0] + d.ux / 72},${at[1] - d.uy / 72}!`;
-  const text = v.text.replace(/\}\s*$/, `${JSON.stringify(d.node)} [pos="${pos}"];\n}\n`);
-  return new DOMParser().parseFromString(await gv.layout(text, 'svg', v.settings?.layout ?? 'neato'), 'image/svg+xml');
+  return laidOut(gv, v, v.text.replace(/\}\s*$/, `${JSON.stringify(d.node)} [pos="${pos}"];\n}\n`));
 }
+
+/** `text` (the cell's, by default) laid out by Graphviz with the cell's engine, as an SVG document. */
+const laidOut = async (gv, v, text = v.text) => new DOMParser().parseFromString(await gv.layout(text, 'svg', v.settings?.layout ?? 'neato'), 'image/svg+xml');
 
 /**
  * Live routing: lay the cell out with the dragged box where it is now, and draw
@@ -408,20 +410,113 @@ export async function mark() {
   for (const c of doc.querySelectorAll('[data-qd-lang=dot]')) {
     const v = await read('dot show', { cell: c.dataset.qd });
     if (v) info.set(c.dataset.qd, v);
-    // an arrow is a thin line: a wider, invisible copy takes the clicks
-    if (v?.editable === true) {
-      for (const p of c.querySelectorAll('svg g.edge > path:not(.qd-dot-hit)')) {
-        const hit = p.cloneNode();
-        hit.setAttribute('class', 'qd-dot-hit');
-        p.before(hit);
-      }
-    }
+    wire(c);
   }
-  // the box or arrow is gone (deleted, undone, reversed elsewhere)
+  reselect();
+}
+
+/** An arrow is a thin line: a wider, invisible copy of each takes the clicks. */
+function wire(c) {
+  if (!editable(c)) return;
+  for (const p of c.querySelectorAll('svg g.edge > path:not(.qd-dot-hit)')) {
+    const hit = p.cloneNode();
+    hit.setAttribute('class', 'qd-dot-hit');
+    p.before(hit);
+  }
+}
+
+/** The selection as the diagrams are now: gone if its box or arrow is (deleted, undone, reversed). */
+function reselect() {
   const d = sel && info.get(sel.cell);
   if (sel && !(sel.node ? d?.nodes?.some((n) => n.name === sel.node) : d?.edges?.some((e) => refOf(d, e) === sel.edge))) sel = null;
   highlight();
   if (sel) api.panelChanged(); // the Properties panel shows the box as it is now
+}
+
+/**
+ * The boxes' pictures, drawn into `svg` as the dot-image filter draws them
+ * (plugins/dot-image, spec 015 US3; keep the two in step): at the label's
+ * spacer, after the shape, before the text. False when a box has a picture
+ * the shown drawing didn't (a new one, or a file the filter couldn't find):
+ * only the render can say.
+ */
+function pictures(svg, v, shown) {
+  let all = true;
+  for (const n of v.nodes || []) {
+    if (!n.image) continue;
+    const g = nodeNamed(svg, n.name);
+    const had = shown && nodeNamed(shown, n.name)?.querySelector('image.dot-image');
+    if (!g || !had) { all = false; continue; }
+    const shape = g.querySelector('polygon') || g.querySelector('path') || g.querySelector('ellipse'); // the filter's order
+    const nums = (shape?.getAttribute('points') || shape?.getAttribute('d') || '').match(/-?[\d.]+,-?[\d.]+/g)?.map((p) => p.split(',').map(Number));
+    let box;
+    if (nums?.length) {
+      const [xs, ys] = [nums.map((p) => p[0]), nums.map((p) => p[1])];
+      box = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+    }
+    else if (shape?.tagName === 'ellipse') { const [cx, cy, rx, ry] = ['cx', 'cy', 'rx', 'ry'].map((k) => Number(shape.getAttribute(k))); box = [cx - rx, cy - ry, cx + rx, cy + ry]; }
+    if (!box) { all = false; continue; }
+    const size = n.spacer || box[3] - box[1] - 16;
+    const tx = g.querySelector('text[text-anchor="start"]')?.getAttribute('x');
+    const x = tx ? Number(tx) - 4 - size : box[0] + 4;
+    const y = (box[1] + box[3]) / 2 - size / 2;
+    const img = svg.ownerDocument.createElementNS(NS, 'image');
+    for (const [k, val] of Object.entries({ class: 'dot-image', href: n.image, x: x.toFixed(2), y: y.toFixed(2), width: size.toFixed(2), height: size.toFixed(2), preserveAspectRatio: 'xMidYMid slice' })) img.setAttribute(k, val);
+    g.insertBefore(img, g.querySelector('text'));
+  }
+  return all;
+}
+
+/**
+ * Draw a cell as Graphviz lays out its saved text, in the page (spec 020):
+ * the same engine as Quarto's, so the same picture as its render (research
+ * R2). Quarto's size and style on the `<svg>` stay. False, drawing nothing,
+ * when it can't (no engine, a layout error), or when only the render can
+ * draw a picture: the next render then reloads.
+ */
+export async function drawCell(ref) {
+  const c = api.elOf(ref);
+  const svg = c?.querySelector('svg');
+  const v = info.get(ref);
+  if (!svg || !v?.text) return false;
+  try {
+    const gv = await graphviz();
+    if (!gv) throw new Error('no Graphviz engine');
+    const out = (await laidOut(gv, v)).documentElement;
+    if (out.querySelector('parsererror')) throw new Error('Graphviz gave no SVG');
+    const whole = pictures(out, v, svg);
+    svg.setAttribute('viewBox', out.getAttribute('viewBox'));
+    svg.replaceChildren(...[...out.childNodes].map((n) => svg.ownerDocument.importNode(n, true)));
+    wire(c);
+    return whole;
+  } catch (e) {
+    console.warn(`qd: can't draw ${ref} in the page: ${e.message}`);
+    return false;
+  }
+}
+
+/**
+ * After an edit from the editor (spec 020 US1): each diagram on the shown
+ * slide whose saved text changed is drawn at once, without waiting for the
+ * render. `drawn(i, text)` hears of each one drawn whole, by its place among
+ * the deck's diagrams.
+ */
+export async function changed(drawn) {
+  const doc = api.frame.contentDocument;
+  const all = [...(doc?.querySelectorAll('[data-qd-lang=dot]') || [])];
+  let any = false;
+  for (const c of all.filter((x) => x.closest('section.present'))) {
+    const ref = c.dataset.qd;
+    if (!editable(c)) continue;
+    const v = await read('dot show', { cell: ref });
+    if (!v || v.text === info.get(ref)?.text) continue;
+    info.set(ref, v); // a drag lays out from the saved text
+    any = true;
+    // a drag started on the drawing meanwhile: its drop draws again (or the render does)
+    if (drag?.cell === ref) continue;
+    if (await drawCell(ref)) drawn(all.indexOf(c), v.text);
+  }
+  if (any) reselect();
 }
 
 /** A diagram qd can edit. */

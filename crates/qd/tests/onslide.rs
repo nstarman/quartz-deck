@@ -4352,6 +4352,9 @@ impl Ed {
     }
     /// Click a diagram node; it shows selected.
     async fn select_node(&self, name: &str) -> (f64, f64) {
+        // once the editor has read the diagram after a render (its arrows get
+        // their wider click copies then): a click before that selects nothing
+        self.wait(&format!("[...{FRAME}.querySelectorAll('[data-qd-lang=dot]')].every((c) => !c.querySelector('g.edge') || !!c.querySelector('path.qd-dot-hit'))")).await;
         let p = self.node_point(name).await;
         self.page.click(Point { x: p.0, y: p.1 }).await.unwrap();
         self.wait(DOT_SEL).await;
@@ -4783,6 +4786,231 @@ async fn diagram_live_routing_without_engine() {
     use DispatchMouseEventType::*;
     ed.mouse(MouseReleased, (a.0, a.1 + inch), false).await;
     ed.wait_file(|f| f.contains("pos=\"0,0!\""), "the drop still moves it")
+        .await;
+}
+
+// ---------- spec 020: diagrams that keep up with the hand ----------
+
+/// A Quarto that waits `secs` before every run (spec 020 T001): `dir/bin/quarto`
+/// runs the real one, and `dir/share` is the real one's, so the editor still
+/// finds its Graphviz there. None without Quarto.
+fn slow_quarto(dir: &Path, secs: u32) -> Option<PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+    let real = which_quarto()?;
+    std::fs::create_dir_all(dir.join("bin")).ok()?;
+    std::os::unix::fs::symlink(real.parent()?.parent()?.join("share"), dir.join("share")).ok()?;
+    let q = dir.join("bin/quarto");
+    std::fs::write(
+        &q,
+        format!(
+            "#!/bin/sh\nsleep {secs}\nexec '{}' \"$@\"\n",
+            real.display()
+        ),
+    )
+    .ok()?;
+    std::fs::set_permissions(&q, std::fs::Permissions::from_mode(0o755)).ok()?;
+    Some(q)
+}
+
+/// The diagram cell's ref in the preview.
+const CELL_REF: &str = "document.querySelector('#preview').contentDocument.querySelector('[data-qd-lang=dot]').dataset.qd";
+
+/// What a cell's drawing shows, shape by shape (spec 020 research R2), without the editor's own additions.
+fn drawing() -> String {
+    format!(
+        "(() => {{ const s = {FRAME}.querySelector('[data-qd-lang=dot] svg'); return [s.getAttribute('viewBox'), s.getAttribute('width'), s.getAttribute('height'), s.getAttribute('style'), ...[...s.querySelectorAll('g.node polygon, g.node path, g.node text, g.node image, g.edge path:not(.qd-dot-hit), g.edge polygon')].map((e) => e.tagName + ':' + ['points', 'd', 'x', 'y', 'width', 'height', 'href'].map((k) => e.getAttribute(k)).join(' ') + ' ' + (e.tagName === 'text' ? e.textContent : ''))]; }})()"
+    )
+}
+
+/// The editor's own drawing of the diagram on the shown slide is its render,
+/// shape for shape (nothing to compare without Quarto's Graphviz).
+async fn draws_like_render(ed: &Ed) {
+    let rendered = ed.eval(&drawing()).await;
+    if ed
+        .eval("fetch('/lib/quarto/graphvizlib.wasm').then((r) => r.ok)")
+        .await
+        != json!(true)
+    {
+        return;
+    }
+    let drew = ed
+        .eval(&format!(
+            "import('/ui/dot.js').then((m) => m.drawCell({CELL_REF}))"
+        ))
+        .await;
+    assert_eq!(drew, json!(true), "drawn in the page");
+    assert_eq!(ed.eval(&drawing()).await, rendered);
+}
+
+/// Spec 020 T002: the editor's own drawing of a cell is Quarto's render, shape for shape.
+#[tokio::test(flavor = "multi_thread")]
+async fn dot_instant_matches_render() {
+    let Some(ed) = Ed::open(DIAGRAM).await else {
+        return;
+    };
+    ed.go("flow").await;
+    ed.select_node("a").await; // marked: the diagram is known
+    draws_like_render(&ed).await;
+}
+
+/// Spec 020 T004: pictures drawn in the page sit where the dot-image filter puts them.
+#[tokio::test(flavor = "multi_thread")]
+async fn dot_image_js_matches_lua() {
+    let plugin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/dot-image");
+    let deck = std::fs::read_to_string(plugin.join("example.qmd")).unwrap();
+    let Some(ed) = Ed::open_with(&deck, &[], |d| {
+        let ext = d.join("_extensions/dot-image");
+        std::fs::create_dir_all(&ext).unwrap();
+        for f in ["_extension.yml", "dot-image.lua"] {
+            std::fs::copy(plugin.join("_extensions/dot-image").join(f), ext.join(f)).unwrap();
+        }
+        std::fs::copy(plugin.join("face.png"), d.join("face.png")).unwrap();
+    })
+    .await
+    else {
+        return;
+    };
+    ed.wait(&format!("!!{FRAME}.querySelector('image.dot-image')"))
+        .await;
+    ed.go("a-tool-and-its-maker").await;
+    ed.select_node("tool").await;
+    draws_like_render(&ed).await; // pictures too, to the filter's two decimals
+}
+
+/// JS: note in `window.__drawn` when the diagram is next drawn again (`Date.now()`).
+fn watch_drawing() -> String {
+    format!(
+        "(() => {{ window.__drawn = 0; new MutationObserver((_, o) => {{ window.__drawn = Date.now(); o.disconnect(); }}).observe({FRAME}.querySelector('[data-qd-lang=dot] svg'), {{ childList: true }}); }})()"
+    )
+}
+
+/// The time from the release of a drag to the cell's new drawing, in ms.
+async fn drop_to_drawing(ed: &Ed, from: (f64, f64), to: (f64, f64)) -> f64 {
+    ed.eval(&watch_drawing()).await;
+    ed.drag(from, to).await;
+    let up = ed.eval("Date.now()").await.as_f64().unwrap();
+    ed.wait("window.__drawn > 0").await;
+    ed.eval("window.__drawn").await.as_f64().unwrap() - up
+}
+
+/// Spec 020 US1 (T006): with a render that takes seconds, a drop draws the
+/// routed diagram at once, the next drag can start at once, and the render
+/// lands without reloading the preview; undo and a nudge draw at once too.
+#[tokio::test(flavor = "multi_thread")]
+async fn dot_drop_draws_at_once() {
+    let slow = tempfile::tempdir().unwrap();
+    let Some(q) = slow_quarto(slow.path(), 4) else {
+        return;
+    };
+    let Some(ed) = Ed::open_with(DIAGRAM, &[("QD_QUARTO", q.to_str().unwrap())], |_| {}).await
+    else {
+        return;
+    };
+    ed.go("flow").await;
+    let a = ed.select_node("a").await;
+    let inch = ed.inch_px().await;
+    let up_to_date = "document.querySelector('#status').textContent === 'Up to date'";
+    ed.eval(&format!("window.__doc = {FRAME}")).await;
+    let ms = drop_to_drawing(&ed, a, (a.0 + inch, a.1)).await;
+    assert_eq!(
+        ed.eval(up_to_date).await,
+        json!(false),
+        "drawn before the render"
+    );
+    assert!(ms < 1000.0, "drawn {ms} ms after the release");
+    assert_eq!(
+        ed.eval(&format!(
+            "!{}?.getAttribute('transform') && !{FRAME}.querySelector('line.qd-dot-provisional')",
+            node_js("a")
+        ))
+        .await,
+        json!(true),
+        "the box is in its place and its arrows routed, no stand-ins"
+    );
+    // straight on: another box, before the render
+    let b = ed.node_point("b").await;
+    drop_to_drawing(&ed, b, (b.0, b.1 - inch)).await;
+    assert_eq!(
+        ed.eval(up_to_date).await,
+        json!(false),
+        "the second drop drew before the render too"
+    );
+    ed.wait_file(
+        |f| {
+            f.contains("a [label=\"Data\", pos=\"1,1!\"]")
+                && f.contains("b [label=\"Tool\", pos=\"2,2!\"]")
+        },
+        "both moved",
+    )
+    .await;
+    ed.settle().await;
+    assert_eq!(
+        ed.eval(&format!("{FRAME} === window.__doc")).await,
+        json!(true),
+        "the render landed without a reload"
+    );
+    // undo puts b back at once, and its render needs no reload either
+    ed.eval(&watch_drawing()).await;
+    ed.key("z", "KeyZ", 90, 4).await;
+    ed.wait("window.__drawn > 0").await;
+    assert_eq!(
+        ed.eval(up_to_date).await,
+        json!(false),
+        "undo drew before the render"
+    );
+    ed.wait_file(|f| f.contains("b [label=\"Tool\", pos=\"2,1!\"]"), "b back")
+        .await;
+    ed.settle().await;
+    assert_eq!(
+        ed.eval(&format!("{FRAME} === window.__doc")).await,
+        json!(true),
+        "no reload after undo"
+    );
+    // a nudge too
+    ed.select_node("c").await;
+    ed.eval(&watch_drawing()).await;
+    ed.key("ArrowUp", "ArrowUp", 38, 0).await;
+    ed.wait("window.__drawn > 0").await;
+    assert_eq!(
+        ed.eval(up_to_date).await,
+        json!(false),
+        "a nudge drew before the render"
+    );
+    ed.settle().await;
+    assert_eq!(
+        ed.eval(&format!("{FRAME} === window.__doc")).await,
+        json!(true),
+        "no reload after a nudge"
+    );
+}
+
+/// Spec 020 US1 (T006): any other change still reloads the preview after its render.
+#[tokio::test(flavor = "multi_thread")]
+async fn dot_other_edits_still_reload() {
+    let Some(ed) = Ed::open(DIAGRAM).await else {
+        return;
+    };
+    ed.go("flow").await;
+    let a = ed.select_node("a").await;
+    let inch = ed.inch_px().await;
+    // a drop draws in place, and its render lands without a reload
+    ed.eval(&format!("window.__doc = {FRAME}")).await;
+    ed.drag(a, (a.0 + inch, a.1)).await;
+    ed.wait_file(|f| f.contains("pos=\"1,1!\""), "a moved")
+        .await;
+    ed.settle().await;
+    assert_eq!(
+        ed.eval(&format!("{FRAME} === window.__doc")).await,
+        json!(true)
+    );
+    // undone from outside, back to the text of the render the preview loaded:
+    // not what it shows now, so it reloads
+    ed.cli(&["undo"]);
+    ed.wait(&format!("{FRAME} !== window.__doc")).await;
+    ed.settle().await;
+    ed.eval(&format!("window.__doc = {FRAME}")).await;
+    ed.cli(&["title", "flow", "Pipeline"]);
+    ed.wait(&format!("{FRAME} !== window.__doc && !!{FRAME}?.querySelector('#flow h2')?.textContent.includes('Pipeline')"))
         .await;
 }
 
