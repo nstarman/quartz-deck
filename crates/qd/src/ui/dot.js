@@ -462,7 +462,8 @@ function pictures(svg, v, shown) {
     const y = (box[1] + box[3]) / 2 - size / 2;
     const img = svg.ownerDocument.createElementNS(NS, 'image');
     for (const [k, val] of Object.entries({ class: 'dot-image', href: n.image, x: x.toFixed(2), y: y.toFixed(2), width: size.toFixed(2), height: size.toFixed(2), preserveAspectRatio: 'xMidYMid slice' })) img.setAttribute(k, val);
-    g.insertBefore(img, g.querySelector('text'));
+    const label = g.querySelector('text'); // inside the box's <a> when it has a link
+    (label?.parentNode ?? g).insertBefore(img, label);
   }
   return all;
 }

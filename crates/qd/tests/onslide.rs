@@ -4896,7 +4896,17 @@ async fn dot_instant_matches_render() {
 #[tokio::test(flavor = "multi_thread")]
 async fn dot_image_js_matches_lua() {
     let plugin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/dot-image");
-    let deck = std::fs::read_to_string(plugin.join("example.qmd")).unwrap();
+    // with a link too: its label then sits in an <a>
+    let deck = std::fs::read_to_string(plugin.join("example.qmd"))
+        .unwrap()
+        .replace(
+            "image=\"face.png\"",
+            "image=\"face.png\", URL=\"https://example.org/tool\"",
+        );
+    assert!(
+        deck.contains("URL="),
+        "the example still has its picture box"
+    );
     let Some(ed) = Ed::open_with(&deck, &[], |d| {
         let ext = d.join("_extensions/dot-image");
         std::fs::create_dir_all(&ext).unwrap();
