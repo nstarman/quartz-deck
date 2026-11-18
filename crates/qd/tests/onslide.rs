@@ -5680,6 +5680,9 @@ async fn list_shows_and_collapses_groups() {
     ed.visit(info["url"].as_str().unwrap()).await;
     ed.wait(&rows(&folded)).await;
     assert_eq!(ed.file(), GROUPS);
+    // the look: a group in one faint band, its sub-slides a little smaller
+    ed.wait("(() => { const li = (id) => document.querySelector(`#slides li[data-id=${id}]`); const w = (id) => li(id).querySelector('.thumb').getBoundingClientRect().width; const bg = (id) => getComputedStyle(li(id)).backgroundColor; return w('b1') < w('part-b') && bg('part-b') === bg('b1') && bg('b1') !== bg('intro') && bg('intro') === 'rgba(0, 0, 0, 0)'; })()")
+        .await;
 }
 
 /// Spec 018 FR-008: showing a slide inside a folded group opens the group.
@@ -5697,4 +5700,8 @@ async fn shown_slide_opens_its_group() {
         .await;
     assert_eq!(ed.cli(&["focus", "--set", "a2"])["result"], "moved");
     ed.wait("document.querySelector('#slides li[data-id=a2]')?.hidden === false && document.querySelector('#slides li[data-id=part-a] .disclose')?.getAttribute('aria-expanded') === 'true'").await;
+    // folding the group of the shown slide shows its head (as Keynote does)
+    ed.click_editor("#slides li[data-id=part-a] .disclose")
+        .await;
+    ed.wait("document.querySelector('#slides li[data-id=a2]')?.hidden === true && document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide()?.id === 'part-a'").await;
 }

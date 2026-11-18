@@ -271,7 +271,8 @@ the presentation ↓ goes to the next sub-slide; setting it back to linear
   across sessions on the same machine, and MUST NOT be written to the
   `.qmd`. It is view state, like the list's scroll position.
 - **FR-008**: When the slide shown on the canvas is inside a collapsed
-  group, the list MUST open that group.
+  group, the list MUST open that group. Collapsing the group of the shown
+  slide shows the group's head instead.
 - **FR-009**: Slide numbers in the list MUST stay one running count over
   all slides, heads included.
 - **FR-010**: ↑ and ↓ in the list MUST move through the visible rows only,
