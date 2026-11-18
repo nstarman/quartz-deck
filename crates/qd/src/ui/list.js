@@ -19,11 +19,11 @@ export function makeList(api) {
   let justDragged = false; // the click that ends a drag isn't a click on the slide
   let shown; // the slide (and its place) the list last scrolled to
   let folded = new Set(); // the heads whose sub-slides are hidden (spec 018 US1)
-  let folds = 0; // the person's folds before the stored state arrives win over it
-  fetch('/api/view').then((r) => r.json()).then((v) => { if (!folds) { folded = new Set(v.collapsed || []); render(); } }).catch(() => {});
+  let touched = false; // the person's folds before the stored state arrives win over it
+  fetch('/api/view').then((r) => r.json()).then((v) => { if (!touched) { folded = new Set(v.collapsed || []); render(); } }).catch(() => {});
   /** Keep `folded` (only heads still there), and redraw. */
   function fold(id, on) {
-    folds += 1;
+    touched = true;
     if (on) folded.add(id); else folded.delete(id);
     const heads = new Set((api.state.deck?.slides || []).filter((s) => s.head).map((s) => s.id));
     folded = new Set([...folded].filter((h) => heads.has(h)));
@@ -242,12 +242,11 @@ export function makeList(api) {
       fresh.dataset.sig = sig;
       return fresh;
     };
-    const items = deck.slides.map((s) => keep(s, false));
+    const items = deck.slides.map((s) => Object.assign(keep(s, false), { hidden: folded.has(s.in) }));
     if (deck.title_slide) items.unshift(keep({ id: 'title-slide', anchor: 'title-slide' }, true));
     // only what changed moves: an item already in its place isn't touched
     items.forEach((li, i) => { if (list.children[i] !== li) list.insertBefore(li, list.children[i] ?? null); });
     while (list.children.length > items.length) list.lastChild.remove();
-    for (const li of items) li.hidden = !!deck.slides.find((s) => s.id === li.dataset.id && folded.has(s.in));
     Object.assign(nav, { scrollLeft, scrollTop });
     const current = list.querySelector('li.current');
     // only when the shown slide changed or moved (undo, an agent's edit): a redraw

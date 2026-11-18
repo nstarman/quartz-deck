@@ -5610,6 +5610,9 @@ async fn list_shows_and_collapses_groups() {
         return;
     };
     ed.settle().await;
+    let rows = |v: &Value| format!("JSON.stringify({ROWS}) === {:?}", v.to_string());
+    let at =
+        |id: &str| format!("document.activeElement?.closest('#slides li')?.dataset.id === '{id}'");
     let open = json!([
         ["title-slide", false, null, "", null],
         ["intro", false, null, "1", null],
@@ -5620,11 +5623,7 @@ async fn list_shows_and_collapses_groups() {
         ["part-b", false, "true", "6", null],
         ["b1", true, null, "7", null]
     ]);
-    ed.wait(&format!(
-        "JSON.stringify({ROWS}) === {:?}",
-        open.to_string()
-    ))
-    .await;
+    ed.wait(&rows(&open)).await;
     let folded = json!([
         ["title-slide", false, null, "", null],
         ["intro", false, null, "1", null],
@@ -5636,71 +5635,40 @@ async fn list_shows_and_collapses_groups() {
     // the button
     ed.click_editor("#slides li[data-id=part-a] .disclose")
         .await;
-    ed.wait(&format!(
-        "JSON.stringify({ROWS}) === {:?}",
-        folded.to_string()
-    ))
-    .await;
+    ed.wait(&rows(&folded)).await;
     ed.click_editor("#slides li[data-id=part-a] .disclose")
         .await;
-    ed.wait(&format!(
-        "JSON.stringify({ROWS}) === {:?}",
-        open.to_string()
-    ))
-    .await;
+    ed.wait(&rows(&open)).await;
 
     // the keys, on the focused head; ↓ from it then skips the folded rows
     ed.eval("document.querySelector('#slides li[data-id=part-a] > button').focus()")
         .await;
     ed.key("ArrowLeft", "ArrowLeft", 37, 0).await;
-    ed.wait(&format!(
-        "JSON.stringify({ROWS}) === {:?}",
-        folded.to_string()
-    ))
-    .await;
+    ed.wait(&rows(&folded)).await;
     ed.key("ArrowDown", "ArrowDown", 40, 0).await;
-    ed.wait("document.activeElement?.closest('#slides li')?.dataset.id === 'part-b'")
-        .await;
+    ed.wait(&at("part-b")).await;
     ed.key("ArrowUp", "ArrowUp", 38, 0).await;
-    ed.wait("document.activeElement?.closest('#slides li')?.dataset.id === 'part-a'")
-        .await;
+    ed.wait(&at("part-a")).await;
     ed.key("ArrowRight", "ArrowRight", 39, 0).await;
-    ed.wait(&format!(
-        "JSON.stringify({ROWS}) === {:?}",
-        open.to_string()
-    ))
-    .await;
+    ed.wait(&rows(&open)).await;
     // ← on a sub-slide goes to its head
     ed.eval("document.querySelector('#slides li[data-id=a2] > button').focus()")
         .await;
     ed.key("ArrowLeft", "ArrowLeft", 37, 0).await;
-    ed.wait("document.activeElement?.closest('#slides li')?.dataset.id === 'part-a'")
-        .await;
+    ed.wait(&at("part-a")).await;
 
     // kept: a reload, then a new server (a new port)
     ed.key("ArrowLeft", "ArrowLeft", 37, 0).await;
-    ed.wait(&format!(
-        "JSON.stringify({ROWS}) === {:?}",
-        folded.to_string()
-    ))
-    .await;
+    ed.wait(&rows(&folded)).await;
     ed.eval("window.__left = true; setTimeout(() => location.reload(), 0)")
         .await;
     ed.wait_secs(&format!("!window.__left && {READY}"), 60)
         .await;
-    ed.wait(&format!(
-        "JSON.stringify({ROWS}) === {:?}",
-        folded.to_string()
-    ))
-    .await;
+    ed.wait(&rows(&folded)).await;
     ed.cli(&["stop"]);
     let info = ed.cli(&["serve", "--detach"]);
     ed.visit(info["url"].as_str().unwrap()).await;
-    ed.wait(&format!(
-        "JSON.stringify({ROWS}) === {:?}",
-        folded.to_string()
-    ))
-    .await;
+    ed.wait(&rows(&folded)).await;
     assert_eq!(ed.file(), GROUPS);
 }
 
@@ -5715,6 +5683,8 @@ async fn shown_slide_opens_its_group() {
         .await;
     ed.wait("document.querySelector('#slides li[data-id=a2]')?.hidden === true")
         .await;
-    ed.cli(&["focus", "--set", "a2"]);
+    ed.until_cli(&["focus"], |v| v["age"].is_number(), "tab never reported")
+        .await;
+    assert_eq!(ed.cli(&["focus", "--set", "a2"])["result"], "moved");
     ed.wait("document.querySelector('#slides li[data-id=a2]')?.hidden === false && document.querySelector('#slides li[data-id=part-a] .disclose')?.getAttribute('aria-expanded') === 'true'").await;
 }

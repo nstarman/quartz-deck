@@ -944,11 +944,12 @@ async fn api_settings(State(app): State<Shared>) -> Response {
 /// groups are folded), `view.json` in the deck's cache folder, never in the deck.
 async fn api_view(State(app): State<Shared>) -> Response {
     let text = std::fs::read_to_string(app.store.cache_dir().join("view.json"));
-    let v: Value = text
-        .ok()
-        .and_then(|t| serde_json::from_str(&t).ok())
-        .unwrap_or(json!({}));
-    Json(v).into_response()
+    Json(
+        text.ok()
+            .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+            .unwrap_or(json!({})),
+    )
+    .into_response()
 }
 
 /// `POST /api/view` (token): replace it with a JSON object of up to 64 KB.
