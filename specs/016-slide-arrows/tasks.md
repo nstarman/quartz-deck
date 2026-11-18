@@ -108,7 +108,12 @@ text use made-up slides only, never the person's own talks, paths or names.
 
   **As built:** no separate example deck: the repository has no examples folder for decks, and `tests/arrows.rs` `rendered_where_given` builds and renders its own.
 - [X] T018 Run quickstart §1–§5 and record it in `specs/016-slide-arrows/checklists/quickstart-run.md`.
-- [ ] T019 With the person: redraw the arrows of one of their real slides (SC-006) and record what needed changing. Nothing about their slide goes into the repository.
+- [X] T019 With the person: redraw the arrows of one of their real slides (SC-006) and record what needed changing. Nothing about their slide goes into the repository.
+
+  **As built (2026-11-17):** done with the person on a copy of their talk, then moved into the talk on their acceptance. A figure slide's two hand-drawn arrows (filled SVG shapes over a figure, each appearing on a click) became two qd arrows, added and styled with `qd arrow add` and `set`. What needed changing or doing:
+  - The images' coordinates were in the figure's own frame; they were mapped onto the slide from the figure's measured box (slide pixels, as `position="absolute"` uses).
+  - A thick, filled arrow became a 26 px stroke. quarto-arrows' head is as long as it is wide (`head-size` × the stroke width), so a short, wide head can't be matched; a square one was chosen, with the `to` end set so the tip lands where the original's did.
+  - The originals faded out on the next click (`fade-in-then-out`). quarto-arrows' fragment wrapper is always `fragment custom` and its `class` option styles the SVG, so it can only draw an arrow in; both arrows now stay once shown. Wrapping an arrow in a `fade-in-then-out` div would keep the fade but make it text-only for qd. The person accepted the arrows staying.
 - [X] T020 Final constitution re-check in `plan.md`; fmt, clippy (`--workspace --all-targets -D warnings`) and `cargo test --workspace --no-fail-fast` green.
 - [X] T021 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
 
