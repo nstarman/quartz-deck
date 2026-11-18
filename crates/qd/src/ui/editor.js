@@ -722,7 +722,7 @@ async function addSlide(where, anchor) {
 }
 
 const slideList = makeList({
-  state, frame, go, op, fetchDeck, openMenu, addSlide,
+  state, frame, go, op, fetchDeck, openMenu, addSlide, say,
   slideMenu: async (id) => actions.slide(await slideTarget(id)),
 });
 

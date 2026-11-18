@@ -97,14 +97,21 @@ too many); two ops per drop (rejected: two undo steps).
 
 ## R5. Collapse state
 
-**Decision**: `localStorage`, key `qd.collapsed:<deck path>`, a list of
-head ids. Ids of heads that are gone are dropped on the next render.
+**Decision**: `view.json` in the deck's own qd cache folder (where its
+undo journal already lives), holding `{"collapsed": [head ids]}`. The
+editor reads it with `GET /api/view` and writes it with `POST /api/view`
+(the run token, like `POST /api/settings`; a body over 64 KB or not a JSON
+object is refused). Ids of heads that are gone are dropped on the next
+write.
 
-**Why**: it is view state for this machine, like the list's scroll, and
-must never reach the `.qmd` (constitution II). qd's settings file is per
-user and shared by every deck, so it is the wrong place for per-deck view
-state. VS Code's panel keeps its own `localStorage`; a group collapsed in
-the browser may be open in VS Code, which the spec allows.
+**Why**: it is view state for this machine and must never reach the
+`.qmd` (constitution II). The browser's `localStorage` was the first
+choice, but `qd serve` takes a new port each run and `localStorage` is kept
+per origin (port included), so it would be empty after every restart
+(found while building PR 2). qd's settings file is per user and shared by
+every deck, so it is the wrong place for per-deck view state. The cache
+folder is per deck, on this machine, and the browser and VS Code's panel
+read the same file.
 
 ## R6. Navigation mode
 

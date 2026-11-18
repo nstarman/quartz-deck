@@ -15,7 +15,7 @@ one reveal.js vertical stack (research R1).
   `--outdent` so a drop that changes depth is one undo step (R4);
   `navigation` sets the deck's `navigation-mode` (R6).
 - **The editor's slide list** indents sub-slides, collapses heads (state in
-  `localStorage`, never in the file; R5), takes Tab/⇧Tab and ← →, sets
+  the deck's qd cache folder, never in the file; R5), takes Tab/⇧Tab and ← →, sets
   depth by dragging sideways (R8), and treats a collapsed head as its whole
   group for drag, copy, cut, duplicate and Delete through the list's
   existing `selected(id)`.
@@ -26,7 +26,7 @@ one reveal.js vertical stack (research R1).
 
 **Primary Dependencies**: none new
 
-**Storage**: the `.qmd` (heading levels, `navigation-mode`); the browser's `localStorage` for collapse state
+**Storage**: the `.qmd` (heading levels, `navigation-mode`); `view.json` in the deck's qd cache folder for collapse state
 
 **Testing**:
 - `cargo test`:
@@ -84,7 +84,7 @@ crates/qd/src/
 ├── ops.rs              # level patch; indent, outdent; mv's depth flag; dup of several slides; navigation
 ├── cli.rs              # Indent, Outdent, Navigation subcommands; Move flags; Dup takes several slides; slides_json fields; schema; API_OPS
 └── ui/
-    ├── list.js         # indent, disclosure, collapse in localStorage, keys, sideways drag, selected() expands groups
+    ├── list.js         # indent, disclosure, collapse (via /api/view), keys, sideways drag, selected() expands groups
     ├── editor.css      # row indent, disclosure button, "+N"
     ├── actions.json    # Indent / Outdent / Presentation navigation entries and keys
     └── actions.js      # their run functions; group labels on a collapsed head
@@ -107,7 +107,7 @@ rebasing this branch onto it.
 
 1. **Core:** `group_level`, `head`/`in` in the deck JSON; the level patch;
    `qd indent`, `qd outdent`; unit, CLI and corpus tests.
-2. **US1:** the list shows groups; collapse and expand with `localStorage`;
+2. **US1:** the list shows groups; collapse and expand, kept in `view.json` (`/api/view`);
    ← →; FR-008; ↑/↓ over visible rows.
 3. **US2:** Tab/⇧Tab, ⌘]/⌘[, menu items with reasons; `qd move
    --indent/--outdent` and the sideways drag; messages.

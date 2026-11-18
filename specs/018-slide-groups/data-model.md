@@ -35,8 +35,9 @@ The deck gains `"group_level": 1` (or `null`) and `"navigation_mode":
 
 ## Collapse state (editor only)
 
-`localStorage["qd.collapsed:<deck path>"]`: a JSON list of head ids.
-Never sent to the server.
+`view.json` in the deck's qd cache folder: `{"collapsed": [head ids]}`,
+read and written by the editor through `GET`/`POST /api/view` (research
+R5). Never in the `.qmd`.
 
 ## Level change (patch)
 

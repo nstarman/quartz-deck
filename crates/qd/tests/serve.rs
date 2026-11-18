@@ -1237,3 +1237,39 @@ fn companion_file_change_rerenders() {
             .contains("Newname")
     );
 }
+
+/// Spec 018 (research R5): the editor's per-deck view state, `view.json` in the
+/// deck's cache folder. Token and same origin to write; a JSON object only;
+/// it outlives the server (a new port each run) and never touches the deck.
+#[test]
+fn view_over_http() {
+    if !have("quarto") {
+        return;
+    }
+    let (_tmp, dir) = setup();
+    let deck = std::fs::read(dir.join("deck.qmd")).unwrap();
+    let server = start(&dir);
+    let p = server.port;
+    let auth = format!("application/json\r\nX-QD-Token: {}", server.token);
+    assert_eq!(get(p, "/api/view"), (200, "{}".to_string()));
+
+    let body = r#"{"collapsed": ["part-a"]}"#;
+    assert_eq!(
+        post(p, "/api/view", "127.0.0.1", "application/json", body).0,
+        403
+    );
+    assert_eq!(post(p, "/api/view", "127.0.0.1", &auth, "[1, 2]").0, 400);
+    let big = format!(r#"{{"x": "{}"}}"#, "a".repeat(70_000));
+    assert_eq!(post(p, "/api/view", "127.0.0.1", &auth, &big).0, 400);
+    assert_eq!(post(p, "/api/view", "127.0.0.1", &auth, body).0, 200);
+    drop(server);
+
+    let server = start(&dir);
+    let (status, v) = get(server.port, "/api/view");
+    assert_eq!(status, 200);
+    assert_eq!(
+        serde_json::from_str::<Value>(&v).unwrap(),
+        serde_json::json!({"collapsed": ["part-a"]})
+    );
+    assert_eq!(std::fs::read(dir.join("deck.qmd")).unwrap(), deck);
+}

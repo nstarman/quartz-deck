@@ -47,7 +47,7 @@ fn current(path: &Path) -> Option<String> {
 
 /// Write `text` atomically, or remove the file for `None`. ponytail: no
 /// inode check as for the deck; the content check before it is the guard.
-fn put(path: &Path, text: Option<&str>) -> Result<()> {
+pub(crate) fn put(path: &Path, text: Option<&str>) -> Result<()> {
     match text {
         Some(t) => {
             let name = path.file_name().unwrap_or_default().to_string_lossy();

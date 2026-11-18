@@ -940,6 +940,34 @@ async fn api_settings(State(app): State<Shared>) -> Response {
     Json(crate::settings::report(&app.settings)).into_response()
 }
 
+/// `GET /api/view`: the editor's view state for this deck (spec 018 R5: which
+/// groups are folded), `view.json` in the deck's cache folder, never in the deck.
+async fn api_view(State(app): State<Shared>) -> Response {
+    let text = std::fs::read_to_string(app.store.cache_dir().join("view.json"));
+    Json(
+        text.ok()
+            .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+            .unwrap_or(json!({})),
+    )
+    .into_response()
+}
+
+/// `POST /api/view` (token): replace it with a JSON object of up to 64 KB.
+async fn api_view_set(State(app): State<Shared>, headers: HeaderMap, body: String) -> Response {
+    if !authorized(&app, &headers) {
+        return forbidden();
+    }
+    match serde_json::from_str::<Value>(&body) {
+        Ok(v) if v.is_object() && body.len() <= 64 * 1024 => {
+            match crate::store::put(&app.store.cache_dir().join("view.json"), Some(&body)) {
+                Ok(()) => Json(json!({"ok": true})).into_response(),
+                Err(e) => err_response(e),
+            }
+        }
+        _ => (StatusCode::BAD_REQUEST, "a JSON object of up to 64 KB").into_response(),
+    }
+}
+
 /// `POST /api/settings` (token): `{key: value, …}` or `{"reset": true}`. Open
 /// editors hear of it from the file watch (as of a change by `qd settings`).
 async fn api_settings_set(
@@ -1281,6 +1309,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             .route("/api/buffer", post(api_buffer))
             .route("/api/buffer/close", post(api_buffer_close))
             .route("/api/settings", get(api_settings).post(api_settings_set))
+            .route("/api/view", get(api_view).post(api_view_set))
             .route(
                 "/api/images",
                 get(api_images).post(api_image_add).layer(limit),
