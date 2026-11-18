@@ -162,10 +162,10 @@ nav .idx:empty { display: none; }
 nav .tag { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 /* groups (spec 018): a group sits in one faint squircle, its head on top and its
    sub-slides a little smaller below; a head's disclosure triangle beside its name */
-nav li.head, nav li.sub { background: color-mix(in srgb, var(--text) 3%, transparent); }
+nav li.head, nav li.sub { background: color-mix(in srgb, var(--text) 2%, transparent); }
 nav li.head { border-radius: 12px; }
 nav li.head:has(+ li.sub:not([hidden])) { border-radius: 12px 12px 0 0; }
-nav li.sub { margin: 0; padding: 6px 8px 0 20px; border-radius: 0; }
+nav li.sub { margin: 0; padding: 6px 4px 0 16px; border-radius: 0; }
 nav li.sub:not(:has(+ li.sub)) { border-radius: 0 0 12px 12px; padding-bottom: 6px; }
 nav li.head .meta { padding-left: 22px; }
 nav .disclose { position: absolute; left: 4px; bottom: 2px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px;
@@ -226,7 +226,7 @@ aside .status.fail { color: var(--danger); }
   /* the strip: the squircle runs left to right, the sub-slides a little smaller */
   nav li.head:has(+ li.sub:not([hidden])) { border-radius: 12px 0 0 12px; }
   nav li.head, nav li.sub { align-self: stretch; } /* one band, as tall as the head */
-  nav li.sub { width: 100px; padding: 0 0 0 8px; }
+  nav li.sub { width: 110px; padding: 0 0 0 8px; }
   nav li.sub:not([hidden]) { display: flex; flex-direction: column; justify-content: flex-end; } /* bottoms level with the head's */
   nav li.sub:not(:has(+ li.sub)) { border-radius: 0 12px 12px 0; padding: 0 6px 0 8px; }
   /* the + after the last slide, level with the thumbnails */
