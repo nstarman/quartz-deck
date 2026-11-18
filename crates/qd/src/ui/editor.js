@@ -172,11 +172,16 @@ async function noteShown(version) {
 }
 // a {dot} cell: its opening fence line, its body, its closing fence
 const DOT_CELL = /^((`{3,})[ \t]*\{dot\b[^\n]*\n)([\s\S]*?)^\2[ \t]*$/gm;
-/** The render of `version` shows what the preview shows already: the same text, but for diagrams drawn into it. */
-async function alreadyShown(version) {
+/**
+ * The preview shows the deck as it is now: its text is the loaded render's,
+ * but for the diagrams drawn into it since. Then no render needs loading, of
+ * this version or an older one that lands after a newer edit (a quick second
+ * drop while a slow deck renders).
+ */
+async function alreadyShown() {
   if (shown.source == null) return false;
   const s = await source();
-  if (s?.version !== version) return false;
+  if (!s) return false;
   const bodies = (t) => [...t.matchAll(DOT_CELL)].map((m) => m[3]);
   const rest = (t) => t.replace(DOT_CELL, '$1');
   const [was, now] = [bodies(shown.source), bodies(s.text)];
@@ -1101,20 +1106,27 @@ offer.addEventListener('click', (e) => {
   if (act) offer.hidden = true;
 });
 es.addEventListener('rendering', () => status('Rendering…'));
-es.addEventListener('rendered', async (e) => {
-  const d = JSON.parse(e.data);
+// one render at a time, in the order they land: a check below waits for the
+// server, and a newer render must never be overtaken by an older one's load
+let renders = Promise.resolve();
+// (a failure in one is logged, never left to stop the ones after it)
+es.addEventListener('rendered', (e) => { renders = renders.then(() => rendered(JSON.parse(e.data))).catch((err) => console.error('qd: render', err)); });
+async function rendered(d) {
+  // reloading now would throw away an edit typed on the slide (research R4); a
+  // source pop-up's text is in this page, and Run there wants the new render (013)
+  const hold = state.session && state.session.mode !== 'source';
+  // decided before "Up to date" shows: until then the preview may still reload
+  const skip = !hold && (await alreadyShown());
   status('Up to date', true);
   statusEl.title = `Version ${d.version.slice(0, 7)}`;
   banner.hidden = true;
-  // reloading now would throw away an edit typed on the slide (research R4); a
-  // source pop-up's text is in this page, and Run there wants the new render (013)
-  if (state.session && state.session.mode !== 'source') {
+  if (hold) {
     state.pendingRender = d;
     pendingBadge(true);
-  } else if (!(await alreadyShown(d.version))) {
+  } else if (!skip) {
     load(d.html, d.version);
   }
-});
+}
 // Save as git commit (spec 012 US2)
 es.addEventListener('history', (e) => {
   const d = JSON.parse(e.data);
