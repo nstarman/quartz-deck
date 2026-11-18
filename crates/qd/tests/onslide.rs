@@ -538,6 +538,14 @@ impl Ed {
         self.close_menu().await;
         self.wait("!document.querySelector('#elbar').hidden").await;
     }
+    /// Right-click slide `id` in the slide list and run its menu item `label`.
+    async fn slide_menu(&self, id: &str, label: &str) {
+        let at = format!(
+            "(() => {{ const r = document.querySelector('#slides li[data-id={id}] > button').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }})()"
+        );
+        self.right_click(self.point(&at).await).await;
+        self.click_menu(label).await;
+    }
     /// Labels of the open context menu's top level, with "(disabled)" marks.
     async fn menu_labels(&self) -> Vec<String> {
         self.wait("!document.querySelector('#ctxmenu').hidden")
@@ -2692,6 +2700,34 @@ async fn paste_key_uses_the_paste_event() {
 /// The audit deck, the same file the audit's screenshots use.
 const AUDIT: &str = include_str!("../../../specs/008-usability/audit/deck/talk.qmd");
 
+/// The title slide stays first (Quarto makes it from the front matter) but has
+/// a menu; slide names show the title as rendered, not its Markdown.
+#[tokio::test(flavor = "multi_thread")]
+async fn title_slide_menu_and_rendered_names() {
+    let deck = AUDIT.replace(
+        "## Highlights {#highlights}",
+        "## *Highlights* 2 {#highlights}",
+    );
+    let Some(ed) = Ed::open(&deck).await else {
+        return;
+    };
+    ed.settle().await;
+    ed.wait("document.querySelector('#slides li[data-id=highlights] .name')?.textContent === 'Highlights 2'")
+        .await;
+    let title = "(() => { const r = document.querySelector('#slides li[data-id=title-slide] > button').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()";
+    ed.right_click(ed.point(title).await).await;
+    assert_eq!(
+        ed.menu_labels().await,
+        [
+            "Add slide after…",
+            "Always first (made from the title at the top) (disabled)"
+        ]
+    );
+    ed.click_menu("Add slide after…").await;
+    ed.wait("[...document.querySelectorAll('dialog.sheet')].some((d) => d.open && d.textContent.includes('New slide'))")
+        .await;
+}
+
 /// The slide ids in `qd slides` output, in order.
 fn slide_ids(v: &Value) -> Vec<String> {
     v["slides"]
@@ -2787,7 +2823,7 @@ async fn audit_measures() {
 }
 
 /// T005 (spec 008 US1): the slide list works like a slide app's: thumbnails,
-/// the title slide first, a + in every gap, untitled new slides with an
+/// the title slide first, untitled new slides with an
 /// editor-only placeholder, and a drag you can see (handle, drag image, gap,
 /// Escape, one undo step), plus the keyboard.
 #[tokio::test(flavor = "multi_thread")]
@@ -2837,10 +2873,9 @@ async fn slide_list_like_a_slide_app() {
         "other thumbnails untouched"
     );
 
-    // + in the gap before "columns": an untitled slide there, a placeholder on the canvas only
+    // "Add slide before…" on "columns": an untitled slide there, a placeholder on the canvas only
     ed.settle().await;
-    ed.click_editor("#slides li[data-id=columns] .add-here")
-        .await;
+    ed.slide_menu("columns", "Add slide before…").await;
     // the gallery (spec 009): "blank" is an untitled slide
     ed.wait("document.querySelector('dialog.sheet[open] label[data-layout=blank]') != null")
         .await;
@@ -3598,7 +3633,7 @@ async fn slide_from_a_layout() {
     let before = ed.file();
     let open_gallery = async || {
         ed.settle().await;
-        ed.click_editor("#slides li[data-id=b] .add-here").await;
+        ed.slide_menu("b", "Add slide before…").await;
         ed.wait(&format!(
             "{sheet}?.querySelectorAll('.is-gallery .preview').length === 12"
         ))
@@ -3832,7 +3867,7 @@ async fn save_a_layout() {
     // the gallery lists it under the deck's heading; rename it there
     let open_gallery = async || {
         ed.settle().await;
-        ed.click_editor("#slides li[data-id=b] .add-here").await;
+        ed.slide_menu("b", "Add slide before…").await;
         ed.wait(&format!(
             "!!document.querySelector('{top} label[data-layout]')"
         ))

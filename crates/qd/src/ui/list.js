@@ -1,5 +1,5 @@
 // The slide list (spec 001; spec 008 US1): a thumbnail of every slide, the
-// title slide first, a + in every gap, and a drag you can see (a picture of
+// title slide first, a slide menu on right-click, and a drag you can see (a picture of
 // the slide under the pointer, the others parting where it will land). Every
 // change is a qd op (add, move) through `api.op`.
 
@@ -18,7 +18,8 @@ export function makeList(api) {
   const el = (tag, cls, text) => Object.assign(document.createElement(tag), cls ? { className: cls } : {}, text ? { textContent: text } : {});
   const frameDoc = () => { try { return api.frame.contentDocument?.querySelector('.reveal .slides') ? api.frame.contentDocument : null; } catch { return null; } };
   const titleText = () => frameDoc()?.querySelector('#title-slide .title')?.textContent.trim() || 'Title slide';
-  const nameOf = (s) => s.title || s.summary || 'Untitled';
+  // the title as the slide shows it (`*Highlights*` → Highlights), the source's before the first render
+  const nameOf = (s) => frameDoc()?.getElementById(s.anchor)?.querySelector(':scope > :is(h1, h2, h3)')?.textContent.trim() || s.title || s.summary || 'Untitled';
 
   // a narrow window's slide picker (spec 008 US8): the list as a menu in the top row.
   // ponytail: names only, no thumbnails; add them if the menu proves hard to scan
@@ -145,15 +146,10 @@ export function makeList(api) {
     b.type = 'button';
     li.append(b);
     if (!isTitle) {
-      const add = el('button', 'add-here', '+');
-      add.type = 'button';
-      add.title = 'Add a slide here';
-      add.setAttribute('aria-label', `Add a slide before ${s.title || 'this slide'}`);
-      add.addEventListener('click', () => api.addSlide({ before: s.id }, add));
       const handle = el('span', 'handle', '⠿');
       handle.title = 'Drag to move';
       handle.setAttribute('aria-hidden', 'true');
-      li.append(add, handle);
+      li.append(handle);
     }
     const meta = el('span', 'meta');
     meta.append(el('span', 'idx', isTitle ? '' : String(s.index)), el('span', 'name', isTitle ? titleText() : nameOf(s)));
@@ -171,6 +167,18 @@ export function makeList(api) {
         api.openMenu(await api.slideMenu(s.id), e.clientX, e.clientY);
       });
       li.addEventListener('pointerdown', (e) => drag(e, li, s));
+    } else {
+      // Quarto builds the title slide from the front matter and always shows it first
+      li.title = 'Always first: Quarto makes it from the title at the top of the file';
+      li.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        const first = api.state.deck?.slides[0];
+        api.openMenu([
+          { label: 'Add slide after…', run: () => api.addSlide(first ? { before: first.id } : {}, li) },
+          '-',
+          { label: 'Always first (made from the title at the top)', disabled: true },
+        ], e.clientX, e.clientY);
+      });
     }
     return li;
   }
@@ -221,8 +229,11 @@ export function makeList(api) {
 
   /** A new render is on the canvas: redraw the thumbnails in view (the rest as they scroll in). */
   function refresh() {
-    const name = list.querySelector('li[data-id=title-slide] .name');
-    if (name) name.textContent = titleText();
+    for (const li of list.children) {
+      const s = li.dataset.id === 'title-slide' ? null : api.state.deck?.slides.find((x) => x.id === li.dataset.id);
+      const name = li.querySelector('.name');
+      if (name) name.textContent = s ? nameOf(s) : titleText();
+    }
     for (const a of visible) build(a);
   }
 
@@ -235,7 +246,7 @@ export function makeList(api) {
   // focused one (⌥↑/⌥↓ and Delete are actions: keys.dispatch handles them)
   list.addEventListener('keydown', (e) => {
     const li = e.target.closest('li');
-    if (!li || e.altKey || e.metaKey || e.ctrlKey || e.shiftKey || e.target.classList.contains('add-here')) return;
+    if (!li || e.altKey || e.metaKey || e.ctrlKey || e.shiftKey) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       const next = e.key === 'ArrowDown' ? li.nextElementSibling : li.previousElementSibling;
@@ -251,7 +262,7 @@ export function makeList(api) {
   // ---------- dragging (pointer events: a drag image and an opening gap) ----------
 
   function drag(down, li, s) {
-    if (down.button !== 0 || down.target.closest('.add-here')) return;
+    if (down.button !== 0) return;
     const across = getComputedStyle(list).display === 'flex'; // narrow layout: a horizontal strip
     const pos = (e) => (across ? e.clientX : e.clientY);
     const start = { x: down.clientX, y: down.clientY };
