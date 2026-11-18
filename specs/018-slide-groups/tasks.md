@@ -93,9 +93,11 @@ text use made-up slides only, never the person's own talks, paths or names.
 
 **Independent test**: collapse a group of four and drag it after the next group; one move, the rest of the file byte-identical, one undo puts it back.
 
-- [ ] T018 [P] [US3] Write failing headless browser tests in `crates/qd/tests/onslide.rs`: **`drag_collapsed_group`** (ghost shows the head with "+N"; drop moves head and sub-slides in order; one undo); **`group_lands_before_a_head`** (a group, and an open head dragged alone, land only where the next slide is a head or at the end: no gap opens among top-level slides or between two sub-slides of another group; the nearest allowed gap does); **`copy_delete_collapsed_group`** (copy then paste puts the whole group back; Delete removes all as one undo; menu labels read "Copy group (4 slides)" and so on); **`open_head_moves_alone`** (moving or deleting an open head leaves its sub-slides, now in the group before, with the message "Its 3 slides now belong to …"); **`pick_across_groups`** (⇧-click picks across groups; a pick including a collapsed head includes its sub-slides).
-- [ ] T019 [US3] In `crates/qd/src/ui/list.js`: `selected(id)` expands a collapsed head into its sub-slides (and does so for each collapsed head in a pick); the drag's items, gaps and midpoints use visible rows only, a group drag, or an open head dragged alone, opens only gaps where the next slide is a head or at the end (FR-017), and its ghost shows "+N".
-- [ ] T020 [US3] Group labels on a collapsed head ("Copy group (N slides)", "Cut group…", "Duplicate group", "Delete group…" with the confirm sheet naming the count) in `crates/qd/src/ui/actions.js`; duplicate of a group goes through `selected()` like copy. The open-head message after `move`/`rm` of a head alone. T018 passes.
+- [ ] T018 [P] [US3] Write failing CLI and unit tests: **`dup_several`** in `crates/qd/tests/cli.rs` (`qd dup a b c` copies the three in deck order after `c` as one patch with fresh slide and block ids, `--after x` places them after `x`, one undo; one slide works as today) and a unit test in `crates/qd/src/ops.rs` that the source slides' text is untouched (contracts/cli.md `qd dup`).
+- [ ] T019 [US3] Make `ops::dup` in `crates/qd/src/ops.rs` take several slides (reusing its per-slide copy, joined as `mv` joins texts) and the `Dup` subcommand in `crates/qd/src/cli.rs` take `slide: Vec<String>` (`required = true`), in `qd schema`. T018 passes.
+- [ ] T020 [P] [US3] Write failing headless browser tests in `crates/qd/tests/onslide.rs`: **`drag_collapsed_group`** (ghost shows the head with "+N"; drop moves head and sub-slides in order; one undo); **`group_lands_before_a_head`** (a group, and an open head dragged alone, land only where the next slide is a head or at the end: no gap opens among top-level slides or between two sub-slides of another group; the nearest allowed gap does); **`copy_delete_collapsed_group`** (copy then paste puts the whole group back; Duplicate copies the whole group with one `qd dup`; Delete removes all as one undo; menu labels read "Copy group (4 slides)" and so on); **`paste_group_after_group_end`** (pasting a copied group, or duplicating one, on a sub-slide in the middle of another group puts it after that group's last slide); **`open_head_moves_alone`** (moving or deleting an open head leaves its sub-slides, now in the group before, with the message "Its 3 slides now belong to …"); **`pick_across_groups`** (⇧-click picks across groups; a pick including a collapsed head includes its sub-slides).
+- [ ] T021 [US3] In `crates/qd/src/ui/list.js`: `selected(id)` expands a collapsed head into its sub-slides (and does so for each collapsed head in a pick); the drag's items, gaps and midpoints use visible rows only, a group drag, or an open head dragged alone, opens only gaps where the next slide is a head or at the end (FR-017), and its ghost shows "+N".
+- [ ] T022 [US3] Group labels on a collapsed head ("Copy group (N slides)", "Cut group…", "Duplicate group", "Delete group…" with the confirm sheet naming the count) in `crates/qd/src/ui/actions.js`; Duplicate goes through `selected()` like copy and calls `qd dup` with all the slides; paste and duplicate of a group pass the target group's last slide as `after` (contracts/editor.md "Paste and duplicate"). Needs T019. The open-head message after `move`/`rm` of a head alone. T020 passes.
 
 **Checkpoint**: parts of a talk can be reordered in one drag.
 
@@ -107,21 +109,22 @@ text use made-up slides only, never the person's own talks, paths or names.
 
 **Independent test**: `qd navigation vertical` adds the option where research R6 says; `qd navigation linear` removes it.
 
-- [ ] T021 [P] [US4] Write failing unit tests in `crates/qd/src/ops.rs` for `ops::navigation` (research R6): no front matter key and `format: revealjs` as a string → a top-level line; a `format: revealjs:` mapping → a line at the end of that mapping with its indentation; an existing key (top level or under `format: revealjs:`) edited where it is; `linear` removes it; an unknown mode is `E_INVALID_ARG`; every other front-matter byte identical. Also a unit test in `crates/qd/src/deck.rs` that `navigation_mode` reads `linear` by default, the `format.revealjs` value over a top-level one.
-- [ ] T022 [P] [US4] Write a failing CLI test in `crates/qd/tests/cli.rs`, **`navigation_mode`**: JSON per contracts/cli.md, the file, undo; `qd slides` reports `navigation_mode`.
-- [ ] T023 [US4] Implement `Deck::navigation_mode` in `crates/qd/src/deck.rs`, `ops::navigation` in `crates/qd/src/ops.rs` (top-level writes through the existing `replace_key`), the `Navigation` subcommand, `navigation_mode` in `slides_json`, `qd schema` and `API_OPS` in `crates/qd/src/cli.rs`. T021 and T022 pass.
-- [ ] T024 [US4] Slide menu ▸ "Presentation navigation" ▸ Linear / Vertical / Grid, the deck's mode checked, running `qd navigation`, in `crates/qd/src/ui/actions.json` and `crates/qd/src/ui/actions.js` (next to Transition), with a headless browser test **`navigation_submenu`** in `crates/qd/tests/onslide.rs`.
+- [ ] T023 [P] [US4] Write failing unit tests in `crates/qd/src/ops.rs` for `ops::navigation` (research R6): no front matter key and `format: revealjs` as a string → a top-level line; a `format: revealjs:` mapping → a line at the end of that mapping with its indentation; an existing key (top level or under `format: revealjs:`) edited where it is; `linear` removes it; an unknown mode is `E_INVALID_ARG`; every other front-matter byte identical. Also a unit test in `crates/qd/src/deck.rs` that `navigation_mode` reads `linear` by default, the `format.revealjs` value over a top-level one.
+- [ ] T024 [P] [US4] Write a failing CLI test in `crates/qd/tests/cli.rs`, **`navigation_mode`**: JSON per contracts/cli.md, the file, undo; `qd slides` reports `navigation_mode`.
+- [ ] T025 [US4] Implement `Deck::navigation_mode` in `crates/qd/src/deck.rs`, `ops::navigation` in `crates/qd/src/ops.rs` (top-level writes through the existing `replace_key`), the `Navigation` subcommand, `navigation_mode` in `slides_json`, `qd schema` and `API_OPS` in `crates/qd/src/cli.rs`. T023 and T024 pass.
+- [ ] T026 [P] [US4] Write a failing headless browser test **`navigation_submenu`** in `crates/qd/tests/onslide.rs`: Slide menu ▸ "Presentation navigation" shows Linear, Vertical, Grid with the deck's mode checked; choosing Vertical writes the option and one undo removes it.
+- [ ] T027 [US4] Slide menu ▸ "Presentation navigation" ▸ Linear / Vertical / Grid, the deck's mode checked, running `qd navigation`, in `crates/qd/src/ui/actions.json` and `crates/qd/src/ui/actions.js` (next to Transition). T026 passes.
 
 ---
 
 ## Phase 7: Polish & cross-cutting (PR 5)
 
-- [ ] T025 [P] A render test in `crates/qd/tests/plugins.rs` (skips without Quarto): a made-up grouped deck renders vertical stacks matching `head`/`in`, in linear and vertical modes (SC-004).
-- [ ] T026 [P] A corpus test in `crates/qd/tests/roundtrip.rs`: for every corpus deck and every slide where `indent` or `outdent` is allowed, the patch changes only the heading lines of the slides in `changed` (every other line byte-identical), and `qd undo` restores the file byte for byte (SC-003). Indent and outdent aren't inverses (an indent may also promote the slide above), so the test doesn't chain them.
-- [ ] T027 [P] Document groups, `qd indent`, `qd outdent`, `qd move --indent/--outdent` and `qd navigation` (and that a group moves by naming its slides) in `skills/quartz-deck/SKILL.md` and `README.md`.
-- [ ] T028 Run `specs/018-slide-groups/quickstart.md` in a scratch folder, timing the two editor steps against SC-002's 10 seconds; record the run in `specs/018-slide-groups/checklists/quickstart-run.md`.
-- [ ] T029 Regroup one of the person's real talks with several parts in the list (SC-006), on a copy outside the repo; nothing of it is committed or named in PR text.
-- [ ] T030 Final constitution re-check written into `specs/018-slide-groups/plan.md`, add a 018 row to `specs/ROADMAP.md`'s table marked done, and `/pr-audit` before each PR is marked ready.
+- [ ] T028 [P] A render test in `crates/qd/tests/plugins.rs` (skips without Quarto): a made-up grouped deck renders vertical stacks matching `head`/`in`, in linear and vertical modes (SC-004).
+- [ ] T029 [P] A corpus test in `crates/qd/tests/roundtrip.rs`: for every corpus deck and every slide where `indent` or `outdent` is allowed, the patch changes only the heading lines of the slides in `changed` (every other line byte-identical), and `qd undo` restores the file byte for byte (SC-003). Indent and outdent aren't inverses (an indent may also promote the slide above), so the test doesn't chain them.
+- [ ] T030 [P] Document groups, `qd indent`, `qd outdent`, `qd move --indent/--outdent` and `qd navigation` (and that a group moves by naming its slides) in `skills/quartz-deck/SKILL.md` and `README.md`.
+- [ ] T031 Run `specs/018-slide-groups/quickstart.md` in a scratch folder, timing the two editor steps against SC-002's 10 seconds; record the run in `specs/018-slide-groups/checklists/quickstart-run.md`.
+- [ ] T032 Regroup one of the person's real talks with several parts in the list (SC-006), on a copy outside the repo; nothing of it is committed or named in PR text.
+- [ ] T033 Final constitution re-check written into `specs/018-slide-groups/plan.md`, add a 018 row to `specs/ROADMAP.md`'s table marked done, and `/pr-audit` before each PR is marked ready.
 
 ---
 
@@ -130,7 +133,7 @@ text use made-up slides only, never the person's own talks, paths or names.
 - T001 before everything (the list changes of PR #92).
 - Phase 2 (T002–T005) blocks every story.
 - US1 (Phase 3) and US2's core (T010–T014) are independent; US2's editor part (T015–T017) needs US1's rows (T007).
-- US3 needs US1 (collapse) and uses US2's drag depth (T017).
+- US3 needs US1 (collapse) and uses US2's drag depth (T017); its `qd dup` change (T018–T019) needs only Phase 2.
 - US4 needs only Phase 2.
 - Polish after the stories it checks.
 
@@ -141,8 +144,9 @@ Within each story: tests first, seen failing; then the code that makes them pass
 - Phase 2: T002 and T004 together (different files).
 - US1: T006 with T008.
 - US2: T010, T011, T013 and T015 together (tests in four places); then T012 → T014; T016 with T017's keydown part.
-- US4 alongside US1–US3 once Phase 2 is in: T021 and T022 together, then T023 → T024.
-- Polish: T025, T026 and T027 together.
+- US3: T018 with T020 (CLI and browser tests); T019 before T022.
+- US4 alongside US1–US3 once Phase 2 is in: T023 and T024 together, then T025 → T027.
+- Polish: T028, T029 and T030 together.
 
 ## Implementation strategy
 

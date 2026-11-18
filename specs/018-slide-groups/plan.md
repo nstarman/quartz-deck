@@ -81,8 +81,8 @@ specs/018-slide-groups/
 ```text
 crates/qd/src/
 ├── deck.rs             # group_level; Slide.head, Slide.parent; navigation_mode read
-├── ops.rs              # level patch; indent, outdent; mv's depth flag; navigation
-├── cli.rs              # Indent, Outdent, Navigation subcommands; Move flags; slides_json fields; schema; API_OPS
+├── ops.rs              # level patch; indent, outdent; mv's depth flag; dup of several slides; navigation
+├── cli.rs              # Indent, Outdent, Navigation subcommands; Move flags; Dup takes several slides; slides_json fields; schema; API_OPS
 └── ui/
     ├── list.js         # indent, disclosure, collapse in localStorage, keys, sideways drag, selected() expands groups
     ├── editor.css      # row indent, disclosure button, "+N"
@@ -111,8 +111,10 @@ rebasing this branch onto it.
    ← →; FR-008; ↑/↓ over visible rows.
 3. **US2:** Tab/⇧Tab, ⌘]/⌘[, menu items with reasons; `qd move
    --indent/--outdent` and the sideways drag; messages.
-4. **US3:** a collapsed head as its group in `selected()`: drag (ghost
-   "+N", landing rule), copy, cut, duplicate, Delete, and their labels.
+4. **US3:** `qd dup` taking several slides; a collapsed head as its group
+   in `selected()`: drag (ghost "+N", landing rule), copy, cut, duplicate,
+   Delete, and their labels; paste and duplicate of a group land after the
+   target's group.
 5. **US4 + polish:** `qd navigation` and the Slide menu submenu; docs and
    skill; quickstart run; regrouping one of the person's real talks
    (SC-006), done on a copy and never committed; final re-check.

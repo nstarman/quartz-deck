@@ -103,10 +103,9 @@ the file byte for byte.
 
 **Acceptance Scenarios**:
 
-1. **Given** a slide directly below a group head or one of its sub-slides,
-   **When** the presenter indents it, **Then** if it was a head, its
-   heading becomes `##` and it and its own sub-slides join the group
-   above; the list shows the result.
+1. **Given** a group head with a group above it, **When** the presenter
+   indents it, **Then** its heading becomes `##` and it and its own
+   sub-slides join the group above; the list shows the result.
 2. **Given** a top-level slide directly below another top-level slide
    (before the first `#`), **When** the presenter indents it, **Then** the
    slide above becomes a group head (its heading becomes `#`) and this
@@ -155,9 +154,10 @@ rest of the file is byte-identical, and one undo puts it back.
    another group or among the top-level slides, **Then** it can't land
    there; the drop marker shows it landing at the nearest place where the
    next slide is a head, or at the end.
-3. **Given** a collapsed head, **When** the presenter copies, cuts or
-   deletes it, **Then** the action covers the head and all its sub-slides,
-   as one step of undo; pasting puts the whole group back.
+3. **Given** a collapsed head, **When** the presenter copies, cuts,
+   duplicates or deletes it, **Then** the action covers the head and all
+   its sub-slides, as one step of undo; pasting puts the whole group back,
+   after the end of the group the paste target is in.
 4. **Given** an open head, **When** the presenter moves or deletes it
    alone, **Then** only the head goes, and its former sub-slides now
    belong to the group before them (or become top-level slides if there is
@@ -300,11 +300,13 @@ the presentation ↓ goes to the next sub-slide; setting it back to linear
 - **FR-016**: Dragging, copying, cutting, duplicating or deleting a
   collapsed head MUST act on the head and all its sub-slides, as one step
   of undo.
-- **FR-017**: A group being moved, or an open head moved alone, MUST land
-  only where the slide after it is a head or at the end of the deck. A
-  `#` dropped anywhere else would take the slides after it into its group
-  (among the top-level slides, or between two sub-slides of another
-  group).
+- **FR-017**: A group being moved, pasted or duplicated, or an open head
+  moved alone, MUST land only where the slide after it is a head or at the
+  end of the deck. A `#` placed anywhere else would take the slides after
+  it into its group (among the top-level slides, or between two sub-slides
+  of another group). Pasting or duplicating a group after a slide inside a
+  group puts it after the end of that group. Outdenting a sub-slide in
+  place (FR-013) is the one way to split a group.
 - **FR-018**: Acting on an open head alone MUST act on the head only; its
   former sub-slides then belong to the group before them, or are top-level
   if none, and the editor says so.

@@ -47,6 +47,12 @@ and `actions.js`. Every change to the file is a `qd` op.
   is a head or at the end of the deck (FR-017): other gaps don't open, and
   the nearest allowed gap does.
 
+## Paste and duplicate
+
+- Pasting slides that start with a head, or duplicating a collapsed group,
+  after a slide inside a group goes after the end of that group (FR-017):
+  the editor passes the group's last slide as `after`.
+
 ## Messages
 
 After an op whose `changed` includes slides other than the one acted on,

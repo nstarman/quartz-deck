@@ -86,6 +86,11 @@ sub-slides and keep their level until outdented.
   (FR-017): a `#` dropped elsewhere would take the slides after it into
   its group. The drop marker skips the other places. On the command line, `qd move` does what the file then means.
 
+- `qd dup` today takes one slide. It takes several, in deck order, as one
+  patch (like `move` and `rm`), so a collapsed group's Duplicate is one
+  command and one undo step. Paste and duplicate of a group go after the
+  end of the target's group, chosen by the editor (FR-017).
+
 **Alternatives considered**: a `--group` flag on `move`/`rm` (rejected:
 the members are in `qd slides`, and two ways to say the same thing is one
 too many); two ops per drop (rejected: two undo steps).
