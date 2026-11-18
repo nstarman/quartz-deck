@@ -4863,17 +4863,17 @@ async fn diagram_snap_guides() {
 }
 
 /// A click on code (a code cell, a `{dot}` diagram, a fenced code block), math,
-/// a callout or raw HTML selects it; its source opens on request: Enter, or the element
+/// a callout, raw HTML or a table selects it; its source opens on request: Enter, or the element
 /// bar's Markdown button.
 #[tokio::test(flavor = "multi_thread")]
 async fn code_click_selects_source_on_request() {
-    let deck = "---\ntitle: T\nformat: revealjs\n---\n\n## Code {#c}\n\n```{python}\nx = 1\n```\n\n```js\nlet y = 2;\n```\n\n$$\nx^2\n$$\n\n::: {.callout-note}\nA note.\n:::\n\n```{=html}\n<div class=\"x\">Hi</div>\n```\n";
+    let deck = "---\ntitle: T\nformat: revealjs\n---\n\n## Code {#c}\n\n```{python}\nx = 1\n```\n\n```js\nlet y = 2;\n```\n\n$$\nx^2\n$$\n\n::: {.callout-note}\nA note.\n:::\n\n```{=html}\n<div class=\"x\">Hi</div>\n```\n\n| A | B |\n|---|---|\n| 1 | 2 |\n";
     let Some(ed) = Ed::open(deck).await else {
         return;
     };
     ed.go("c").await;
     let closed = "document.querySelector('#srcedit').hidden";
-    for el in ["c/0", "c/1", "c/2", "c/3", "c/4"].map(|r| format!("[data-qd=\"{r}\"]")) {
+    for el in ["c/0", "c/1", "c/2", "c/3", "c/4", "c/5"].map(|r| format!("[data-qd=\"{r}\"]")) {
         let el = el.as_str();
         ed.click_in_slide(el).await;
         ed.wait("!document.querySelector('#elbar').hidden").await;
