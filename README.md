@@ -77,7 +77,7 @@ stderr with a stable `code` and a `hint`. Decks inside a Quarto project
   elsewhere saves; Undo takes it back. Only the bytes you changed are written: line
   wrapping, quotes, indentation and untouched markup stay as they were.
 - **Source in place:** code (a code cell, a diagram, a code block), math,
-  callouts and raw HTML are selected by a click; Enter, ⌥Enter, a double-click or the
+  callouts, raw HTML and tables are selected by a click; Enter, ⌥Enter, a double-click or the
   element bar's **Markdown** opens their markdown over the element. Anything
   else that can't be typed into opens it on a click (Alt+click any element;
   Alt+click the slide background for the whole slide; ⌥Enter while typing).

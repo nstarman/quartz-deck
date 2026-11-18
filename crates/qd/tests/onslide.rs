@@ -4863,17 +4863,17 @@ async fn diagram_snap_guides() {
 }
 
 /// A click on code (a code cell, a `{dot}` diagram, a fenced code block), math,
-/// a callout or raw HTML selects it; its source opens on request: Enter, or the element
+/// a callout, raw HTML or a table selects it; its source opens on request: Enter, or the element
 /// bar's Markdown button.
 #[tokio::test(flavor = "multi_thread")]
 async fn code_click_selects_source_on_request() {
-    let deck = "---\ntitle: T\nformat: revealjs\n---\n\n## Code {#c}\n\n```{python}\nx = 1\n```\n\n```js\nlet y = 2;\n```\n\n$$\nx^2\n$$\n\n::: {.callout-note}\nA note.\n:::\n\n```{=html}\n<div class=\"x\">Hi</div>\n```\n";
+    let deck = "---\ntitle: T\nformat: revealjs\n---\n\n## Code {#c}\n\n```{python}\nx = 1\n```\n\n```js\nlet y = 2;\n```\n\n$$\nx^2\n$$\n\n::: {.callout-note}\nA note.\n:::\n\n```{=html}\n<div class=\"x\">Hi</div>\n```\n\n| A | B |\n|---|---|\n| 1 | 2 |\n";
     let Some(ed) = Ed::open(deck).await else {
         return;
     };
     ed.go("c").await;
     let closed = "document.querySelector('#srcedit').hidden";
-    for el in ["c/0", "c/1", "c/2", "c/3", "c/4"].map(|r| format!("[data-qd=\"{r}\"]")) {
+    for el in ["c/0", "c/1", "c/2", "c/3", "c/4", "c/5"].map(|r| format!("[data-qd=\"{r}\"]")) {
         let el = el.as_str();
         ed.click_in_slide(el).await;
         ed.wait("!document.querySelector('#elbar').hidden").await;
@@ -4920,6 +4920,13 @@ async fn arrow_ed(deck: &str) -> Option<Ed> {
 }
 
 impl Ed {
+    /// Double-click slide pixel `(x, y)` once an arrow's hit path is under it
+    /// (after a render the hit paths are redrawn), and wait for the label sheet.
+    async fn label_arrow_at(&self, x: f64, y: f64) {
+        let (px, py) = self.slide_px(x, y).await;
+        self.wait(&format!("(() => {{ const f = document.querySelector('#preview'); const r = f.getBoundingClientRect(); return !!f.contentDocument.elementFromPoint({px} - r.left - f.clientLeft, {py} - r.top - f.clientTop)?.closest('.qd-arrow-hit'); }})()")).await;
+        self.double_click((px, py)).await;
+    }
     /// Click slide pixel `(x, y)` on an arrow's line and wait for its handles.
     async fn select_arrow_at(&self, x: f64, y: f64) {
         let (px, py) = self.slide_px(x, y).await;
@@ -5201,8 +5208,7 @@ async fn arrow_label_by_double_click() {
     };
     ed.go("a").await;
     ed.settle().await;
-    let on_line = ed.slide_px(350.0, 510.0).await; // off the middle (the bend handle)
-    ed.double_click(on_line).await;
+    ed.label_arrow_at(350.0, 510.0).await; // off the middle (the bend handle)
     ed.wait(
         "document.activeElement?.closest('dialog.sheet') && document.activeElement.value === ''",
     )
@@ -5218,7 +5224,7 @@ async fn arrow_label_by_double_click() {
     .await;
     // Escape: nothing
     let before = ed.file();
-    ed.double_click(on_line).await;
+    ed.label_arrow_at(350.0, 510.0).await;
     ed.wait("document.activeElement?.closest('dialog.sheet') && document.activeElement.value === 'the peak'").await;
     ed.key("Escape", "Escape", 27, 0).await;
     ed.wait("!document.querySelector('dialog.sheet')").await;
@@ -5231,8 +5237,7 @@ async fn arrow_label_by_double_click() {
     ed.wait_file(|f| f.contains("label-position=\"end\""), "at the end")
         .await;
     ed.settle().await;
-    let on_line = ed.slide_px(350.0, 510.0).await; // the panel narrowed the slide
-    ed.double_click(on_line).await;
+    ed.label_arrow_at(350.0, 510.0).await;
     ed.wait("document.activeElement?.closest('dialog.sheet') && document.activeElement.value === 'the peak'").await;
     ed.key("a", "KeyA", 65, 4).await; // ⌘A, then delete
     ed.key("Backspace", "Backspace", 8, 0).await;
