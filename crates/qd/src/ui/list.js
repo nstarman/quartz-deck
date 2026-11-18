@@ -32,7 +32,7 @@ export function makeList(api) {
       leaving = id;
       api.go(slides.find((s) => s.id === id).anchor);
     }
-    const heads = new Set((api.state.deck?.slides || []).filter((s) => s.head).map((s) => s.id));
+    const heads = new Set(slides.filter((s) => s.head).map((s) => s.id));
     folded = new Set([...folded].filter((h) => heads.has(h)));
     fetch('/api/view', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-QD-Token': token }, body: JSON.stringify({ collapsed: [...folded] }) })
       .then((r) => { if (!r.ok) throw new Error(); }).catch(() => api.say('Could not keep which groups are folded', true));
@@ -233,7 +233,7 @@ export function makeList(api) {
     // the shown slide is never folded away (FR-008)
     const showing = deck.slides.find((s) => s.anchor === api.state.anchor);
     if (showing?.in !== leaving) leaving = null;
-    if (showing?.in && showing.in !== leaving && folded.has(showing.in)) { fold(showing.in, false); return; }
+    if (showing?.in && !leaving && folded.has(showing.in)) { fold(showing.in, false); return; }
     // redrawing must not move the keyboard: back to the same slide afterwards
     const focused = list.contains(document.activeElement) && document.activeElement.closest('li')?.dataset.id;
     // building items moves the thumbnails out of the old ones, and the list's

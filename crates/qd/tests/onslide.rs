@@ -5700,8 +5700,9 @@ async fn shown_slide_opens_its_group() {
         .await;
     assert_eq!(ed.cli(&["focus", "--set", "a2"])["result"], "moved");
     ed.wait("document.querySelector('#slides li[data-id=a2]')?.hidden === false && document.querySelector('#slides li[data-id=part-a] .disclose')?.getAttribute('aria-expanded') === 'true'").await;
-    // folding the group of the shown slide shows its head (as Keynote does)
-    ed.click_editor("#slides li[data-id=part-a] .disclose")
+    // folding the group of the shown slide shows its head (as Keynote does); a
+    // click by script: the list is still scrolling the shown slide into view
+    ed.eval("document.querySelector('#slides li[data-id=part-a] .disclose').click()")
         .await;
     ed.wait("document.querySelector('#slides li[data-id=a2]')?.hidden === true && document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide()?.id === 'part-a'").await;
 }
