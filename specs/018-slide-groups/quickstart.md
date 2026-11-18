@@ -66,4 +66,6 @@ Expected: `navigation-mode: vertical` appears, then is gone again.
   under" (only the title slide is above it); Escape returns focus to the
   canvas;
 - drag the collapsed Methods row below Results: one move, one undo;
-- drag R1 16 px left while moving it: it lands as a head.
+- drag R1 to the end of the list, 16 px to the left: it lands there as a
+  head; dropped the same way between M1 and M2, the gap doesn't open
+  (FR-017).

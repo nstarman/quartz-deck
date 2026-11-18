@@ -82,7 +82,7 @@ sub-slides and keep their level until outdented.
   first moved slide in the same patch (its own heading, plus P's when P
   becomes a head).
 - The editor, not the command, keeps a moved group (or an open head moved
-  alone) to places where the next slide is a head or the end of the deck
+  alone, or a slide dropped outdented) to places where the next slide is a head or the end of the deck
   (FR-017): a `#` dropped elsewhere would take the slides after it into
   its group. The drop marker skips the other places. On the command line, `qd move` does what the file then means.
 

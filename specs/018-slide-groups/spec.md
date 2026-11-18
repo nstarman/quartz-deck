@@ -157,7 +157,8 @@ rest of the file is byte-identical, and one undo puts it back.
 3. **Given** a collapsed head, **When** the presenter copies, cuts,
    duplicates or deletes it, **Then** the action covers the head and all
    its sub-slides, as one step of undo; pasting puts the whole group back,
-   after the end of the group the paste target is in.
+   after the end of the group the paste target is in (or after the last
+   top-level slide, if the target is one).
 4. **Given** an open head, **When** the presenter moves or deletes it
    alone, **Then** only the head goes, and its former sub-slides now
    belong to the group before them (or become top-level slides if there is
@@ -253,7 +254,7 @@ the presentation ↓ goes to the next sub-slide; setting it back to linear
   slides involved; every other byte of the file stays as it was, and undo
   restores it byte for byte.
 - **FR-004**: Every structural action of this spec (indent, outdent, move,
-  copy, cut and delete of a group) MUST have a `qd` command, with the same
+  copy, cut, duplicate and delete of a group) MUST have a `qd` command, with the same
   result as the gesture, as one undo step. Command names are settled in
   the plan.
 
@@ -300,13 +301,17 @@ the presentation ↓ goes to the next sub-slide; setting it back to linear
 - **FR-016**: Dragging, copying, cutting, duplicating or deleting a
   collapsed head MUST act on the head and all its sub-slides, as one step
   of undo.
-- **FR-017**: A group being moved, pasted or duplicated, or an open head
-  moved alone, MUST land only where the slide after it is a head or at the
-  end of the deck. A `#` placed anywhere else would take the slides after
-  it into its group (among the top-level slides, or between two sub-slides
-  of another group). Pasting or duplicating a group after a slide inside a
-  group puts it after the end of that group. Outdenting a sub-slide in
-  place (FR-013) is the one way to split a group.
+- **FR-017**: Anything that leaves a head at its landing place (a group
+  moved, pasted or duplicated, an open head moved alone, or a slide
+  dropped outdented) MUST land only where the slide after it is a head or
+  at the end of the deck. A `#` placed anywhere else would take the slides
+  after it into its group (among the top-level slides, or between two
+  sub-slides of another group). Pasting or duplicating a group on a slide
+  inside a group puts it after the end of that group; on a top-level slide,
+  after the last top-level slide, just before the first head. A group
+  dropped indented becomes sub-slides and takes nothing with it, but
+  follows the same rule to keep one rule. Outdenting a sub-slide in place
+  (FR-013) is the one way to split a group.
 - **FR-018**: Acting on an open head alone MUST act on the head only; its
   former sub-slides then belong to the group before them, or are top-level
   if none, and the editor says so.

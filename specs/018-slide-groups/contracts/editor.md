@@ -43,15 +43,16 @@ and `actions.js`. Every change to the file is a `qd` op.
 - Horizontal offset beyond 16 px sets the landing depth (research R8); the
   drop marker is drawn at that depth. The drop is one `qd move` with
   `--indent` or `--outdent` when the depth changes.
-- A group, or an open head dragged alone, lands only where the next slide
-  is a head or at the end of the deck (FR-017): other gaps don't open, and
+- A group, an open head dragged alone, or a slide dropped outdented lands
+  only where the next slide is a head or at the end of the deck (FR-017): other gaps don't open, and
   the nearest allowed gap does.
 
 ## Paste and duplicate
 
 - Pasting slides that start with a head, or duplicating a collapsed group,
-  after a slide inside a group goes after the end of that group (FR-017):
-  the editor passes the group's last slide as `after`.
+  on a slide inside a group goes after the end of that group; on a
+  top-level slide, after the last top-level slide (FR-017). The editor
+  passes that slide as `after`.
 
 ## Messages
 

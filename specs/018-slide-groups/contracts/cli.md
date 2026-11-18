@@ -30,5 +30,6 @@ what lets a group be duplicated.
 | `E_NOT_FOUND` | `SLIDE` doesn't exist |
 | `E_CONFLICT` | `--expect` doesn't match the file |
 
-All four new commands are in `API_OPS` (the editor calls them through
+The three new commands (`indent`, `outdent`, `navigation`) and the
+`move` and `dup` changes are in `API_OPS` (the editor calls them through
 `api.op`), `qd schema` and the skill.
