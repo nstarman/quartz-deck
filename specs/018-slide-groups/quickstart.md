@@ -14,8 +14,8 @@ qd add --title "Intro" && qd add --title "Methods" && qd add --title "M1" \
 ## 1. Make groups from the CLI
 
 ```bash
-qd indent m1        # Methods becomes `#`, M1 its sub-slide; M2 follows (R3)
-qd indent r1        # Results becomes `#`, R1 its sub-slide
+qd indent m1        # Methods becomes `#`, M1 its sub-slide; M2, Results and R1 follow (R3)
+qd outdent results  # Results becomes `#`; R1 follows it
 qd slides | jq '.slides[] | {id, head, in}'
 ```
 
@@ -42,6 +42,10 @@ qd undo && qd undo
 
 Expected: after the move, Results and R1 come before Methods; after
 `outdent`, M2 is `#`; two undos give back the file of step 1 byte for byte.
+
+Time the editor version of steps 1 and 3 in section 5: turning a run of
+slides into a group, and dragging a collapsed group of ten slides, each
+takes under 10 seconds (SC-002).
 
 ## 4. Navigation mode
 

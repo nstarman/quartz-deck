@@ -93,8 +93,8 @@ text use made-up slides only, never the person's own talks, paths or names.
 
 **Independent test**: collapse a group of four and drag it after the next group; one move, the rest of the file byte-identical, one undo puts it back.
 
-- [ ] T018 [P] [US3] Write failing headless browser tests in `crates/qd/tests/onslide.rs`: **`drag_collapsed_group`** (ghost shows the head with "+N"; drop moves head and sub-slides in order; one undo); **`group_lands_between_groups`** (no gap opens between two sub-slides of another group; it lands before or after that group); **`copy_delete_collapsed_group`** (copy then paste puts the whole group back; Delete removes all as one undo; menu labels read "Copy group (4 slides)" and so on); **`open_head_moves_alone`** (moving or deleting an open head leaves its sub-slides, now in the group before, with the message "Its 3 slides now belong to …"); **`pick_across_groups`** (⇧-click picks across groups; a pick including a collapsed head includes its sub-slides).
-- [ ] T019 [US3] In `crates/qd/src/ui/list.js`: `selected(id)` expands a collapsed head into its sub-slides (and does so for each collapsed head in a pick); the drag's items, gaps and midpoints use visible rows only, a group drag skips gaps inside other groups (FR-017), and its ghost shows "+N".
+- [ ] T018 [P] [US3] Write failing headless browser tests in `crates/qd/tests/onslide.rs`: **`drag_collapsed_group`** (ghost shows the head with "+N"; drop moves head and sub-slides in order; one undo); **`group_lands_before_a_head`** (a group, and an open head dragged alone, land only where the next slide is a head or at the end: no gap opens among top-level slides or between two sub-slides of another group; the nearest allowed gap does); **`copy_delete_collapsed_group`** (copy then paste puts the whole group back; Delete removes all as one undo; menu labels read "Copy group (4 slides)" and so on); **`open_head_moves_alone`** (moving or deleting an open head leaves its sub-slides, now in the group before, with the message "Its 3 slides now belong to …"); **`pick_across_groups`** (⇧-click picks across groups; a pick including a collapsed head includes its sub-slides).
+- [ ] T019 [US3] In `crates/qd/src/ui/list.js`: `selected(id)` expands a collapsed head into its sub-slides (and does so for each collapsed head in a pick); the drag's items, gaps and midpoints use visible rows only, a group drag, or an open head dragged alone, opens only gaps where the next slide is a head or at the end (FR-017), and its ghost shows "+N".
 - [ ] T020 [US3] Group labels on a collapsed head ("Copy group (N slides)", "Cut group…", "Duplicate group", "Delete group…" with the confirm sheet naming the count) in `crates/qd/src/ui/actions.js`; duplicate of a group goes through `selected()` like copy. The open-head message after `move`/`rm` of a head alone. T018 passes.
 
 **Checkpoint**: parts of a talk can be reordered in one drag.
@@ -117,11 +117,11 @@ text use made-up slides only, never the person's own talks, paths or names.
 ## Phase 7: Polish & cross-cutting (PR 5)
 
 - [ ] T025 [P] A render test in `crates/qd/tests/plugins.rs` (skips without Quarto): a made-up grouped deck renders vertical stacks matching `head`/`in`, in linear and vertical modes (SC-004).
-- [ ] T026 [P] A corpus test in `crates/qd/tests/roundtrip.rs`: for every corpus deck, each possible indent followed by its outdent (and the reverse) leaves the file byte-identical to the start (SC-003).
+- [ ] T026 [P] A corpus test in `crates/qd/tests/roundtrip.rs`: for every corpus deck and every slide where `indent` or `outdent` is allowed, the patch changes only the heading lines of the slides in `changed` (every other line byte-identical), and `qd undo` restores the file byte for byte (SC-003). Indent and outdent aren't inverses (an indent may also promote the slide above), so the test doesn't chain them.
 - [ ] T027 [P] Document groups, `qd indent`, `qd outdent`, `qd move --indent/--outdent` and `qd navigation` (and that a group moves by naming its slides) in `skills/quartz-deck/SKILL.md` and `README.md`.
-- [ ] T028 Run `specs/018-slide-groups/quickstart.md` in a scratch folder; record the run in `specs/018-slide-groups/checklists/quickstart-run.md`.
+- [ ] T028 Run `specs/018-slide-groups/quickstart.md` in a scratch folder, timing the two editor steps against SC-002's 10 seconds; record the run in `specs/018-slide-groups/checklists/quickstart-run.md`.
 - [ ] T029 Regroup one of the person's real talks with several parts in the list (SC-006), on a copy outside the repo; nothing of it is committed or named in PR text.
-- [ ] T030 Final constitution re-check written into `specs/018-slide-groups/plan.md`, mark `specs/ROADMAP.md`'s 018 line done, and `/pr-audit` before each PR is marked ready.
+- [ ] T030 Final constitution re-check written into `specs/018-slide-groups/plan.md`, add a 018 row to `specs/ROADMAP.md`'s table marked done, and `/pr-audit` before each PR is marked ready.
 
 ---
 

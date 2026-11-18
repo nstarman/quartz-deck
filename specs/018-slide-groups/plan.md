@@ -54,7 +54,7 @@ one reveal.js vertical stack (research R1).
 | Principle | Status |
 |---|---|
 | I. Clean room | ✅ Quarto's and reveal.js's documented behaviour, checked by rendering made-up decks. Keynote is named as a familiar model of behaviour only; nothing from it is copied. |
-| II. `.qmd` is the truth | ✅ Groups are heading levels, which the file already holds. Patches change only heading marks (R2). Collapse state is view state in the browser, like scroll position, never in the deck. |
+| II. `.qmd` is the truth | ✅ Groups are heading levels, which the file already holds. Patches change only heading marks (R2). Collapse state is view state in the browser, never in the deck, as the editor already keeps other view state outside the deck (`ui.source_width`, `ui.form_panel` in the settings file). |
 | III. CLI first | ✅ `qd indent`, `qd outdent`, `qd move --indent/--outdent`, `qd navigation`, all in `API_OPS`, `qd schema` and the skill. A group is moved or removed by naming its slides, which `qd slides` lists. Collapse is not an edit, so it has no command. |
 | IV. Live preview | ✅ Each op re-renders through the existing loop; collapse doesn't touch the render. |
 | V. Safe edits | ✅ Ordinary ops with `--expect`, atomic writes, undo; opaque slides refuse. |

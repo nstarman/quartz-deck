@@ -43,8 +43,9 @@ and `actions.js`. Every change to the file is a `qd` op.
 - Horizontal offset beyond 16 px sets the landing depth (research R8); the
   drop marker is drawn at that depth. The drop is one `qd move` with
   `--indent` or `--outdent` when the depth changes.
-- A group can't land between two sub-slides of another group: those gaps
-  don't open, the nearest gap before or after that group does.
+- A group, or an open head dragged alone, lands only where the next slide
+  is a head or at the end of the deck (FR-017): other gaps don't open, and
+  the nearest allowed gap does.
 
 ## Messages
 

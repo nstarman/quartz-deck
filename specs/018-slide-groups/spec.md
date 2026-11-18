@@ -121,8 +121,8 @@ the file byte for byte.
    marker shows the slide landing indented or not, and dropping writes
    that.
 5. **Given** an indent or outdent that isn't possible (the first slide, a
-   slide with nothing above it to go under, a group head with a group
-   above it already at the one allowed level, the title slide), **When**
+   slide with nothing above it but the title slide, a sub-slide on indent,
+   a head on outdent, the title slide), **When**
    the presenter tries it, **Then** nothing changes and the menu item is
    shown disabled.
 6. **Given** the same change made with a command, **When** it runs,
@@ -152,8 +152,9 @@ rest of the file is byte-identical, and one undo puts it back.
    drag image shows the group (the head with a count of its sub-slides),
    and dropping moves the head and its sub-slides together, in order.
 2. **Given** a group being dragged, **When** it is over the middle of
-   another group, **Then** it can't land there (a group can't sit inside a
-   group); the drop marker shows it landing before or after that group.
+   another group or among the top-level slides, **Then** it can't land
+   there; the drop marker shows it landing at the nearest place where the
+   next slide is a head, or at the end.
 3. **Given** a collapsed head, **When** the presenter copies, cuts or
    deletes it, **Then** the action covers the head and all its sub-slides,
    as one step of undo; pasting puts the whole group back.
@@ -208,8 +209,8 @@ the presentation ↓ goes to the next sub-slide; setting it back to linear
   marked hidden: a hidden head's sub-slides still show in the
   presentation. The list tags each hidden slide as today.
 - **Rule-started slides** (`---`) inside a section belong to that section,
-  as Quarto reads them; indenting or outdenting one first gives it a
-  heading, and the editor says so.
+  as Quarto reads them; outdenting one gives it an empty `#` heading,
+  which Quarto shows as an empty section slide, and the editor says so.
 - **Other slide levels.** With `slide-level: 1` every `#` is a plain slide
   and there are no groups; indent and outdent are disabled with the
   reason. With `slide-level: 3` or more, the groups are the top-level
@@ -277,9 +278,10 @@ the presentation ↓ goes to the next sub-slide; setting it back to linear
 
 **Indent and outdent**
 
-- **FR-011**: Tab on a focused slide in the list MUST indent it and ⇧Tab
-  MUST outdent it; the slide menu MUST offer both, disabled with a reason
-  when the action isn't possible.
+- **FR-011**: Tab (and ⌘]) on a focused slide in the list MUST indent it
+  and ⇧Tab (and ⌘[) MUST outdent it; Escape MUST move focus from the list
+  back to the canvas, since Tab no longer leaves the list. The slide menu
+  MUST offer both, disabled with a reason when the action isn't possible.
 - **FR-012**: Indenting MUST follow Quarto's reading of the file:
   indenting a head makes it a sub-slide of the group above (its own
   sub-slides join that group); indenting a top-level slide under another
@@ -295,10 +297,14 @@ the presentation ↓ goes to the next sub-slide; setting it back to linear
 
 **Groups as one**
 
-- **FR-016**: Dragging, copying, cutting or deleting a collapsed head MUST
-  act on the head and all its sub-slides, as one step of undo.
-- **FR-017**: A group being moved MUST land only between groups or among
-  top-level slides, never between two sub-slides of another group.
+- **FR-016**: Dragging, copying, cutting, duplicating or deleting a
+  collapsed head MUST act on the head and all its sub-slides, as one step
+  of undo.
+- **FR-017**: A group being moved, or an open head moved alone, MUST land
+  only where the slide after it is a head or at the end of the deck. A
+  `#` dropped anywhere else would take the slides after it into its group
+  (among the top-level slides, or between two sub-slides of another
+  group).
 - **FR-018**: Acting on an open head alone MUST act on the head only; its
   former sub-slides then belong to the group before them, or are top-level
   if none, and the editor says so.
@@ -353,9 +359,8 @@ the presentation ↓ goes to the next sub-slide; setting it back to linear
   the machine (as other editor view settings are kept), so it never
   reaches the `.qmd` (constitution II: the file holds only what it can
   express). It is not an edit, so it has no `qd` command.
-- **Where the navigation setting sits**: in the deck's existing settings
-  or properties, next to other deck-wide options; the plan picks the
-  place. qd writes `navigation-mode` under `format: revealjs:` when the
+- **Where the navigation setting sits**: in the Slide menu, next to
+  Transition (plan, research R6). qd writes `navigation-mode` under `format: revealjs:` when the
   deck keeps its options there, and at the top level otherwise, matching
   where the deck already keeps similar options.
 - **Keynote's behaviour** on outdenting a slide in the middle of a group

@@ -81,9 +81,10 @@ sub-slides and keep their level until outdented.
   `--indent` and `--outdent`: after placing the slides, apply R3 to the
   first moved slide in the same patch (its own heading, plus P's when P
   becomes a head).
-- The editor, not the command, keeps a moved group from landing between
-  two sub-slides of another group (FR-017): the drop marker skips those
-  places. On the command line, `qd move` does what the file then means.
+- The editor, not the command, keeps a moved group (or an open head moved
+  alone) to places where the next slide is a head or the end of the deck
+  (FR-017): a `#` dropped elsewhere would take the slides after it into
+  its group. The drop marker skips the other places. On the command line, `qd move` does what the file then means.
 
 **Alternatives considered**: a `--group` flag on `move`/`rm` (rejected:
 the members are in `qd slides`, and two ways to say the same thing is one
