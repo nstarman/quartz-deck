@@ -867,8 +867,9 @@ fn classify(chunk: Chunk, text: &str, used: &mut HashSet<String>) -> (BlockKind,
 }
 
 fn group_level(slides: &[Slide], slide_level: u8) -> Option<u8> {
-    let sections = slides.iter().filter(|s| s.kind == SlideKind::Section);
-    sections
+    slides
+        .iter()
+        .filter(|s| s.kind == SlideKind::Section)
         .map(|s| s.level)
         .min()
         .or((slide_level > 1).then(|| slide_level - 1))
