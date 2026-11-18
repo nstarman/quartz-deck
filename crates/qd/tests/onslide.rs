@@ -4360,6 +4360,12 @@ impl Ed {
         self.wait(DOT_SEL).await;
         p
     }
+    /// The person's Quarto has a Graphviz the editor can use (spec 015 R6).
+    async fn has_engine(&self) -> bool {
+        self.eval("fetch('/lib/quarto/graphvizlib.wasm').then((r) => r.ok)")
+            .await
+            == json!(true)
+    }
     /// How many page pixels one inch of the diagram is.
     async fn inch_px(&self) -> f64 {
         self.eval("(() => { const d = document.querySelector('#preview').contentDocument; const g = d.querySelector('[data-qd-lang=dot] svg g.graph'); const m = g.getScreenCTM(); return 72 * m.a; })()").await.as_f64().unwrap()
@@ -4826,11 +4832,7 @@ fn drawing() -> String {
 /// shape for shape (nothing to compare without Quarto's Graphviz).
 async fn draws_like_render(ed: &Ed) {
     let rendered = ed.eval(&drawing()).await;
-    if ed
-        .eval("fetch('/lib/quarto/graphvizlib.wasm').then((r) => r.ok)")
-        .await
-        != json!(true)
-    {
+    if !ed.has_engine().await {
         return;
     }
     let drew = ed
@@ -5021,9 +5023,9 @@ async fn dot_live_routing_keeps_up() {
     let mut body = String::new();
     for i in 0..20 {
         body += &format!("  n{i} [pos=\"{},{}!\"];\n", (i % 5) * 2, i / 5);
-    }
-    for i in 0..19 {
-        body += &format!("  n{i} -> n{};\n", i + 1);
+        if i < 19 {
+            body += &format!("  n{i} -> n{};\n", i + 1);
+        }
     }
     let deck = format!(
         "---\ntitle: T\nformat: revealjs\n---\n\n## Big {{#big}}\n\n```{{dot}}\ndigraph {{\n  layout=neato; splines=ortho;\n  node [shape=box];\n{body}}}\n```\n"
@@ -5036,42 +5038,25 @@ async fn dot_live_routing_keeps_up() {
         .await;
     ed.go("big").await;
     let p = ed.select_node("n7").await;
-    let scale = ed.inch_px().await / 72.0; // page pixels per graph unit
     use DispatchMouseEventType::*;
     ed.mouse(MousePressed, p, false).await;
-    let transform = format!("{}.getAttribute('transform')", node_js("n7"));
     for k in 1..=30 {
         let at = (p.0 + k as f64 * 3.0, p.1 + k as f64 * 2.0);
         ed.mouse(MouseMoved, at, false).await;
         tokio::time::sleep(Duration::from_millis(16)).await;
-        let t = ed.eval(&transform).await;
-        let xy: Vec<f64> = t
-            .as_str()
-            .unwrap_or("")
-            .trim_start_matches("translate(")
-            .trim_end_matches(')')
-            .split(' ')
-            .filter_map(|v| v.parse().ok())
-            .collect();
+        let c = ed.node_point("n7").await;
+        // (the first move is within the 3 px that make a click a drag)
         if k > 1 {
             assert!(
-                xy.len() == 2
-                    && (xy[0] * scale - k as f64 * 3.0).abs() < 1.0
-                    && (xy[1] * scale - k as f64 * 2.0).abs() < 1.0,
-                "move {k}: the box at {t}, the pointer {} px across",
-                k * 3
+                (c.0 - at.0).abs() < 1.0 && (c.1 - at.1).abs() < 1.0,
+                "move {k}: box at {c:?}, pointer at {at:?}"
             );
         }
     }
-    let routed_now = ed.eval(&format!("{}.length", routed())).await;
-    let routed_n = routed_now.as_u64().unwrap_or(0);
-    let engine = ed
-        .eval("fetch('/lib/quarto/graphvizlib.wasm').then((r) => r.ok)")
-        .await;
-    if engine == json!(true) {
-        ed.wait(&format!("{}.length === 2", routed())).await; // n7 -> n8 and n6 -> n7, by default
+    if ed.has_engine().await {
+        ed.wait(&format!("{}.length === 2", routed())).await; // n6 -> n7 and n7 -> n8, by default
     } else {
-        assert_eq!(routed_n, 0);
+        assert_eq!(ed.eval(&format!("{}.length", routed())).await, json!(0));
     }
     ed.mouse(MouseReleased, (p.0 + 90.0, p.1 + 60.0), false)
         .await;
