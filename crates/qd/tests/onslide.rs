@@ -4352,6 +4352,9 @@ impl Ed {
     }
     /// Click a diagram node; it shows selected.
     async fn select_node(&self, name: &str) -> (f64, f64) {
+        // once the editor has read the diagram after a render (its arrows get
+        // their wider click copies then): a click before that selects nothing
+        self.wait(&format!("[...{FRAME}.querySelectorAll('[data-qd-lang=dot]')].every((c) => !c.querySelector('g.edge') || !!c.querySelector('path.qd-dot-hit'))")).await;
         let p = self.node_point(name).await;
         self.page.click(Point { x: p.0, y: p.1 }).await.unwrap();
         self.wait(DOT_SEL).await;
