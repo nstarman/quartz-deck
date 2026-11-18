@@ -128,11 +128,12 @@ talk in the repository.
 
 ## Phase 5: Polish
 
-- [ ] T011 [P] Docs: `README.md`. Diagrams draw at once after an edit, and arrows follow while dragging; "Route arrows while dragging" turns that off.
-- [ ] T012 Run quickstart §1–§7 and record it in `specs/020-diagram-speed/checklists/quickstart-run.md`, with times from the status changes.
-- [ ] T013 Final constitution re-check in `plan.md`; fmt, clippy (`--workspace --all-targets -D warnings`) and `cargo test --workspace --no-fail-fast` green.
-- [ ] T014 With the person: try dragging on their talk's diagram (a copy) and record the times from release to drawing. Nothing about their talk goes into the repository.
-- [ ] T015 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
+- [X] T011 [P] Docs: `README.md`. Diagrams draw at once after an edit, and arrows follow while dragging; "Route arrows while dragging" turns that off.
+- [X] T012 Run quickstart §1–§7 and record it in `specs/020-diagram-speed/checklists/quickstart-run.md`, with times from the status changes.
+- [X] T013 Final constitution re-check in `plan.md`; fmt, clippy (`--workspace --all-targets -D warnings`) and `cargo test --workspace --no-fail-fast` green.
+- [X] T014 With the person: try dragging on their talk's diagram (a copy) and record the times from release to drawing. Nothing about their talk goes into the repository.
+  **As built:** run on a copy of the talk by Claude, with the drag driven in the page (the pane was hidden): 24 ms from release to drawing, against a 23.8 s render, with no reload. The first try found a bug, a linked box with a picture, now fixed and tested. Live routing during the drag is left for the person to try by hand. Recorded in `checklists/quickstart-run.md`.
+- [X] T015 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
 
 ---
 

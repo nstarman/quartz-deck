@@ -105,6 +105,27 @@ in the editor. The reload rule goes in `editor.js`, which owns the preview.
 
 Each PR passes `/pr-audit`.
 
+**Final re-check after the build (T013, 2026-11-18)**: pass.
+- **I.** Our own code. Quarto's Graphviz is used as Quarto ships it, and
+  `dot-image`'s placement is ported from qd's own filter.
+- **II.** Unchanged: the same ops write the same patches. The instant
+  drawing is only what the editor shows.
+- **III.** No new edit. `dot show` gained a read-only `spacer` field, in
+  `qd schema` and the contract. The new default is in `qd settings`.
+- **IV.** Quarto's render still arrives, and a reload is skipped only when
+  the text it was made from is what the editor drew. A test checks that
+  the page's drawing equals the render, pictures included, and that an
+  outside undo still reloads.
+- **V.** Unchanged handlers and conflict checks. A cell isn't redrawn under
+  a drag that's already running on it.
+- **VI.** Each story's browser tests were seen failing first, against a
+  Quarto slowed by 4 s. The talk's diagram exposed a bug (a linked box
+  with a picture); its test failed first, too.
+- **VII.** No new dependency or module: about 100 lines in `dot.js`, a
+  small rule in `editor.js`, and one default.
+- **Measured:** 79 ms (made-up deck) and 24 ms (the person's talk, 15
+  boxes) from release to drawing, against renders of 3.9 s and 23.8 s.
+
 ## Complexity Tracking
 
 None: no principle is bent.
