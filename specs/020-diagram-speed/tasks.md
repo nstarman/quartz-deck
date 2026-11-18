@@ -33,28 +33,29 @@ talk in the repository.
 
 ## Phase 1: Setup
 
-- [ ] T001 Add a test helper in `crates/qd/tests/onslide.rs`:
+- [X] T001 Add a test helper in `crates/qd/tests/onslide.rs`:
   - **`slow_quarto(dir, secs)`** writes an executable script into the test's temporary folder that sleeps `secs` and then runs the real `quarto` with its arguments, and returns its path for `Ed::open_with`'s `QD_QUARTO`;
   - **`dot_ed(boxes, slow)`** opens a made-up deck with one pinned `{dot}` cell of `boxes` boxes in a chain, via `qd dot new` and `qd dot add` in `open_with`'s setup.
+  **As built:** `slow_quarto` only. The tests use the existing `DIAGRAM` deck (three boxes), so no `dot_ed` was needed. Each `share/` symlink keeps the editor's `/lib/quarto/` working.
 
 ---
 
 ## Phase 2: Foundational (blocks every story)
 
-- [ ] T002 Write a failing browser test **`dot_instant_matches_render`** in `crates/qd/tests/onslide.rs`. On a 7-box diagram, at normal speed:
+- [X] T002 Write a failing browser test **`dot_instant_matches_render`** in `crates/qd/tests/onslide.rs`. On a 7-box diagram, at normal speed:
   - call `dot.js`'s new exported `drawCell(ref)` on the rendered cell;
   - its SVG has the same node shapes, label positions, edge paths, arrowheads and `viewBox` as Quarto's render, compared as the spike did (research R2), ignoring `path.qd-dot-hit`;
   - the root keeps Quarto's `width`, `height` and `style`.
-- [ ] T003 Implement `drawCell(ref)` in `crates/qd/src/ui/dot.js`:
+- [X] T003 Implement `drawCell(ref)` in `crates/qd/src/ui/dot.js`:
   - lay out `info`'s text with the existing `graphviz()` and the cell's engine;
   - put the result's children and `viewBox` into the cell's `<svg>`, keeping Quarto's root attributes;
   - re-add the clickable arrow copies, the highlight and the handles. Factor that part of `mark()` into a per-cell function that both use.
   It returns false, drawing nothing, when there is no engine or the layout throws, with the reason on the console (research R7). T002 passes.
-- [ ] T004 [P] Write a failing test **`dot_image_js_matches_lua`** in `crates/qd/tests/onslide.rs`:
+- [X] T004 [P] Write a failing test **`dot_image_js_matches_lua`** in `crates/qd/tests/onslide.rs`:
   - render `plugins/dot-image/example.qmd`'s diagram in the editor;
   - draw it with `drawCell`;
   - each `<image class="dot-image">` has the same `href`, `x`, `y`, `width` and `height` (within 0.01) as the Lua filter's output.
-- [ ] T005 Port `dot-image`'s `draw` step to `crates/qd/src/ui/dot.js` (research R3): for each node of `dot show` with an `image`, place the picture at the spacer with the same size rule, after the shape and before the label. `drawCell` uses it. T004 passes.
+- [X] T005 Port `dot-image`'s `draw` step to `crates/qd/src/ui/dot.js` (research R3): for each node of `dot show` with an `image`, place the picture at the spacer with the same size rule, after the shape and before the label. `drawCell` uses it. T004 passes.
 
 **Checkpoint**: the editor can draw any diagram cell exactly as Quarto renders it.
 
@@ -66,7 +67,7 @@ talk in the repository.
 
 **Independent test**: spec US1's independent test.
 
-- [ ] T006 [US1] Write failing browser tests in `crates/qd/tests/onslide.rs`, with Quarto slowed by 3 s (T001):
+- [X] T006 [US1] Write failing browser tests in `crates/qd/tests/onslide.rs`, with Quarto slowed by 3 s (T001):
   - **`dot_drop_draws_at_once`:**
     - drag a box and release; within 100 ms the cell's arrows are Graphviz's routes to the new place (no stand-in lines, no `transform` on the box);
     - a second drag starts and drops before the status reads "Up to date", and draws at once too;
@@ -79,18 +80,31 @@ talk in the repository.
   - **`dot_other_edits_still_reload`:**
     - editing a paragraph reloads the iframe after the render, as before;
     - giving a box its first picture (which installs `dot-image` and changes `filters:`) also reloads.
-- [ ] T007 [US1] Redraw after every op in `crates/qd/src/ui/dot.js` and `crates/qd/src/ui/editor.js` (research R5):
+  **As built:**
+  - **Merged tests:** `dot_drop_draws_at_once` covers the two drops, the render landing without a reload (the same `document`), undo and a nudge; `dot_other_edits_still_reload` uses a title change from the CLI.
+  - **Other diagram ops:** connect, rename, colour, delete and flip go through the same `op()` → `dot.changed()` path, so they aren't tested one by one.
+  - **Pictures:** covered by `dot_image_js_matches_lua` (T004), which compares the drawn pictures with the filter's.
+  - **Timing:** the release-to-drawing bound in the test is 1000 ms, because the machine runs under heavy load; SC-001's 100 ms is checked by hand in T012.
+  - **A box's first picture:** not tested on its own. It installs `dot-image` and changes `filters:`, outside the cells, so the rule reloads by construction.
+  - **TDD:** the new tests were seen failing against the old editor first.
+- [X] T007 [US1] Redraw after every op in `crates/qd/src/ui/dot.js` and `crates/qd/src/ui/editor.js` (research R5):
   - after a successful op, `editor.js`'s `op()` calls a new `dot.changed()`;
   - `dot.changed()` re-reads `dot show` for each editable diagram on the shown slide and calls `drawCell` for each whose `text` changed;
   - the drop clears its own leftovers: the box's `transform`, the stand-in lines and the live copies;
   - each drawn cell's text goes into `shown.drawn`.
-- [ ] T008 [US1] Implement the reload rule in `crates/qd/src/ui/editor.js` (data-model "Editor state"):
+  **As built:**
+  - **Timing:** `op()` calls `dot.changed()` on the next task, not before it returns. A caller's own follow-up runs first: a flip selects the reversed arrow, and an add selects the new box. Redrawing first dropped the selection (`diagram_delete_and_edge_properties` caught it).
+  - **During a drag:** a cell isn't redrawn while a drag runs on it, because the drawing would be swapped out from under the drag (`diagram_live_routing` caught it). The cell's saved text is still updated, so the drag lays out from it, and its drop redraws.
+- [X] T008 [US1] Implement the reload rule in `crates/qd/src/ui/editor.js` (data-model "Editor state"):
   - when a render loads, fetch `/api/source` into `shown.source`, or leave it unknown if its version differs, and empty `shown.drawn`;
   - on `rendered`, fetch the source again;
   - compare the two with every `{dot}` body taken out, and check each body is in `shown.drawn` or unchanged;
   - skip `load()` when both hold (set the status, version and `shown` as after a load);
   - otherwise load as today. The held-back render while typing (`pendingRender`) is unchanged.
   T006 passes; every existing `dot` and preview test still passes.
+  **As built:**
+  - **What's compared:** each cell's body is compared with what is drawn now: the drawn text if the editor drew it, else the loaded render's. A first version compared with the loaded render's text and missed an undo from outside back to it (`diagram_snap_guides` caught it; `dot_other_edits_still_reload` now checks it). Cells are known by their place among the deck's diagrams.
+  - **Fence line:** the compared text keeps each cell's opening fence line, so a change to the cell's options still reloads. A drawing that needs a picture the shown one didn't have (a new picture, or a file the filter couldn't find) isn't counted as drawn, so its render reloads.
 
 **Checkpoint**: PR 1. Dragging feels immediate however long the deck takes to render.
 

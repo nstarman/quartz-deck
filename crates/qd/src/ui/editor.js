@@ -154,7 +154,37 @@ async function op(name, args = {}, { fileExpect = true } = {}) {
   if (body.version) state.version = body.version;
   status('Saved', true);
   say(`${name} ✓`);
+  // a diagram edit shows at once (spec 020), once the caller has taken the result
+  // (a flip selects the reversed arrow, an add the new box)
+  setTimeout(() => dot.changed((i, text) => shown.drawn.set(i, text)));
   return body;
+}
+
+// What the preview shows (spec 020): the source of the render loaded in it, and
+// the diagrams drawn into it since (by their place among the deck's {dot} cells).
+// A render that changes only those, to what is drawn, needn't reload.
+const shown = { source: null, drawn: new Map() };
+const source = () => fetch('/api/source').then((r) => r.json()).catch(() => null);
+async function noteShown(version) {
+  shown.drawn.clear();
+  const s = await source();
+  shown.source = s && s.version === version ? s.text : null; // moved on already: the next render reloads
+}
+// a {dot} cell: its opening fence line, its body, its closing fence
+const DOT_CELL = /^((`{3,})[ \t]*\{dot\b[^\n]*\n)([\s\S]*?)^\2[ \t]*$/gm;
+/** The render of `version` shows what the preview shows already: the same text, but for diagrams drawn into it. */
+async function alreadyShown(version) {
+  if (shown.source == null) return false;
+  const s = await source();
+  if (s?.version !== version) return false;
+  const bodies = (t) => [...t.matchAll(DOT_CELL)].map((m) => m[3]);
+  const rest = (t) => t.replace(DOT_CELL, '$1');
+  const [was, now] = [bodies(shown.source), bodies(s.text)];
+  const drawnNow = (i) => (shown.drawn.has(i) ? shown.drawn.get(i) : was[i]);
+  if (rest(s.text) !== rest(shown.source) || was.length !== now.length || !now.every((b, i) => b === drawnNow(i))) return false;
+  shown.source = s.text;
+  shown.drawn.clear();
+  return true;
 }
 
 // ---------- preview ----------
@@ -584,6 +614,7 @@ function hookFrame() {
     // only the render that has the inserted element: an older one still loading would
     // show other text at that ref, and the edit would not open
     if (state.editAfterRender?.version === state.loading) openInserted(state.editAfterRender);
+    noteShown(state.loading);
     slideList.refresh();
     hist.mark();
     runslide.mark();
@@ -1070,7 +1101,7 @@ offer.addEventListener('click', (e) => {
   if (act) offer.hidden = true;
 });
 es.addEventListener('rendering', () => status('Rendering…'));
-es.addEventListener('rendered', (e) => {
+es.addEventListener('rendered', async (e) => {
   const d = JSON.parse(e.data);
   status('Up to date', true);
   statusEl.title = `Version ${d.version.slice(0, 7)}`;
@@ -1080,7 +1111,7 @@ es.addEventListener('rendered', (e) => {
   if (state.session && state.session.mode !== 'source') {
     state.pendingRender = d;
     pendingBadge(true);
-  } else {
+  } else if (!(await alreadyShown(d.version))) {
     load(d.html, d.version);
   }
 });
