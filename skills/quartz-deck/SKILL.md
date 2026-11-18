@@ -273,8 +273,8 @@ Building a diagram:
 In the editor the person does the same on the slide: drag boxes, drag from
 a box's handles to connect, double-click to rename, and View ▸ Properties
 panel for the details. Each gesture runs one of these commands. The setting
-`diagrams.live-layout` (`qd settings set diagrams.live-layout true`, when they ask) routes
-arrows while they drag; it changes nothing that's saved.
+`diagrams.live-layout` (on by default; `qd settings set diagrams.live-layout false`
+when they ask) routes arrows while they drag; it changes nothing that's saved.
 
 Looks are written on each box, so a box renders the same everywhere.
 Boxes and arrows inside a `subgraph` are refused with `E_UNSAFE_EDIT`:

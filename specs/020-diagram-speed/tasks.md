@@ -116,10 +116,11 @@ talk in the repository.
 
 **Independent test**: spec US2's independent test.
 
-- [ ] T009 [P] [US2] Write failing tests:
+- [X] T009 [P] [US2] Write failing tests:
   - in `crates/qd/src/settings.rs`, `diagrams.live-layout` defaults to `true` (change the existing assertion at the settings test);
   - in `crates/qd/tests/onslide.rs`, **`dot_live_routing_keeps_up`**: on a 20-box diagram with default settings, a drag of 30 pointer moves 16 ms apart keeps the box under the pointer at each move, and the routed copies of its arrows appear during the drag.
-- [ ] T010 [US2] Change the default in `crates/qd/src/settings.rs`. Check that `route()` in `crates/qd/src/ui/dot.js` never delays the box's `transform`, which is set before the layout is awaited. Fix it if the test shows otherwise. T009 passes.
+- [X] T010 [US2] Change the default in `crates/qd/src/settings.rs`. Check that `route()` in `crates/qd/src/ui/dot.js` never delays the box's `transform`, which is set before the layout is awaited. Fix it if the test shows otherwise. T009 passes.
+  **As built:** `route()` already set the box's `transform` before awaiting a layout, so only the default changed. The test turns snapping off, so the box must sit exactly under the pointer at each of 30 moves; it passed before the default changed. The README and the skill now say that live routing is on by default (part of T011).
 
 **Checkpoint**: PR 2.
 

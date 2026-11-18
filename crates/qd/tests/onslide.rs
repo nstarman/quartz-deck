@@ -4360,6 +4360,12 @@ impl Ed {
         self.wait(DOT_SEL).await;
         p
     }
+    /// The person's Quarto has a Graphviz the editor can use (spec 015 R6).
+    async fn has_engine(&self) -> bool {
+        self.eval("fetch('/lib/quarto/graphvizlib.wasm').then((r) => r.ok)")
+            .await
+            == json!(true)
+    }
     /// How many page pixels one inch of the diagram is.
     async fn inch_px(&self) -> f64 {
         self.eval("(() => { const d = document.querySelector('#preview').contentDocument; const g = d.querySelector('[data-qd-lang=dot] svg g.graph'); const m = g.getScreenCTM(); return 72 * m.a; })()").await.as_f64().unwrap()
@@ -4826,11 +4832,7 @@ fn drawing() -> String {
 /// shape for shape (nothing to compare without Quarto's Graphviz).
 async fn draws_like_render(ed: &Ed) {
     let rendered = ed.eval(&drawing()).await;
-    if ed
-        .eval("fetch('/lib/quarto/graphvizlib.wasm').then((r) => r.ok)")
-        .await
-        != json!(true)
-    {
+    if !ed.has_engine().await {
         return;
     }
     let drew = ed
@@ -5011,6 +5013,52 @@ async fn dot_other_edits_still_reload() {
     ed.eval(&format!("window.__doc = {FRAME}")).await;
     ed.cli(&["title", "flow", "Pipeline"]);
     ed.wait(&format!("{FRAME} !== window.__doc && !!{FRAME}?.querySelector('#flow h2')?.textContent.includes('Pipeline')"))
+        .await;
+}
+
+/// Spec 020 US2 (T009): arrows are routed live by default, and on a 20-box
+/// diagram the dragged box stays under the pointer at every move of a fast drag.
+#[tokio::test(flavor = "multi_thread")]
+async fn dot_live_routing_keeps_up() {
+    let mut body = String::new();
+    for i in 0..20 {
+        body += &format!("  n{i} [pos=\"{},{}!\"];\n", (i % 5) * 2, i / 5);
+        if i < 19 {
+            body += &format!("  n{i} -> n{};\n", i + 1);
+        }
+    }
+    let deck = format!(
+        "---\ntitle: T\nformat: revealjs\n---\n\n## Big {{#big}}\n\n```{{dot}}\ndigraph {{\n  layout=neato; splines=ortho;\n  node [shape=box];\n{body}}}\n```\n"
+    );
+    let Some(ed) = Ed::open(&deck).await else {
+        return;
+    };
+    // the boxes go exactly where the pointer goes: no snapping to the others
+    ed.eval("import('/ui/settings.js').then((s) => s.set({'placement.snap': false}))")
+        .await;
+    ed.go("big").await;
+    let p = ed.select_node("n7").await;
+    use DispatchMouseEventType::*;
+    ed.mouse(MousePressed, p, false).await;
+    for k in 1..=30 {
+        let at = (p.0 + k as f64 * 3.0, p.1 + k as f64 * 2.0);
+        ed.mouse(MouseMoved, at, false).await;
+        tokio::time::sleep(Duration::from_millis(16)).await;
+        let c = ed.node_point("n7").await;
+        // (the first move is within the 3 px that make a click a drag)
+        if k > 1 {
+            assert!(
+                (c.0 - at.0).abs() < 1.0 && (c.1 - at.1).abs() < 1.0,
+                "move {k}: box at {c:?}, pointer at {at:?}"
+            );
+        }
+    }
+    if ed.has_engine().await {
+        ed.wait(&format!("{}.length === 2", routed())).await; // n6 -> n7 and n7 -> n8, by default
+    } else {
+        assert_eq!(ed.eval(&format!("{}.length", routed())).await, json!(0));
+    }
+    ed.mouse(MouseReleased, (p.0 + 90.0, p.1 + 60.0), false)
         .await;
 }
 
