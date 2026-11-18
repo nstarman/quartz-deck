@@ -23,9 +23,13 @@ Decisions made with the person:
 - When the window is wide and the inspector shows, it replaces the floating
   bars (slide bar, element bar, formatting bar). In a narrower window the
   floating bars work as they do today.
-- It is organised in tabs that follow the selection, like Keynote: Slide
-  when nothing is selected; Style, Text and Arrange for an element. It
-  takes over today's Properties panel.
+- It is organised in tabs that follow the selection: Slide when nothing is
+  selected; Element, Text and Position for an element. It takes over
+  today's Properties panel.
+- Clean room (constitution, Principle I): Keynote is only the reference
+  for the general idea, a docked properties column whose tabs follow the
+  selection, which many editors share. Its look, layout details and
+  wording (such as its tab names) are not copied.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -33,16 +37,17 @@ Decisions made with the person:
 
 On a wide window the presenter selects a box on the slide. Nothing floats
 over the slide. On the right, the inspector shows the box's controls in
-three tabs: Style (look, appears on click, classes), Text (the formatting
-controls) and Arrange (position, size, order, delete). They make a change
+three tabs: Element (edit, markdown, appears on click, classes, delete,
+and the element's own fields), Text (the formatting controls) and
+Position (position, size, order). They make a change
 there and the slide updates, as it would from the element bar.
 
 **Why this priority**: it is the point of the feature: the controls in one
 fixed place beside the slide, not on top of it.
 
 **Independent Test**: open a deck in a window 1440 px wide, select a text
-box, turn on "Appears on click" in the Style tab and set its left edge in
-the Arrange tab; the file changes as with the element bar, and no floating
+box, turn on "Appears on click" in the Element tab and set its left edge in
+the Position tab; the file changes as with the element bar, and no floating
 bar appeared.
 
 **Acceptance Scenarios**:
@@ -50,10 +55,10 @@ bar appeared.
 1. **Given** a wide window and an element selected, **When** the presenter
    looks at the slide, **Then** no element bar or formatting bar floats
    over it, and the inspector shows that element's tabs.
-2. **Given** the Style tab, **When** they toggle "Appears on click" or set
+2. **Given** the Element tab, **When** they toggle "Appears on click" or set
    a class, **Then** the deck changes exactly as the element bar's or
    menu's action would, with one undo step.
-3. **Given** the Arrange tab, **When** they type a position or size, or
+3. **Given** the Position tab, **When** they type a position or size, or
    move the element up or down, **Then** it moves as from today's
    Properties panel and menu.
 4. **Given** they are typing in a text element, **When** they use the Text
@@ -94,8 +99,8 @@ changes as from the slide bar.
 The presenter narrows the window, or shows the source pane beside the
 slide. When there is no longer room, the inspector closes and the
 floating bars come back; when there is room again, it comes back. They
-can also hide it with a toolbar button or a shortcut, as Keynote's Format
-button does, and that choice is remembered.
+can also hide it with a toolbar button or a shortcut, and that choice is
+remembered.
 
 **Why this priority**: the feature must not cost the slide its room on a
 small screen.
@@ -144,8 +149,8 @@ shows again with the same selection.
   formatting bar MUST NOT float over or above the slide; their controls
   MUST be in the inspector.
 - **FR-003**: The inspector's tabs MUST follow the selection: Slide (or
-  the title fields on the title slide) with nothing selected; Style, Text
-  and Arrange for an element, leaving out tabs that don't apply.
+  the title fields on the title slide) with nothing selected; Element, Text
+  and Position for an element, leaving out tabs that don't apply.
 - **FR-004**: Every control in the inspector MUST do exactly what the same
   action does from the bars, menus or keys today: the same edit, the same
   undo step, the same `qd` command behind it.
@@ -162,7 +167,7 @@ shows again with the same selection.
 
 - **Inspector**: the right-hand column; shown or hidden by width and by
   the person's choice; its tabs depend on the selection.
-- **Tab**: Slide, Title, Style, Text or Arrange; each lists controls that
+- **Tab**: Slide, Title, Element, Text or Position; each lists controls that
   map to existing actions.
 
 ## Success Criteria *(mandatory)*
@@ -187,9 +192,9 @@ shows again with the same selection.
   (320 px), not resizable at first.
 - **What moves**: controls move, not change. No new edit is added by this
   feature; anything that can't be done today stays out.
-- **Look**: a Mac-like column (tabs as a segmented control, grouped
-  sections), drawn in the editor's own style and colours, with no Apple
-  assets.
-- **Out of scope**: a top toolbar of insert buttons like Keynote's
-  (Insert stays in the menu), a resizable or floating inspector, and
+- **Look**: a column in the editor's own style and colours: a row of tab
+  buttons and grouped sections, with no other app's assets, icons or
+  wording.
+- **Out of scope**: a top toolbar of insert buttons (Insert stays in the
+  menu), a resizable or floating inspector, and
   presenter-notes layout changes.
