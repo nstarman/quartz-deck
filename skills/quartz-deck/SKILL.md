@@ -280,6 +280,35 @@ Looks are written on each box, so a box renders the same everywhere.
 Boxes and arrows inside a `subgraph` are refused with `E_UNSAFE_EDIT`:
 edit those as text.
 
+## Arrows
+
+An arrow on a slide is one line of Emil Hvitfeldt's quarto-arrows shortcode,
+`{{< arrow from="x,y" to="x,y" position="absolute" … >}}`, placed in the
+slide's own pixels (on a 1600×900 deck, `0,0` is the top-left corner and
+`1600,900` the bottom-right). `qd arrow list SLIDE` and `qd arrow show REF`
+read them; an arrow without `position="absolute"` (in the text's flow), or
+one that can't be read safely, is reported in `editable` with the reason
+and stays editable as text.
+
+- `qd arrow add SLIDE --from X,Y --to X,Y [--color C] [--width N] [--dash true|A,B] [--head H] [--heads end|start|both|none] [--label T] [--label-position start|middle|end] [--fragment]`
+  adds one after the slide's content, before its notes, and prints its ref.
+  The first arrow in a deck downloads quarto-arrows (pinned by checksum)
+  into qd's cache and installs it into the deck's `_extensions/`; offline
+  with nothing cached it fails with `E_DOWNLOAD` and changes nothing.
+- `qd arrow move REF --from X,Y` / `--to X,Y` / `--by DX,DY` moves an end,
+  or the whole arrow; only what moves is rewritten.
+- `qd arrow bend REF --through X,Y` curves it through the point (writing
+  `control1`/`control2`); `--straight` removes the curve.
+- `qd arrow set REF KEY=VALUE…` sets colour, width, dash, line, head,
+  head-start, head-end, label, label-position, fragment and the like;
+  `KEY=` or the default value removes the option.
+- `qd arrow rm REF` removes it.
+
+Arrows are free: moving an element later doesn't move them. In the editor
+the person draws them with Insert ▸ Arrow, drags their ends (snapping to
+elements), bends them by the middle handle, and labels them by
+double-click.
+
 ## Errors and what to do
 
 | code | meaning | recover |

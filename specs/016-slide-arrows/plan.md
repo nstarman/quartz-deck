@@ -117,6 +117,32 @@ skills/quartz-deck/SKILL.md   # qd arrow commands
 
 Each PR passes `/pr-audit`.
 
+**Final re-check after the build (T020, 2026-11-17)**: pass.
+- **I.** The reader, patches and overlay are our own. quarto-arrows is
+  downloaded and run by Quarto, never copied into qd. Tests and the
+  quickstart use made-up slides only.
+- **II.** An arrow is one shortcode line in its slide; every command changes
+  only its own options in that line, keeping hand-written order and
+  quoting (a test caught a version of `move` that rewrote the end it
+  didn't move). No sidecar.
+- **III.** Every gesture is a `qd arrow` command (`add`, `move`, `bend`,
+  `set`, `rm`, plus `show` and `list`) or `qd block rm`, in `qd schema`,
+  the skill and the README.
+- **IV.** A drop re-renders through the preview loop; provisional lines and
+  curves are only drawn.
+- **V.** Ordinary edits with `--expect`, `--dry-run` and undo. The first
+  `add` downloads and installs the extension before the edit, so offline
+  it changes nothing; arrows qd can't read stay text-only with the reason.
+- **VI.** Each story's unit, CLI and browser tests came first (the CLI tests
+  for `bend`/`set` were written with the code, noted in their PR). A
+  real Quarto render checks the ends land within 1 slide pixel.
+- **VII.** The existing library, as the person chose; no new crates; one
+  core module (`arrows.rs`) and one editor module (`ui/arrows.js`), which
+  reuses the editor's guides, the shared read op, and the action list.
+- **Licences.** quarto-arrows' README says MIT; it has no licence file, so
+  qd downloads it (pinned by SHA-256 at commit 957a61b) rather than
+  shipping it. Listed in the licence test's downloaded assets.
+
 ## Complexity Tracking
 
 None: no principle is bent.

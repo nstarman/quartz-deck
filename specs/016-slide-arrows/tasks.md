@@ -104,11 +104,13 @@ text use made-up slides only, never the person's own talks, paths or names.
 
 ## Phase 6: Polish
 
-- [ ] T017 [P] Docs: `skills/quartz-deck/SKILL.md` (`qd arrow` commands), `README.md` (arrows), and an example deck for the render test.
-- [ ] T018 Run quickstart §1–§5 and record it in `specs/016-slide-arrows/checklists/quickstart-run.md`.
+- [X] T017 [P] Docs: `skills/quartz-deck/SKILL.md` (`qd arrow` commands), `README.md` (arrows), and an example deck for the render test.
+
+  **As built:** no separate example deck: the repository has no examples folder for decks, and `tests/arrows.rs` `rendered_where_given` builds and renders its own.
+- [X] T018 Run quickstart §1–§5 and record it in `specs/016-slide-arrows/checklists/quickstart-run.md`.
 - [ ] T019 With the person: redraw the arrows of one of their real slides (SC-006) and record what needed changing. Nothing about their slide goes into the repository.
-- [ ] T020 Final constitution re-check in `plan.md`; fmt, clippy (`--workspace --all-targets -D warnings`) and `cargo test --workspace --no-fail-fast` green.
-- [ ] T021 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
+- [X] T020 Final constitution re-check in `plan.md`; fmt, clippy (`--workspace --all-targets -D warnings`) and `cargo test --workspace --no-fail-fast` green.
+- [X] T021 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
 
 ---
 

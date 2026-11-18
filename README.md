@@ -210,6 +210,29 @@ line or two of the cell's DOT text.
 - **CLI:** `qd dot show`, `pin`, `move`, `new`, `add`, `connect`, `rename`,
   `set`, `rm`, `flip`. DOT that qd can't read safely stays editable as text.
 
+### Arrows (spec [016](specs/016-slide-arrows/spec.md))
+
+Point at things on a slide with arrows you draw and change in the editor.
+Each arrow is one line of Emil Hvitfeldt's
+[quarto-arrows](https://github.com/EmilHvitfeldt/quarto-arrows) shortcode,
+placed in the slide's own pixels, so the deck stays plain Quarto plus that
+extension.
+
+- **Draw:** Insert ▸ Arrow, then drag on the slide. The ends snap to the
+  edges and centres of the elements and the slide, with a guide line; hold
+  ⌘ to place one freely.
+- **Change:** click an arrow's line to select it. Drag either end, or the
+  line to move it all; drag the middle handle to bend it; the arrow keys
+  nudge it (⇧ for 10 px); Delete removes it.
+- **Style and label:** View ▸ Properties panel sets its colour, width,
+  dashes, head and which ends have one; double-click it for a label.
+  "Appears on click" makes it draw itself in when you click while
+  presenting.
+- **The extension** is downloaded once, the first time a deck gets an arrow,
+  checked against a pinned checksum, and installed into the deck's
+  `_extensions/`.
+- **CLI:** `qd arrow add`, `move`, `bend`, `set`, `rm`, `show`, `list`.
+
 ### Shared focus (spec [005](specs/005-shared-focus/spec.md))
 
 - **"This" means what you selected:** click an element, select a few words
