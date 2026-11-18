@@ -540,10 +540,10 @@ impl Ed {
     }
     /// Right-click slide `id` in the slide list and run its menu item `label`.
     async fn slide_menu(&self, id: &str, label: &str) {
-        let at = format!(
-            "(() => {{ const r = document.querySelector('#slides li[data-id={id}] > button').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }})()"
-        );
-        self.right_click(self.point(&at).await).await;
+        let at = self
+            .editor_point(&format!("#slides li[data-id={id}] > button"), None)
+            .await;
+        self.right_click(at).await;
         self.click_menu(label).await;
     }
     /// Labels of the open context menu's top level, with "(disabled)" marks.
@@ -2714,8 +2714,10 @@ async fn title_slide_menu_and_rendered_names() {
     ed.settle().await;
     ed.wait("document.querySelector('#slides li[data-id=highlights] .name')?.textContent === 'Highlights 2'")
         .await;
-    let title = "(() => { const r = document.querySelector('#slides li[data-id=title-slide] > button').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()";
-    ed.right_click(ed.point(title).await).await;
+    let title = ed
+        .editor_point("#slides li[data-id=title-slide] > button", None)
+        .await;
+    ed.right_click(title).await;
     assert_eq!(
         ed.menu_labels().await,
         [

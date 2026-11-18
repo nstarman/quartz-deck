@@ -19,6 +19,11 @@ export function makeList(api) {
   const frameDoc = () => { try { return api.frame.contentDocument?.querySelector('.reveal .slides') ? api.frame.contentDocument : null; } catch { return null; } };
   const titleText = () => frameDoc()?.querySelector('#title-slide .title')?.textContent.trim() || 'Title slide';
   // the title as the slide shows it (`*Highlights*` → Highlights), the source's before the first render
+  // a new slide after `id` (after the title slide: before the first slide)
+  const addAfter = (id, at) => {
+    const first = api.state.deck?.slides[0];
+    return api.addSlide(id !== 'title-slide' ? { after: id } : first ? { before: first.id } : {}, at);
+  };
   const nameOf = (s) => frameDoc()?.getElementById(s.anchor)?.querySelector(':scope > :is(h1, h2, h3)')?.textContent.trim() || s.title || s.summary || 'Untitled';
 
   // a narrow window's slide picker (spec 008 US8): the list as a menu in the top row.
@@ -169,12 +174,10 @@ export function makeList(api) {
       li.addEventListener('pointerdown', (e) => drag(e, li, s));
     } else {
       // Quarto builds the title slide from the front matter and always shows it first
-      li.title = 'Always first: Quarto makes it from the title at the top of the file';
       li.addEventListener('contextmenu', (e) => {
         e.preventDefault();
-        const first = api.state.deck?.slides[0];
         api.openMenu([
-          { label: 'Add slide after…', run: () => api.addSlide(first ? { before: first.id } : {}, li) },
+          { label: 'Add slide after…', run: () => addAfter(s.id, li) },
           '-',
           { label: 'Always first (made from the title at the top)', disabled: true },
         ], e.clientX, e.clientY);
@@ -254,8 +257,7 @@ export function makeList(api) {
     } else if (e.key === 'Enter') {
       e.preventDefault();
       e.stopPropagation();
-      const slides = api.state.deck?.slides || [];
-      api.addSlide(li.dataset.id === 'title-slide' ? (slides[0] ? { before: slides[0].id } : {}) : { after: li.dataset.id }, li);
+      addAfter(li.dataset.id, li);
     }
   });
 
