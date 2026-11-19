@@ -130,6 +130,7 @@
   {"id": "source-full", "label": "Source full width", "menu": ["View"], "toggle": true, "where": ["anywhere"]},
   {"id": "form-panel", "label": "Properties panel", "menu": ["View"], "toggle": true, "where": ["anywhere"]},
   {"id": "inspector", "label": "Inspector (a wide window)", "menu": ["View"], "toggle": true, "key": "Alt+Mod+0", "where": ["anywhere"]},
+  {"id": "focus-inspector", "label": "Go to the inspector and back", "menu": ["View"], "key": "F6", "where": ["anywhere"]},
   {"id": "history", "label": "History", "menu": ["View"], "toggle": true, "key": "Alt+Mod+H", "where": ["anywhere"], "qd": "qd history"},
   {"id": "history-restore", "label": "Restore this version…", "menu": ["View"], "where": ["anywhere"], "qd": "qd restore <rev>"},
   {"id": "history-compare", "label": "Compare this version with now", "menu": ["View"], "where": ["anywhere"], "qd": "qd diff <rev>"},

@@ -65,12 +65,42 @@ function update() {
 }
 
 function show() {
-  for (const b of tabs.children) b.ariaSelected = String(b.id === `tab-${tab}`);
+  for (const b of tabs.children) {
+    const on = b.id === `tab-${tab}`;
+    b.ariaSelected = String(on);
+    b.tabIndex = on ? 0 : -1; // Tab reaches the tab shown; the arrows the others
+  }
   for (const x of panel.querySelectorAll(':is(.bars, .body) > [data-tab]')) x.classList.toggle('off', x.dataset.tab !== tab);
 }
 
-export function init(get) {
+let toSlide = () => {};
+
+/** F6: from the slide to the tab shown, and from the inspector back to the slide. */
+export function toggleFocus() {
+  if (panel.contains(document.activeElement)) toSlide();
+  else tabs.querySelector('[aria-selected=true]')?.focus();
+}
+
+export function init(get, slide) {
   what = get;
+  toSlide = slide;
+  // the tablist's own keys: ← → move along the tabs (WAI-ARIA tabs)
+  tabs.addEventListener('keydown', (e) => {
+    const d = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+    if (!d) return;
+    e.preventDefault();
+    const all = [...tabs.children];
+    const next = all[(all.indexOf(document.activeElement) + d + all.length) % all.length];
+    next.click();
+    next.focus();
+  });
+  // Esc in a field: back to the slide, the selection kept
+  panel.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !e.target.matches('input, textarea, select')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    toSlide();
+  });
   // the panel redrawn (a new selection), typing begun or ended
   new MutationObserver(update).observe(panel.querySelector('.body'), { childList: true });
   new MutationObserver(update).observe(fmtbar, { attributes: true, attributeFilter: ['hidden'] });

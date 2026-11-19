@@ -1756,7 +1756,7 @@ await settings.ready((n) => say(n, true)).catch(() => say('settings could not be
 }
 $('[data-act=form]', srcpane).addEventListener('click', () => properties(!mainEl.classList.contains('panel-open')));
 // the inspector (spec 019): the panel beside the slide whenever the window is wide enough
-inspector.init(() => ({ kind: state.sel ? state.selKind : null, typeable: state.selTypeable, title: !slideByAnchor(state.anchor) }));
+inspector.init(() => ({ kind: state.sel ? state.selKind : null, typeable: state.selTypeable, title: !slideByAnchor(state.anchor) }), () => frame.contentWindow?.focus());
 addEventListener('qd-inspector', () => { placeElbar(); placeToolbar(frame); });
 /** View ▸ Properties: on a window wide enough, the inspector (it was turned off); else the panel. */
 function properties(on) {
@@ -2223,6 +2223,7 @@ const toggle = (cls, set) => ({ checked: () => mainEl.classList.contains(cls), r
 keys.on('toggle-source', { checked: () => !srcpane.hidden, run: () => setSource(srcpane.hidden) });
 keys.on('source-full', toggle('source-full', setFull));
 keys.on('form-panel', { checked: () => mainEl.classList.contains('panel-open') || inspector.shown(), run: () => properties(!mainEl.classList.contains('panel-open')) });
+keys.on('focus-inspector', { enabled: inspector.shown, run: inspector.toggleFocus });
 keys.on('inspector', { checked: () => !!settings.get('ui.inspector'), run: () => settings.set({ 'ui.inspector': !settings.get('ui.inspector') }) });
 keys.on('history', { checked: hist.isOpen, run: () => hist.toggle() });
 keys.on('history-compare', { enabled: hist.versionOpen, run: hist.compare });
