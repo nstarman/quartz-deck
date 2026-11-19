@@ -276,6 +276,8 @@ a box's handles to connect, double-click to rename, and View ▸ Properties
 panel for the details. Each gesture runs one of these commands. The setting
 `diagrams.live-layout` (on by default; `qd settings set diagrams.live-layout false`
 when they ask) routes arrows while they drag; it changes nothing that's saved.
+On a wide window the details are in the inspector on the right instead of a
+panel; `ui.inspector` (on by default) turns it off when they ask.
 
 Looks are written on each box, so a box renders the same everywhere.
 Boxes and arrows inside a `subgraph` are refused with `E_UNSAFE_EDIT`:
