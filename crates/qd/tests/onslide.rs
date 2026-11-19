@@ -5881,14 +5881,14 @@ async fn group_menu_acts_on_the_whole_group() {
     ed.right_click(ed.row("part-a").await).await;
     let labels = ed.menu_labels().await;
     for l in [
-        "Duplicate group",
+        "Duplicate group (4 slides)",
         "Cut group (4 slides)",
         "Copy group (4 slides)",
-        "Delete group…",
+        "Delete group (4 slides)…",
     ] {
         assert!(labels.iter().any(|x| x == l), "{l} in {labels:?}");
     }
-    ed.click_menu("Duplicate group").await;
+    ed.click_menu("Duplicate group (4 slides)").await;
     ed.wait_file(
         |f| f.matches("\n# Part A").count() == 2 && f.matches("\n## A3").count() == 2,
         "the group duplicated",
@@ -5896,7 +5896,7 @@ async fn group_menu_acts_on_the_whole_group() {
     .await;
     ed.undo_to(GROUPS).await;
     ed.right_click(ed.row("part-a").await).await;
-    ed.click_menu("Delete group…").await;
+    ed.click_menu("Delete group (4 slides)…").await;
     ed.click_editor("dialog.sheet button[value=ok]").await;
     ed.wait_file(
         |f| !f.contains("{#a1}") && !f.contains("{#part-a}") && f.contains("{#b1}"),

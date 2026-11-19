@@ -1411,22 +1411,19 @@ fn dup_several() {
     let e = Env::with(src);
     let v = e.ok(&["dup", "a", "a1"]);
     assert_edit(&v, "dup");
-    let ids: Vec<Value> = outline(&e.ok(&["slides"]))
-        .iter()
-        .map(|s| s[0].clone())
-        .collect();
+    let o = outline(&e.ok(&["slides"]));
+    let ids: Vec<&Value> = o.iter().map(|s| &s[0]).collect();
     assert_eq!(ids.len(), 6, "{ids:?}");
     assert_eq!(
-        (&ids[0], &ids[1], &ids[4], &ids[5]),
+        (ids[0], ids[1], ids[4], ids[5]),
         (&json!("a"), &json!("a1"), &json!("b"), &json!("c"))
     );
     assert_eq!(
-        v["target"], ids[2],
+        &v["target"], ids[2],
         "the first copy, after the last named slide"
     );
     // the copies are a group of their own: a head, then its sub-slide
-    let o = outline(&e.ok(&["slides"]));
-    assert_eq!((&o[2][1], &o[3][2]), (&json!(true), &ids[2]));
+    assert_eq!((&o[2][1], &o[3][2]), (&json!(true), ids[2]));
     // fresh ids for the copied block too, and the source untouched
     let text = e.text();
     assert_eq!(text.matches("{#note}").count(), 1, "{text}");

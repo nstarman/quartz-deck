@@ -1553,14 +1553,11 @@ const actions = makeActions({
   addSlide,
   op: async (name, args) => {
     let behind = [];
-    if (name === 'dup') {
-      const many = slideList.selected(args.slide); // a folded group duplicates whole (spec 018 US3)
-      if (many.length > 1) args = { ...args, slide: many };
-    }
+    // the picked slides, if this is one (spec 008 US9), or a folded group's (spec 018 US3)
+    const many = /^(dup|rm)$/.test(name) ? slideList.selected(args.slide) : [];
+    if (many.length > 1) args = { ...args, slide: many };
     if (name === 'rm') {
-      const many = slideList.selected(args.slide); // the picked slides, if this is one (spec 008 US9)
-      if (many.length > 1) args = { ...args, slide: many };
-      else behind = slideList.leftBehind(many[0]); // an open head deleted alone
+      if (many.length === 1) behind = slideList.leftBehind(many[0]); // an open head deleted alone
       const slides = state.deck?.slides || [];
       const i = slides.findIndex((x) => x.id === many[0]);
       const near = [...slides.slice(0, i).reverse(), ...slides.slice(i + 1)].find((x) => !many.includes(x.id));
@@ -2054,11 +2051,7 @@ async function pasteSlides(t) {
   // a pasted group (starting with a head) lands whole: after the target's group, or after
   // the last top-level slide, never splitting another group (spec 018 FR-017)
   const gl = state.deck?.group_level;
-  const ss = state.deck?.slides || [];
-  const top = ss.findIndex((s) => s.head);
-  const target = slideById(t.slideId);
-  const after = !gl || !new RegExp(`^#{${gl}}(?!#)`).test(text.trimStart()) ? t.slideId
-    : target?.head || target?.in ? slideList.groupEnd(t.slideId) : top > 0 ? ss[top - 1].id : ss.at(-1).id;
+  const after = gl && new RegExp(`^#{${gl}}(?!#)`).test(text.trimStart()) ? slideList.groupEnd(t.slideId) : t.slideId;
   const r = slides
     ? await op('paste', { after, md: text })
     : await op('block add', { slide: t.slideId, end: true, md: outside(text) });
