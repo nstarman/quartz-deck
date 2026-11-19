@@ -164,9 +164,10 @@ async function op(name, args = {}, { fileExpect = true } = {}) {
 // What the preview shows (spec 020): the source of the render loaded in it, and
 // the diagrams drawn into it since (by their place among the deck's {dot} cells).
 // A render that changes only those, to what is drawn, needn't reload.
-const shown = { source: null, drawn: new Map() };
+const shown = { version: null, source: null, drawn: new Map() };
 const source = () => fetch('/api/source').then((r) => r.json()).catch(() => null);
 async function noteShown(version) {
+  shown.version = version;
   shown.drawn.clear();
   const s = await source();
   shown.source = s && s.version === version ? s.text : null; // moved on already: the next render reloads
@@ -1119,8 +1120,11 @@ async function rendered(d) {
   // reloading now would throw away an edit typed on the slide (research R4); a
   // source pop-up's text is in this page, and Run there wants the new render (013)
   const hold = state.session && state.session.mode !== 'source';
-  // decided before "Up to date" shows: until then the preview may still reload
-  const skip = !hold && (await alreadyShown());
+  // decided before "Up to date" shows: until then the preview may still reload.
+  // A render of the version on screen brings something the text doesn't have
+  // (a run's output): only another version's can be one the page already shows.
+  const skip = !hold && d.version !== shown.version && (await alreadyShown());
+  if (skip) shown.version = d.version;
   status('Up to date', true);
   statusEl.title = `Version ${d.version.slice(0, 7)}`;
   banner.hidden = true;

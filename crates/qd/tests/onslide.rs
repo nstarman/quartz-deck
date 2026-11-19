@@ -1649,6 +1649,13 @@ async fn popup_run() {
         false,
         "the pop-up stays open"
     );
+    // the edit's render lands first (a slow machine): a run during its reload
+    // would show in the page it replaces
+    ed.wait_secs(
+        &format!("document.querySelector('#status').textContent === 'Up to date' && !document.querySelector('#preview').hasAttribute('aria-busy') && !!{FRAME}.querySelector(\"{cell} .qd-output\")?.textContent.includes('54')"),
+        120,
+    )
+    .await;
     // unchanged: runs again, writes nothing
     let version = ed.cli(&["slides"])["version"].clone();
     ed.popup_run("```{python}\nprint(6 * 9)\n```").await;
