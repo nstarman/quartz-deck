@@ -6375,3 +6375,30 @@ async fn dialogs_and_panels_guard_the_deck() {
         "the panel's Apply overwrote another element"
     );
 }
+
+/// Spec 018 US4: Slide ▸ Presentation navigation sets the deck's navigation-mode,
+/// the deck's mode checked; one undo takes it back.
+#[tokio::test(flavor = "multi_thread")]
+async fn navigation_submenu() {
+    let Some(ed) = Ed::open(GROUPS).await else {
+        return;
+    };
+    ed.settle().await;
+    let checked = "[...document.querySelectorAll('#ctxmenu li[aria-checked=true]')].map((li) => li.firstChild.textContent.trim())";
+    ed.menu("Slide", "Presentation navigation").await;
+    ed.wait(&format!("JSON.stringify({checked}).includes('Linear')"))
+        .await;
+    ed.close_menu().await;
+    ed.menu("Slide", "Presentation navigation/Vertical").await;
+    ed.wait_file(
+        |f| f.contains("\nnavigation-mode: vertical\n"),
+        "the option written",
+    )
+    .await;
+    ed.settle().await;
+    ed.menu("Slide", "Presentation navigation").await;
+    ed.wait(&format!("JSON.stringify({checked}).includes('Vertical')"))
+        .await;
+    ed.close_menu().await;
+    ed.undo_to(GROUPS).await;
+}

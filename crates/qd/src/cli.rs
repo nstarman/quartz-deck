@@ -323,6 +323,11 @@ enum Cmd {
     Indent { slide: String },
     /// Take a sub-slide out of its group: it heads a group of its own
     Outdent { slide: String },
+    /// How the presentation moves through groups (spec 018): Quarto's navigation-mode
+    Navigation {
+        /// linear, vertical or grid
+        mode: String,
+    },
     /// Remove one or more slides (one undo step)
     Rm {
         #[arg(required = true)]
@@ -898,7 +903,7 @@ fn parse_kv(s: &str) -> std::result::Result<(String, String), String> {
 fn output_of(cmd: &str) -> &'static str {
     match cmd {
         "slides" => {
-            r#"{"version","slide_level","group_level","width","height","title_slide","slides":[{"id","explicit","index","kind","title","summary","blocks","boxes","opaque","anchor","hidden","head","in"?}]}"#
+            r#"{"version","slide_level","group_level","navigation_mode","width","height","title_slide","slides":[{"id","explicit","index","kind","title","summary","blocks","boxes","opaque","anchor","hidden","head","in"?}]}"#
         }
         "show" => {
             r#"{"version","slide":{"id","explicit","index","kind","level","title","attrs":{"id","classes","kv"},"opaque","source","blocks":[{"id","explicit","kind","text","attrs","geom"?}]}}"#
@@ -959,6 +964,7 @@ fn output_of(cmd: &str) -> &'static str {
             r#"{"ok","op","version","diff","assigned_ids","target":"<box id>","converted_units"?,"commit"?:{"rev"}|{"error"}}"#
         }
         "new" => r#"{"ok","op":"new","path","version","target"}"#,
+        "navigation" => r#"{"ok","op":"navigation","version","diff","target","navigation_mode"}"#,
         "indent" | "outdent" => {
             r#"{"ok","op","version","diff","assigned_ids","target","changed":[ids whose heading level changed],"dry_run"?}"#
         }
@@ -1287,7 +1293,7 @@ pub fn slides_json(d: &Deck) -> Value {
             v
         })
         .collect();
-    json!({"version": d.version, "slide_level": d.slide_level, "group_level": d.group_level(),
+    json!({"version": d.version, "slide_level": d.slide_level, "group_level": d.group_level(), "navigation_mode": d.navigation_mode(),
         "width": d.width, "height": d.height, "title_slide": d.has_title_slide(), "slides": slides})
 }
 
@@ -1535,6 +1541,7 @@ const API_OPS: &[&str] = &[
     "move",
     "indent",
     "outdent",
+    "navigation",
     "rm",
     "title",
     "body",
@@ -2360,6 +2367,10 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             }
             _ => ctx.edit(|d| ops::mv(d, slide, to.pos())),
         },
+        Cmd::Navigation { mode } => ctx.edit_with(|d| {
+            let p = ops::navigation(d, mode)?;
+            Ok((p, json!({ "navigation_mode": mode })))
+        }),
         Cmd::Indent { slide } => ctx.edit_with(|d| changed(ops::relevel(d, slide, ops::Depth::In))),
         Cmd::Outdent { slide } => {
             ctx.edit_with(|d| changed(ops::relevel(d, slide, ops::Depth::Out)))

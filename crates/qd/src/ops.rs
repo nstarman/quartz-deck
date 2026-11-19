@@ -1219,6 +1219,83 @@ fn replace_key(d: &Deck, key: &str, new_line: Option<String>) -> Result<Patch> {
     Ok(patch("meta", key.into(), vec![(fm, new_fm)], vec![]))
 }
 
+/// Set the presentation's `navigation-mode` (spec 018 US4, research R6): a line
+/// already there is edited where it is; else it joins a `format: revealjs:`
+/// mapping, else the top level. `linear`, Quarto's default, removes it.
+pub fn navigation(d: &Deck, mode: &str) -> Result<Patch> {
+    if !matches!(mode, "linear" | "vertical" | "grid") {
+        return Err(QdError::InvalidArg(format!(
+            "'{mode}': the navigation mode is linear, vertical or grid"
+        )));
+    }
+    let key = "navigation-mode";
+    let value = (mode != "linear").then_some(mode);
+    let fm = d.front_matter.map_or("", |s| d.slice(s));
+    let base = d.front_matter.map_or(0, |s| s.start);
+    // the `format: revealjs:` mapping: its child indent, where a new line goes, an existing one
+    let mut lines = Vec::new(); // (start, full end, text)
+    let mut at = base;
+    for raw in fm.split_inclusive('\n') {
+        lines.push((at, at + raw.len(), raw.trim_end_matches(['\n', '\r'])));
+        at += raw.len();
+    }
+    let indent = |l: &str| l.len() - l.trim_start().len();
+    // `k:` at the start of the line, and its value after the colon
+    fn value_of<'a>(l: &'a str, k: &str) -> Option<&'a str> {
+        l.trim_start()
+            .strip_prefix(k)?
+            .strip_prefix(':')
+            .map(str::trim)
+    }
+    let is_key = |l: &str, k: &str| value_of(l, k).is_some();
+    // `k:` with nothing but a comment after it: a mapping follows
+    let opens =
+        |l: &str, k: &str| value_of(l, k).is_some_and(|v| v.is_empty() || v.starts_with('#'));
+    let mut nested = None;
+    if let Some(f) = lines
+        .iter()
+        .position(|(_, _, l)| indent(l) == 0 && opens(l, "format"))
+    {
+        let block: Vec<_> = lines[f + 1..]
+            .iter()
+            .take_while(|(_, _, l)| l.trim().is_empty() || indent(l) > 0)
+            .collect();
+        if let Some(r) = block.iter().position(|(_, _, l)| opens(l, "revealjs")) {
+            let own = indent(block[r].2);
+            let kids: Vec<_> = block[r + 1..]
+                .iter()
+                .take_while(|(_, _, l)| l.trim().is_empty() || indent(l) > own)
+                .filter(|(_, _, l)| !l.trim().is_empty())
+                .collect();
+            let child = kids.first().map_or(own + 2, |(_, _, l)| indent(l));
+            let end = kids.last().map_or(block[r].1, |(_, e, _)| *e);
+            let line = kids
+                .iter()
+                .find(|(_, _, l)| indent(l) == child && is_key(l, key))
+                .map(|(s, e, _)| Span { start: *s, end: *e });
+            nested = Some((child, end, line));
+        }
+    }
+    let text = |child: usize, v: &str| format!("{}{key}: {v}{}", " ".repeat(child), d.nl);
+    let top = d.meta.get(key).is_some();
+    let reps = match (nested, value) {
+        (Some((child, _, Some(line))), v) => {
+            vec![(line, v.map_or(String::new(), |v| text(child, v)))]
+        }
+        (Some((child, end, None)), Some(v)) if !top => {
+            vec![(Span { start: end, end }, text(child, v))]
+        }
+        (_, None) if !top => vec![], // already linear
+        _ => {
+            return edit_front_matter(d, key, value).map(|p| Patch {
+                op: "navigation".into(),
+                ..p
+            });
+        }
+    };
+    Ok(patch("navigation", key.into(), reps, vec![]))
+}
+
 /// Set a top-level front matter key to a single-line YAML value.
 pub fn meta_set(d: &Deck, key: &str, value: &str) -> Result<Patch> {
     edit_front_matter(d, key, Some(value))
