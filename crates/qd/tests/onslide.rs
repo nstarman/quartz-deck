@@ -55,17 +55,22 @@ const READY: &str = "(() => { const f = document.querySelector('#preview'); retu
 
 /// Evaluate `js` in `page` (promises awaited); its JSON value.
 async fn eval(page: &Page, js: &str) -> Value {
+    try_eval(page, js)
+        .await
+        .unwrap_or_else(|e| panic!("eval failed: {e}\n{js}"))
+}
+
+/// [`eval`], or the error, for instance when the page is between two documents
+/// (a reload destroys the context the evaluation was sent to).
+async fn try_eval(page: &Page, js: &str) -> Result<Value, chromiumoxide::error::CdpError> {
     let p = EvaluateParams::builder()
         .expression(js)
         .await_promise(true)
         .return_by_value(true)
         .build()
         .unwrap();
-    let r = page
-        .evaluate_expression(p)
-        .await
-        .unwrap_or_else(|e| panic!("eval failed: {e}\n{js}"));
-    r.value().cloned().unwrap_or(Value::Null)
+    let r = page.evaluate_expression(p).await?;
+    Ok(r.value().cloned().unwrap_or(Value::Null))
 }
 
 struct Ed {
@@ -202,12 +207,13 @@ impl Ed {
 
     async fn wait_secs(&self, cond: &str, secs: u64) {
         // a condition that throws (e.g. the preview is mid-reload after a
-        // render) counts as "not yet", not as a failure
+        // render) counts as "not yet", not as a failure; so does a page that
+        // is mid-reload itself (its context is gone: the evaluation fails)
         let cond_safe = format!(
             "(async () => {{ try {{ return await ({cond}); }} catch {{ return false; }} }})()"
         );
         let start = Instant::now();
-        while self.eval(&cond_safe).await != Value::Bool(true) {
+        while try_eval(&self.page, &cond_safe).await.ok() != Some(Value::Bool(true)) {
             if start.elapsed() > Duration::from_secs(secs) {
                 // what the page looked like, so a failure elsewhere (CI) can be read
                 let state = self.eval(PAGE_STATE).await;
