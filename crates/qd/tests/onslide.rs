@@ -5821,3 +5821,142 @@ async fn drag_sideways_sets_depth() {
     ed.wait_file(|f| f.contains("\n# D {#d}\n"), "D heads a group")
         .await;
 }
+
+impl Ed {
+    /// The middle of slide `id`'s row in the list, scrolled into view first.
+    async fn row(&self, id: &str) -> (f64, f64) {
+        self.eval(&format!("document.querySelector('#slides li[data-id={id}]').scrollIntoView({{ block: 'center' }})"))
+            .await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        self.editor_point(&format!("#slides li[data-id={id}] > button"), None)
+            .await
+    }
+    /// Fold the group headed by `id` in the list.
+    async fn fold(&self, id: &str, sub: &str) {
+        self.eval(&format!(
+            "document.querySelector('#slides li[data-id={id}] .disclose').click()"
+        ))
+        .await;
+        self.wait(&format!(
+            "document.querySelector('#slides li[data-id={sub}]')?.hidden === true"
+        ))
+        .await;
+    }
+}
+
+/// Spec 018 US3: a folded group drags as one (its picture says "+N"), one undo.
+#[tokio::test(flavor = "multi_thread")]
+async fn drag_collapsed_group() {
+    let Some(ed) = Ed::open(GROUPS).await else {
+        return;
+    };
+    ed.settle().await;
+    ed.fold("part-a", "a1").await;
+    ed.fold("part-b", "b1").await;
+    let from = ed.row("part-b").await;
+    let to = ed.row("part-a").await;
+    let to = (to.0, to.1 - 40.0);
+    ed.press_and_move(from, to).await;
+    ed.wait("document.querySelector('.drag-ghost .name')?.textContent.endsWith('+1')")
+        .await;
+    ed.mouse(DispatchMouseEventType::MouseReleased, to, false)
+        .await;
+    ed.until_cli(
+        &["slides"],
+        |v| slide_ids(v) == ["intro", "part-b", "b1", "part-a", "a1", "a2", "a3"],
+        "the group moved whole, before Part A",
+    )
+    .await;
+    ed.undo_to(GROUPS).await;
+}
+
+/// Spec 018 US3: on a folded head the menu acts on the whole group.
+#[tokio::test(flavor = "multi_thread")]
+async fn group_menu_acts_on_the_whole_group() {
+    let Some(ed) = Ed::open(GROUPS).await else {
+        return;
+    };
+    ed.settle().await;
+    ed.fold("part-a", "a1").await;
+    ed.right_click(ed.row("part-a").await).await;
+    let labels = ed.menu_labels().await;
+    for l in [
+        "Duplicate group",
+        "Cut group (4 slides)",
+        "Copy group (4 slides)",
+        "Delete group…",
+    ] {
+        assert!(labels.iter().any(|x| x == l), "{l} in {labels:?}");
+    }
+    ed.click_menu("Duplicate group").await;
+    ed.wait_file(
+        |f| f.matches("\n# Part A").count() == 2 && f.matches("\n## A3").count() == 2,
+        "the group duplicated",
+    )
+    .await;
+    ed.undo_to(GROUPS).await;
+    ed.right_click(ed.row("part-a").await).await;
+    ed.click_menu("Delete group…").await;
+    ed.click_editor("dialog.sheet button[value=ok]").await;
+    ed.wait_file(
+        |f| !f.contains("{#a1}") && !f.contains("{#part-a}") && f.contains("{#b1}"),
+        "the group deleted",
+    )
+    .await;
+    ed.undo_to(GROUPS).await;
+}
+
+/// Spec 018 FR-017: a pasted group lands whole, after the target's group or the
+/// last top-level slide, never splitting another group.
+#[tokio::test(flavor = "multi_thread")]
+async fn paste_group_after_group_end() {
+    let deck = "---\ntitle: Paste\nformat: revealjs\n---\n\n## Intro {#intro}\n\n## Agenda {#agenda}\n\n# Part A {#part-a}\n\n## A1 {#a1}\n\n## A2 {#a2}\n\n# Part B {#part-b}\n\n## B1 {#b1}\n";
+    let Some(ed) = Ed::open(deck).await else {
+        return;
+    };
+    ed.settle().await;
+    ed.fold("part-b", "b1").await;
+    ed.right_click(ed.row("part-b").await).await;
+    ed.click_menu("Copy group (2 slides)").await;
+    let pos = |v: &Value, id: &str| slide_ids(v).iter().position(|x| x == id);
+    // on a top-level slide: after the last top-level slide
+    ed.right_click(ed.row("intro").await).await;
+    ed.click_menu("Paste slides after").await;
+    ed.until_cli(
+        &["slides"],
+        |v| pos(v, "part-b-1") == Some(2) && pos(v, "agenda") == Some(1),
+        "after Agenda",
+    )
+    .await;
+    ed.undo_to(deck).await;
+    // on a sub-slide: after its group
+    ed.right_click(ed.row("a1").await).await;
+    ed.click_menu("Paste slides after").await;
+    ed.until_cli(
+        &["slides"],
+        |v| pos(v, "part-b-1") == pos(v, "a2").map(|i| i + 1),
+        "after A2",
+    )
+    .await;
+}
+
+/// Spec 018 FR-018: deleting an open head alone says where its slides went.
+#[tokio::test(flavor = "multi_thread")]
+async fn open_head_deleted_alone() {
+    let Some(ed) = Ed::open(GROUPS).await else {
+        return;
+    };
+    ed.settle().await;
+    ed.right_click(ed.row("part-b").await).await;
+    ed.click_menu("Delete slide…").await;
+    ed.click_editor("dialog.sheet button[value=ok]").await;
+    ed.wait_file(
+        |f| !f.contains("{#part-b}") && f.contains("{#b1}"),
+        "Part B deleted",
+    )
+    .await;
+    ed.wait(
+        "document.querySelector('#notice').textContent === 'Its 1 slide now belongs to Part A'",
+    )
+    .await;
+}

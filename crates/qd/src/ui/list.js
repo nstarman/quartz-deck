@@ -339,7 +339,7 @@ export function makeList(api) {
       const ghost = el('div', 'drag-ghost');
       const host = el('div', 'thumb');
       host.attachShadow({ mode: 'open' });
-      ghost.append(host, el('span', 'name', s.title || 'Untitled'));
+      ghost.append(host, el('span', 'name', `${s.title || 'Untitled'}${folded.has(s.id) ? ` +${subsOf(s.id).length}` : ''}`));
       ghost.style.width = `${r.width}px`;
       document.body.append(ghost);
       const doc = frameDoc();
@@ -439,12 +439,15 @@ export function makeList(api) {
       // nearest others either side of the gap
       const group = selected(s.id);
       const { rest } = done;
-      const after = rest.slice(0, done.to).filter((id) => !group.includes(id)).at(-1);
+      // after a folded head means after its whole group (its sub-slides aren't rows)
+      const prev = rest.slice(0, done.to).filter((id) => !group.includes(id)).at(-1);
+      const after = prev && folded.has(prev) ? groupEnd(prev) : prev;
+      const behind = group.length === 1 ? leftBehind(s.id) : [];
       const before = rest.slice(done.to).find((id) => !group.includes(id));
       const where = after ? { after } : before ? { before } : null;
       if (!where) return;
       const r = await api.op('move', { slide: group.length > 1 ? group : s.id, ...where, ...(depth ? { [depth]: true } : {}) });
-      if (r) { await api.fetchDeck(); api.regrouped(r, group[0]); }
+      if (r) { await api.fetchDeck(); api.regrouped(r, group[0]); adopted(behind); }
     };
     const key = (e) => {
       if (e.key !== 'Escape' || !d) return; // Escape puts it back
@@ -487,11 +490,28 @@ export function makeList(api) {
   }
   /** The slides an action on `id` applies to: the picked ones in deck order, if `id` is one. */
   function selected(id) {
-    if (picked.size < 2 || !picked.has(id)) return [id];
-    return (api.state.deck?.slides || []).map((s) => s.id).filter((x) => picked.has(x));
+    const slides = api.state.deck?.slides || [];
+    const ids = picked.size < 2 || !picked.has(id) ? [id] : slides.map((s) => s.id).filter((x) => picked.has(x));
+    // a folded head stands for its whole group (spec 018 US3), in deck order
+    const all = new Set(ids.flatMap((x) => [x, ...(folded.has(x) ? subsOf(x).map((s) => s.id) : [])]));
+    return slides.map((s) => s.id).filter((x) => all.has(x));
   }
+  /** The slides in slide `id`'s group when it is a folded head (its count for the menus), else 0. */
+  const groupSize = (id) => (folded.has(id) ? 1 + subsOf(id).length : 0);
+  /** The last slide of `id`'s group: after it, a group lands whole (FR-017). */
+  const groupEnd = (id) => { const s = byId(id); const head = s?.head ? s.id : s?.in; return head ? subsOf(head).at(-1)?.id ?? head : id; };
+  /** After an open head moved or was deleted alone: where its sub-slides went (FR-018). */
+  function adopted(subs) {
+    if (!subs.length) return;
+    const first = byId(subs[0]);
+    const [n, one] = [subs.length, subs.length === 1];
+    const what = `Its ${n} slide${one ? '' : 's'}`;
+    api.say(first?.in ? `${what} now ${one ? 'belongs' : 'belong'} to ${byId(first.in)?.title || 'the group before'}` : `${what} now ${one ? 'stands on its' : 'stand on their'} own`);
+  }
+  /** The sub-slides of `id` if it is an open head acting alone (they stay behind). */
+  const leftBehind = (id) => (byId(id)?.head && !folded.has(id) ? subsOf(id).map((s) => s.id) : []);
 
-  return { render, refresh, selected };
+  return { render, refresh, selected, groupSize, groupEnd, adopted, leftBehind };
 }
 
 // how far sideways a drag goes to land a slide one step in or out (spec 018 R8)

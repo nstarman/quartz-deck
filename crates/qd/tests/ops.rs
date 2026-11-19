@@ -116,7 +116,7 @@ fn add_to_files_without_trailing_newline_or_slides() {
 #[test]
 fn dup_gets_fresh_ids() {
     let d = deck();
-    let p = ops::dup(&d, "results", None).unwrap();
+    let p = ops::dup(&d, &["results"], None).unwrap();
     snap("dup_results", &d, &p);
     let a = run(&d, p.clone(), &[]);
     assert_eq!(a.slides[2].id, p.target);
