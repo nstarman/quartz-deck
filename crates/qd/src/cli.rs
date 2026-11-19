@@ -289,9 +289,10 @@ enum Cmd {
         #[command(subcommand)]
         action: LayoutCmd,
     },
-    /// Duplicate a slide (new ids)
+    /// Duplicate one or more slides (new ids; several keep their deck order, after the last)
     Dup {
-        slide: String,
+        #[arg(required = true)]
+        slide: Vec<String>,
         #[arg(long)]
         after: Option<String>,
     },

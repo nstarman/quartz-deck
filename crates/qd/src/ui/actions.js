@@ -116,14 +116,17 @@ export function makeActions(api) {
     return r;
   }
 
+  /** "Copy group (4 slides)" on a folded head (spec 018 US3), else the slide's own label. */
+  const group = (t, verb) => { const n = api.groupSize(t.slideId); return n ? `${verb} group (${n} slides)` : `${verb} slide`; };
+
   const kv = (t) => t.full?.attrs?.kv || {};
   const setAttr = (t, key, value) => api.op('set', value ? { slide: t.slideId, attr: [`${key}=${value}`] } : { slide: t.slideId, unset: [key] });
   const slide = [
     { id: 'slide-before', label: 'Add slide before…', run: (t) => api.addSlide({ before: t.slideId }) },
     { id: 'slide-after', label: 'Add slide after…', run: (t) => api.addSlide({ after: t.slideId }) },
-    { id: 'slide-dup', label: 'Duplicate slide', run: (t) => api.op('dup', { slide: t.slideId }) },
-    { id: 'slide-cut', label: 'Cut slide', run: async (t) => { await api.copySlide(t); return api.op('rm', { slide: t.slideId }); } },
-    { id: 'slide-copy', label: 'Copy slide', run: (t) => api.copySlide(t) },
+    { id: 'slide-dup', label: (t) => group(t, 'Duplicate'), run: (t) => api.op('dup', { slide: t.slideId }) },
+    { id: 'slide-cut', label: (t) => group(t, 'Cut'), run: async (t) => { await api.copySlide(t); return api.op('rm', { slide: t.slideId }); } },
+    { id: 'slide-copy', label: (t) => group(t, 'Copy'), run: (t) => api.copySlide(t) },
     { id: 'slide-paste', label: 'Paste slides after', run: (t) => api.pasteSlides(t) },
     ...['in', 'out'].map((dir) => ({
       id: `slide-${dir}dent`, label: dir === 'in' ? 'Indent slide' : 'Outdent slide',
@@ -131,7 +134,11 @@ export function makeActions(api) {
       run: async (t) => regrouped(await api.op(`${dir}dent`, { slide: t.slideId }), t.slideId),
     })),
     { id: 'slide-hide', label: 'Hidden in the presentation', checked: (t) => kv(t).visibility === 'hidden', run: (t) => setAttr(t, 'visibility', kv(t).visibility === 'hidden' ? null : 'hidden') },
-    { id: 'slide-rm', label: 'Delete slide…', run: async (t) => (!settings.get('confirm.slide_delete') || await confirmSheet('Delete slide?', `"${t.title || t.slideId}" will be deleted. Undo brings it back.`, 'Delete')) && api.op('rm', { slide: t.slideId }) },
+    { id: 'slide-rm', label: (t) => `${group(t, 'Delete')}…`, run: async (t) => {
+      const n = api.groupSize(t.slideId);
+      const what = n ? ['Delete group?', `"${t.title || t.slideId}" and the ${n - 1} slides in its group will be deleted. Undo brings them back.`] : ['Delete slide?', `"${t.title || t.slideId}" will be deleted. Undo brings it back.`];
+      return (!settings.get('confirm.slide_delete') || await confirmSheet(...what, 'Delete')) && api.op('rm', { slide: t.slideId });
+    } },
     { id: 'history-restore-slide', label: 'Restore slide from this version', visible: () => !!api.version(), run: (t) => api.op('restore', { rev: api.version().rev, slide: t.slideId }) },
     '-',
     { id: 'slide-bg', label: 'Background colour…', run: async (t) => {
@@ -161,7 +168,7 @@ export function makeActions(api) {
   const shown = (a, t) => a === '-' || !a.visible || a.visible(t);
   const resolve = (list, t) => list.filter((a) => shown(a, t)).map((a) => (a === '-' ? a : {
     id: a.id,
-    label: a.label,
+    label: typeof a.label === 'function' ? a.label(t) : a.label,
     shortcut: keys.shortcut(a.id), // keys come from the action list (spec 007)
     checked: typeof a.checked === 'function' ? a.checked(t) : undefined,
     disabled: a.enabled ? !a.enabled(t) : false,

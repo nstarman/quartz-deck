@@ -1553,12 +1553,16 @@ async function slideTarget(slideId) {
 
 const actions = makeActions({
   deck: () => state.deck,
+  groupSize: (id) => slideList.groupSize(id),
   runCells: run.runCells,
   addSlide,
   op: async (name, args) => {
+    let behind = [];
+    // the picked slides, if this is one (spec 008 US9), or a folded group's (spec 018 US3)
+    const many = /^(dup|rm)$/.test(name) ? slideList.selected(args.slide) : [];
+    if (many.length > 1) args = { ...args, slide: many };
     if (name === 'rm') {
-      const many = slideList.selected(args.slide); // the picked slides, if this is one (spec 008 US9)
-      if (many.length > 1) args = { ...args, slide: many };
+      if (many.length === 1) behind = slideList.leftBehind(many[0]); // an open head deleted alone
       const slides = state.deck?.slides || [];
       const i = slides.findIndex((x) => x.id === many[0]);
       const near = [...slides.slice(0, i).reverse(), ...slides.slice(i + 1)].find((x) => !many.includes(x.id));
@@ -1566,13 +1570,14 @@ const actions = makeActions({
     }
     const r = await op(name, args);
     if (!r) return null;
-    if (name === 'dup') { state.goAfterRender = r.target; copiedFrom.set(r.target, slideById(args.slide)?.anchor); }
+    if (name === 'dup') { state.goAfterRender = r.target; copiedFrom.set(r.target, slideById([].concat(args.slide)[0])?.anchor); }
     if (/^(block|box|arrow) /.test(name) && !/ rm$/.test(name) && r.target?.includes('/')) state.sel = r.target; // the element at its new place
     if (/^(block |arrow )?rm$/.test(name)) state.sel = null;
     if (name === 'block place') state.sel = args.element; // the box is where the element was
     await fetchDeck();
     await renderPanel();
     renderSlidebar();
+    slideList.adopted(behind);
     return r;
   },
   placement,
@@ -2057,8 +2062,12 @@ async function pasteSlides(t) {
   const text = await clipboardText();
   if (!text) { say('Nothing to paste', true); return; }
   const slides = /^(#{1,6}\s|---[ \t]*(\n|$))/.test(text.trimStart());
+  // a pasted group (starting with a head) lands whole: after the target's group, or after
+  // the last top-level slide, never splitting another group (spec 018 FR-017)
+  const gl = state.deck?.group_level;
+  const after = gl && new RegExp(`^#{${gl}}(?!#)`).test(text.trimStart()) ? slideList.groupEnd(t.slideId) : t.slideId;
   const r = slides
-    ? await op('paste', { after: t.slideId, md: text })
+    ? await op('paste', { after, md: text })
     : await op('block add', { slide: t.slideId, end: true, md: outside(text) });
   if (!r) return;
   if (slides) state.goAfterRender = r.target;

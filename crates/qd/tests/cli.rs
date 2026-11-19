@@ -1402,3 +1402,45 @@ fn move_lands_indented() {
         2,
     );
 }
+
+/// Spec 018 US3: `qd dup` copies several slides, in deck order, as one patch
+/// with fresh ids (contracts/cli.md), so a folded group duplicates as one.
+#[test]
+fn dup_several() {
+    let src = "---\ntitle: T\n---\n\n# A {#a}\n\n## A1 {#a1}\n\n::: {#note}\nx\n:::\n\n## B {#b}\n\n## C {#c}\n";
+    let e = Env::with(src);
+    let v = e.ok(&["dup", "a", "a1"]);
+    assert_edit(&v, "dup");
+    let o = outline(&e.ok(&["slides"]));
+    let ids: Vec<&Value> = o.iter().map(|s| &s[0]).collect();
+    assert_eq!(ids.len(), 6, "{ids:?}");
+    assert_eq!(
+        (ids[0], ids[1], ids[4], ids[5]),
+        (&json!("a"), &json!("a1"), &json!("b"), &json!("c"))
+    );
+    assert_eq!(
+        &v["target"], ids[2],
+        "the first copy, after the last named slide"
+    );
+    // the copies are a group of their own: a head, then its sub-slide
+    assert_eq!((&o[2][1], &o[3][2]), (&json!(true), ids[2]));
+    // fresh ids for the copied block too, and the source untouched
+    let text = e.text();
+    assert_eq!(text.matches("{#note}").count(), 1, "{text}");
+    assert!(
+        text.starts_with(&src[..src.find("## B").unwrap()]),
+        "{text}"
+    );
+    e.ok(&["undo"]);
+    assert_eq!(e.text(), src);
+    // --after puts them elsewhere; one slide works as before
+    e.ok(&["dup", "a", "a1", "--after", "c"]);
+    let ids: Vec<Value> = outline(&e.ok(&["slides"]))
+        .iter()
+        .map(|s| s[0].clone())
+        .collect();
+    assert_eq!(&ids[..4], [json!("a"), json!("a1"), json!("b"), json!("c")]);
+    e.ok(&["undo"]);
+    e.ok(&["dup", "b"]);
+    assert_eq!(outline(&e.ok(&["slides"])).len(), 5);
+}

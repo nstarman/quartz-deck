@@ -445,37 +445,46 @@ fn fill_placeholder(old: &str, md: &str, nl: &str) -> Option<String> {
     })
 }
 
-pub fn dup(d: &Deck, slide: &str, after: Option<&str>) -> Result<Patch> {
+pub fn dup(d: &Deck, slides: &[impl AsRef<str>], after: Option<&str>) -> Result<Patch> {
     let mut ctx = Ctx::new(d);
-    let s = ctx.slide(slide)?;
-    let at = ctx.insertion(Pos::After(after.unwrap_or(slide)))?;
+    let src = several(&ctx, slides)?;
+    let last = &src[src.len() - 1].id;
+    let at = ctx.insertion(Pos::After(after.unwrap_or(last)))?;
     let mut assigned = Vec::new();
-    let (src_text, _) = ctx.rewrite(s, None, None, None, &mut assigned);
-
-    // copy: fresh slide id, fresh ids for blocks with explicit ids
-    let new_id = ctx.slide_id(s.title.as_deref());
-    let rest = copy_body(&mut ctx, d, s, false, &mut assigned);
-    let mut attrs = s.attrs.clone().unwrap_or_default();
-    attrs.set_id(&new_id);
-    let fake = Slide {
-        attrs: Some(attrs),
-        id_explicit: true,
-        ..s.clone()
-    };
-    let change = AttrChange::default();
-    let (copy, _) = ctx.rewrite(
-        &fake,
-        Some(s.title.clone()),
-        Some(&change),
-        Some(rest),
-        &mut Vec::new(),
-    );
-    assigned.insert(0, new_id.clone());
-    let mut reps = vec![(Span { start: at, end: at }, ctx.place(at, &copy))];
-    if src_text != d.slice(s.span) {
-        reps.push((s.span, src_text));
+    let mut reps = Vec::new();
+    let mut copies: Vec<String> = Vec::new();
+    let mut new_ids = Vec::new();
+    for s in &src {
+        let (src_text, _) = ctx.rewrite(s, None, None, None, &mut assigned);
+        if src_text != d.slice(s.span) {
+            reps.push((s.span, src_text));
+        }
+        // copy: fresh slide id, fresh ids for blocks with explicit ids
+        let new_id = ctx.slide_id(s.title.as_deref());
+        let rest = copy_body(&mut ctx, d, s, false, &mut assigned);
+        let mut attrs = s.attrs.clone().unwrap_or_default();
+        attrs.set_id(&new_id);
+        let fake = Slide {
+            attrs: Some(attrs),
+            id_explicit: true,
+            ..(*s).clone()
+        };
+        let (copy, _) = ctx.rewrite(
+            &fake,
+            Some(s.title.clone()),
+            Some(&AttrChange::default()),
+            Some(rest),
+            &mut Vec::new(),
+        );
+        copies.push(copy);
+        new_ids.push(new_id);
     }
-    Ok(patch("dup", new_id, reps, assigned))
+    // several copies follow one another, as `move` joins slides (spec 018 US3)
+    let copy = join_slides(ctx.nl(), copies.iter().map(String::as_str));
+    reps.insert(0, (Span { start: at, end: at }, ctx.place(at, &copy)));
+    let target = new_ids[0].clone();
+    assigned.splice(0..0, new_ids);
+    Ok(patch("dup", target, reps, assigned))
 }
 
 /// Insert slides given as markdown (a copy from this or another deck). An
@@ -551,12 +560,7 @@ pub fn mv(d: &Deck, slides: &[impl AsRef<str>], pos: Pos) -> Result<Patch> {
             assigned,
         ));
     }
-    let gap = format!("{0}{0}", ctx.nl());
-    let joined = texts
-        .iter()
-        .map(|(t, _)| t.trim_end_matches(['\n', '\r']))
-        .collect::<Vec<_>>()
-        .join(&gap);
+    let joined = join_slides(ctx.nl(), texts.iter().map(|(t, _)| t.as_str()));
     let mut reps: Vec<_> = moved.iter().map(|s| (s.span, String::new())).collect();
     reps.push((Span { start: at, end: at }, ctx.place(at, &joined)));
     Ok(patch("move", id, reps, assigned))
@@ -694,6 +698,12 @@ pub fn mv_depth(
         moved.assigned_ids,
     );
     Ok((p, changed))
+}
+
+/// Slides' texts one after another, a blank line between them.
+fn join_slides<'a>(nl: &str, texts: impl Iterator<Item = &'a str>) -> String {
+    let texts: Vec<&str> = texts.map(|t| t.trim_end_matches(['\n', '\r'])).collect();
+    texts.join(&format!("{nl}{nl}"))
 }
 
 /// Remove one or more slides, as one patch.
