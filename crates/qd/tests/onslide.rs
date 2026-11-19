@@ -6447,5 +6447,29 @@ async fn resting_pointer_keeps_menu_focus() {
     .await;
     ed.wait(&format!("!{active}?.startsWith('Duplicate')"))
         .await;
+    // and over a submenu's item, that item keeps it (its parent doesn't take it back)
+    let item = |label: &str| {
+        format!(
+            "(() => {{ const r = [...document.querySelectorAll('#ctxmenu li')].find((li) => li.firstChild?.textContent === {label:?} && li.offsetParent).getBoundingClientRect(); return [r.left + 20, r.top + r.height / 2]; }})()"
+        )
+    };
+    let sub = ed.point(&item("Presentation navigation")).await;
+    ed.mouse(DispatchMouseEventType::MouseMoved, sub, false)
+        .await;
+    ed.wait("[...document.querySelectorAll('#ctxmenu li')].some((li) => li.firstChild?.textContent === 'Vertical' && li.offsetParent)")
+        .await;
+    let v = ed.point(&item("Vertical")).await;
+    ed.mouse(DispatchMouseEventType::MouseMoved, (v.0 - 3.0, v.1), false)
+        .await;
+    ed.mouse(DispatchMouseEventType::MouseMoved, v, false).await;
+    ed.wait("document.activeElement.firstChild?.textContent === 'Vertical'")
+        .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(
+        ed.eval("document.activeElement.firstChild?.textContent")
+            .await,
+        "Vertical"
+    );
+    ed.key("Escape", "Escape", 27, 0).await; // out of the submenu
     ed.close_menu().await;
 }

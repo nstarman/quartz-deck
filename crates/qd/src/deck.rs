@@ -681,12 +681,13 @@ impl Deck {
     /// top-level one; `linear`, Quarto's default, when the deck has none.
     pub fn navigation_mode(&self) -> &str {
         let key = "navigation-mode";
-        let revealjs = self.meta.get("format").and_then(|f| f.get("revealjs"));
-        revealjs
-            .and_then(|r| r.get(key))
-            .or_else(|| self.meta.get(key))
-            .and_then(Yaml::as_str)
-            .unwrap_or("linear")
+        (self
+            .meta
+            .get("format")
+            .and_then(|f| f.get("revealjs")?.get(key)))
+        .or_else(|| self.meta.get(key))
+        .and_then(Yaml::as_str)
+        .unwrap_or("linear")
     }
 
     pub fn has_title_slide(&self) -> bool {

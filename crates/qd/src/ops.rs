@@ -1232,13 +1232,15 @@ pub fn navigation(d: &Deck, mode: &str) -> Result<Patch> {
     let value = (mode != "linear").then_some(mode);
     let fm = d.front_matter.map_or("", |s| d.slice(s));
     let base = d.front_matter.map_or(0, |s| s.start);
-    // the `format: revealjs:` mapping: its child indent, where a new line goes, an existing one
-    let mut lines = Vec::new(); // (start, full end, text)
-    let mut at = base;
-    for raw in fm.split_inclusive('\n') {
-        lines.push((at, at + raw.len(), raw.trim_end_matches(['\n', '\r'])));
-        at += raw.len();
-    }
+    // the front matter's lines: (start, full end, text)
+    let lines: Vec<(usize, usize, &str)> = fm
+        .split_inclusive('\n')
+        .scan(base, |at, raw| {
+            let start = *at;
+            *at += raw.len();
+            Some((start, *at, raw.trim_end_matches(['\n', '\r'])))
+        })
+        .collect();
     let indent = |l: &str| l.len() - l.trim_start().len();
     // `k:` at the start of the line, and its value after the colon
     fn value_of<'a>(l: &'a str, k: &str) -> Option<&'a str> {
@@ -1247,19 +1249,20 @@ pub fn navigation(d: &Deck, mode: &str) -> Result<Patch> {
             .strip_prefix(':')
             .map(str::trim)
     }
-    let is_key = |l: &str, k: &str| value_of(l, k).is_some();
     // `k:` with nothing but a comment after it: a mapping follows
     let opens =
         |l: &str, k: &str| value_of(l, k).is_some_and(|v| v.is_empty() || v.starts_with('#'));
+    // the `format: revealjs:` mapping: its child indent, where a new line goes, an existing one
     let mut nested = None;
-    if let Some(f) = lines
+    let inner: Vec<&str> = lines
         .iter()
-        .position(|(_, _, l)| indent(l) == 0 && opens(l, "format"))
+        .map(|(_, _, l)| *l)
+        .skip(1)
+        .take(lines.len().saturating_sub(2))
+        .collect();
+    if let Some((f, end)) = key_extent(&inner, "format").filter(|&(f, _)| opens(inner[f], "format"))
     {
-        let block: Vec<_> = lines[f + 1..]
-            .iter()
-            .take_while(|(_, _, l)| l.trim().is_empty() || indent(l) > 0)
-            .collect();
+        let block = &lines[f + 2..end + 1]; // `inner` starts after the opening `---`
         if let Some(r) = block.iter().position(|(_, _, l)| opens(l, "revealjs")) {
             let own = indent(block[r].2);
             let kids: Vec<_> = block[r + 1..]
@@ -1271,7 +1274,7 @@ pub fn navigation(d: &Deck, mode: &str) -> Result<Patch> {
             let end = kids.last().map_or(block[r].1, |(_, e, _)| *e);
             let line = kids
                 .iter()
-                .find(|(_, _, l)| indent(l) == child && is_key(l, key))
+                .find(|(_, _, l)| indent(l) == child && value_of(l, key).is_some())
                 .map(|(s, e, _)| Span { start: *s, end: *e });
             nested = Some((child, end, line));
         }
@@ -1287,7 +1290,8 @@ pub fn navigation(d: &Deck, mode: &str) -> Result<Patch> {
         }
         (_, None) if !top => vec![], // already linear
         _ => {
-            return edit_front_matter(d, key, value).map(|p| Patch {
+            let p = replace_key(d, key, value.map(|v| text(0, v)))?;
+            return Ok(Patch {
                 op: "navigation".into(),
                 ..p
             });

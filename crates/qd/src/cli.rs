@@ -2368,8 +2368,10 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             _ => ctx.edit(|d| ops::mv(d, slide, to.pos())),
         },
         Cmd::Navigation { mode } => ctx.edit_with(|d| {
-            let p = ops::navigation(d, mode)?;
-            Ok((p, json!({ "navigation_mode": mode })))
+            Ok((
+                ops::navigation(d, mode)?,
+                json!({ "navigation_mode": mode }),
+            ))
         }),
         Cmd::Indent { slide } => ctx.edit_with(|d| changed(ops::relevel(d, slide, ops::Depth::In))),
         Cmd::Outdent { slide } => {

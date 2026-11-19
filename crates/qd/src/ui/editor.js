@@ -2231,7 +2231,7 @@ const NAVIGATION = {
 };
 for (const x of Object.keys(NAVIGATION)) {
   keys.on(`navigation-${x}`, {
-    checked: () => (state.deck?.navigation_mode || 'linear') === x,
+    checked: () => state.deck?.navigation_mode === x,
     why: () => NAVIGATION[x],
     run: async () => { if (await op('navigation', { mode: x })) await fetchDeck(); },
   });
