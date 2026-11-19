@@ -4530,6 +4530,124 @@ async fn inspector_title_tab() {
         .await;
 }
 
+/// Spec 019 US3 (T013): across the width where the inspector comes and goes,
+/// the selection, the tab, a typing session and an unsaved field stay.
+#[tokio::test(flavor = "multi_thread")]
+async fn inspector_follows_the_width() {
+    let Some(ed) = inspecting().await else {
+        return;
+    };
+    ed.go("a").await;
+    ed.select("[data-qd=\"a/0\"]").await;
+    ed.click_editor("#tab-position").await;
+    ed.window(1000, 800).await;
+    ed.wait(&format!("!{INSPECTING} && !document.querySelector('#elbar').hidden && getComputedStyle(document.querySelector('#elbar')).position === 'fixed' && !!{FRAME}.querySelector('.qd-sel')")).await;
+    ed.window(1440, 900).await;
+    ed.wait(&format!(
+        "{INSPECTING} && {TABS}[1] === 'Position' && !!{FRAME}.querySelector('.qd-sel')"
+    ))
+    .await;
+    // an unsaved edit in the Element tab's markdown
+    ed.click_editor("#tab-element").await;
+    ed.eval("document.querySelector('#panel .body textarea[name=md]').value = 'a draft'")
+        .await;
+    ed.window(1000, 800).await;
+    ed.wait(&format!("!{INSPECTING}")).await;
+    ed.window(1440, 900).await;
+    ed.wait(&format!("{INSPECTING} && document.querySelector('#panel .body textarea[name=md]')?.value === 'a draft'")).await;
+    // typing on the slide
+    ed.click_in_slide("[data-qd=\"a/1\"]").await;
+    ed.wait("window.qdSession() !== null").await;
+    ed.window(1000, 800).await;
+    ed.wait(&format!(
+        "!{INSPECTING} && window.qdSession() !== null && !document.querySelector('#fmtbar').hidden"
+    ))
+    .await;
+    ed.window(1440, 900).await;
+    ed.wait(&format!("{INSPECTING} && window.qdSession() !== null && !!document.querySelector('#panel #fmtbar:not([hidden])')")).await;
+}
+
+/// Spec 019 US3 (T013): the source and History panes take the room it needs;
+/// it goes, and comes back when they close.
+#[tokio::test(flavor = "multi_thread")]
+async fn inspector_and_panes() {
+    let Some(ed) = inspecting().await else {
+        return;
+    };
+    ed.window(1300, 900).await;
+    ed.wait(INSPECTING).await;
+    for act in ["toggle-source", "history"] {
+        let run = format!("import('/ui/keys.js').then((k) => k.run('{act}'))");
+        ed.eval(&run).await;
+        ed.wait(&format!("!{INSPECTING}")).await;
+        assert!(
+            ed.eval("document.querySelector('#stage').getBoundingClientRect().width")
+                .await
+                .as_f64()
+                .unwrap()
+                > 0.0,
+            "{act}: the slide keeps its room"
+        );
+        ed.eval(&run).await;
+        ed.wait(INSPECTING).await;
+    }
+}
+
+/// Spec 019 US3 (T013): ⌥⌘0 hides it, and a reload keeps it hidden.
+#[tokio::test(flavor = "multi_thread")]
+async fn inspector_toggle_is_remembered() {
+    let Some(ed) = inspecting().await else {
+        return;
+    };
+    ed.key("0", "Digit0", 48, 1 | 4).await;
+    ed.wait(&format!("!{INSPECTING}")).await;
+    ed.page.reload().await.unwrap();
+    ed.wait_secs(READY, 60).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(
+        ed.eval(INSPECTING).await,
+        json!(false),
+        "still hidden after a reload"
+    );
+    ed.key("0", "Digit0", 48, 1 | 4).await;
+    ed.wait(INSPECTING).await;
+}
+
+/// Spec 019 US3 (T013): F6 goes to the inspector's tab and back; the arrow
+/// keys move along the tabs; Escape in a field goes back to the slide.
+#[tokio::test(flavor = "multi_thread")]
+async fn inspector_keyboard() {
+    let Some(ed) = inspecting().await else {
+        return;
+    };
+    ed.go("a").await;
+    ed.select("[data-qd=\"a/0\"]").await;
+    let focus = "(document.activeElement?.id || document.activeElement?.tagName)";
+    ed.key("F6", "F6", 117, 0).await;
+    ed.wait(&format!("{focus} === 'tab-element'")).await;
+    ed.key("ArrowRight", "ArrowRight", 39, 0).await;
+    ed.wait(&format!("{focus} === 'tab-text' && {TABS}[1] === 'Text'"))
+        .await;
+    ed.key("ArrowRight", "ArrowRight", 39, 0).await;
+    ed.wait(&format!("{focus} === 'tab-position'")).await;
+    ed.key("ArrowLeft", "ArrowLeft", 37, 0).await;
+    ed.wait(&format!("{focus} === 'tab-text'")).await;
+    // into the tab, then Escape: back to the slide
+    ed.click_editor("#tab-element").await;
+    ed.eval("document.querySelector('#panel .body textarea[name=md]').focus()")
+        .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("!document.querySelector('#panel').contains(document.activeElement)")
+        .await;
+    // F6 there and back
+    ed.key("F6", "F6", 117, 0).await;
+    ed.wait("document.querySelector('#panel .tabs').contains(document.activeElement)")
+        .await;
+    ed.key("F6", "F6", 117, 0).await;
+    ed.wait("!document.querySelector('#panel').contains(document.activeElement)")
+        .await;
+}
+
 // ---------- spec 015 US1: diagrams on the slide ----------
 
 const DIAGRAM: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## Flow {#flow}\n\n```{dot}\ndigraph {\n  layout=neato; splines=ortho;\n  node [shape=box];\n  a [label=\"Data\", pos=\"0,1!\"];\n  b [label=\"Tool\", pos=\"2,1!\"];\n  c [label=\"Paper\", pos=\"2,0!\"];\n  a -> b; b -> c;\n}\n```\n";

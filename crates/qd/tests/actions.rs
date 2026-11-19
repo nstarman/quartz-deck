@@ -42,6 +42,7 @@ fn parse_key(k: &str) -> (Vec<&str>, &str) {
         "ArrowDown",
         "ArrowLeft",
         "ArrowRight",
+        "F6",
         "F10",
         "ContextMenu",
         ",",
@@ -189,6 +190,11 @@ const WIDGET_KEYS: &[(&str, usize, &str)] = &[
     // form ⌘Enter submit; Esc closing a menu while focus is in the preview; the edit
     // session's commit/leave/indent keys (move with US4, T020); the splitter's arrows
     ("dot.js", 1, "Esc cancelling a drag of a diagram's box"),
+    (
+        "inspector.js",
+        2,
+        "the inspector's tablist: ← → along the tabs; Esc from a field back to the slide (019)",
+    ),
     (
         "arrows.js",
         1,

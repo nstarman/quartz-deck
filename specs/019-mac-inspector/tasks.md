@@ -135,7 +135,7 @@ Paths are relative to the repo root.
 
 **Independent test**: spec US3's independent test.
 
-- [ ] T013 [P] [US3] Write failing browser tests in `crates/qd/tests/onslide.rs`:
+- [X] T013 [P] [US3] Write failing browser tests in `crates/qd/tests/onslide.rs`:
   - **`inspector_follows_the_width`:**
     - an element selected at 1440 stays selected at 1000, with `#elbar` floating over it;
     - back at 1440 it is in the inspector on the same tab;
@@ -147,11 +147,16 @@ Paths are relative to the repo root.
     - the arrow keys move between tabs;
     - Tab reaches the tab's first field;
     - Escape in a field returns to the slide.
-- [ ] T014 [US3] Run the width check when the source or History pane opens, closes or is resized, in `crates/qd/src/ui/editor.js`. Keep the selection, typing session and field values when nodes move in and out, in `crates/qd/src/ui/inspector.js`.
-- [ ] T015 [US3] Implement the keys:
+- [X] T014 [US3] Run the width check when the source or History pane opens, closes or is resized, in `crates/qd/src/ui/editor.js`. Keep the selection, typing session and field values when nodes move in and out, in `crates/qd/src/ui/inspector.js`.
+- [X] T015 [US3] Implement the keys:
   - F6 between the slide and the inspector, in `crates/qd/src/ui/keys.js`, with its entry in the allowances of `keys_are_handled_only_through_the_list`;
   - the tabs' arrow keys and Escape, in `crates/qd/src/ui/inspector.js`.
   T013 passes.
+
+**As built (PR 3):**
+- **T014 needed no code.** The width check already watches `#stage`, which the source and History panes narrow. The selection, the typing session and the panel's fields stay because only the bars move; the panel's content isn't redrawn on a resize. The tests (`inspector_follows_the_width`, `inspector_and_panes`, `inspector_toggle_is_remembered`) passed the first time they ran.
+- **F6** is an action in the list (View ▸ "Go to the inspector and back", `F6`), so it shows in the menu. The test's list of named keys gains F6.
+- **The tablist's ← →** and **Esc from a field** are widget keys in `inspector.js` (allowance in `keys_are_handled_only_through_the_list`). The tabs use a roving tabindex: Tab reaches the tab shown.
 
 **Checkpoint**: PR 3. The feature is complete.
 
