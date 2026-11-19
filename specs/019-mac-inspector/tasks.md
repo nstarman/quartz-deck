@@ -108,17 +108,22 @@ Paths are relative to the repo root.
 
 **Independent test**: spec US2's independent test.
 
-- [ ] T011 [P] [US2] Write failing browser tests in `crates/qd/tests/onslide.rs`, at 1440 × 900:
+- [X] T011 [P] [US2] Write failing browser tests in `crates/qd/tests/onslide.rs`, at 1440 × 900:
   - **`inspector_slide_tab`:**
     - with nothing selected the Slide tab shows, `#slidebar`'s controls are inside it, and the row above the slide is gone (the preview starts at the top of the stage);
     - setting the transition to fade writes `transition="fade"` with one undo step;
     - Hidden, Background and the ⋯ menu act as from the slide bar;
   - **`inspector_title_tab`:** on the title slide the Title tab shows the title panel's fields, and editing the subtitle writes it to the front matter as today.
-- [ ] T012 [US2] Move the slide bar and the slide panel into the Slide tab, and the title panel into the Title tab, in `crates/qd/src/ui/editor.js` and `crates/qd/src/ui/inspector.js`:
+- [X] T012 [US2] Move the slide bar and the slide panel into the Slide tab, and the title panel into the Title tab, in `crates/qd/src/ui/editor.js` and `crates/qd/src/ui/inspector.js`:
   - `renderSlidebar` fills `#slidebar` wherever it is;
   - `renderPanel` and `renderTitlePanel` render into their tabs;
   - the slide bar's row collapses while the inspector shows (`crates/qd/src/ui/editor.css`).
   T011 passes.
+
+**As built (PR 2):**
+- **Mostly done by PR 1.** With nothing selected, the slide or title panel is the only tab's content. The slide bar moves into the inspector, so its row above the slide is gone. `renderSlidebar` fills it wherever it is.
+- **What was left was a duplicate.** The Slide tab showed background and transition twice: the slide bar's controls, applied at once, and the slide form's copies, applied with Apply. In the inspector the form's Background fieldset and Transition field are hidden (CSS). Title, classes and content stay in the form.
+- **The Title tab** holds today's title panel, which has the deck's title only. Subtitle, author and date stay in the front matter (`qd meta`), as before.
 
 **Checkpoint**: PR 2. Nothing floats over or above the slide on a wide window.
 

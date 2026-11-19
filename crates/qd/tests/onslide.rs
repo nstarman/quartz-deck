@@ -1649,6 +1649,13 @@ async fn popup_run() {
         false,
         "the pop-up stays open"
     );
+    // the edit's render lands first (a slow machine): a run during its reload
+    // would show in the page it replaces
+    ed.wait_secs(
+        &format!("document.querySelector('#status').textContent === 'Up to date' && !document.querySelector('#preview').hasAttribute('aria-busy') && !!{FRAME}.querySelector(\"{cell} .qd-output\")?.textContent.includes('54')"),
+        120,
+    )
+    .await;
     // unchanged: runs again, writes nothing
     let version = ed.cli(&["slides"])["version"].clone();
     ed.popup_run("```{python}\nprint(6 * 9)\n```").await;
@@ -4376,15 +4383,21 @@ const INSPECTING: &str = "document.querySelector('main').classList.contains('ins
 /// The inspector's tab names, in order, and the selected one.
 const TABS: &str = "[[...document.querySelectorAll('#panel .tabs [role=tab]')].map((t) => t.textContent), document.querySelector('#panel .tabs [aria-selected=true]')?.textContent]";
 
+/// The editor on a window wide enough for the inspector, with it showing.
+async fn inspecting() -> Option<Ed> {
+    let ed = Ed::open(INSPECTOR_DECK).await?;
+    ed.window(1440, 900).await;
+    ed.wait(INSPECTING).await;
+    Some(ed)
+}
+
 /// Spec 019 T004: the inspector is there on a wide window, gone on a narrower
 /// one, and gone when the person turned it off.
 #[tokio::test(flavor = "multi_thread")]
 async fn inspector_shows_when_wide() {
-    let Some(ed) = Ed::open(INSPECTOR_DECK).await else {
+    let Some(ed) = inspecting().await else {
         return;
     };
-    ed.window(1440, 900).await;
-    ed.wait(INSPECTING).await;
     ed.go("a").await;
     ed.wait(&format!(
         "JSON.stringify({TABS}) === JSON.stringify([['Slide'], 'Slide'])"
@@ -4412,11 +4425,9 @@ async fn inspector_shows_when_wide() {
 /// each does what it does from the bar.
 #[tokio::test(flavor = "multi_thread")]
 async fn inspector_element_tabs() {
-    let Some(ed) = Ed::open(INSPECTOR_DECK).await else {
+    let Some(ed) = inspecting().await else {
         return;
     };
-    ed.window(1440, 900).await;
-    ed.wait(INSPECTING).await;
     ed.go("a").await;
     ed.select("[data-qd=\"a/0\"]").await;
     ed.wait(&format!(
@@ -4464,6 +4475,59 @@ async fn inspector_element_tabs() {
         "JSON.stringify({TABS}[0]) === JSON.stringify(['Element', 'Position'])"
     ))
     .await;
+}
+
+/// Spec 019 US2 (T011): with nothing selected the Slide tab holds the slide
+/// bar (no row above the slide) and the slide's form, each control once.
+#[tokio::test(flavor = "multi_thread")]
+async fn inspector_slide_tab() {
+    let Some(ed) = inspecting().await else {
+        return;
+    };
+    ed.go("a").await;
+    ed.wait(&format!(
+        "JSON.stringify({TABS}) === JSON.stringify([['Slide'], 'Slide'])"
+    ))
+    .await;
+    assert_eq!(
+        ed.eval("!document.querySelector('#stage > #slidebar') && !!document.querySelector('#panel #slidebar')").await,
+        json!(true),
+        "no slide bar row above the slide"
+    );
+    // each control once: the bar's (applied at once), not the form's copy too
+    assert_eq!(
+        ed.eval("['select[name=transition]', 'input[name=bg], [data-act=bg]'].map((s) => [...document.querySelectorAll('#panel ' + s)].filter((x) => x.offsetParent).length)").await,
+        json!([1, 1]),
+        "one transition, one background"
+    );
+    // the bar's transition writes at once, one undo step
+    let before = ed.file();
+    ed.eval("(() => { const s = document.querySelector('#panel #slidebar [name=transition]'); s.value = 'fade'; s.dispatchEvent(new Event('change', { bubbles: true })); })()").await;
+    ed.wait_file(|f| f.contains("transition=fade"), "faded")
+        .await;
+    ed.settle().await;
+    ed.undo_to(&before).await;
+    ed.settle().await;
+    // Hidden, from the bar in the inspector
+    ed.click_editor("#panel #slidebar [name=hidden]").await;
+    ed.wait_file(|f| f.contains("visibility=hidden"), "hidden")
+        .await;
+}
+
+/// Spec 019 US2 (T011): on the title slide the Title tab has the deck's title.
+#[tokio::test(flavor = "multi_thread")]
+async fn inspector_title_tab() {
+    let Some(ed) = inspecting().await else {
+        return;
+    };
+    ed.go("title-slide").await;
+    ed.wait(&format!(
+        "JSON.stringify({TABS}) === JSON.stringify([['Title'], 'Title'])"
+    ))
+    .await;
+    ed.eval("(() => { const f = document.querySelector('#panel .body form'); f.title.value = 'Renamed'; f.requestSubmit(); })()").await;
+    ed.wait_file(|f| f.contains("title: \"Renamed\""), "the front matter")
+        .await;
 }
 
 // ---------- spec 015 US1: diagrams on the slide ----------

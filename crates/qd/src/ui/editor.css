@@ -329,6 +329,8 @@ main.inspector > #panel > .bars > :is(#slidebar, #elbar, #fmtbar) { position: st
   flex-wrap: wrap; margin: 0 0 12px; padding: 0; border: 0; box-shadow: none; background: none; }
 main.inspector > #panel > .bars:has(> #fmtbar:not([hidden])) > .note { display: none; }
 main.inspector > #panel .off { display: none; } /* another tab's (inspector.js) */
+/* the slide form's background and transition: the slide bar above has them, applied at once */
+main.inspector > #panel .slide-form > :is(fieldset, label:has(> select[name=transition])) { display: none; }
 
 #ctxmenu { position: fixed; z-index: 30; }
 #ctxmenu ul { list-style: none; margin: 0; padding: 4px; min-width: 210px; background: var(--panel); color: var(--text);
