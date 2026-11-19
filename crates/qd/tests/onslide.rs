@@ -6402,3 +6402,50 @@ async fn navigation_submenu() {
     ed.close_menu().await;
     ed.undo_to(GROUPS).await;
 }
+
+/// A menu opened from the keyboard keeps its focus when it opens (or grows)
+/// under a pointer that isn't moving: only a mouse that moves takes the focus
+/// (a wider Slide menu once slid under a parked pointer and Enter cut a slide).
+#[tokio::test(flavor = "multi_thread")]
+async fn resting_pointer_keeps_menu_focus() {
+    let Some(ed) = Ed::open(GROUPS).await else {
+        return;
+    };
+    ed.settle().await;
+    ed.go("intro").await; // a slide Duplicate acts on (on the title slide it is disabled)
+    // where the Slide menu's second item will be, the pointer parked there
+    let at = ed
+        .point("(() => { const r = document.querySelector('#menubar [data-menu=Slide]').getBoundingClientRect(); return [r.left + 60, r.bottom + 40]; })()")
+        .await;
+    ed.mouse(DispatchMouseEventType::MouseMoved, at, false)
+        .await;
+    let active =
+        "(document.activeElement.dataset.menu || document.activeElement.firstChild?.textContent)";
+    ed.eval("document.querySelector('#add-slide').focus()")
+        .await;
+    ed.key("F10", "F10", 121, 0).await;
+    for _ in 0..3 {
+        ed.key("ArrowRight", "ArrowRight", 39, 0).await;
+    }
+    ed.wait(&format!("{active} === 'Slide'")).await;
+    ed.key("ArrowDown", "ArrowDown", 40, 0).await;
+    ed.wait(&format!("{active}?.startsWith('Duplicate')")).await;
+    // the pointer "moves" without moving, as when content slides under it
+    ed.mouse(DispatchMouseEventType::MouseMoved, at, false)
+        .await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        ed.eval(&format!("{active}?.startsWith('Duplicate')")).await == true,
+        "focus stayed"
+    );
+    // a mouse that moves does take it
+    ed.mouse(
+        DispatchMouseEventType::MouseMoved,
+        (at.0 + 4.0, at.1),
+        false,
+    )
+    .await;
+    ed.wait(&format!("!{active}?.startsWith('Duplicate')"))
+        .await;
+    ed.close_menu().await;
+}

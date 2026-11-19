@@ -34,7 +34,12 @@ function build(items) {
     }
     // the mouse never takes focus: an edit open on the slide stays open (Format items)
     li.addEventListener('mousedown', (e) => e.preventDefault());
-    li.addEventListener('mouseenter', () => { if (root.contains(document.activeElement)) li.focus(); });
+    // a mouse that moves over an item takes the focus there; a pointer the menu opened
+    // under (or slid under, when the menu grows) doesn't: the keyboard keeps its place.
+    // (Browsers fire mousemove with no movement when content moves under the pointer.)
+    li.addEventListener('mousemove', (e) => {
+      if ((e.movementX || e.movementY) && document.activeElement !== li && root.contains(document.activeElement)) li.focus();
+    });
     ul.append(li);
   }
   return ul;
