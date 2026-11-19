@@ -311,7 +311,17 @@ enum Cmd {
         slide: Vec<String>,
         #[command(flatten)]
         to: Where,
+        /// Then indent the first moved slide where it lands (spec 018), in the same edit
+        #[arg(long, conflicts_with = "outdent")]
+        indent: bool,
+        /// Then outdent the first moved slide where it lands, in the same edit
+        #[arg(long)]
+        outdent: bool,
     },
+    /// Put a slide in the group above it, by heading levels (spec 018: `#` sections)
+    Indent { slide: String },
+    /// Take a sub-slide out of its group: it heads a group of its own
+    Outdent { slide: String },
     /// Remove one or more slides (one undo step)
     Rm {
         #[arg(required = true)]
@@ -931,10 +941,18 @@ fn output_of(cmd: &str) -> &'static str {
             r#"{"ok","op","version","diff","assigned_ids","target":"<box id>","converted_units"?,"commit"?:{"rev"}|{"error"}}"#
         }
         "new" => r#"{"ok","op":"new","path","version","target"}"#,
+        "indent" | "outdent" => {
+            r#"{"ok","op","version","diff","assigned_ids","target","changed":[ids whose heading level changed],"dry_run"?}"#
+        }
         _ => {
             r#"{"ok","op","version","diff","assigned_ids","target","dry_run"?,"commit"?:{"rev"}|{"error"}}"#
         }
     }
+}
+
+/// An edit that also reports the slides whose heading level changed (spec 018).
+fn changed(r: Result<(Patch, Vec<String>)>) -> Result<(Patch, Value)> {
+    r.map(|(p, ids)| (p, json!({ "changed": ids })))
 }
 
 fn schema() -> Value {
@@ -1481,6 +1499,8 @@ const API_OPS: &[&str] = &[
     "dup",
     "paste",
     "move",
+    "indent",
+    "outdent",
     "rm",
     "title",
     "body",
@@ -2273,7 +2293,26 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             let md = required_input(input)?;
             ctx.edit(|d| ops::paste(d, &md, at(after, before)))
         }
-        Cmd::Move { slide, to } => ctx.edit(|d| ops::mv(d, slide, to.pos())),
+        Cmd::Move {
+            slide,
+            to,
+            indent,
+            outdent,
+        } => match (indent, outdent) {
+            (false, false) => ctx.edit(|d| ops::mv(d, slide, to.pos())),
+            _ => {
+                let depth = if *indent {
+                    ops::Depth::In
+                } else {
+                    ops::Depth::Out
+                };
+                ctx.edit_with(|d| changed(ops::mv_depth(d, slide, to.pos(), depth)))
+            }
+        },
+        Cmd::Indent { slide } => ctx.edit_with(|d| changed(ops::relevel(d, slide, ops::Depth::In))),
+        Cmd::Outdent { slide } => {
+            ctx.edit_with(|d| changed(ops::relevel(d, slide, ops::Depth::Out)))
+        }
         Cmd::Rm { slide } => ctx.edit(|d| ops::rm(d, slide)),
         Cmd::Title {
             slide,

@@ -5706,3 +5706,115 @@ async fn shown_slide_opens_its_group() {
         .await;
     ed.wait("document.querySelector('#slides li[data-id=a2]')?.hidden === true && document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide()?.id === 'part-a'").await;
 }
+
+/// Spec 018 US2's made-up deck: four top-level slides.
+const FLAT: &str = "---\ntitle: Flat\nformat: revealjs\n---\n\n## A {#a}\n\nx\n\n## B {#b}\n\n## C {#c}\n\n## D {#d}\n";
+
+/// Spec 018 US2: Tab and ⌘]/Ctrl+] indent, ⇧Tab outdents; a refusal says why and
+/// writes nothing; Escape leaves the list for the canvas.
+#[tokio::test(flavor = "multi_thread")]
+async fn tab_indents_in_list() {
+    let Some(ed) = Ed::open(FLAT).await else {
+        return;
+    };
+    let notice = |s: &str| format!("document.querySelector('#notice').textContent.includes('{s}')");
+    ed.settle().await;
+    ed.pick_slide("b").await;
+    ed.key("Tab", "Tab", 9, 0).await;
+    ed.wait_file(|f| f.contains("\n# A {#a}\n"), "A heads a group")
+        .await;
+    ed.wait(&notice("now heads a group")).await;
+    // the first slide has nothing above it
+    ed.pick_slide("a").await;
+    let before = ed.file();
+    ed.key("Tab", "Tab", 9, 0).await;
+    ed.wait(&notice("nothing above")).await;
+    assert_eq!(ed.file(), before);
+    // ⇧Tab: D heads a group of its own; Ctrl+] puts it back
+    ed.show_in_list("d").await;
+    ed.pick_slide("d").await;
+    ed.key("Tab", "Tab", 9, 8).await;
+    ed.wait_file(|f| f.contains("\n# D {#d}\n"), "D heads a group")
+        .await;
+    ed.pick_slide("d").await;
+    ed.key("]", "BracketRight", 221, 2).await;
+    ed.wait_file(|f| f.contains("\n## D {#d}\n"), "D back in A's group")
+        .await;
+    // Escape: out of the list
+    ed.pick_slide("b").await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("document.activeElement === document.querySelector('#preview')")
+        .await;
+}
+
+/// Spec 018 US2: the row menu offers Indent and Outdent, disabled when the rules say no.
+#[tokio::test(flavor = "multi_thread")]
+async fn menu_indent_items() {
+    let Some(ed) = Ed::open(FLAT).await else {
+        return;
+    };
+    ed.settle().await;
+    let e = &ed;
+    let labels = |at| async move {
+        e.right_click(at).await;
+        let l = e.menu_labels().await;
+        e.close_menu().await;
+        l.into_iter()
+            .filter(|x| x.contains("dent slide"))
+            .collect::<Vec<_>>()
+    };
+    let a = ed
+        .editor_point("#slides li[data-id=a] > button", None)
+        .await;
+    assert_eq!(
+        labels(a).await,
+        ["Indent slide (disabled)", "Outdent slide (disabled)"]
+    );
+    let b = ed
+        .editor_point("#slides li[data-id=b] > button", None)
+        .await;
+    assert_eq!(
+        labels(b).await,
+        ["Indent slide", "Outdent slide (disabled)"]
+    );
+    ed.slide_menu("b", "Indent slide").await;
+    ed.wait_file(|f| f.contains("\n# A {#a}\n"), "A heads a group")
+        .await;
+}
+
+/// Spec 018 US2: a drag 16 px or more sideways lands the slide one step in or out,
+/// each one undo step.
+#[tokio::test(flavor = "multi_thread")]
+async fn drag_sideways_sets_depth() {
+    let Some(ed) = Ed::open(FLAT).await else {
+        return;
+    };
+    ed.settle().await;
+    let c = ed
+        .editor_point("#slides li[data-id=c] > button", None)
+        .await;
+    ed.drag(c, (c.0 + 40.0, c.1)).await;
+    ed.wait_file(|f| f.contains("\n# B {#b}\n"), "B heads a group (C in it)")
+        .await;
+    ed.undo_to(FLAT).await;
+    // a small sideways wobble keeps the depth: nothing changes
+    ed.settle().await;
+    let c = ed
+        .editor_point("#slides li[data-id=c] > button", None)
+        .await;
+    ed.drag(c, (c.0 + 8.0, c.1)).await;
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    assert_eq!(ed.file(), FLAT);
+    // in a group, a drag to the left takes it out
+    ed.cli(&["indent", "c"]);
+    ed.wait("document.querySelector('#slides li[data-id=c]')?.classList.contains('sub')")
+        .await;
+    ed.settle().await;
+    ed.show_in_list("d").await;
+    let d = ed
+        .editor_point("#slides li[data-id=d] > button", None)
+        .await;
+    ed.drag(d, (d.0 - 40.0, d.1)).await;
+    ed.wait_file(|f| f.contains("\n# D {#d}\n"), "D heads a group")
+        .await;
+}

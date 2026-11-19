@@ -89,6 +89,8 @@
   {"id": "slide-copy", "label": "Copy slide", "menu": ["Slide"], "key": "Mod+C", "where": ["slides"]},
   {"id": "slide-paste", "label": "Paste slides after", "menu": ["Slide"], "key": "Mod+V", "where": ["slides", "slide"], "qd": "qd paste --after <slide> --md -"},
   {"id": "slide-move-up", "label": "Move slide up", "menu": ["Slide"], "key": "Alt+ArrowUp", "where": ["slides"], "qd": "qd move <slide> --before <prev>"},
+  {"id": "slide-indent", "label": "Indent slide", "menu": ["Slide"], "key": ["Tab", "Mod+]"], "where": ["slides"], "qd": "qd indent <slide>"},
+  {"id": "slide-outdent", "label": "Outdent slide", "menu": ["Slide"], "key": ["Shift+Tab", "Mod+["], "where": ["slides"], "qd": "qd outdent <slide>"},
   {"id": "slide-move-down", "label": "Move slide down", "menu": ["Slide"], "key": "Alt+ArrowDown", "where": ["slides"], "qd": "qd move <slide> --after <next>"},
   {"id": "slide-hide", "label": "Hidden in the presentation", "menu": ["Slide"], "toggle": true, "where": ["slides", "slide", "element"], "qd": "qd set <slide> --attr visibility=hidden"},
   {"id": "slide-rm", "label": "Delete slide…", "menu": ["Slide"], "key": ["Backspace", "Delete"], "where": ["slides"], "qd": "qd rm <slide>"},

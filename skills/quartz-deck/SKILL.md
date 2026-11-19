@@ -76,6 +76,7 @@ when the current directory has exactly one `.qmd`.
 | save a slide as a layout | `qd layout save results my-layout` (the deck's `_layouts/`; `--mine` for every deck; `--at REF=L,T,W,H` places a flow element; `--replace` overwrites); `qd layout rename A B`, `qd layout rm A`; then `qd add --layout my-layout`. Only the structure is kept, never the slide's text |
 | reorder | `qd move results --before intro` / `--after last`; several at once keep their order: `qd move a b c --after last` |
 | delete | `qd rm @4` (several: `qd rm a b`, one undo step) |
+| groups (sub-slides) | a group is a `#` section and the `##` slides after it, as Quarto stacks them; `qd slides` shows `head` and `in`. `qd indent b` puts b in the group above (the slide above may become a `#` head), `qd outdent b` makes b head a group of its own; `qd move d --after a --indent` lands it in one step. Only heading marks change. A whole group moves by naming its slides: `qd move a a1 a2 --after b2` |
 | retitle | `qd title results "Findings"` (`""` = untitled) |
 | replace content | `qd body results --md "New text"` (keeps positioned boxes) |
 | change a few characters anywhere (code, YAML, text) | `qd replace --old 'np.mean(xs' --new 'np.median(xs' --expect <version>` — `--old` must match exactly once (`E_AMBIGUOUS`: add surrounding text); only those bytes change |
