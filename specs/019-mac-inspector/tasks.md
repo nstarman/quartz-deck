@@ -37,25 +37,25 @@ Paths are relative to the repo root.
 
 ## Phase 1: Setup
 
-- [ ] T001 Add a browser-test helper `Ed::window(w, h)` in `crates/qd/tests/onslide.rs`. It wraps `SetDeviceMetricsOverrideParams`, as `narrow_window` uses it, and waits for the editor's layout to settle. Switch `narrow_window` to it.
+- [X] T001 Add a browser-test helper `Ed::window(w, h)` in `crates/qd/tests/onslide.rs`. It wraps `SetDeviceMetricsOverrideParams`, as `narrow_window` uses it, and waits for the editor's layout to settle. Switch `narrow_window` to it.
 
 ---
 
 ## Phase 2: Foundational (blocks every story)
 
-- [ ] T002 [P] Write a failing unit test in `crates/qd/src/settings.rs`: `ui.inspector` is a known bool key, default `true`; `qd settings` lists it.
-- [ ] T003 Add `ui.inspector` beside `ui.form_panel` in `crates/qd/src/settings.rs` (data-model "Setting"). T002 passes.
-- [ ] T004 Write a failing browser test `inspector_shows_when_wide` in `crates/qd/tests/onslide.rs`:
+- [X] T002 [P] Write a failing unit test in `crates/qd/src/settings.rs`: `ui.inspector` is a known bool key, default `true`; `qd settings` lists it.
+- [X] T003 Add `ui.inspector` beside `ui.form_panel` in `crates/qd/src/settings.rs` (data-model "Setting"). T002 passes.
+- [X] T004 Write a failing browser test `inspector_shows_when_wide` in `crates/qd/tests/onslide.rs`:
   - at 1440 × 900, `<main>` has the class `inspector`; `#panel` has a `tablist` labelled "Inspector" with the tabs of data-model "Which tabs show";
   - at 1000 × 800 the class is off and the page is as before;
   - with `ui.inspector` false (set through the editor's settings) the class is off at 1440.
-- [ ] T005 Create `crates/qd/src/ui/inspector.js` and wire it from `crates/qd/src/ui/editor.js`:
+- [X] T005 Create `crates/qd/src/ui/inspector.js` and wire it from `crates/qd/src/ui/editor.js`:
   - the width check (research R3: window ≥ 1200 px and the slide's column ≥ 640 px, two constants), run on load, on window resize and from the existing `ResizeObserver`;
   - the class `inspector` on `<main>`;
   - the `tablist`/`tabpanel` structure of contracts/editor.md, in `crates/qd/src/ui/index.html`;
   - `tab` state that follows the selection (data-model "Page state").
   T004 passes.
-- [ ] T006 [P] Styles in `crates/qd/src/ui/editor.css`: the inspector column (320 px, beside the stage, on the left of it with `source-right`), the row of tab buttons, grouped sections; dark mode and the VS Code theme through the existing variables.
+- [X] T006 [P] Styles in `crates/qd/src/ui/editor.css`: the inspector column (320 px, beside the stage, on the left of it with `source-right`), the row of tab buttons, grouped sections; dark mode and the VS Code theme through the existing variables.
 
 **Checkpoint**: the inspector appears and hides with the width; its tabs are there but empty.
 
@@ -67,7 +67,7 @@ Paths are relative to the repo root.
 
 **Independent test**: spec US1's independent test.
 
-- [ ] T007 [P] [US1] Write failing browser tests in `crates/qd/tests/onslide.rs`, at 1440 × 900:
+- [X] T007 [P] [US1] Write failing browser tests in `crates/qd/tests/onslide.rs`, at 1440 × 900:
   - **`inspector_element_tabs`:**
     - selecting a paragraph shows Element, Text and Position, with Element selected, and `#elbar` is inside `#panel` and not floating;
     - "Appears on click" there adds `.fragment` exactly as the element bar does, with one undo step;
@@ -82,15 +82,21 @@ Paths are relative to the repo root.
     - a paragraph has Move up/down but no position fields;
   - **`inspector_tabs_by_kind`:** a code cell shows Element (with Run) and Position, no Text; an arrow (spec 016) and a diagram box (spec 015) show their fields in Element;
   - **`inspector_remembers_the_element_tab`:** choosing Position, then selecting another element, keeps Position.
-- [ ] T008 [US1] Move the element bar and the element panel into the Element tab in `crates/qd/src/ui/editor.js` and `crates/qd/src/ui/inspector.js`:
+- [X] T008 [US1] Move the element bar and the element panel into the Element tab in `crates/qd/src/ui/editor.js` and `crates/qd/src/ui/inspector.js`:
   - while the inspector shows, `placeElbar` puts `#elbar` in the tab instead of floating it, and back when it hides;
   - `renderElementPanel` renders its kind, ref, diagram/arrow fields and Markdown into the Element tab, and its position/size form and Move up/down into Position.
   Handlers unchanged (research R2).
-- [ ] T009 [US1] Move the formatting bar into the Text tab in `crates/qd/src/ui/toolbar.js` and `crates/qd/src/ui/inspector.js`:
+- [X] T009 [US1] Move the formatting bar into the Text tab in `crates/qd/src/ui/toolbar.js` and `crates/qd/src/ui/inspector.js`:
   - `place`/`placeNear` skip positioning while `#fmtbar` is in the tab;
   - a typing session opening or closing switches to or from Text (research R4);
   - the note shows when there is no session.
-- [ ] T010 [US1] Add the `inspector` action (View ▸ Inspector, `Alt+Mod+I`, toggle) to `crates/qd/src/ui/actions.json` and its handler, which sets `ui.inspector`. Make the `form-panel` action select the inspector's tab on a wide window (research R5). T007 passes; the existing element bar, formatting bar and Properties tests still pass at 800 × 600.
+- [X] T010 [US1] Add the `inspector` action (View ▸ Inspector, `Alt+Mod+0`, toggle) to `crates/qd/src/ui/actions.json` and its handler, which sets `ui.inspector`. Make the `form-panel` action select the inspector's tab on a wide window (research R5). T007 passes; the existing element bar, formatting bar and Properties tests still pass at 800 × 600.
+
+**As built (PR 1):**
+- **Tabs filter sections.** The tabs show or hide `data-tab`-tagged parts of `#panel`: its `.bars` (the three bars, moved in) and its `.body` (the existing panel views, tagged in their templates). The bars keep their own code. While in the inspector they're `position: static`, so their placement code has no effect, and `placeElbar` skips placing.
+- **Shortcut:** ⌥⌘0, not ⌥⌘I, which opens Chrome's developer tools.
+- **Typing:** the editor clears the selection while typing on the slide, so the inspector shows the Text tab alone then.
+- **New buttons:** the element view gains Move up/down, tagged `data-tab=position` and running the existing `up`/`down` actions. They show in the Properties panel too.
 
 **Checkpoint**: PR 1. On a wide window an element's controls are all in the inspector.
 
@@ -130,7 +136,7 @@ Paths are relative to the repo root.
     - back at 1440 it is in the inspector on the same tab;
     - an open typing session and an unsaved Markdown field in the Element tab survive both resizes (SC-003);
   - **`inspector_and_panes`:** at 1440, opening the source pane at its default width hides the inspector when the slide's column would drop below 640 px, and closing it brings the inspector back; the same for History;
-  - **`inspector_toggle_is_remembered`:** ⌥⌘I hides it, a reload keeps it hidden (`ui.inspector` false), and ⌥⌘I shows it again;
+  - **`inspector_toggle_is_remembered`:** ⌥⌘0 hides it, a reload keeps it hidden (`ui.inspector` false), and ⌥⌘0 shows it again;
   - **`inspector_keyboard`:**
     - F6 moves focus from the slide to the selected tab and back;
     - the arrow keys move between tabs;
@@ -148,7 +154,7 @@ Paths are relative to the repo root.
 
 ## Phase 6: Polish
 
-- [ ] T016 [P] Docs: `README.md` (the inspector, ⌥⌘I, when it shows) and `skills/quartz-deck/SKILL.md` (`ui.inspector` in `qd settings`). Run the tests for any `qd <word>` the docs mention (`skill_matches_cli`).
+- [ ] T016 [P] Docs: `README.md` (the inspector, ⌥⌘0, when it shows) and `skills/quartz-deck/SKILL.md` (`ui.inspector` in `qd settings`). Run the tests for any `qd <word>` the docs mention (`skill_matches_cli`).
 - [ ] T017 Run quickstart §1–§9 and record it in `specs/019-mac-inspector/checklists/quickstart-run.md`.
 - [ ] T018 With the person: try it on their own screens and decks. Tune the two width constants (R3) if they ask, and record the result. Nothing about their decks goes into the repository.
 - [ ] T019 Final constitution re-check in `plan.md`; fmt, clippy (`--workspace --all-targets -D warnings`) and `cargo test --workspace --no-fail-fast` green.

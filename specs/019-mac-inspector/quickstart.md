@@ -32,8 +32,8 @@ Open the printed editor link in a browser window at least 1400 px wide.
    it again: the inspector comes back on the same tab.
 7. **Source pane**: open View ▸ Source pane with the window at 1400 px. The
    inspector hides if the slide would get narrower than 640 px.
-8. **Hide and remember**: press ⌥⌘I. The inspector hides and the bars float.
-   Reload: it stays hidden. Press ⌥⌘I again to bring it back.
+8. **Hide and remember**: press ⌥⌘0. The inspector hides and the bars float.
+   Reload: it stays hidden. Press ⌥⌘0 again to bring it back.
 9. **Keyboard**: press F6 to move focus to the inspector, use the arrows to
    change tabs and Tab to reach a field, then press F6 to return to the
    slide.

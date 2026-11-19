@@ -82,8 +82,10 @@ inspector.
 - **Setting**: a new setting `ui.inspector` (bool, default true), in
   `settings.rs`, so it is in `qd settings` like the other `ui.*` keys.
 - **Toggle**: a new action `inspector`, "Inspector" in the View menu, with
-  ⌥⌘I. It is a general convention for an inspector, and free in
-  `actions.json`. It also has a button at the right end of the header.
+  ⌥⌘0, free in `actions.json`. (⌥⌘I was the first choice, but in Chrome it
+  opens the developer tools before a page can take it.) The menu item is
+  the toggle; a header button is left out, since the menu and shortcut cover
+  it.
 - **Properties**: the existing `form-panel` action ("Properties panel")
   shows the inspector on a wide window. Below the width it opens the panel
   as today (`ui.form_panel`).

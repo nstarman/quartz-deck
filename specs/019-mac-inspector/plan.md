@@ -14,7 +14,7 @@ for an element Element, Text and Position.
   control keeps its handler (research R2).
 - **When it shows**: one width check decides, from the window and the
   panes (R3).
-- **Choice**: a setting and ⌥⌘I let the person hide it (R5).
+- **Choice**: a setting and ⌥⌘0 let the person hide it (R5).
 - **Clean room**: names and look are our own (R1).
 
 This is editor-only work, plus one setting in the core.
@@ -30,7 +30,7 @@ This is editor-only work, plus one setting in the core.
 **Testing**:
 - `cargo test`:
   - a unit test in `settings.rs` for the new key;
-  - browser tests in `tests/onslide.rs` at 1440 px and 1000 px, one per acceptance scenario: tabs follow the selection; no floating bar while it shows; each tab's control makes the same file change as the bar it replaces; resizing keeps the selection and typing; ⌥⌘I and the reload; F6 and the arrow keys;
+  - browser tests in `tests/onslide.rs` at 1440 px and 1000 px, one per acceptance scenario: tabs follow the selection; no floating bar while it shows; each tab's control makes the same file change as the bar it replaces; resizing keeps the selection and typing; ⌥⌘0 and the reload; F6 and the arrow keys;
   - the existing bar and panel tests keep passing below 1200 px, where nothing changes.
 - The browser tests already set the window size. The default test window is 800 × 600, so existing tests run without the inspector unless a test widens the window.
 
@@ -82,7 +82,7 @@ crates/qd/src/
     ├── inspector.js    # new: width check, tabs, moving the bars in and out
     ├── editor.js       # panels split into tabs; bars skip floating while inside; Properties action
     ├── toolbar.js      # place/placeNear skip while the bar is in the inspector
-    ├── actions.json    # View ▸ Inspector (Alt+Mod+I)
+    ├── actions.json    # View ▸ Inspector (Alt+Mod+0)
     ├── keys.js         # F6 between the slide and the inspector
     ├── editor.css      # the inspector's column, tabs and sections
     └── index.html      # tablist and tabpanels in #panel
@@ -98,7 +98,7 @@ itself. Everything it shows stays in the module that owns it today.
 
 1. **US1, the element's tabs:** the width check, `ui.inspector`, the tab
    structure; the Element, Text and Position tabs with the element bar,
-   formatting bar and element panel moved in. View ▸ Inspector and ⌥⌘I.
+   formatting bar and element panel moved in. View ▸ Inspector and ⌥⌘0.
 2. **US2, the slide's tab:** the slide bar and slide panel in the Slide
    tab; the title panel in the Title tab; the slide bar's row gone while
    the inspector shows.

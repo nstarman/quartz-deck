@@ -12,6 +12,7 @@ import * as hist from '/ui/history.js';
 import * as runslide from '/ui/runslide.js';
 import * as dot from '/ui/dot.js';
 import * as arrows from '/ui/arrows.js';
+import * as inspector from '/ui/inspector.js';
 import { openMenu, closeMenu, menuOpen } from '/ui/menu.js';
 import { makeList } from '/ui/list.js';
 import * as pane from '/ui/pane.js';
@@ -25,7 +26,7 @@ const statusEl = $('#status');
 const notice = $('#notice');
 const banner = $('#banner');
 $('.close', banner).addEventListener('click', () => { banner.hidden = true; });
-const panel = $('#panel');
+const panel = $('#panel .body'); // (the inspector's tabs and bars sit above it, spec 019)
 
 const state = {
   version: null, // last deck version we saw (sent as `expect`)
@@ -549,8 +550,7 @@ function hookFrame() {
       // source opens with Enter, ⌥Enter, a double-click or the bar's Markdown button);
       // anything else opens its source
       const b = (await elementTarget(el.dataset.qd))?.block;
-      const quiet = ['cell', 'code', 'math', 'html', 'table'].includes(b?.kind) || !!b?.attrs?.classes?.some((c) => c.startsWith('callout'));
-      if (quiet || el.classList.contains('absolute')) select(el.dataset.qd); else beginSource(el);
+      if (selectsOnly(b) || el.classList.contains('absolute')) select(el.dataset.qd); else beginSource(el);
     });
   }, true);
   doc.addEventListener('pointerdown', placeDrag, true);
@@ -846,10 +846,13 @@ async function renderElementPanel() {
   if (!block) { state.sel = null; return renderPanel(); }
   const view = $('#element-panel').content.cloneNode(true);
   const f = $('form.element-form', view);
+  // the inspector's tabs (spec 019): Text for what a click would type into
+  Object.assign(state, { selKind: block.kind, selTypeable: !selectsOnly(block) && !NOT_TYPEABLE.has(block.kind) && !!region(block.kind, block.text) });
   $('.kind', view).textContent = block.kind[0].toUpperCase() + block.kind.slice(1);
   $('.ref', view).textContent = ref;
   const diagram = dot.panel(ref) || arrows.panel(ref); // a diagram's box or arrow (015), an arrow (016)
-  if (diagram) f.before(diagram);
+  if (diagram) { diagram.dataset.tab = 'element'; f.before(diagram); }
+  view.querySelectorAll('[data-tab=position] > button').forEach((b) => b.addEventListener('click', async () => { const t = await elementTarget(ref); if (t) actions.run(b.dataset.act, t); }));
   f.md.value = block.text;
   f.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1146,6 +1149,8 @@ es.addEventListener('render_error', (e) => {
 // ---------- on-slide editing (spec 003 US1) ----------
 
 const NOT_TYPEABLE = new Set(['code', 'math', 'html', 'table', 'image', 'notes', 'pause', 'raw']);
+/** Code, math, callouts, raw HTML and tables: a click selects them, their source opens on request. */
+const selectsOnly = (b) => ['cell', 'code', 'math', 'html', 'table'].includes(b?.kind) || !!b?.attrs?.classes?.some((c) => c.startsWith('callout'));
 const META_FIELDS = [['title', '.title'], ['subtitle', '.subtitle'], ['author', '.quarto-title-author-name'], ['date', '.date']];
 
 function pendingBadge(on) {
@@ -1641,7 +1646,7 @@ async function placeElbar() {
   $('[data-act=run]', elbar).hidden = t?.block.kind !== 'cell';
   $('[data-act=fragment]', elbar).setAttribute('aria-pressed', String(!!(t && actions.checked('fragment', t))));
   elbar.hidden = false;
-  placeNear(elbar, el.querySelector('.qd-arrow-hit') || el, frame); // an arrow: beside its line
+  if (!inspector.shown()) placeNear(elbar, el.querySelector('.qd-arrow-hit') || el, frame); // an arrow: beside its line
 }
 
 // the preview resized (source pane, panels, window): follow the element, or the bar
@@ -1721,6 +1726,7 @@ splitter.addEventListener('keydown', (e) => {
 const themed = new URLSearchParams(location.search).has('theme'); // VS Code sets the theme (spec 006)
 settings.onChange((v) => {
   mainEl.classList.toggle('source-right', v['source.side'] === 'right');
+  inspector.fit(); // ui.inspector
   if (!themed) {
     if (v.theme === 'system') delete document.documentElement.dataset.theme;
     else document.documentElement.dataset.theme = v.theme;
@@ -1737,7 +1743,15 @@ await settings.ready((n) => say(n, true)).catch(() => say('settings could not be
   setFull(v('ui.source_full'));
   setSource(v('source.open') === 'open' || (v('source.open') === 'last' && v('ui.source_was_open')), false);
 }
-$('[data-act=form]', srcpane).addEventListener('click', () => setPanel(!mainEl.classList.contains('panel-open')));
+$('[data-act=form]', srcpane).addEventListener('click', () => properties(!mainEl.classList.contains('panel-open')));
+// the inspector (spec 019): the panel beside the slide whenever the window is wide enough
+inspector.init(() => ({ kind: state.sel ? state.selKind : null, typeable: state.selTypeable, title: !slideByAnchor(state.anchor) }));
+addEventListener('qd-inspector', () => { placeElbar(); placeToolbar(frame); });
+/** View ▸ Properties: on a window wide enough, the inspector (it was turned off); else the panel. */
+function properties(on) {
+  if (inspector.fits()) settings.set({ 'ui.inspector': true });
+  else setPanel(on);
+}
 $('[data-act=full]', srcpane).addEventListener('click', () => setFull(!mainEl.classList.contains('source-full')));
 
 
@@ -2180,7 +2194,8 @@ for (const [id, d, where] of [['slide-move-up', -1, 'before'], ['slide-move-down
 const toggle = (cls, set) => ({ checked: () => mainEl.classList.contains(cls), run: () => set(!mainEl.classList.contains(cls)) });
 keys.on('toggle-source', { checked: () => !srcpane.hidden, run: () => setSource(srcpane.hidden) });
 keys.on('source-full', toggle('source-full', setFull));
-keys.on('form-panel', toggle('panel-open', setPanel));
+keys.on('form-panel', { checked: () => mainEl.classList.contains('panel-open') || inspector.shown(), run: () => properties(!mainEl.classList.contains('panel-open')) });
+keys.on('inspector', { checked: () => !!settings.get('ui.inspector'), run: () => settings.set({ 'ui.inspector': !settings.get('ui.inspector') }) });
 keys.on('history', { checked: hist.isOpen, run: () => hist.toggle() });
 keys.on('history-compare', { enabled: hist.versionOpen, run: hist.compare });
 keys.on('history-restore', {

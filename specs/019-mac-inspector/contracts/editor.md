@@ -53,7 +53,7 @@ Tabs that don't apply have `hidden`.
 
 | id | label | menu | key | notes |
 |---|---|---|---|---|
-| `inspector` | Inspector | View | `Alt+Mod+I` | toggle; sets `ui.inspector` |
+| `inspector` | Inspector | View | `Alt+Mod+0` | toggle; sets `ui.inspector` |
 | `form-panel` | Properties panel | View | — | unchanged id; on a wide window shows the inspector |
 
 ## Keys

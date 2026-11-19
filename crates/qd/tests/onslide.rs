@@ -3397,15 +3397,11 @@ async fn tidier_bars_and_fuller_insert() {
 /// and typing on a slide still works.
 #[tokio::test(flavor = "multi_thread")]
 async fn narrow_window() {
-    use chromiumoxide::cdp::browser_protocol::emulation::SetDeviceMetricsOverrideParams;
     let Some(ed) = Ed::open(P2).await else {
         return;
     };
-    ed.page
-        .execute(SetDeviceMetricsOverrideParams::new(420, 760, 1.0, false))
-        .await
-        .unwrap();
-    ed.wait("innerWidth === 420 && getComputedStyle(document.querySelector('nav')).display === 'none' && !!document.querySelector('#slide-picker').offsetParent && document.querySelector('#slide-picker').getBoundingClientRect().right <= innerWidth")
+    ed.window(420, 760).await;
+    ed.wait("getComputedStyle(document.querySelector('nav')).display === 'none' && !!document.querySelector('#slide-picker').offsetParent && document.querySelector('#slide-picker').getBoundingClientRect().right <= innerWidth")
         .await;
 
     // the picker reaches every slide
@@ -4367,6 +4363,103 @@ async fn history_commit_notice() {
     );
 }
 
+// ---------- spec 019: the inspector on a wide window ----------
+
+const INSPECTOR_DECK: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## A {#a}\n\nFirst words\n\nSecond words\n\n## B {#b}\n\n```{python}\nprint(1)\n```\n";
+const INSPECTING: &str = "document.querySelector('main').classList.contains('inspector')";
+/// The inspector's tab names, in order, and the selected one.
+const TABS: &str = "[[...document.querySelectorAll('#panel .tabs [role=tab]')].map((t) => t.textContent), document.querySelector('#panel .tabs [aria-selected=true]')?.textContent]";
+
+/// Spec 019 T004: the inspector is there on a wide window, gone on a narrower
+/// one, and gone when the person turned it off.
+#[tokio::test(flavor = "multi_thread")]
+async fn inspector_shows_when_wide() {
+    let Some(ed) = Ed::open(INSPECTOR_DECK).await else {
+        return;
+    };
+    ed.window(1440, 900).await;
+    ed.wait(INSPECTING).await;
+    ed.go("a").await;
+    ed.wait(&format!(
+        "JSON.stringify({TABS}) === JSON.stringify([['Slide'], 'Slide'])"
+    ))
+    .await;
+    assert_eq!(
+        ed.eval("document.querySelector('#panel .tabs').getAttribute('role') === 'tablist' && !!document.querySelector('#panel #slidebar')").await,
+        json!(true),
+        "a tablist, and the slide bar inside it"
+    );
+    ed.window(1000, 800).await;
+    ed.wait(&format!(
+        "!{INSPECTING} && !document.querySelector('#panel #slidebar')"
+    ))
+    .await;
+    ed.window(1440, 900).await;
+    ed.wait(INSPECTING).await;
+    ed.eval("import('/ui/settings.js').then((s) => s.set({'ui.inspector': false}))")
+        .await;
+    ed.wait(&format!("!{INSPECTING}")).await;
+}
+
+/// Spec 019 US1 (T007): with an element selected on a wide window nothing
+/// floats over the slide; Element, Text and Position hold its controls, and
+/// each does what it does from the bar.
+#[tokio::test(flavor = "multi_thread")]
+async fn inspector_element_tabs() {
+    let Some(ed) = Ed::open(INSPECTOR_DECK).await else {
+        return;
+    };
+    ed.window(1440, 900).await;
+    ed.wait(INSPECTING).await;
+    ed.go("a").await;
+    ed.select("[data-qd=\"a/0\"]").await;
+    ed.wait(&format!(
+        "JSON.stringify({TABS}) === JSON.stringify([['Element', 'Text', 'Position'], 'Element'])"
+    ))
+    .await;
+    assert_eq!(
+        ed.eval("(() => { const b = document.querySelector('#elbar'); return !!b.closest('#panel') && getComputedStyle(b).position === 'static'; })()").await,
+        json!(true),
+        "the element bar is in the inspector, not floating"
+    );
+    // Position: Move down puts it after the next
+    ed.click_editor("#tab-position").await;
+    ed.wait(&format!("{TABS}[1] === 'Position'")).await;
+    ed.click_editor("#panel .body [data-tab=position] [data-act=down]")
+        .await;
+    ed.wait_file(
+        |f| f.find("Second words") < f.find("First words"),
+        "moved down",
+    )
+    .await;
+    ed.settle().await;
+    // the chosen element tab stays for the next element
+    ed.select("[data-qd=\"a/0\"]").await;
+    ed.wait(&format!("{TABS}[1] === 'Position'")).await;
+    // typing: the Text tab, with the formatting bar in it
+    ed.click_in_slide("[data-qd=\"a/0\"]").await; // a click on text types into it
+    ed.wait(&format!(
+        "{TABS}[1] === 'Text' && !!document.querySelector('#panel #fmtbar:not([hidden])')"
+    ))
+    .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.settle().await;
+    // Appears on click, from the bar in the Element tab, as from the floating bar
+    ed.select("[data-qd=\"a/0\"]").await;
+    ed.click_editor("#tab-element").await;
+    ed.click_editor("#panel #elbar [data-act=fragment]").await;
+    ed.wait_file(|f| f.contains(".fragment"), "a fragment")
+        .await;
+    ed.settle().await;
+    // a code cell: no Text tab
+    ed.go("b").await;
+    ed.select("[data-qd=\"b/0\"]").await;
+    ed.wait(&format!(
+        "JSON.stringify({TABS}[0]) === JSON.stringify(['Element', 'Position'])"
+    ))
+    .await;
+}
+
 // ---------- spec 015 US1: diagrams on the slide ----------
 
 const DIAGRAM: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## Flow {#flow}\n\n```{dot}\ndigraph {\n  layout=neato; splines=ortho;\n  node [shape=box];\n  a [label=\"Data\", pos=\"0,1!\"];\n  b [label=\"Tool\", pos=\"2,1!\"];\n  c [label=\"Paper\", pos=\"2,0!\"];\n  a -> b; b -> c;\n}\n```\n";
@@ -4402,6 +4495,17 @@ impl Ed {
         self.eval("fetch('/lib/quarto/graphvizlib.wasm').then((r) => r.ok)")
             .await
             == json!(true)
+    }
+    /// Size the editor's window (spec 019 T001), and wait for its layout.
+    async fn window(&self, w: i64, h: i64) {
+        use chromiumoxide::cdp::browser_protocol::emulation::SetDeviceMetricsOverrideParams;
+        self.page
+            .execute(SetDeviceMetricsOverrideParams::new(w, h, 1.0, false))
+            .await
+            .unwrap();
+        self.wait(&format!("innerWidth === {w} && innerHeight === {h}"))
+            .await;
+        tokio::time::sleep(Duration::from_millis(300)).await; // the resize observers
     }
     /// How many page pixels one inch of the diagram is.
     async fn inch_px(&self) -> f64 {
