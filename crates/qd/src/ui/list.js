@@ -8,7 +8,7 @@
 import { token } from '/ui/run.js';
 
 /**
- * `api`: {state, frame, go(anchor), op(name, args), fetchDeck(), addSlide, say(msg, isError),
+ * `api`: {state, frame, go(anchor), op(name, args), fetchDeck(), addSlide, say(msg, isError), regrouped(r, id),
  * slideMenu(id) → menu items, openMenu(items, x, y)}.
  */
 export function makeList(api) {
@@ -39,6 +39,7 @@ export function makeList(api) {
     render();
   }
   const subsOf = (id) => (api.state.deck?.slides || []).filter((s) => s.in === id);
+  const byId = (id) => api.state.deck?.slides.find((s) => s.id === id);
 
   const el = (tag, cls, text) => Object.assign(document.createElement(tag), cls ? { className: cls } : {}, text ? { textContent: text } : {});
   const frameDoc = () => { try { return api.frame.contentDocument?.querySelector('.reveal .slides') ? api.frame.contentDocument : null; } catch { return null; } };
@@ -278,7 +279,7 @@ export function makeList(api) {
   /** A new render is on the canvas: redraw the thumbnails in view (the rest as they scroll in). */
   function refresh() {
     for (const li of list.children) {
-      const s = li.dataset.id === 'title-slide' ? null : api.state.deck?.slides.find((x) => x.id === li.dataset.id);
+      const s = li.dataset.id === 'title-slide' ? null : byId(li.dataset.id);
       const name = li.querySelector('.name');
       if (name) name.textContent = s ? nameOf(s) : titleText();
     }
@@ -296,14 +297,16 @@ export function makeList(api) {
   list.addEventListener('keydown', (e) => {
     const li = e.target.closest('li');
     if (!li || e.altKey || e.metaKey || e.ctrlKey || e.shiftKey) return;
-    const s = api.state.deck?.slides.find((x) => x.id === li.dataset.id);
-    const way = { ArrowUp: 'previousElementSibling', ArrowDown: 'nextElementSibling', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'add' }[e.key];
+    const s = byId(li.dataset.id);
+    const way = { ArrowUp: 'previousElementSibling', ArrowDown: 'nextElementSibling', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'add', Escape: 'leave' }[e.key];
     const turn = way === 'left' || way === 'right';
     // ← → act only on a group (elsewhere they keep scrolling a narrow window's strip)
     const folds = turn && s?.head && subsOf(s.id).length && folded.has(s.id) === (way === 'right');
     if (!way || (turn && !folds && !(way === 'left' && s?.in))) return;
     e.preventDefault();
-    if (way === 'add') {
+    if (way === 'leave') {
+      api.frame.focus(); // Tab indents here, so Escape is the way out of the list (spec 018 R7)
+    } else if (way === 'add') {
       e.stopPropagation();
       addAfter(li.dataset.id, li);
     } else if (folds) {
@@ -345,7 +348,8 @@ export function makeList(api) {
       const scroll0 = across ? nav.scrollLeft : nav.scrollTop;
       const mids = items.map((x) => { const b = x.getBoundingClientRect(); return (across ? b.left + b.width / 2 : b.top + b.height / 2) + scroll0; });
       const step = items.length > 1 ? Math.abs(mids[1] - mids[0]) : (across ? r.width : r.height);
-      d = { items, from, to: from, ghost, off: { x: start.x - r.left, y: start.y - r.top }, mids, step };
+      const rest = items.filter((x, i) => i !== from).map((x) => x.dataset.id); // the others, in order
+      d = { items, from, rest, to: from, ghost, off: { x: start.x - r.left, y: start.y - r.top }, mids, step };
       document.body.classList.add('dragging-slide');
     };
 
@@ -354,13 +358,21 @@ export function makeList(api) {
       const p = pos(last) + scroll;
       // where it lands: after every other slide whose middle is above the pointer
       d.to = d.items.filter((x, i) => i !== d.from && d.mids[i] < p).length;
+      // sideways in the list (not the strip): it lands indented or outdented (spec 018 R8)
+      const dx = across ? 0 : last.clientX - start.x;
+      d.depth = dx >= INDENT ? 'indent' : dx <= -INDENT ? 'outdent' : null;
+      if (d.depth && !depthOk(d)) d.depth = null; // a drag that wanders sideways is still a plain move
+      d.ghost.dataset.depth = d.depth || '';
+      // a slide that is a head where it lands goes only before a head or at the end (FR-017)
+      if (d.to !== d.from && (d.depth === 'outdent' || (s.head && d.depth !== 'indent'))) d.to = headGap(d);
       d.items.forEach((x, i) => {
         let shift = 0;
         if (i > d.from && i <= d.to) shift = -d.step;
         else if (i < d.from && i >= d.to) shift = d.step;
         x.style.transform = shift ? (across ? `translateX(${shift}px)` : `translateY(${shift}px)`) : '';
       });
-      d.ghost.style.transform = `translate(${last.clientX - d.off.x}px, ${last.clientY - d.off.y}px)`;
+      // kept on screen: dragged left, its hint (← out of the group) stays readable
+      d.ghost.style.transform = `translate(${Math.max(0, last.clientX - d.off.x)}px, ${last.clientY - d.off.y}px)`;
     };
 
     // near the list's edges, scroll it (and keep the landing place under the pointer)
@@ -400,19 +412,39 @@ export function makeList(api) {
       }
       place();
     };
+    // can it land one step in or out there (the rules of `qd indent`/`qd outdent`, research R3)?
+    const depthOk = (d) => {
+      if (api.state.deck?.group_level == null || s.opaque) return false; // no groups, or a slide qd won't restructure
+      const above = byId(d.rest[d.to - 1]);
+      const sub = !s.head && !!above && (above.head || !!above.in); // where it lands, unchanged
+      return d.depth === 'outdent' ? sub : !sub && !!above && (s.head || above.kind !== 'implicit');
+    };
+    // the landing place nearest `d.to` that is before a head, or the end
+    const headGap = (d) => {
+      const ok = (to) => to === d.rest.length || byId(d.rest[to])?.head;
+      for (let k = 0; k <= d.rest.length; k++) for (const to of [d.to - k, d.to + k]) if (ok(to)) return to;
+      return d.rest.length;
+    };
     const up = async () => {
       const done = end();
-      if (!done || done.to === done.from) return;
+      if (!done) return;
+      const depth = done.depth;
+      if (done.to === done.from) {
+        // dragged sideways in place: only the depth changes
+        const r = depth && await api.op(depth, { slide: s.id });
+        if (r) { await api.fetchDeck(); api.regrouped(r, s.id); }
+        return;
+      }
       // the slides that go (the picked ones, if this is one of them) land between the
       // nearest others either side of the gap
       const group = selected(s.id);
-      const rest = done.items.filter((x, i) => i !== done.from).map((x) => x.dataset.id);
+      const { rest } = done;
       const after = rest.slice(0, done.to).filter((id) => !group.includes(id)).at(-1);
       const before = rest.slice(done.to).find((id) => !group.includes(id));
       const where = after ? { after } : before ? { before } : null;
       if (!where) return;
-      const r = await api.op('move', { slide: group.length > 1 ? group : s.id, ...where });
-      if (r) await api.fetchDeck();
+      const r = await api.op('move', { slide: group.length > 1 ? group : s.id, ...where, ...(depth ? { [depth]: true } : {}) });
+      if (r) { await api.fetchDeck(); api.regrouped(r, group[0]); }
     };
     const key = (e) => {
       if (e.key !== 'Escape' || !d) return; // Escape puts it back
@@ -462,8 +494,12 @@ export function makeList(api) {
   return { render, refresh, selected };
 }
 
+// how far sideways a drag goes to land a slide one step in or out (spec 018 R8)
+const INDENT = 16;
+
 // A thumbnail is a still copy of the slide: no reveal.js runs in it. ponytail:
 // outputs a script draws (Plotly, widgets) show as their static markup.
+
 const THUMB_CSS = `
 .reveal { position: absolute; left: 0; top: 0; width: var(--w); height: var(--h); transform: scale(var(--s));
   transform-origin: 0 0; overflow: hidden; pointer-events: none; }

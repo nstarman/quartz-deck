@@ -46,6 +46,8 @@ fn parse_key(k: &str) -> (Vec<&str>, &str) {
         "ContextMenu",
         ",",
         "?",
+        "[",
+        "]",
     ];
     assert!(
         key.len() == 1 && key.chars().all(|c| c.is_ascii_alphanumeric()) || named.contains(key),

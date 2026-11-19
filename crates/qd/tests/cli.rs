@@ -77,6 +77,15 @@ impl Env {
     }
 }
 
+/// Each slide of `qd slides` as [id, head, in] (spec 018).
+fn outline(v: &Value) -> Vec<Value> {
+    let slides = v["slides"].as_array().unwrap();
+    slides
+        .iter()
+        .map(|s| json!([s["id"], s["head"], s.get("in")]))
+        .collect()
+}
+
 fn assert_edit(v: &Value, op: &str) {
     assert_eq!(v["ok"], true);
     assert_eq!(v["op"], op);
@@ -1313,14 +1322,8 @@ fn slides_report_groups() {
     );
     let v = e.ok(&["slides"]);
     assert_eq!(v["group_level"], 1);
-    let got: Vec<Value> = v["slides"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|s| json!([s["id"], s["head"], s.get("in")]))
-        .collect();
     assert_eq!(
-        got,
+        outline(&v),
         [
             json!(["intro", false, null]),
             json!(["part-a", true, null]),
@@ -1329,5 +1332,73 @@ fn slides_report_groups() {
             json!(["pb", true, null]),
             json!(["b1", false, "pb"]),
         ]
+    );
+}
+
+/// Spec 018 US2: `qd indent` / `qd outdent` (contracts/cli.md).
+#[test]
+fn indent_and_outdent() {
+    let flat = "---\ntitle: T\n---\n\n## A\n\n## B\n\n## C\n";
+    let e = Env::with(flat);
+    // --dry-run reports and writes nothing
+    let v = e.ok(&["--dry-run", "indent", "b"]);
+    assert_eq!(v["changed"], json!(["a"]), "{v}");
+    assert_eq!(e.text(), flat);
+    let v = e.ok(&["indent", "b"]);
+    assert_edit(&v, "indent");
+    assert_eq!((&v["target"], &v["changed"]), (&json!("b"), &json!(["a"])));
+    assert_eq!(e.text(), "---\ntitle: T\n---\n\n# A\n\n## B\n\n## C\n");
+    let v = e.ok(&["outdent", "c"]);
+    assert_edit(&v, "outdent");
+    assert_eq!(e.text(), "---\ntitle: T\n---\n\n# A\n\n## B\n\n# C\n");
+    // one undo each
+    e.ok(&["undo"]);
+    e.ok(&["undo"]);
+    assert_eq!(e.text(), flat);
+    // refused with the reason; a stale --expect is a conflict
+    let v = e.err(&["indent", "a"], "E_INVALID_ARG", 1);
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("nothing above"),
+        "{v}"
+    );
+    e.err(
+        &["--expect", "0000000000000000", "indent", "b"],
+        "E_CONFLICT",
+        1,
+    );
+}
+
+/// Spec 018 US2: a move that lands indented is one patch and one undo step (research R4).
+#[test]
+fn move_lands_indented() {
+    let flat = "---\ntitle: T\n---\n\n## A\n\n## B\n\n## C\n\n## D\n";
+    let e = Env::with(flat);
+    let v = e.ok(&["move", "d", "--after", "a", "--indent"]);
+    assert_edit(&v, "move");
+    assert_eq!(v["changed"], json!(["a"]), "{v}");
+    assert_eq!(
+        outline(&e.ok(&["slides"])),
+        [
+            json!(["a", true, null]),
+            json!(["d", false, "a"]),
+            json!(["b", false, "a"]),
+            json!(["c", false, "a"])
+        ]
+    );
+    e.ok(&["undo"]);
+    assert_eq!(e.text(), flat);
+    // c isn't in a group, so it can't land outdented: nothing moves
+    e.err(
+        &["move", "c", "--after", "d", "--outdent"],
+        "E_INVALID_ARG",
+        1,
+    );
+    e.err(
+        &["move", "d", "--after", "a", "--indent", "--outdent"],
+        "E_USAGE",
+        2,
     );
 }

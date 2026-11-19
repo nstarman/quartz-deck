@@ -30,8 +30,27 @@ export const INSERTS = [
 
 /**
  * `api` is the editor: op, runCells(refs), refresh, beginEditRef, beginSourceEl, beginSlideSource,
- * insert(slide, where, kind), copy(t), paste(t), copySlide(t), pasteSlides(t), say, slideUrl(anchor).
+ * insert(slide, where, kind), copy(t), paste(t), copySlide(t), pasteSlides(t), say, slideUrl(anchor), deck().
  */
+/**
+ * Why slide `id` can't go into the group above (`in`) or out of its group (`out`):
+ * the rules `qd indent` / `qd outdent` refuse by (spec 018 research R3), for the
+ * menus' tooltips and the keys' messages. Null when it can.
+ */
+export function groupWhy(deck, id, dir) {
+  const ss = deck?.slides || [];
+  const i = ss.findIndex((s) => s.id === id);
+  const s = ss[i];
+  if (!s) return 'The title slide always comes first';
+  if (deck.group_level == null) return 'With slide-level: 1 every slide stands alone';
+  if (s.opaque) return 'qd can’t restructure this slide safely (an unterminated fence or div)';
+  if (dir === 'out') return s.in ? null : s.head ? 'It already heads a group' : 'It isn’t in a group';
+  if (s.in) return 'It is already in a group: groups are one level deep';
+  if (i === 0) return 'There is nothing above it to go under';
+  const p = ss[i - 1];
+  return !s.head && !p.head && p.kind === 'implicit' ? 'The slide above has no title: give it one first' : null;
+}
+
 // what can't be placed freely, and why (spec 009 FR-012; `qd block place` says the same)
 const UNPLACEABLE = {
   div: 'A div (columns, callout…) can’t be placed: place the elements inside it',
@@ -87,6 +106,16 @@ export function makeActions(api) {
     })),
   ];
 
+  /** After an indent, outdent or a move that landed indented: say what else changed (spec 018 FR-015). */
+  function regrouped(r, id) {
+    if (!r?.changed) return r;
+    const name = (x) => api.deck()?.slides.find((s) => s.id === x)?.title;
+    const others = r.changed.filter((x) => x !== id);
+    if (others.length) api.say(`${others.map((x) => name(x) || 'The slide above').join(', ')} now heads a group: it shows as a section slide`);
+    else if (r.changed.includes(id) && !name(id)) api.say('It now heads a group under an empty heading: give it a title');
+    return r;
+  }
+
   const kv = (t) => t.full?.attrs?.kv || {};
   const setAttr = (t, key, value) => api.op('set', value ? { slide: t.slideId, attr: [`${key}=${value}`] } : { slide: t.slideId, unset: [key] });
   const slide = [
@@ -96,6 +125,11 @@ export function makeActions(api) {
     { id: 'slide-cut', label: 'Cut slide', run: async (t) => { await api.copySlide(t); return api.op('rm', { slide: t.slideId }); } },
     { id: 'slide-copy', label: 'Copy slide', run: (t) => api.copySlide(t) },
     { id: 'slide-paste', label: 'Paste slides after', run: (t) => api.pasteSlides(t) },
+    ...['in', 'out'].map((dir) => ({
+      id: `slide-${dir}dent`, label: dir === 'in' ? 'Indent slide' : 'Outdent slide',
+      enabled: (t) => !groupWhy(api.deck(), t.slideId, dir), why: (t) => groupWhy(api.deck(), t.slideId, dir),
+      run: async (t) => regrouped(await api.op(`${dir}dent`, { slide: t.slideId }), t.slideId),
+    })),
     { id: 'slide-hide', label: 'Hidden in the presentation', checked: (t) => kv(t).visibility === 'hidden', run: (t) => setAttr(t, 'visibility', kv(t).visibility === 'hidden' ? null : 'hidden') },
     { id: 'slide-rm', label: 'Delete slide…', run: async (t) => (!settings.get('confirm.slide_delete') || await confirmSheet('Delete slide?', `"${t.title || t.slideId}" will be deleted. Undo brings it back.`, 'Delete')) && api.op('rm', { slide: t.slideId }) },
     { id: 'history-restore-slide', label: 'Restore slide from this version', visible: () => !!api.version(), run: (t) => api.op('restore', { rev: api.version().rev, slide: t.slideId }) },
@@ -154,5 +188,6 @@ export function makeActions(api) {
     why: (id, t, table = 'element') => find(id, table)?.why?.(t),
     /** Its tooltip: why it can't act on `t`, else what to know about it. */
     tip: (id, t, table = 'element') => tip(find(id, table), t),
+    regrouped,
   };
 }

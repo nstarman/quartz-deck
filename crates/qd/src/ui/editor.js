@@ -723,6 +723,7 @@ async function addSlide(where, anchor) {
 
 const slideList = makeList({
   state, frame, go, op, fetchDeck, openMenu, addSlide, say,
+  regrouped: (r, id) => actions.regrouped(r, id),
   slideMenu: async (id) => actions.slide(await slideTarget(id)),
 });
 
@@ -1546,6 +1547,7 @@ async function slideTarget(slideId) {
 }
 
 const actions = makeActions({
+  deck: () => state.deck,
   runCells: run.runCells,
   addSlide,
   op: async (name, args) => {
@@ -2168,6 +2170,19 @@ for (const x of ['default', ...TRANSITIONS]) {
     enabled: (ctx) => !!ctx.slide,
     checked: (ctx) => (ctx.slide?.full?.attrs?.kv?.transition || 'default') === x,
     run: (ctx) => actions.setAttr(ctx.slide, 'transition', x === 'default' ? null : x),
+  });
+}
+// indent and outdent (spec 018): from a key, a refusal says why (the key never leaves the
+// list); from a menu, the item is disabled with the reason as its tooltip
+for (const id of ['slide-indent', 'slide-outdent']) {
+  keys.on(id, {
+    enabled: (ctx) => !!ctx.e || (!!ctx.slide && actions.can(id, ctx.slide, 'slide')),
+    why: (ctx) => ctx.slide && actions.tip(id, ctx.slide, 'slide'),
+    run: (ctx) => {
+      // no slide: the key was on the title slide's row
+      const why = ctx.slide ? actions.why(id, ctx.slide, 'slide') : 'The title slide always comes first';
+      return why ? say(why, true) : actions.run(id, ctx.slide, 'slide');
+    },
   });
 }
 const neighbour = (ctx, d) => { const ss = state.deck?.slides || []; return ss[ss.findIndex((x) => x.id === ctx.slide?.slideId) + d]; };

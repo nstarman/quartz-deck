@@ -562,6 +562,140 @@ pub fn mv(d: &Deck, slides: &[impl AsRef<str>], pos: Pos) -> Result<Patch> {
     Ok(patch("move", id, reps, assigned))
 }
 
+// ---------- slide groups (spec 018) ----------
+
+/// Which way `relevel` moves a slide in the slide list's outline.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Depth {
+    In,
+    Out,
+}
+
+/// The replacement that puts slide `s`'s heading at `level`, changing only its
+/// marks (research R2): the `#` run, a setext underline, or a `---` line.
+fn marks(d: &Deck, s: &Slide, level: u8) -> Result<(Span, String)> {
+    let head = s.head.ok_or_else(|| {
+        QdError::InvalidArg(format!(
+            "slide '{}' has no heading: give the slide a title first",
+            s.id
+        ))
+    })?;
+    let text = d.slice(head);
+    let hashes = "#".repeat(level as usize);
+    if s.kind == SlideKind::Rule {
+        return Ok((head, format!("{hashes}{}", d.nl)));
+    }
+    if s.setext {
+        if level > 2 {
+            // setext has only two levels
+            let title = text.lines().next().unwrap_or_default().trim();
+            return Ok((head, format!("{hashes} {title}{}", d.nl)));
+        }
+        // the underline: one character repeated (deck.rs `setext_level`), kept as long
+        let under = text.find('\n').map_or(text.len(), |i| i + 1);
+        let lead = text[under..].len() - text[under..].trim_start().len();
+        let run = text[under + lead..].trim_end().len();
+        let at = head.start + under + lead;
+        let ch = if level == 1 { "=" } else { "-" };
+        return Ok((
+            Span {
+                start: at,
+                end: at + run,
+            },
+            ch.repeat(run),
+        ));
+    }
+    let lead = text.len() - text.trim_start().len();
+    let run = text[lead..].bytes().take_while(|&b| b == b'#').count();
+    let at = head.start + lead;
+    Ok((
+        Span {
+            start: at,
+            end: at + run,
+        },
+        hashes,
+    ))
+}
+
+/// Indent or outdent a slide in the outline Quarto reads from heading levels
+/// (spec 018 research R3), as one patch. Returns the slides whose level changed.
+pub fn relevel(d: &Deck, slide: &str, depth: Depth) -> Result<(Patch, Vec<String>)> {
+    let ctx = Ctx::new(d);
+    let x = ctx.slide(slide)?;
+    let Some(top) = d.group_level() else {
+        return Err(QdError::InvalidArg(
+            "with slide-level: 1 every slide stands alone, so there are no groups".into(),
+        ));
+    };
+    let refuse = |why: String| Err(QdError::InvalidArg(why));
+    let mut moves: Vec<(&Slide, u8)> = Vec::new();
+    match depth {
+        Depth::In => {
+            if x.parent.is_some() {
+                return refuse(format!(
+                    "'{}' is already in a group; groups are one level deep",
+                    x.id
+                ));
+            }
+            // `index` is 1-based: the slide above is at index - 2
+            let Some(p) = x.index.checked_sub(2).map(|i| &d.slides[i]) else {
+                return refuse(format!("there is nothing above '{}' to go under", x.id));
+            };
+            // the slide above first: `changed` is in deck order
+            if !p.is_head && p.parent.is_none() {
+                moves.push((ctx.slide(&p.id)?, top));
+            }
+            if x.is_head {
+                moves.push((x, d.slide_level));
+            }
+        }
+        Depth::Out => {
+            if x.parent.is_none() {
+                return refuse(if x.is_head {
+                    format!("'{}' already heads a group", x.id)
+                } else {
+                    format!("'{}' is not in a group", x.id)
+                });
+            }
+            moves.push((x, top));
+        }
+    }
+    let reps = moves
+        .iter()
+        .map(|(s, l)| marks(d, s, *l))
+        .collect::<Result<Vec<_>>>()?;
+    let op = match depth {
+        Depth::In => "indent",
+        Depth::Out => "outdent",
+    };
+    let changed = moves.iter().map(|(s, _)| s.id.clone()).collect();
+    Ok((patch(op, x.id.clone(), reps, vec![]), changed))
+}
+
+/// `move`, then indent or outdent the first moved slide where it lands
+/// (research R4), as one patch so it is one undo step.
+pub fn mv_depth(
+    d: &Deck,
+    slides: &[impl AsRef<str>],
+    pos: Pos,
+    depth: Depth,
+) -> Result<(Patch, Vec<String>)> {
+    let moved = mv(d, slides, pos)?;
+    let text = apply(&d.text, &moved)?;
+    let (p, changed) = relevel(&Deck::parse(text.clone()), &moved.target, depth)?;
+    let all = Span {
+        start: 0,
+        end: d.text.len(),
+    };
+    let p = patch(
+        "move",
+        moved.target.clone(),
+        vec![(all, apply(&text, &p)?)],
+        moved.assigned_ids,
+    );
+    Ok((p, changed))
+}
+
 /// Remove one or more slides, as one patch.
 pub fn rm(d: &Deck, slides: &[impl AsRef<str>]) -> Result<Patch> {
     let ctx = Ctx::new(d);
