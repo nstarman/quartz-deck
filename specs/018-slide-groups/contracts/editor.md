@@ -5,8 +5,11 @@ and `actions.js`. Every change to the file is a `qd` op.
 
 ## The list
 
-- A sub-slide's row is indented by one step (16 px); heads and top-level
-  slides are at the left edge. The title slide stays first, not indented.
+- A group sits in one faint gray squircle: the head on top, its sub-slides
+  below, inset on both sides so their thumbnails are a little smaller. A
+  collapsed group is the head alone in its squircle. In a narrow window's
+  strip the squircle runs left to right. Heads and top-level slides are at
+  the left edge; the title slide stays first, outside any group.
 - A head with sub-slides has a disclosure button before its thumbnail,
   `aria-expanded` true or false, label "Collapse Part A" / "Expand Part A".
   A collapsed head shows the number of its sub-slides ("+3").

@@ -22,10 +22,17 @@ export function makeList(api) {
   let touched = false; // the person's folds before the stored state arrives win over it
   fetch('/api/view').then((r) => r.json()).then((v) => { if (!touched) { folded = new Set(v.collapsed || []); render(); } }).catch(() => {});
   /** Keep `folded` (only heads still there), and redraw. */
+  let leaving = null; // the head of a group folded while one of its slides was shown: going to the head
   function fold(id, on) {
     touched = true;
     if (on) folded.add(id); else folded.delete(id);
-    const heads = new Set((api.state.deck?.slides || []).filter((s) => s.head).map((s) => s.id));
+    // folding the group of the shown slide shows its head, as Keynote does
+    const slides = api.state.deck?.slides || [];
+    if (on && slides.find((s) => s.anchor === api.state.anchor)?.in === id) {
+      leaving = id;
+      api.go(slides.find((s) => s.id === id).anchor);
+    }
+    const heads = new Set(slides.filter((s) => s.head).map((s) => s.id));
     folded = new Set([...folded].filter((h) => heads.has(h)));
     fetch('/api/view', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-QD-Token': token }, body: JSON.stringify({ collapsed: [...folded] }) })
       .then((r) => { if (!r.ok) throw new Error(); }).catch(() => api.say('Could not keep which groups are folded', true));
@@ -225,7 +232,8 @@ export function makeList(api) {
     if (!deck) return;
     // the shown slide is never folded away (FR-008)
     const showing = deck.slides.find((s) => s.anchor === api.state.anchor);
-    if (showing?.in && folded.has(showing.in)) { fold(showing.in, false); return; }
+    if (showing?.in !== leaving) leaving = null;
+    if (showing?.in && !leaving && folded.has(showing.in)) { fold(showing.in, false); return; }
     // redrawing must not move the keyboard: back to the same slide afterwards
     const focused = list.contains(document.activeElement) && document.activeElement.closest('li')?.dataset.id;
     // building items moves the thumbnails out of the old ones, and the list's

@@ -160,8 +160,13 @@ nav li.current .meta { color: var(--accent); font-weight: 600; }
 nav .idx { color: var(--muted); flex: none; }
 nav .idx:empty { display: none; }
 nav .tag { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
-/* groups (spec 018): a sub-slide one step in; a head's disclosure triangle beside its name */
-nav li.sub { margin-left: 16px; }
+/* groups (spec 018): a group sits in one faint squircle, its head on top and its
+   sub-slides a little smaller below; a head's disclosure triangle beside its name */
+nav li.head, nav li.sub { background: color-mix(in srgb, var(--text) 2%, transparent); }
+nav li.head { border-radius: 12px; }
+nav li.head:has(+ li.sub:not([hidden])) { border-radius: 12px 12px 0 0; }
+nav li.sub { margin: 0; padding: 6px 4px 0 16px; border-radius: 0; }
+nav li.sub:not(:has(+ li.sub)) { border-radius: 0 0 12px 12px; padding-bottom: 6px; }
 nav li.head .meta { padding-left: 22px; }
 nav .disclose { position: absolute; left: 4px; bottom: 2px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px;
   background: none; color: var(--muted); font-size: 14px; line-height: 20px; }
@@ -218,7 +223,12 @@ aside .status.fail { color: var(--danger); }
   nav ol { display: flex; gap: 0; flex: none; align-items: flex-start; }
   nav li { flex: none; width: 120px; }
   nav li + li { margin: 0 0 0 8px; }
-  nav li.sub { margin-left: 8px; } /* the strip has no room for an indent: the triangle and +N show the groups */
+  /* the strip: the squircle runs left to right, the sub-slides a little smaller */
+  nav li.head:has(+ li.sub:not([hidden])) { border-radius: 12px 0 0 12px; }
+  nav li.head, nav li.sub { align-self: stretch; } /* one band, as tall as the head */
+  nav li.sub { width: 110px; padding: 0 0 0 8px; }
+  nav li.sub:not([hidden]) { display: flex; flex-direction: column; justify-content: flex-end; } /* bottoms level with the head's */
+  nav li.sub:not(:has(+ li.sub)) { border-radius: 0 12px 12px 0; padding: 0 6px 0 8px; }
   /* the + after the last slide, level with the thumbnails */
   nav button.wide { flex: none; width: 28px; height: 28px; padding: 0; border-radius: 50%; align-self: center;
     position: relative; top: -10px; margin: 0 12px 0 16px; } /* -10px: level with the thumbnails, not their titles */
