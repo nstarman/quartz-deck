@@ -185,9 +185,9 @@ export function makeActions(api) {
     can,
     checked: (id, t, table = 'element') => find(id, table)?.checked?.(t),
     /** Why action `id` can't act on `t` (a disabled item's tooltip). */
-    regrouped,
     why: (id, t, table = 'element') => find(id, table)?.why?.(t),
     /** Its tooltip: why it can't act on `t`, else what to know about it. */
     tip: (id, t, table = 'element') => tip(find(id, table), t),
+    regrouped,
   };
 }

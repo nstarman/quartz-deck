@@ -12,9 +12,22 @@ fn re(src: &str, slide: &str, depth: Depth) -> (String, Vec<String>) {
     (ops::apply(&d.text, &p).unwrap(), changed)
 }
 
-fn refused(src: &str, slide: &str, depth: Depth) -> QdError {
-    ops::relevel(&Deck::parse(src.into()), slide, depth).unwrap_err()
+/// Why `relevel` refuses (an `E_INVALID_ARG` reason).
+fn reason(src: &str, slide: &str, depth: Depth) -> String {
+    match ops::relevel(&Deck::parse(src.into()), slide, depth) {
+        Err(QdError::InvalidArg(m)) => m,
+        r => panic!("{:?}", r.map(|(_, c)| c)),
+    }
 }
+
+/// The outline after moving `slide` after `after` one step `depth`, and what changed level.
+fn mv(src: &str, slide: &str, after: &str, depth: Depth) -> (Vec<String>, Vec<String>) {
+    let d = Deck::parse(src.into());
+    let (p, changed) = ops::mv_depth(&d, &[slide], Pos::After(after), depth).unwrap();
+    (groups(&ops::apply(&d.text, &p).unwrap()), changed)
+}
+
+const LV3: &str = "---\nslide-level: 3\n---\n\n";
 
 /// Each slide's id, `H` for a head, and its head's id.
 fn groups(text: &str) -> Vec<String> {
@@ -47,10 +60,9 @@ fn setext_swaps_its_underline() {
 
 #[test]
 fn setext_below_level_two_becomes_atx() {
-    let lv3 = "---\nslide-level: 3\n---\n\n";
-    let src = format!("{lv3}# P\n\n## S\n\nT\n====\n\n### t1\n");
+    let src = format!("{LV3}# P\n\n## S\n\nT\n====\n\n### t1\n");
     let (t, changed) = re(&src, "t", Depth::In);
-    assert_eq!(t, format!("{lv3}# P\n\n## S\n\n### T\n\n### t1\n"));
+    assert_eq!(t, format!("{LV3}# P\n\n## S\n\n### T\n\n### t1\n"));
     assert_eq!(changed, ["t"]);
 }
 
@@ -70,15 +82,8 @@ fn auto_ids_stay() {
 
 #[test]
 fn an_untitled_first_slide_cannot_become_a_head() {
-    let e = refused(
-        "---\nformat: revealjs\n---\n\nPreamble.\n\n## B\n",
-        "b",
-        Depth::In,
-    );
-    assert!(
-        matches!(e, QdError::InvalidArg(ref m) if m.contains("title")),
-        "{e}"
-    );
+    let src = "---\nformat: revealjs\n---\n\nPreamble.\n\n## B\n";
+    assert!(reason(src, "b", Depth::In).contains("title"));
 }
 
 // ---------- R3: the rules ----------
@@ -117,24 +122,19 @@ fn outdenting_mid_group_takes_the_rest() {
 
 #[test]
 fn deeper_slide_levels_move_between_the_two_levels() {
-    let lv3 = "---\nslide-level: 3\n---\n\n";
-    let src = format!("{lv3}# P\n\n## S\n\n### s1\n");
+    let src = format!("{LV3}# P\n\n## S\n\n### s1\n");
     assert_eq!(
         re(&src, "s", Depth::Out).0,
-        format!("{lv3}# P\n\n# S\n\n### s1\n")
+        format!("{LV3}# P\n\n# S\n\n### s1\n")
     );
     assert_eq!(
         re(&src, "s1", Depth::Out).0,
-        format!("{lv3}# P\n\n## S\n\n# s1\n")
+        format!("{LV3}# P\n\n## S\n\n# s1\n")
     );
 }
 
 #[test]
 fn refusals_say_why() {
-    let reason = |src: &str, slide: &str, depth| match refused(src, slide, depth) {
-        QdError::InvalidArg(m) => m,
-        e => panic!("{e}"),
-    };
     let flat = "## A\n\n## B\n";
     let grouped = "# A\n\n## a1\n";
     assert!(reason(flat, "a", Depth::In).contains("nothing above"));
@@ -145,9 +145,10 @@ fn refusals_say_why() {
     assert!(reason(lv1, "b", Depth::In).contains("slide-level"));
     // a slide qd can't segment safely is never restructured
     let opaque = "## A\n\nok\n\n## B\n\n```\nunterminated\n";
+    let d = Deck::parse(opaque.into());
     assert!(matches!(
-        refused(opaque, "b", Depth::In),
-        QdError::UnsafeEdit(_)
+        ops::relevel(&d, "b", Depth::In),
+        Err(QdError::UnsafeEdit(_))
     ));
 }
 
@@ -155,15 +156,10 @@ fn refusals_say_why() {
 
 #[test]
 fn move_lands_indented_or_outdented() {
-    let d = Deck::parse("## A\n\n## B\n\n## C\n\n## D\n".into());
-    let (p, changed) = ops::mv_depth(&d, &["d"], Pos::After("a"), Depth::In).unwrap();
-    let t = ops::apply(&d.text, &p).unwrap();
-    assert_eq!(groups(&t), ["a:H", "d<a", "b<a", "c<a"]);
+    let (outline, changed) = mv("## A\n\n## B\n\n## C\n\n## D\n", "d", "a", Depth::In);
+    assert_eq!(outline, ["a:H", "d<a", "b<a", "c<a"]);
     assert_eq!(changed, ["a"]);
-
-    let d = Deck::parse("# A\n\n## a1\n\n## a2\n\n## B\n".into());
-    let (p, changed) = ops::mv_depth(&d, &["a1"], Pos::After("a2"), Depth::Out).unwrap();
-    let t = ops::apply(&d.text, &p).unwrap();
-    assert_eq!(groups(&t), ["a:H", "a2<a", "a1:H", "b<a1"]);
+    let (outline, changed) = mv("# A\n\n## a1\n\n## a2\n\n## B\n", "a1", "a2", Depth::Out);
+    assert_eq!(outline, ["a:H", "a2<a", "a1:H", "b<a1"]);
     assert_eq!(changed, ["a1"]);
 }

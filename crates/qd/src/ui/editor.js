@@ -2175,12 +2175,12 @@ for (const x of ['default', ...TRANSITIONS]) {
 // indent and outdent (spec 018): from a key, a refusal says why (the key never leaves the
 // list); from a menu, the item is disabled with the reason as its tooltip
 for (const id of ['slide-indent', 'slide-outdent']) {
-  const onTitle = (ctx) => ctx.e?.target?.closest?.('#slides li')?.dataset.id === 'title-slide';
   keys.on(id, {
-    enabled: (ctx) => !!ctx.slide && (!!ctx.e || actions.can(id, ctx.slide, 'slide')),
+    enabled: (ctx) => !!ctx.e || (!!ctx.slide && actions.can(id, ctx.slide, 'slide')),
     why: (ctx) => ctx.slide && actions.tip(id, ctx.slide, 'slide'),
     run: (ctx) => {
-      const why = onTitle(ctx) ? 'The title slide always comes first' : !actions.can(id, ctx.slide, 'slide') && actions.tip(id, ctx.slide, 'slide');
+      // no slide: the key was on the title slide's row
+      const why = ctx.slide ? actions.why(id, ctx.slide, 'slide') : 'The title slide always comes first';
       return why ? say(why, true) : actions.run(id, ctx.slide, 'slide');
     },
   });

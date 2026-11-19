@@ -591,12 +591,10 @@ fn marks(d: &Deck, s: &Slide, level: u8) -> Result<(Span, String)> {
             let title = text.lines().next().unwrap_or_default().trim();
             return Ok((head, format!("{hashes} {title}{}", d.nl)));
         }
+        // the underline: one character repeated (deck.rs `setext_level`), kept as long
         let under = text.find('\n').map_or(text.len(), |i| i + 1);
         let lead = text[under..].len() - text[under..].trim_start().len();
-        let run = text[under + lead..]
-            .chars()
-            .take_while(|c| matches!(c, '=' | '-'))
-            .count();
+        let run = text[under + lead..].trim_end().len();
         let at = head.start + under + lead;
         let ch = if level == 1 { "=" } else { "-" };
         return Ok((
@@ -643,11 +641,12 @@ pub fn relevel(d: &Deck, slide: &str, depth: Depth) -> Result<(Patch, Vec<String
             let Some(p) = x.index.checked_sub(2).map(|i| &d.slides[i]) else {
                 return refuse(format!("there is nothing above '{}' to go under", x.id));
             };
-            if x.is_head {
-                moves.push((x, d.slide_level));
-            }
+            // the slide above first: `changed` is in deck order
             if !p.is_head && p.parent.is_none() {
                 moves.push((ctx.slide(&p.id)?, top));
+            }
+            if x.is_head {
+                moves.push((x, d.slide_level));
             }
         }
         Depth::Out => {
@@ -661,15 +660,13 @@ pub fn relevel(d: &Deck, slide: &str, depth: Depth) -> Result<(Patch, Vec<String
             moves.push((x, top));
         }
     }
-    moves.sort_by_key(|(s, _)| s.index);
     let reps = moves
         .iter()
         .map(|(s, l)| marks(d, s, *l))
         .collect::<Result<Vec<_>>>()?;
-    let op = if depth == Depth::In {
-        "indent"
-    } else {
-        "outdent"
+    let op = match depth {
+        Depth::In => "indent",
+        Depth::Out => "outdent",
     };
     let changed = moves.iter().map(|(s, _)| s.id.clone()).collect();
     Ok((patch(op, x.id.clone(), reps, vec![]), changed))

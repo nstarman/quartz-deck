@@ -77,6 +77,15 @@ impl Env {
     }
 }
 
+/// Each slide of `qd slides` as [id, head, in] (spec 018).
+fn outline(v: &Value) -> Vec<Value> {
+    let slides = v["slides"].as_array().unwrap();
+    slides
+        .iter()
+        .map(|s| json!([s["id"], s["head"], s.get("in")]))
+        .collect()
+}
+
 fn assert_edit(v: &Value, op: &str) {
     assert_eq!(v["ok"], true);
     assert_eq!(v["op"], op);
@@ -1313,14 +1322,8 @@ fn slides_report_groups() {
     );
     let v = e.ok(&["slides"]);
     assert_eq!(v["group_level"], 1);
-    let got: Vec<Value> = v["slides"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|s| json!([s["id"], s["head"], s.get("in")]))
-        .collect();
     assert_eq!(
-        got,
+        outline(&v),
         [
             json!(["intro", false, null]),
             json!(["part-a", true, null]),
@@ -1376,14 +1379,8 @@ fn move_lands_indented() {
     let v = e.ok(&["move", "d", "--after", "a", "--indent"]);
     assert_edit(&v, "move");
     assert_eq!(v["changed"], json!(["a"]), "{v}");
-    let ids: Vec<Value> = e.ok(&["slides"])["slides"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|s| json!([s["id"], s["head"], s.get("in")]))
-        .collect();
     assert_eq!(
-        ids,
+        outline(&e.ok(&["slides"])),
         [
             json!(["a", true, null]),
             json!(["d", false, "a"]),

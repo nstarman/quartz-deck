@@ -5740,6 +5740,12 @@ async fn tab_indents_in_list() {
     ed.key("]", "BracketRight", 221, 2).await;
     ed.wait_file(|f| f.contains("\n## D {#d}\n"), "D back in A's group")
         .await;
+    // the title slide always comes first: the key says so
+    ed.go("title-slide").await;
+    ed.eval("document.querySelector('#slides li[data-id=title-slide] > button').focus()")
+        .await;
+    ed.key("Tab", "Tab", 9, 0).await;
+    ed.wait(&notice("title slide always comes first")).await;
     // Escape: out of the list
     ed.pick_slide("b").await;
     ed.key("Escape", "Escape", 27, 0).await;
@@ -5755,7 +5761,10 @@ async fn menu_indent_items() {
     };
     ed.settle().await;
     let e = &ed;
-    let labels = |at| async move {
+    let labels = |id: &'static str| async move {
+        let at = e
+            .editor_point(&format!("#slides li[data-id={id}] > button"), None)
+            .await;
         e.right_click(at).await;
         let l = e.menu_labels().await;
         e.close_menu().await;
@@ -5763,18 +5772,12 @@ async fn menu_indent_items() {
             .filter(|x| x.contains("dent slide"))
             .collect::<Vec<_>>()
     };
-    let a = ed
-        .editor_point("#slides li[data-id=a] > button", None)
-        .await;
     assert_eq!(
-        labels(a).await,
+        labels("a").await,
         ["Indent slide (disabled)", "Outdent slide (disabled)"]
     );
-    let b = ed
-        .editor_point("#slides li[data-id=b] > button", None)
-        .await;
     assert_eq!(
-        labels(b).await,
+        labels("b").await,
         ["Indent slide", "Outdent slide (disabled)"]
     );
     ed.slide_menu("b", "Indent slide").await;

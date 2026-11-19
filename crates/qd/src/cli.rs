@@ -2299,15 +2299,13 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             indent,
             outdent,
         } => match (indent, outdent) {
-            (false, false) => ctx.edit(|d| ops::mv(d, slide, to.pos())),
-            _ => {
-                let depth = if *indent {
-                    ops::Depth::In
-                } else {
-                    ops::Depth::Out
-                };
-                ctx.edit_with(|d| changed(ops::mv_depth(d, slide, to.pos(), depth)))
+            (true, _) => {
+                ctx.edit_with(|d| changed(ops::mv_depth(d, slide, to.pos(), ops::Depth::In)))
             }
+            (_, true) => {
+                ctx.edit_with(|d| changed(ops::mv_depth(d, slide, to.pos(), ops::Depth::Out)))
+            }
+            _ => ctx.edit(|d| ops::mv(d, slide, to.pos())),
         },
         Cmd::Indent { slide } => ctx.edit_with(|d| changed(ops::relevel(d, slide, ops::Depth::In))),
         Cmd::Outdent { slide } => {
