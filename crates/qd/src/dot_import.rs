@@ -208,6 +208,7 @@ struct Inherited {
     fill: Option<String>,
     stroke: Option<String>,
     font_size: Option<f64>,
+    font_family: Option<String>,
     href: Option<String>,
 }
 
@@ -233,6 +234,7 @@ struct Text {
     text: String,
     fill: Option<String>,
     size: Option<f64>,
+    family: Option<String>,
     href: Option<String>,
 }
 
@@ -310,6 +312,10 @@ fn read(svg: &str) -> Result<Drawing> {
             root,
             &Inherited {
                 m: ID,
+                // the root's own: a drawing often sets its font, fill or stroke there
+                fill: prop(root, "fill"),
+                stroke: prop(root, "stroke"),
+                font_family: prop(root, "font-family"),
                 ..Default::default()
             },
             &mut d,
@@ -344,6 +350,7 @@ fn walk(n: roxmltree::Node, up: &Inherited, d: &mut Drawing) {
         }
         here.fill = prop(c, "fill").or(here.fill);
         here.stroke = prop(c, "stroke").or(here.stroke);
+        here.font_family = prop(c, "font-family").or(here.font_family);
         if let Some(s) =
             prop(c, "font-size").and_then(|v| v.trim_end_matches("px").parse::<f64>().ok())
         {
@@ -601,6 +608,7 @@ fn push_text(d: &mut Drawing, here: &Inherited, at: P, s: &str, fill: Option<Str
         text: s,
         fill: fill.or_else(|| here.fill.clone()).filter(|v| v != "none"),
         size: here.font_size,
+        family: here.font_family.clone(),
         href: here.href.clone(),
     });
 }
@@ -664,7 +672,8 @@ struct Made {
     pictures: Vec<String>,
 }
 
-fn make(d: &Drawing) -> Result<Made> {
+/// `slide_width`: the deck's, in px; a wider drawing is scaled down to fit.
+fn make(d: &Drawing, slide_width: f64) -> Result<Made> {
     if d.shapes.is_empty() {
         return Err(QdError::InvalidArg(
             "no boxes in this drawing: qd reads rectangles, circles and ellipses as boxes".into(),
@@ -698,7 +707,12 @@ fn make(d: &Drawing) -> Result<Made> {
             .join("\n");
         // Graphviz's own name; else the label's letters and digits, `_2`… when
         // taken, n1, n2… with no label
-        let base = d.names.get(i).cloned().unwrap_or_else(|| name_from(&label));
+        let first_line = label.lines().next().unwrap_or("");
+        let base = d
+            .names
+            .get(i)
+            .cloned()
+            .unwrap_or_else(|| name_from(first_line));
         let name = if !base.is_empty() && !names.contains(&base) {
             base
         } else {
@@ -764,6 +778,11 @@ fn make(d: &Drawing) -> Result<Made> {
         a.extend(s.fill.clone().map(|v| ("fillcolor", v)));
         a.extend(s.stroke.clone().map(|v| ("color", v)));
         a.extend(first.and_then(|t| t.fill.clone()).map(|v| ("fontcolor", v)));
+        // Graphviz takes one font: the list's first, unquoted
+        let font = first
+            .and_then(|t| t.family.as_deref())
+            .and_then(|f| f.split(',').next());
+        a.extend(font.map(|f| ("fontname", f.trim().trim_matches(['"', '\'']).to_string())));
         a.extend(
             first
                 .and_then(|t| t.size)
@@ -848,11 +867,14 @@ fn make(d: &Drawing) -> Result<Made> {
         .flat_map(|s| [(s.area.0, s.area.1), (s.area.2, s.area.3)])
         .collect();
     let all = Rect::around(&corners);
-    let fig = |v: f64| ((v + 8.0) / 96.0 * 100.0).round() / 100.0;
+    let (w, h) = (all.2 - all.0 + 8.0, all.3 - all.1 + 8.0);
+    // never wider than the slide: a bigger drawing is scaled down to fit, its shape kept
+    let k = (slide_width / w).min(1.0);
+    let fig = |v: f64| (v * k / 96.0 * 100.0).round() / 100.0;
     let cell = format!(
         "```{{dot}}\n//| fig-width: {}\n//| fig-height: {}\n{} {{\n  layout=neato; splines=ortho;\n{}}}\n```",
-        fig(all.2 - all.0),
-        fig(all.3 - all.1),
+        fig(w),
+        fig(h),
         if op == "--" { "graph" } else { "digraph" },
         stmts
             .iter()
@@ -881,7 +903,7 @@ pub fn import(
 ) -> Result<(crate::ops::Patch, Value)> {
     use crate::ops::Pos;
     let drawing = read(svg)?;
-    let made = make(&drawing)?;
+    let made = make(&drawing, f64::from(d.width))?;
     let mut p = match (replace, &at, on) {
         (Some(r), Pos::End, None) => crate::ops::edit(d, r, &made.cell, None)?,
         (Some(_), _, _) => {
@@ -913,6 +935,9 @@ pub fn import(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The slide width of a deck that doesn't set one.
+    const W: f64 = crate::layouts::BASE.0;
 
     const HAND: &str = include_str!("../tests/fixtures/dot-import/hand.svg");
     fn close(a: P, b: P) -> bool {
@@ -994,13 +1019,13 @@ mod tests {
 
     #[test]
     fn boxes_arrows_and_what_is_left_out() {
-        let m = make(&read(HAND).unwrap()).unwrap();
+        let m = make(&read(HAND).unwrap(), W).unwrap();
         let names: Vec<&str> = m
             .boxes
             .iter()
             .map(|b| b["name"].as_str().unwrap())
             .collect();
-        assert_eq!(names, ["data", "tool", "paperdraft", "results"]);
+        assert_eq!(names, ["data", "tool", "paper", "results"]);
         assert_eq!(m.boxes[2]["label"], "Paper\ndraft");
         let arrows: Vec<(String, String)> = m
             .arrows
@@ -1017,7 +1042,7 @@ mod tests {
             [
                 ("data".into(), "tool".into()),
                 ("tool".into(), "results".into()),
-                ("paperdraft".into(), "results".into())
+                ("paper".into(), "results".into())
             ]
         );
         let left: Vec<String> = m
@@ -1037,7 +1062,7 @@ mod tests {
             "image=\"face.png\"",
             "label=<<TABLE",
             "style=\"rounded,filled\"",
-            "paperdraft -> results [dir=both]",
+            "paper -> results [dir=both]",
             "data -> tool;",
             "//| fig-width: 8.42\n//| fig-height: 3.46\n",
         ] {
@@ -1064,7 +1089,7 @@ mod tests {
     fn reads_a_graphviz_drawing() {
         let d = read(GRAPHVIZ).unwrap();
         assert!(d.graphviz);
-        let m = make(&d).unwrap();
+        let m = make(&d, W).unwrap();
         let names: Vec<&str> = m
             .boxes
             .iter()
@@ -1126,11 +1151,32 @@ mod tests {
         assert_eq!(edge_ends("x->y", "->", &names), None);
     }
 
+    /// Found on a real drawing (T017): a drawing wider than the slide is scaled
+    /// down to fit, its shape kept; a box is named from its label's first line.
+    #[test]
+    fn wide_drawings_fit_the_slide() {
+        let wide = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2000 100" font-family="'Plex Sans', Arial"><rect x="0" y="0" width="900" height="92"/><text x="10" y="40">Step one</text><text x="10" y="70">the details</text><rect x="1092" y="0" width="900" height="92"/></svg>"#;
+        let m = make(&read(wide).unwrap(), W).unwrap();
+        assert!(
+            m.cell
+                .contains("//| fig-width: 10.94\n//| fig-height: 0.55\n"),
+            "{}",
+            m.cell
+        );
+        assert_eq!(m.boxes[0]["name"], "stepone");
+        assert!(
+            m.cell.contains("fontname=\"Plex Sans\""),
+            "the root's font: {}",
+            m.cell
+        );
+        assert_eq!(m.boxes[1]["name"], "n1");
+    }
+
     #[test]
     fn no_boxes_is_an_error() {
         let only_lines =
             r#"<svg xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="0" x2="9" y2="9"/></svg>"#;
-        assert!(make(&read(only_lines).unwrap()).is_err());
+        assert!(make(&read(only_lines).unwrap(), W).is_err());
     }
 
     #[test]

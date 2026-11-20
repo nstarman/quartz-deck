@@ -74,6 +74,9 @@ constants, to tune on the proving case (SC-005).
 - **Stroke:** gives `color`. The box's text `fill` gives `fontcolor`.
   Colours are written as given (named, `#rgb`, `#rrggbb`).
 - **Font size:** a text's `font-size` gives `fontsize` in points.
+- **Font:** a text's `font-family` gives `fontname`, taking the list's
+  first family. It can come from the root `<svg>`, where drawings often set
+  it.
 - **Links:** an `a` around the box or its text gives `URL` (`href` or
   `xlink:href`).
 - **Pictures:** an `image` inside a box gives `image="<href>"` and the
@@ -95,6 +98,8 @@ constants, to tune on the proving case (SC-005).
   96 px each: seen in spec 020's spike, where the defaults 10 × 5 gave
   960 × 480). Graphviz draws only the boxes' extent, so this shows one
   drawing unit as one slide pixel (tested against a real render, SC-002).
+  A drawing wider than the deck's slide is scaled down to fit it, its
+  shape kept: real drawings are often drawn large and shrunk by CSS.
   A first version used the canvas's size and `#|`; Quarto ignored the
   option and the figure kept the default size.
 

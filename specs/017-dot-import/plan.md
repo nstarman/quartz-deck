@@ -107,6 +107,25 @@ separate concern from editing DOT, and `dot.rs` is already long.
 
 Each PR passes `/pr-audit`.
 
+**Final re-check after the build (T018, 2026-11-20)**: pass.
+- **I.** Our own reader; SVG and DOT are open formats. The fixtures are
+  made up, and the person's drawings were tried outside the repository.
+- **II.** The result is an ordinary `{dot}` cell, read by `qd dot show` and
+  edited by every `qd dot` command (tested). Nothing is kept outside the
+  deck.
+- **III.** A command with JSON, `--dry-run`, `--expect`, `qd schema`, the
+  skill and the README.
+- **IV.** It's an edit like any other; the render was checked at one unit to
+  one pixel.
+- **V.** One op and one undo step; nothing is written on any error (tested).
+- **VI.** PR 2's tests were seen failing first. PR 1's unit tests were
+  written with the code, as noted in tasks.md.
+- **VII.** One module, `dot_import.rs`, reusing `dot.rs`'s writers and
+  placing; one small crate (`roxmltree`). Along the way, `positions_from_svg`
+  learned to read rounded boxes, which `qd dot pin` needed.
+- **Licences.** `roxmltree` is MIT OR Apache-2.0, checked by the licence
+  test.
+
 ## Complexity Tracking
 
 | Addition | Why | Simpler option rejected because |

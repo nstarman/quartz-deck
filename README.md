@@ -219,6 +219,16 @@ line or two of the cell's DOT text.
   until the drop.
 - **CLI:** `qd dot show`, `pin`, `move`, `new`, `add`, `connect`, `rename`,
   `set`, `rm`, `flip`. DOT that qd can't read safely stays editable as text.
+- **From a drawing** (spec [017](specs/017-dot-import/spec.md)): `qd dot import
+  drawing.svg --on SLIDE` (or `--after`/`--before REF`, or `--replace REF` for
+  the element showing the drawing) turns an SVG into a pinned diagram you can
+  then edit on the slide. In a hand-drawn SVG, rectangles, circles and
+  ellipses with their text become boxes, where and as large as they're drawn,
+  with their colours, links and pictures; a line whose ends reach two boxes
+  becomes an arrow, pointing the way its drawn head does. An SVG Graphviz drew
+  keeps its box names and arrows. Whatever it can't place is listed with the
+  reason. SVGs exported from Keynote, Illustrator, Inkscape or draw.io
+  (flattened shapes, split text) aren't the aim.
 
 ### Arrows (spec [016](specs/016-slide-arrows/spec.md))
 

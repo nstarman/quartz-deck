@@ -249,6 +249,12 @@ box; positions snap to 0.25 in unless `--no-snap`. Arrows re-route on the
 next render. A diagram that isn't pinned refuses `move` with the hint to pin.
 
 Building a diagram:
+- `qd dot import FILE.svg --on SLIDE` (or `--after`/`--before REF`, or
+  `--replace REF`) turns a drawing into a pinned diagram: a hand-drawn SVG's
+  rectangles, circles and ellipses with text become boxes, its lines between
+  two boxes become arrows; an SVG Graphviz drew keeps its names and arrows.
+  Check `left_out` (with reasons) and `notes` in its output and tell the
+  person what didn't come across; then refine with the commands below.
 - `qd dot new --on SLIDE` (or `--after REF`, `--before REF`) inserts a
   pinned starter diagram: two boxes, `data` and `tool`, one in each starter
   look, joined.

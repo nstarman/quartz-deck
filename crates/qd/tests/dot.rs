@@ -592,7 +592,7 @@ fn import_hand_drawn() {
     assert_eq!(v["boxes"].as_array().unwrap().len(), 4, "{v}");
     assert_eq!(
         v["arrows"],
-        json!([{"from": "data", "to": "tool"}, {"from": "tool", "to": "results"}, {"from": "paperdraft", "to": "results"}])
+        json!([{"from": "data", "to": "tool"}, {"from": "tool", "to": "results"}, {"from": "paper", "to": "results"}])
     );
     let left: Vec<&str> = v["left_out"]
         .as_array()
@@ -622,7 +622,7 @@ fn import_hand_drawn() {
     assert_eq!(node("tool")["url"], "https://example.org/tool");
     assert_eq!(node("tool")["image"], "face.png");
     assert_eq!(node("tool")["label"], "Tool");
-    assert_eq!(node("paperdraft")["look"]["shape"], "ellipse");
+    assert_eq!(node("paper")["look"]["shape"], "ellipse");
     assert!(
         s["edges"]
             .as_array()
@@ -774,7 +774,7 @@ fn import_renders_where_drawn() {
     let (dx, dy) = (pos["data"].0, pos["data"].1);
     for (name, drawn) in [
         ("tool", (340.0, 0.0)),
-        ("paperdraft", (610.0, 0.0)),
+        ("paper", (610.0, 0.0)),
         ("results", (340.0, 244.0)),
     ] {
         let (x, y) = pos[name];
