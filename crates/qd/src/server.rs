@@ -60,7 +60,8 @@ const UI_MODULES: &[(&str, &str)] = &[
 enum Ev {
     Changed(String),
     Rendering,
-    Rendered(String),
+    /// a render: the deck's version, and a fingerprint of the cell outputs it shows
+    Rendered(String, String),
     RenderError(String),
     /// Code runs (contracts/http.md): `kernel`, `run_started`, `cell_output`, `run_done`.
     Run(&'static str, Value),
@@ -71,7 +72,10 @@ impl Ev {
         let (name, data) = match self {
             Ev::Changed(v) => ("changed", json!({"version": v})),
             Ev::Rendering => ("rendering", json!({})),
-            Ev::Rendered(v) => ("rendered", json!({"version": v, "html": html})),
+            Ev::Rendered(v, o) => (
+                "rendered",
+                json!({"version": v, "outputs": o, "html": html}),
+            ),
             Ev::RenderError(m) => ("render_error", json!({"message": m})),
             Ev::Run(name, data) => (*name, data.clone()),
         };
@@ -82,7 +86,7 @@ impl Ev {
 #[derive(Default)]
 struct St {
     version: String,
-    rendered: Option<String>,
+    rendered: Option<(String, String)>,
     error: Option<String>,
 }
 
@@ -1041,8 +1045,8 @@ async fn events(
     let initial: Vec<Ev> = {
         let st = app.st.lock().unwrap();
         let mut v = Vec::new();
-        if let Some(r) = &st.rendered {
-            v.push(Ev::Rendered(r.clone()));
+        if let Some((r, o)) = &st.rendered {
+            v.push(Ev::Rendered(r.clone(), o.clone()));
         }
         if let Some(e) = &st.error {
             v.push(Ev::RenderError(e.clone()));
@@ -1077,6 +1081,8 @@ async fn render_loop(app: Shared) {
         let _ = app.tx.send(Ev::Rendering);
         let outputs = Outputs::new(&app.store).report(&d);
         let copy = preview_copy(&d, &outputs["cells"]);
+        // what the render shows besides the deck's text: the editor reloads when it changes (spec 020)
+        let shown_outputs = crate::deck::version_of(outputs["cells"].to_string().as_bytes());
         let (path, out, a) = (app.store.path.clone(), app.out.clone(), app.clone());
         let res = tokio::task::spawn_blocking(move || {
             let closing = a.rendering.lock().unwrap();
@@ -1089,9 +1095,9 @@ async fn render_loop(app: Shared) {
         let ev = match res {
             Ok(Ok(_)) => {
                 let mut st = app.st.lock().unwrap();
-                st.rendered = Some(d.version.clone());
+                st.rendered = Some((d.version.clone(), shown_outputs.clone()));
                 st.error = None;
-                Ev::Rendered(d.version)
+                Ev::Rendered(d.version, shown_outputs)
             }
             Ok(Err(e)) => {
                 let msg = match &e {
