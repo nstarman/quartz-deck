@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A made-up hand-drawn diagram for qd's tests (spec 017): four boxes, three
+     arrows, a link, a picture, a moved and scaled group, a stray line, a
+     stray text and a shape qd doesn't read. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="960" height="540" viewBox="0 0 960 540">
+  <defs>
+    <marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+  </defs>
+  <rect x="60" y="60" width="180" height="72" fill="white" stroke="#c8ccd2"/>
+  <text x="150" y="102" text-anchor="middle" font-size="20" fill="#1f2933">Data</text>
+
+  <a href="https://example.org/tool">
+    <rect x="400" y="60" width="180" height="72" rx="12" style="fill:#3d4a5c;stroke:#3d4a5c"/>
+    <image href="face.png" x="410" y="74" width="44" height="44"/>
+    <text x="520" y="102" text-anchor="middle" font-size="20" fill="white">Tool</text>
+  </a>
+
+  <ellipse cx="760" cy="96" rx="100" ry="40" fill="#f3e5c0" stroke="#b08a2e"/>
+  <text x="760" y="90" text-anchor="middle" font-size="18">Paper</text>
+  <text x="760" y="114" text-anchor="middle" font-size="18">draft</text>
+
+  <g transform="translate(380,300) scale(2)">
+    <rect x="0" y="0" width="110" height="40" fill="#e8f0fe" stroke="#2a5bd7"/>
+    <text x="55" y="25" text-anchor="middle" font-size="12">Results</text>
+  </g>
+
+  <g stroke="#333" stroke-width="2" fill="none">
+    <line x1="240" y1="96" x2="398" y2="96" marker-end="url(#head)"/>
+    <path d="M 490 134 L 490 220 L 470 220 L 470 296" marker-end="url(#head)"/>
+    <polyline points="760,140 760,340 606,340" style="marker-start:url(#head);marker-end:url(#head)"/>
+    <line x1="60" y1="480" x2="200" y2="480" marker-end="url(#head)"/>
+  </g>
+
+  <text x="700" y="500" font-size="14">a note</text>
+  <polygon points="860,440 880,480 840,480" fill="#ccc"/>
+</svg>

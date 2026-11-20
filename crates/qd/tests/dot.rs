@@ -563,3 +563,226 @@ fn image_installs_dot_image() {
     }
     assert_eq!(text(&t), DECK, "undo restores the deck");
 }
+
+// ---------- spec 017: importing a drawing ----------
+
+const HAND: &str = include_str!("fixtures/dot-import/hand.svg");
+const SLIDE: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## Flow {#flow}\n\nWords\n";
+
+/// A deck with `hand.svg` beside it, and the picture it shows.
+fn with_drawing(deck_text: &str) -> tempfile::TempDir {
+    let t = deck(deck_text);
+    fs::write(t.path().join("hand.svg"), HAND).unwrap();
+    let face = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../plugins/dot-image/face.png"
+    );
+    fs::copy(face, t.path().join("face.png")).unwrap();
+    t
+}
+
+/// Spec 017 US1 (T009): a hand-drawn SVG becomes one pinned, editable cell;
+/// what can't be placed is reported with the reason.
+#[test]
+fn import_hand_drawn() {
+    let t = with_drawing(SLIDE);
+    let (ok, v) = json(t.path(), &["dot", "import", "hand.svg", "--on", "flow"]);
+    assert!(ok, "{v}");
+    assert_eq!(v["kind"], "hand");
+    assert_eq!(v["boxes"].as_array().unwrap().len(), 4, "{v}");
+    assert_eq!(
+        v["arrows"],
+        json!([{"from": "data", "to": "tool"}, {"from": "tool", "to": "results"}, {"from": "paperdraft", "to": "results"}])
+    );
+    let left: Vec<&str> = v["left_out"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["reason"].as_str().unwrap())
+        .collect();
+    assert_eq!(left.len(), 3, "{v}");
+    assert!(
+        left.iter().any(|r| r.contains("outside every box"))
+            && left.iter().any(|r| r.contains("near no box"))
+    );
+    assert_eq!(v["notes"], json!([]), "face.png is beside the deck");
+    assert_eq!(v["installed"], json!(["dot-image"]), "{v}");
+    let after = text(&t);
+    assert!(after.contains("filters:\n- dot-image\n"), "{after}");
+    assert!(
+        after.contains("//| fig-width: 8.42\n//| fig-height: 3.46\n"),
+        "{after}"
+    );
+    let cell = v["cell"].as_str().unwrap();
+    let (ok, s) = json(t.path(), &["dot", "show", cell]);
+    assert!(ok && s["editable"] == true, "{s}");
+    assert_eq!(s["pinned"], true);
+    let nodes = s["nodes"].as_array().unwrap();
+    let node = |n: &str| nodes.iter().find(|x| x["name"] == n).unwrap();
+    assert_eq!(node("tool")["url"], "https://example.org/tool");
+    assert_eq!(node("tool")["image"], "face.png");
+    assert_eq!(node("tool")["label"], "Tool");
+    assert_eq!(node("paperdraft")["look"]["shape"], "ellipse");
+    assert!(
+        s["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["attrs"]["dir"] == "both"),
+        "{s}"
+    );
+}
+
+/// Spec 017 US1 (T009): one edit: a dry run writes nothing; one undo puts it back; a stale version is refused.
+#[test]
+fn import_is_one_edit() {
+    let t = with_drawing(SLIDE);
+    let (ok, v) = json(
+        t.path(),
+        &["dot", "import", "hand.svg", "--on", "flow", "--dry-run"],
+    );
+    assert!(
+        ok && v["diff"].as_str().is_some_and(|d| d.contains("+```{dot}")),
+        "{v}"
+    );
+    assert_eq!(text(&t), SLIDE);
+    let (ok, v) = json(
+        t.path(),
+        &[
+            "dot", "import", "hand.svg", "--on", "flow", "--expect", "0000000",
+        ],
+    );
+    assert!(!ok && v["error"]["code"] == "E_CONFLICT", "{v}");
+    assert!(json(t.path(), &["dot", "import", "hand.svg", "--on", "flow"]).0);
+    assert!(json(t.path(), &["undo"]).0);
+    assert_eq!(text(&t), SLIDE);
+}
+
+/// Spec 017 US1 (T009): `--replace` puts the cell where the drawing's image was.
+#[test]
+fn import_replaces() {
+    let deck_text =
+        "---\ntitle: T\nformat: revealjs\n---\n\n## Flow {#flow}\n\n![](hand.svg)\n\nAfter\n";
+    let t = with_drawing(deck_text);
+    let (ok, v) = json(
+        t.path(),
+        &["dot", "import", "hand.svg", "--replace", "flow/0"],
+    );
+    assert!(ok, "{v}");
+    let after = text(&t);
+    assert!(
+        !after.contains("![](hand.svg)") && after.contains("```{dot}"),
+        "{after}"
+    );
+    assert!(after.find("```{dot}") < after.find("After"));
+}
+
+/// Spec 017 US1 (T009): nothing written on an error.
+#[test]
+fn import_errors() {
+    let t = with_drawing(SLIDE);
+    fs::write(
+        t.path().join("lines.svg"),
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="0" x2="9" y2="9"/></svg>"#,
+    )
+    .unwrap();
+    common::err(
+        t.path(),
+        &["dot", "import", "talk.qmd", "--on", "flow"],
+        "E_INVALID_ARG",
+    );
+    common::err(
+        t.path(),
+        &["dot", "import", "lines.svg", "--on", "flow"],
+        "E_INVALID_ARG",
+    );
+    common::err(
+        t.path(),
+        &["dot", "import", "missing.svg", "--on", "flow"],
+        "E_IO",
+    );
+    let (ok, _) = json(
+        t.path(),
+        &[
+            "dot",
+            "import",
+            "hand.svg",
+            "--on",
+            "flow",
+            "--replace",
+            "flow/0",
+        ],
+    );
+    assert!(!ok, "two places");
+    assert_eq!(text(&t), SLIDE);
+}
+
+/// Spec 017 FR-008 (T009): an imported diagram edits like any other.
+#[test]
+fn imported_diagram_edits() {
+    let t = with_drawing(SLIDE);
+    let (_, v) = json(t.path(), &["dot", "import", "hand.svg", "--on", "flow"]);
+    let cell = v["cell"].as_str().unwrap().to_string();
+    let before = text(&t);
+    let (ok, m) = json(t.path(), &["dot", "move", &cell, "data", "--by", "0.25,0"]);
+    assert!(ok, "{m}");
+    let after = text(&t);
+    let (added, removed) = changed(&before, &after);
+    assert_eq!((added.len(), removed.len()), (1, 1), "{added:?}");
+    // (a move lands on the 0.25 in grid)
+    assert!(added[0].contains("pos=\"0.25,3.5!\""), "{added:?}");
+}
+
+/// Spec 017 SC-002 (T011): rendered by Quarto, the imported boxes sit where
+/// the drawing has them, one drawing unit to one slide pixel, within 5 px;
+/// the picture is drawn.
+#[test]
+fn import_renders_where_drawn() {
+    if !common::have("quarto") {
+        return;
+    }
+    let t = with_drawing(SLIDE);
+    assert!(json(t.path(), &["dot", "import", "hand.svg", "--on", "flow"]).0);
+    let out = std::process::Command::new("quarto")
+        .args(["render", "talk.qmd", "--to", "revealjs"])
+        .current_dir(t.path())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let html = fs::read_to_string(t.path().join("talk.html")).unwrap();
+    assert!(html.contains("class=\"dot-image\""), "the picture");
+    let svg = &html[html.find("<svg").unwrap()..];
+    let svg = &svg[..svg.find("</svg>").unwrap()];
+    // one unit to one pixel: the figure's width is its viewBox's
+    let num = |re: &str| -> Vec<f64> {
+        let c = regex::Regex::new(re).unwrap().captures(svg).unwrap();
+        c.iter()
+            .skip(1)
+            .map(|m| m.unwrap().as_str().parse().unwrap())
+            .collect()
+    };
+    let w = num(r#"width="([\d.]+)(?:pt|px)?""#)[0];
+    let vb = num(r"(?i)viewBox=.([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+)");
+    assert!((w / vb[2] - 1.0).abs() < 0.01, "scale {}", w / vb[2]);
+    // each box where hand.svg has it: the editor's own reading, in inches from the lowest, leftmost
+    let html = html.replacen("<svg", "<div data-qd=\"x\"></div><svg", 1);
+    let pos = quartz_deck::dot::positions_from_svg(&html, "x").expect("boxes, rounded ones too");
+    let (dx, dy) = (pos["data"].0, pos["data"].1);
+    for (name, drawn) in [
+        ("tool", (340.0, 0.0)),
+        ("paperdraft", (610.0, 0.0)),
+        ("results", (340.0, 244.0)),
+    ] {
+        let (x, y) = pos[name];
+        // inches, y up, against drawing units, y down
+        let off = ((x - dx) * 72.0, (dy - y) * 72.0);
+        assert!(
+            (off.0 - drawn.0).abs() <= 5.0 && (off.1 - drawn.1).abs() <= 5.0,
+            "{name}: {off:?} against {drawn:?}"
+        );
+    }
+}

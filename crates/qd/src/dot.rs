@@ -1044,7 +1044,7 @@ fn spacer_width(label: &str) -> Option<u32> {
 
 /// A spacer label for `text` in a box `height` inches tall, as DOT text: an
 /// empty square cell, where dot-image draws the picture, then the text.
-fn spacer(text: &str, height: f64) -> String {
+pub(crate) fn spacer(text: &str, height: f64) -> String {
     let w = (height * 72.0 - 8.0).round();
     format!(
         "<<TABLE BORDER=\"0\" CELLPADDING=\"0\" CELLSPACING=\"4\"><TR><TD WIDTH=\"{w}\" HEIGHT=\"{w}\" FIXEDSIZE=\"TRUE\"></TD><TD>{}</TD></TR></TABLE>>",
@@ -1080,10 +1080,14 @@ fn fit_label(doc: &mut Doc, name: &str) -> Result<()> {
 }
 
 /// `name [k=v, …]`, or just `name`.
-fn node_stmt(name: &str, attrs: &[(String, String)]) -> String {
+/// A box statement, values quoted as DOT needs; an HTML label (`<<…>>`) as it is.
+pub(crate) fn node_stmt(name: &str, attrs: &[(String, String)]) -> String {
     let list: Vec<String> = attrs
         .iter()
-        .map(|(k, v)| format!("{k}={}", dot_value(v)))
+        .map(|(k, v)| {
+            let html = k == "label" && v.starts_with("<<") && v.ends_with(">>");
+            format!("{k}={}", if html { v.clone() } else { dot_value(v) })
+        })
         .collect();
     if list.is_empty() {
         dot_value(name)
@@ -1675,16 +1679,26 @@ pub fn set(
     if !kv.iter().any(|(k, v)| k == "image" && !v.is_empty()) {
         return Ok((p, json!({})));
     }
-    // a picture needs the dot-image filter: named in the deck's `filters:` (research R5)
+    Ok((
+        with_dot_image(d, p)?,
+        json!({"extension": crate::plugins::DOT_IMAGE.name}),
+    ))
+}
+
+/// `p`, with the dot-image filter named in the deck's `filters:` in the same
+/// edit: a picture in a box needs it (research R5; spec 017 R5).
+pub(crate) fn with_dot_image(d: &Deck, p: crate::ops::Patch) -> Result<crate::ops::Patch> {
     let after = crate::ops::apply(&d.text, &p)?;
     let after = crate::plugins::with_filters(&after, &[crate::plugins::DOT_IMAGE])?;
     let whole = Span {
         start: 0,
         end: d.text.len(),
     };
-    Ok((
-        crate::ops::patch(&p.op, p.target, vec![(whole, after)], vec![]),
-        json!({"extension": crate::plugins::DOT_IMAGE.name}),
+    Ok(crate::ops::patch(
+        &p.op,
+        p.target,
+        vec![(whole, after)],
+        vec![],
     ))
 }
 
@@ -1786,6 +1800,19 @@ pub fn flip(d: &Deck, r: &str, target: &str) -> Result<(crate::ops::Patch, Value
 
 /// `qd dot new`: the starter diagram before or after a block, else at the end of slide `on`.
 pub fn new(d: &Deck, on: Option<&str>, at: crate::ops::Pos) -> Result<(crate::ops::Patch, Value)> {
+    let mut p = add_cell(d, on, at, &starter_diagram())?;
+    p.op = "dot-new".into();
+    let cell = p.target.clone();
+    Ok((p, json!({"cell": cell})))
+}
+
+/// A new cell `md` at the end of slide `on`, or after/before an element.
+pub(crate) fn add_cell(
+    d: &Deck,
+    on: Option<&str>,
+    at: crate::ops::Pos,
+    md: &str,
+) -> Result<crate::ops::Patch> {
     use crate::ops::Pos;
     let slide = match (&at, on) {
         (Pos::After(r) | Pos::Before(r), _) => d.element(r)?.0.id.clone(),
@@ -1796,10 +1823,7 @@ pub fn new(d: &Deck, on: Option<&str>, at: crate::ops::Pos) -> Result<(crate::op
             ));
         }
     };
-    let mut p = crate::ops::block_add(d, &slide, at, &starter_diagram())?;
-    p.op = "dot-new".into();
-    let cell = p.target.clone();
-    Ok((p, json!({"cell": cell})))
+    crate::ops::block_add(d, &slide, at, md)
 }
 
 /// Box centres in inches from a rendered page: the `{dot}` cell tagged
@@ -1813,8 +1837,10 @@ pub fn positions_from_svg(
     let svg = &html[start..start + html[start..].find("</svg>")?];
     let title =
         regex::Regex::new(r#"class="node[^"]*">\s*<title>(.*?)</title>"#).expect("valid regex");
-    let points = regex::Regex::new(r#"points="([^"]+)"|cx="([-\d.]+)" cy="([-\d.]+)""#)
+    // a box's outline: a polygon, a path (a rounded box), or an ellipse
+    let points = regex::Regex::new(r#"(?:points|\sd)="([^"]+)"|cx="([-\d.]+)" cy="([-\d.]+)""#)
         .expect("valid regex");
+    let number = regex::Regex::new(r"-?[\d.]+").expect("valid regex");
     let marks: Vec<(usize, String)> = title
         .captures_iter(svg)
         .map(|c| {
@@ -1830,12 +1856,15 @@ pub fn positions_from_svg(
         let c = points.captures(&svg[*from..to])?;
         let (x, y) = match (c.get(1), c.get(2), c.get(3)) {
             (Some(p), _, _) => {
-                let pts: Vec<(f64, f64)> = p
-                    .as_str()
-                    .split_whitespace()
-                    .filter_map(|xy| parse_pos(xy).map(|(x, y, _)| (x, y)))
+                let v: Vec<f64> = number
+                    .find_iter(p.as_str())
+                    .filter_map(|m| m.as_str().parse().ok())
                     .collect();
-                let (xs, ys): (Vec<f64>, Vec<f64>) = pts.into_iter().unzip();
+                let (xs, ys): (Vec<f64>, Vec<f64>) = v
+                    .chunks(2)
+                    .filter(|c| c.len() == 2)
+                    .map(|c| (c[0], c[1]))
+                    .unzip();
                 let mid = |v: &[f64]| {
                     (v.iter().cloned().fold(f64::MAX, f64::min)
                         + v.iter().cloned().fold(f64::MIN, f64::max))
@@ -1878,7 +1907,7 @@ pub fn positions_from_graphviz(
 }
 
 /// The lowest, leftmost box at 0, 0, two decimals.
-fn normalised(
+pub(crate) fn normalised(
     m: std::collections::HashMap<String, (f64, f64)>,
 ) -> Option<std::collections::HashMap<String, (f64, f64)>> {
     if m.is_empty() {

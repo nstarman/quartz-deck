@@ -811,6 +811,23 @@ enum DotCmd {
         #[arg(long, conflicts_with = "on")]
         before: Option<String>,
     },
+    /// A drawing (SVG, hand-written or from Graphviz) as a new pinned diagram (spec 017)
+    Import {
+        /// The SVG file
+        file: PathBuf,
+        /// At the end of this slide
+        #[arg(long, required_unless_present_any = ["after", "before", "replace"])]
+        on: Option<String>,
+        /// After this block
+        #[arg(long, conflicts_with_all = ["on", "before", "replace"])]
+        after: Option<String>,
+        /// Before this block
+        #[arg(long, conflicts_with_all = ["on", "replace"])]
+        before: Option<String>,
+        /// In place of this element (the drawing's image, say)
+        #[arg(long, conflicts_with = "on")]
+        replace: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -891,7 +908,7 @@ fn output_of(cmd: &str) -> &'static str {
             r#"show: {"ok","ref","from":[x,y],"to":[x,y],"control":[[x,y],...]|null,"options":{...},"editable":true} or {"ok","ref","editable":{"reason","at":{"line","column"}}}; list: {"ok","arrows":[<show>...]}"#
         }
         "dot" => {
-            r#"show: {"ok","kind":"dot","cell","directed","pinned","editable":true|{"reason","at":{"line","column"}},"settings":{...},"nodes":[{"name","label","look":{...},"url","image","spacer","pos":[x,y]|null,"pinned","size":{...},"locked"}],"edges":[{"from","to","index","attrs":{...},"locked"}]}"#
+            r#"show: {"ok","kind":"dot","cell","directed","pinned","editable":true|{"reason","at":{"line","column"}},"settings":{...},"nodes":[{"name","label","look":{...},"url","image","spacer","pos":[x,y]|null,"pinned","size":{...},"locked"}],"edges":[{"from","to","index","attrs":{...},"locked"}]}; import: {"ok","cell","kind":"hand"|"graphviz","file","boxes":[{"name","label"}],"arrows":[{"from","to"}],"left_out":[{"what","at","reason"}],"notes":[...],"extension"?}"#
         }
         "bib" => {
             r#"bare: {"ok","kind":"bib","where":"none|companion|embedded|both","files":[{"path","format","inside"}],"embedded","entries","missing":[{"key","slides"}]}; pull: {"ok","op":"bib-pull","version","diff","file"?,"created"?,"embedded"?,"added","changed":[{"id","fields"}],"merged":[{"id","from"}],"gone","warnings"}; embed: {...,"entries","left"}; extract: {...,"file","entries"}; convert: {...,"file","from"} — every write is an edit of the deck and its companion file together (--dry-run, --expect, one qd undo)"#
@@ -1136,6 +1153,18 @@ fn find_deck(arg: &Option<PathBuf>) -> Result<PathBuf> {
 }
 
 /// `--after`/`--before`, else the end.
+/// A picture in a diagram (`dot set image=`, `dot import`): the dot-image
+/// filter goes into the deck's `_extensions/` once the edit is written.
+fn install_dot_image(ctx: &Ctx, v: &mut Value) -> Result<()> {
+    if v.get("extension").is_some() && !ctx.cli.dry_run {
+        let store = ctx.store()?;
+        let dir = store.path.parent().unwrap_or(Path::new("."));
+        let x = crate::plugins::install_these(&[crate::plugins::DOT_IMAGE], dir)?;
+        v["installed"] = x["installed"].clone();
+    }
+    Ok(())
+}
+
 fn at<'a>(after: &'a Option<String>, before: &'a Option<String>) -> Pos<'a> {
     match (after, before) {
         (Some(a), _) => Pos::After(a),
@@ -1773,19 +1802,38 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                     let mut v = ctx.edit_with(|d| {
                         dot::set(d, cell, target, pairs, look.as_deref(), look_of.as_deref())
                     })?;
-                    // a picture: the dot-image filter goes into the deck's _extensions/
-                    if v.get("extension").is_some() && !ctx.cli.dry_run {
-                        let store = ctx.store()?;
-                        let dir = store.path.parent().unwrap_or(Path::new("."));
-                        let x = crate::plugins::install_these(&[crate::plugins::DOT_IMAGE], dir)?;
-                        v["installed"] = x["installed"].clone();
-                    }
+                    install_dot_image(&ctx, &mut v)?;
                     Ok(v)
                 }
                 DotCmd::Rm { cell, target } => ctx.edit_with(|d| dot::rm(d, cell, target)),
                 DotCmd::Flip { cell, edge } => ctx.edit_with(|d| dot::flip(d, cell, edge)),
                 DotCmd::New { on, after, before } => {
                     ctx.edit_with(|d| dot::new(d, on.as_deref(), at(after, before)))
+                }
+                DotCmd::Import {
+                    file,
+                    on,
+                    after,
+                    before,
+                    replace,
+                } => {
+                    let svg = std::fs::read_to_string(file)?;
+                    let store = ctx.store()?;
+                    let dir = store.path.parent().unwrap_or(std::path::Path::new("."));
+                    let name = file.display().to_string();
+                    let mut v = ctx.edit_with(|d| {
+                        crate::dot_import::import(
+                            d,
+                            &name,
+                            &svg,
+                            on.as_deref(),
+                            at(after, before),
+                            replace.as_deref(),
+                            dir,
+                        )
+                    })?;
+                    install_dot_image(&ctx, &mut v)?;
+                    Ok(v)
                 }
                 DotCmd::Pin { cell, positions } => {
                     let positions = match positions {
