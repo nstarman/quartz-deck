@@ -821,8 +821,18 @@ async fn toolbar_formats_and_unformats() {
         ed.session().await["draft"],
         "- *one*\n- **[two]{style=\"color:#c0392b\"}**"
     );
-    // remove all three again: the draft is byte-identical to the source
+    // the system picker: its mousedown keeps the edit open; each change recolours the same span
     ed.click_editor("#fmtbar [data-fmt=color]").await;
+    let kept = "(() => { const w = document.querySelector('#fmtbar input[type=color]'); \
+        const kept = !w.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true })); \
+        for (const v of ['#ff8800', '#00aa55']) { w.value = v; w.dispatchEvent(new Event('input')); } \
+        return kept; })()";
+    assert_eq!(ed.eval(kept).await, true);
+    assert_eq!(
+        ed.session().await["draft"],
+        "- *one*\n- **[two]{style=\"color:#00aa55\"}**"
+    );
+    // remove all three again: the draft is byte-identical to the source
     ed.click_editor("#fmtbar [data-fmt=nocolor]").await;
     ed.caret(list, Some("two")).await;
     ed.click_editor("#fmtbar [data-fmt=bold]").await;

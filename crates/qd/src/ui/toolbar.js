@@ -61,15 +61,18 @@ function styled(prop) {
 }
 
 function setStyle(prop, value) {
+  const css = prop === 'fontSize' ? 'font-size' : 'color';
   const existing = enclosing(styled(prop));
   if (existing) {
-    if (value) existing.style[prop] = value; else unwrap(existing);
+    if (!value) { unwrap(existing); return; }
+    existing.style[prop] = ''; // written as text, not through .style: that gives rgb(), which tidy drops
+    existing.setAttribute('style', [existing.getAttribute('style'), `${css}:${value}`].filter(Boolean).join(';'));
     return;
   }
   if (!value) return;
   wrap(() => false, (d) => {
     const span = d.createElement('span');
-    span.setAttribute('style', `${prop === 'fontSize' ? 'font-size' : 'color'}:${value}`);
+    span.setAttribute('style', `${css}:${value}`);
     return span;
   });
 }
@@ -189,11 +192,16 @@ const swatches = COLOURS.map(([c, name]) => {
   b.style.background = c;
   return b;
 });
+// any other colour from the system's own picker (on a Mac, the Colours window); the mousedown
+// keeps focus in the slide, so the edit stays open and each change recolours the selection
+const wheel = el('input', { type: 'color', value: COLOURS[0][0], title: 'Other colour…', ariaLabel: 'Other text colour' });
+wheel.addEventListener('mousedown', (e) => e.preventDefault());
+wheel.addEventListener('input', () => { if (session) setStyle('color', wheel.value); });
 const segment = el('span', { className: 'seg' });
 segment.append(...['left', 'center', 'right'].map(make));
 bar.append(
   ...['bold', 'italic', 'underline', 'strike', 'link', 'ul'].map(make), sep(),
-  ...pop('color', 'A', 'Text colour', [...swatches, button('nocolor', '⌀', 'Remove text colour', noColor)]),
+  ...pop('color', 'A', 'Text colour', [...swatches, wheel, button('nocolor', '⌀', 'Remove text colour', noColor)]),
   ...pop('more', 'Aa', 'More formatting', [...['code', 'ol', 'outdent', 'indent', 'mark'].map(make), sep(), make('smaller'), make('larger'), sep(), segment]),
 );
 
