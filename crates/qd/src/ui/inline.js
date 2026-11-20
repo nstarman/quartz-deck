@@ -31,6 +31,8 @@ function fence(code) {
 
 const SIZE_STYLE = /^font-size:\s*[\d.]+em$/;
 const COLOR_STYLE = /^color:\s*#[0-9a-f]{3,8}$/i;
+const FONT_STYLE = /^font-family:\s*'[\w .-]+'$/u; // the names toolbar.js badFont lets through
+const okDecl = (d) => SIZE_STYLE.test(d) || COLOR_STYLE.test(d) || FONT_STYLE.test(d);
 
 /** Markdown for the inline content of `node`. Throws Unsupported. */
 export function serializeInline(node) {
@@ -62,7 +64,7 @@ export function serializeInline(node) {
         const style = (n.getAttribute('style') || '').trim();
         const classes = [...n.classList];
         const others = [...n.attributes].filter((a) => !['style', 'class'].includes(a.name));
-        const okStyle = style.split(';').filter((p) => p.trim()).every((p) => SIZE_STYLE.test(p.trim()) || COLOR_STYLE.test(p.trim()));
+        const okStyle = style.split(';').map((p) => p.trim()).filter(Boolean).every(okDecl);
         if (others.length || !okStyle || classes.some((c) => c.startsWith('math') || c.startsWith('citation'))) {
           throw new Unsupported('span');
         }
@@ -296,12 +298,16 @@ function tidy(root) {
     const style = n.getAttribute('style');
     if (style !== null) {
       const decls = style.split(';').map((d) => d.trim()).filter(Boolean);
-      if (n.tagName !== 'SPAN' || !decls.every((d) => SIZE_STYLE.test(d) || COLOR_STYLE.test(d))) {
+      if (n.tagName !== 'SPAN' || !decls.every(okDecl)) {
         const kept = n.tagName !== 'SPAN' ? [] : decls.flatMap((d) => {
           const [k, ...v] = d.split(':');
           const key = k.trim().toLowerCase();
           const val = v.join(':').trim();
           if (key === 'color') return /^#[0-9a-f]{3,8}$/i.test(val) ? [`color:${val}`] : [];
+          if (key === 'font-family') { // the browser writes "…"; the attribute needs '…'
+            const font = `font-family:${val.replace(/"/g, "'")}`;
+            return FONT_STYLE.test(font) ? [font] : [];
+          }
           return key === 'font-size' && /^[\d.]+em$/.test(val) ? [`font-size:${val}`] : [];
         });
         if (kept.length) n.setAttribute('style', kept.join(';')); else n.removeAttribute('style');

@@ -55,6 +55,7 @@
   {"separator": true, "menu": ["Edit", "Format"]},
   {"id": "highlight", "label": "Highlight", "menu": ["Edit", "Format"], "where": ["text"]},
   {"id": "no-color", "label": "Remove text colour", "menu": ["Edit", "Format"], "where": ["text"]},
+  {"id": "font", "label": "Font…", "menu": ["Edit", "Format"], "where": ["text"]},
   {"id": "smaller", "label": "Smaller text", "menu": ["Edit", "Format"], "where": ["text"]},
   {"id": "larger", "label": "Larger text", "menu": ["Edit", "Format"], "where": ["text"]},
   {"id": "align-left", "label": "Align left", "menu": ["Edit", "Format"], "where": ["text"]},

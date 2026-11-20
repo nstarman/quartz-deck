@@ -61,7 +61,7 @@ function styled(prop) {
 }
 
 function setStyle(prop, value) {
-  const css = prop === 'fontSize' ? 'font-size' : 'color';
+  const css = prop.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
   const existing = enclosing(styled(prop));
   if (existing) {
     if (!value) { unwrap(existing); return; }
@@ -107,22 +107,46 @@ function badLink(x) {
   return 'An address such as https://example.org, a slide such as #results, or a path';
 }
 
-async function link() {
+/** Ask with a sheet (its options from async `opts()`), then put the keyboard and selection back in the text. */
+async function askInText(opts) {
   const s = sel();
   const range = s?.rangeCount ? s.getRangeAt(0).cloneRange() : null;
-  const existing = enclosing((n) => n.tagName === 'A');
   session.hold = true; // the sheet takes focus; don't save on that blur
-  const v = await ask({
-    title: 'Link',
-    anchor: bar.querySelector('[data-fmt=link]'),
-    fields: [{ name: 'href', kind: 'text', label: 'Address (empty removes the link)', value: existing?.getAttribute('href') || '', placeholder: 'https://', validate: badLink }],
-  });
+  const v = await ask(await opts());
   session.hold = false;
   session.root.focus();
   if (range) { s.removeAllRanges(); s.addRange(range); }
+  return v;
+}
+
+async function link() {
+  const existing = enclosing((n) => n.tagName === 'A');
+  const v = await askInText(async () => ({
+    title: 'Link',
+    anchor: bar.querySelector('[data-fmt=link]'),
+    fields: [{ name: 'href', kind: 'text', label: 'Address (empty removes the link)', value: existing?.getAttribute('href') || '', placeholder: 'https://', validate: badLink }],
+  }));
   if (!v) return;
   if (!v.href) { if (existing) unwrap(existing); return; }
   if (existing) existing.setAttribute('href', v.href); else exec('createLink', v.href);
+}
+
+/** A font name: nothing that could end the style attribute or the quotes around it (as inline.js FONT_STYLE). */
+const badFont = (x) => (!x || /^[\w .-]+$/u.test(x) ? '' : 'Letters, digits, spaces, - and . only');
+const COMMON_FONTS = ['Avenir Next', 'Futura', 'Georgia', 'Gill Sans', 'Helvetica Neue', 'Menlo', 'Optima', 'Palatino', 'Times New Roman'];
+
+async function font() {
+  const existing = enclosing(styled('fontFamily'));
+  const v = await askInText(async () => ({
+    title: 'Font',
+    anchor: bar.querySelector('[data-fmt=more]'),
+    fields: [{
+      name: 'family', kind: 'text', label: 'Font (empty removes it)', value: existing?.style.fontFamily.replace(/["']/g, '') || '', validate: badFont,
+      // the fonts on this computer where the browser can list them (Chrome asks once), else a few common ones
+      suggestions: await window.queryLocalFonts?.().then((l) => (l.length ? [...new Set(l.map((f) => f.family))] : null), () => null) ?? COMMON_FONTS,
+    }],
+  }));
+  if (v) setStyle('fontFamily', v.family ? `'${v.family}'` : null);
 }
 
 const BLOCK_ONLY = new Set(['ul', 'ol', 'indent', 'outdent', 'left', 'center', 'right']);
@@ -140,6 +164,7 @@ const BUTTONS = [
   ['outdent', '⇤', 'Outdent (⇧Tab)', () => exec('outdent')],
   ['indent', '⇥', 'Indent (Tab in a list)', () => exec('indent')],
   ['mark', '▇', 'Highlight', () => wrap((n) => n.tagName === 'MARK', (d) => d.createElement('mark'))],
+  ['font', 'Font…', 'Font', font],
   ['smaller', 'A−', 'Smaller text', () => stepSize(-1)],
   ['larger', 'A+', 'Larger text', () => stepSize(1)],
   ['left', '⯇', 'Align left', () => setAlign(null)],
@@ -202,7 +227,7 @@ segment.append(...['left', 'center', 'right'].map(make));
 bar.append(
   ...['bold', 'italic', 'underline', 'strike', 'link', 'ul'].map(make), sep(),
   ...pop('color', 'A', 'Text colour', [...swatches, wheel, button('nocolor', '⌀', 'Remove text colour', noColor)]),
-  ...pop('more', 'Aa', 'More formatting', [...['code', 'ol', 'outdent', 'indent', 'mark'].map(make), sep(), make('smaller'), make('larger'), sep(), segment]),
+  ...pop('more', 'Aa', 'More formatting', [...['code', 'ol', 'outdent', 'indent', 'mark'].map(make), sep(), make('font'), make('smaller'), make('larger'), sep(), segment]),
 );
 
 /** Show the toolbar for an edit session; `frame` is the preview iframe. */
