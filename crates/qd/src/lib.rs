@@ -6,6 +6,7 @@ pub mod browser;
 pub mod cli;
 pub mod deck;
 pub mod dot;
+pub mod dot_import;
 pub mod engine;
 pub mod env;
 pub mod error;

@@ -23,8 +23,8 @@ qd dot import FILE.svg (--on SLIDE | --after REF | --before REF | --replace REF)
 
 ````text
 ```{dot}
-#| fig-width: 10.42
-#| fig-height: 5.21
+//| fig-width: 8.42
+//| fig-height: 3.46
 digraph {
   layout=neato; splines=ortho;
   data [label="Data", pos="0,1.5!", width=1.5, height=0.6, fixedsize=true, shape=box, style="rounded,filled", fillcolor=white, color="#c8ccd2", fontcolor="#1f2933"];

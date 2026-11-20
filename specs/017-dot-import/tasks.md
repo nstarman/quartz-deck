@@ -32,8 +32,8 @@ Paths are relative to the repo root.
 
 ## Phase 1: Setup
 
-- [ ] T001 Add `roxmltree` to `crates/qd/Cargo.toml`. Create an empty `crates/qd/src/dot_import.rs`, declared in `crates/qd/src/lib.rs`. Make `node_stmt`, `spacer` and `normalised` in `crates/qd/src/dot.rs` `pub(crate)`. `dependency_licenses_are_allowed` passes with the new crate.
-- [ ] T002 [P] Make the fixture `crates/qd/tests/fixtures/dot-import/hand.svg` (research R9). It has:
+- [X] T001 Add `roxmltree` to `crates/qd/Cargo.toml`. Create an empty `crates/qd/src/dot_import.rs`, declared in `crates/qd/src/lib.rs`. Make `node_stmt`, `spacer` and `normalised` in `crates/qd/src/dot.rs` `pub(crate)`. `dependency_licenses_are_allowed` passes with the new crate.
+- [X] T002 [P] Make the fixture `crates/qd/tests/fixtures/dot-import/hand.svg` (research R9). It has:
   - four boxes: a plain `rect`, a rounded `rect` (`rx`), an `ellipse`, and a `rect` inside a `<g transform="translate(…) scale(…)">`;
   - each box's text, one in two `text` lines;
   - three lines with markers: a straight `line`, a bent `path` (L-shaped), and a `polyline` with markers at both ends;
@@ -46,18 +46,18 @@ Paths are relative to the repo root.
 
 ## Phase 2: Foundational: reading a drawing (blocks every story)
 
-- [ ] T003 [P] Write failing unit tests in `crates/qd/src/dot_import.rs` for the geometry (research R2):
+- [X] T003 [P] Write failing unit tests in `crates/qd/src/dot_import.rs` for the geometry (research R2):
   - `transform` parsing and composition (translate, scale, rotate, matrix, nested groups) applied to a point;
   - bounding boxes of `rect`, `circle` and `ellipse` under a transform;
   - first and last points, and the direction at each end, of `line`, `polyline` and `path` (absolute and relative `M L H V C Q Z`, and arcs taken as straight to their end).
-- [ ] T004 Implement the geometry in `crates/qd/src/dot_import.rs`. T003 passes.
-- [ ] T005 [P] Write failing unit tests in `crates/qd/src/dot_import.rs` for reading `hand.svg` into data-model "Drawing":
+- [X] T004 Implement the geometry in `crates/qd/src/dot_import.rs`. T003 passes.
+- [X] T005 [P] Write failing unit tests in `crates/qd/src/dot_import.rs` for reading `hand.svg` into data-model "Drawing":
   - each Shape with its fill, stroke, rounded and link;
   - each Text with its anchor, string, fill and size (attributes and `style`);
   - each Line with its markers;
   - the Picture;
   - Other elements kept for the report.
-- [ ] T006 Implement the reader with `roxmltree` in `crates/qd/src/dot_import.rs` (research R1). Reject a file with no `<svg>` root, or bad XML, as `E_INVALID_ARG` ("not SVG"). T005 passes.
+- [X] T006 Implement the reader with `roxmltree` in `crates/qd/src/dot_import.rs` (research R1). Reject a file with no `<svg>` root, or bad XML, as `E_INVALID_ARG` ("not SVG"). T005 passes.
 
 **Checkpoint**: qd reads a drawing into shapes, texts, lines and pictures, placed as drawn.
 
@@ -69,14 +69,14 @@ Paths are relative to the repo root.
 
 **Independent test**: spec US1's independent test, on `hand.svg`.
 
-- [ ] T007 [P] [US1] Write failing unit tests in `crates/qd/src/dot_import.rs` for turning a Drawing into Boxes and Arrows:
+- [X] T007 [P] [US1] Write failing unit tests in `crates/qd/src/dot_import.rs` for turning a Drawing into Boxes and Arrows:
   - **Labels (R3):** texts go into the smallest box around them, joined top to bottom; a stray text is reported.
   - **Names (data-model "Box"):** from labels, made unique; `n1` for a box with no text.
   - **Arrow ends (R4):** within 8 units of an edge, or along the line within 24; a far end is reported with the end that found nothing; a box joined to itself is reported; markers give the direction, `dir=both` or `arrowhead=none`.
   - **Looks (R5):** `fillcolor`, `color`, `fontcolor`, `fontsize`, `style`, `shape`, `URL`, `image` with the spacer label.
   - **Placement (R2):** `pos` normalised and pinned; `width`, `height` and `fixedsize` from the bounding box.
-- [ ] T008 [US1] Implement boxes, arrows and the report in `crates/qd/src/dot_import.rs`. T007 passes.
-- [ ] T009 [P] [US1] Write failing CLI tests in `crates/qd/tests/dot.rs`:
+- [X] T008 [US1] Implement boxes, arrows and the report in `crates/qd/src/dot_import.rs`. T007 passes.
+- [X] T009 [P] [US1] Write failing CLI tests in `crates/qd/tests/dot.rs`:
   - **`import_hand_drawn`:** `qd dot import hand.svg --on SLIDE` gives the report of data-model "Report" and contracts/cli.md:
     - 4 boxes, 3 arrows;
     - `left_out` has the stray line and the stray text, each with its reason;
@@ -87,13 +87,24 @@ Paths are relative to the repo root.
   - **`import_replaces`:** `--replace` on an image element puts the cell in its place.
   - **`import_errors`:** not SVG gives `E_INVALID_ARG`; only lines, no boxes, gives `E_INVALID_ARG`; a missing file gives `E_IO`; two places given gives `E_INVALID_ARG`. The file is unchanged each time.
   - **`imported_diagram_edits`:** `qd dot move` on an imported box changes only its `pos` (FR-008).
-- [ ] T010 [US1] Implement the cell and `qd dot import` in `crates/qd/src/dot_import.rs` and `crates/qd/src/cli.rs`:
+- [X] T010 [US1] Implement the cell and `qd dot import` in `crates/qd/src/dot_import.rs` and `crates/qd/src/cli.rs`:
   - the cell text with `node_stmt` and the fig size (research R6);
   - placing it with `block_add`, or `edit` for `--replace`, and `with_filters` for a picture (R8);
   - `qd schema`'s output docs and `API_OPS`.
 
   T009 passes.
-- [ ] T011 [US1] Write and pass a render check in `crates/qd/tests/dot.rs`, `import_renders_where_drawn` (SC-002). Render an imported `hand.svg` deck with Quarto. Each box's centre in the rendered SVG, scaled to the slide, is within 5 px of its centre in `hand.svg`, and the picture is drawn. It skips without Quarto.
+- [X] T011 [US1] Write and pass a render check in `crates/qd/tests/dot.rs`, `import_renders_where_drawn` (SC-002). Render an imported `hand.svg` deck with Quarto. Each box's centre in the rendered SVG, scaled to the slide, is within 5 px of its centre in `hand.svg`, and the picture is drawn. It skips without Quarto.
+
+**As built (PR 1):**
+- **Tests:** the unit tests were written alongside the code in `dot_import.rs`, not seen failing first; the CLI and render tests were run against the finished code.
+- **Box statements:** written by `dot::node_stmt`, now `pub(crate)`, which leaves a spacer label (`<<TABLE…>>`) unquoted. The audit replaced a first, copied version.
+- **Figure size:** `//|` options sized from the boxes' extent, not the canvas (see research R6). The render check caught both problems.
+- **Not in `API_OPS`:** importing reads a file path, so the editor's server doesn't offer it; the spec keeps it CLI only.
+- **The picture's extension:** installed by the CLI after the edit, as `dot set image=` does.
+- **Tests:** `dot move` on an imported box snaps it to the 0.25 in grid, as for any box; the test expects that.
+- **Audit:**
+  - `dot::add_cell` (placing a cell, shared with `dot new`), `dot::with_dot_image` (shared with `dot set`) and the CLI's `install_dot_image` replace copies.
+  - The audit also found that `dot::positions_from_svg`, which pins a diagram from its render, gave up on any rounded box (Graphviz draws those as a `<path>`). It now reads paths, and the render check uses it.
 
 **Checkpoint**: PR 1. A hand-drawn diagram imports as an editable one.
 

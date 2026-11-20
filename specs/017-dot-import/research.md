@@ -88,11 +88,15 @@ constants, to tune on the proving case (SC-005).
 - **The cell:** a `{dot}` cell with `layout=neato; splines=ortho;`, one
   statement per box in drawing order (`node_stmt`, reused), then one per
   arrow.
-- **Its size:** the cell options `#| fig-width` and `#| fig-height` are set
-  to the drawing's width and height ÷ 96. Quarto sizes a `{dot}` figure's
-  `<svg>` from those (in inches, at 96 px each: seen in spec 020's spike,
-  where the defaults 10 × 5 gave 960 × 480). So the diagram shows on the
-  slide at the drawing's own size.
+- **Its size:** the cell options `//| fig-width` and `//| fig-height` (a
+  `{dot}` cell's options start with `//|`, since `#` isn't a DOT comment)
+  are set to the boxes' extent plus Graphviz's 4 pt margin on each side,
+  ÷ 96. Quarto sizes a `{dot}` figure's `<svg>` from those (in inches, at
+  96 px each: seen in spec 020's spike, where the defaults 10 × 5 gave
+  960 × 480). Graphviz draws only the boxes' extent, so this shows one
+  drawing unit as one slide pixel (tested against a real render, SC-002).
+  A first version used the canvas's size and `#|`; Quarto ignored the
+  option and the figure kept the default size.
 
 ## R7. Graphviz SVGs
 
