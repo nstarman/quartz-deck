@@ -109,6 +109,25 @@ itself. Everything it shows stays in the module that owns it today.
 
 Each PR passes `/pr-audit`.
 
+**Final re-check after the build (T019, 2026-11-19)**: pass.
+- **I.** Our own tab names (Slide, Title, Element, Text, Position), layout
+  and look, drawn with the editor's styles. No other app's screenshots,
+  icons or wording are in the repo.
+- **II.** Nothing is stored in the deck. Every control is the one it was,
+  with the same patch.
+- **III.** No new edit. The new preference is `ui.inspector` in
+  `qd settings`; F6 and ⌥⌘0 are in `qd actions`.
+- **IV.** Unchanged.
+- **V.** Unchanged handlers. Crossing the width keeps the selection, a
+  typing session and unsaved fields (tested).
+- **VI.** Each story's browser tests were written first. Three of them
+  passed at once: T014 needed no code, which the tests showed.
+- **VII.** No new dependency. One small module (`inspector.js`); the bars
+  are moved, not copied, and the tabs are a filter over tagged sections.
+- **Along the way:** #103 fixed a regression from spec 020 (#98): a run's
+  output never showed. #105 leaves F6 unbound inside VS Code, where it
+  pauses the debugger.
+
 ## Complexity Tracking
 
 None: no principle is bent.

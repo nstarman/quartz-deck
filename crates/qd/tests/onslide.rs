@@ -4530,6 +4530,35 @@ async fn inspector_title_tab() {
         .await;
 }
 
+/// Spec 019 quickstart §4–§5 (T017): Bold from the Text tab while typing,
+/// and a box's left edge from the Position tab, as from the floating bar and
+/// the Properties panel.
+#[tokio::test(flavor = "multi_thread")]
+async fn inspector_text_and_position() {
+    let Some(ed) = inspecting().await else {
+        return;
+    };
+    ed.go("a").await;
+    let p = "[data-qd=\"a/1\"]";
+    ed.click_in_slide(p).await;
+    ed.caret(p, Some("Second")).await;
+    ed.wait(&format!("{TABS}[1] === 'Text'")).await;
+    ed.click_editor("#panel #fmtbar [data-fmt=bold]").await;
+    ed.key("Escape", "Escape", 27, 0).await; // saves
+    ed.wait_file(|f| f.contains("**Second** words"), "bold")
+        .await;
+    ed.settle().await;
+    // a box: its left edge from Position
+    ed.cli(&["box", "add", "a", "--text", "Box"]);
+    ed.settle().await;
+    ed.go("a").await;
+    ed.click_in_slide("#a .absolute").await;
+    ed.click_editor("#tab-position").await;
+    ed.eval("(() => { const g = document.querySelector('#panel .body form.geom-form'); g.left.value = '123'; g.requestSubmit(); })()").await;
+    ed.wait_file(|f| num(f, "left") == 123.0, "the box moved")
+        .await;
+}
+
 /// Spec 019 US3 (T013): across the width where the inspector comes and goes,
 /// the selection, the tab, a typing session and an unsaved field stay.
 #[tokio::test(flavor = "multi_thread")]

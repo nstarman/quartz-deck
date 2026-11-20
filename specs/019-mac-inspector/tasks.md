@@ -164,11 +164,12 @@ Paths are relative to the repo root.
 
 ## Phase 6: Polish
 
-- [ ] T016 [P] Docs: `README.md` (the inspector, ⌥⌘0, when it shows) and `skills/quartz-deck/SKILL.md` (`ui.inspector` in `qd settings`). Run the tests for any `qd <word>` the docs mention (`skill_matches_cli`).
-- [ ] T017 Run quickstart §1–§9 and record it in `specs/019-mac-inspector/checklists/quickstart-run.md`.
+- [X] T016 [P] Docs: `README.md` (the inspector, ⌥⌘0, when it shows) and `skills/quartz-deck/SKILL.md` (`ui.inspector` in `qd settings`). Run the tests for any `qd <word>` the docs mention (`skill_matches_cli`).
+- [X] T017 Run quickstart §1–§9 and record it in `specs/019-mac-inspector/checklists/quickstart-run.md`.
 - [ ] T018 With the person: try it on their own screens and decks. Tune the two width constants (R3) if they ask, and record the result. Nothing about their decks goes into the repository.
-- [ ] T019 Final constitution re-check in `plan.md`; fmt, clippy (`--workspace --all-targets -D warnings`) and `cargo test --workspace --no-fail-fast` green.
-- [ ] T020 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
+  **Open:** for the person to try by hand on their own screens. The width constants stay at 1200 / 640 until they ask.
+- [X] T019 Final constitution re-check in `plan.md`; fmt, clippy (`--workspace --all-targets -D warnings`) and `cargo test --workspace --no-fail-fast` green.
+- [X] T020 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
 
 ---
 

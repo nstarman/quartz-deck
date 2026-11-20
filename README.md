@@ -88,6 +88,14 @@ stderr with a stable `code` and a `hint`. Decks inside a Quarto project
   selection toggles "appears on click". Hover an element for **+** (insert)
   and **⠿** (drag). Tab / Shift+Tab in the slide move the selection; ⌘C/⌘X/
   ⌘V/⌘D, ⌫, ⌥↑/⌥↓ act on it. The old form panel is View ▸ Properties panel.
+- **The inspector** (spec [019](specs/019-mac-inspector/spec.md)): on a window
+  at least 1200 px wide, with 640 px left for the slide, the properties stay
+  on the right and the slide, element and formatting bars move into them, so
+  nothing floats over the slide. Its tabs follow the selection: **Slide** (or
+  **Title**) with nothing selected; **Element**, **Text** and **Position** for
+  an element; **Text** while you type. It makes way for the source and History
+  panes. View ▸ Inspector (⌥⌘0) turns it off (setting `ui.inspector`); F6 goes
+  to it and back, ← → move along its tabs, Esc in a field returns to the slide.
 - **With an agent:** you and Claude can edit at the same time. Saves are
   checked per element (`qd edit … --expect-text <hash>`, hashes in `qd
   show`); if both change the same element you see both versions and choose.
