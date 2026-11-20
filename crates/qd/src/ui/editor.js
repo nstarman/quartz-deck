@@ -164,10 +164,10 @@ async function op(name, args = {}, { fileExpect = true } = {}) {
 // What the preview shows (spec 020): the source of the render loaded in it, and
 // the diagrams drawn into it since (by their place among the deck's {dot} cells).
 // A render that changes only those, to what is drawn, needn't reload.
-const shown = { version: null, source: null, drawn: new Map() };
+const shown = { outputs: null, source: null, drawn: new Map() };
 const source = () => fetch('/api/source').then((r) => r.json()).catch(() => null);
-async function noteShown(version) {
-  shown.version = version;
+async function noteShown(version, outputs) {
+  shown.outputs = outputs; // the cell outputs that render showed (the server's fingerprint)
   shown.drawn.clear();
   const s = await source();
   shown.source = s && s.version === version ? s.text : null; // moved on already: the next render reloads
@@ -196,8 +196,9 @@ async function alreadyShown() {
 
 // ---------- preview ----------
 
-function load(path, version = null) {
+function load(path, version = null, outputs = null) {
   state.loading = version;
+  state.loadingOutputs = outputs; // the render's cell outputs (spec 020: a change reloads)
   // Reveal may ignore the initial URL hash (e.g. when it starts in scroll view),
   // so it is steered once it reports ready (see hookFrame): to the slide an op
   // chose, else to the one shown then (the person may move on while it loads)
@@ -620,7 +621,7 @@ function hookFrame() {
     // only the render that has the inserted element: an older one still loading would
     // show other text at that ref, and the edit would not open
     if (state.editAfterRender?.version === state.loading) openInserted(state.editAfterRender);
-    noteShown(state.loading);
+    noteShown(state.loading, state.loadingOutputs);
     slideList.refresh();
     hist.mark();
     runslide.mark();
@@ -1121,10 +1122,9 @@ async function rendered(d) {
   // source pop-up's text is in this page, and Run there wants the new render (013)
   const hold = state.session && state.session.mode !== 'source';
   // decided before "Up to date" shows: until then the preview may still reload.
-  // A render of the version on screen brings something the text doesn't have
-  // (a run's output): only another version's can be one the page already shows.
-  const skip = !hold && d.version !== shown.version && (await alreadyShown());
-  if (skip) shown.version = d.version;
+  // New cell outputs (a run's) aren't in the text: a render with others reloads.
+  // A render of what's on screen already (the same render twice) needn't.
+  const skip = !hold && d.outputs === shown.outputs && (await alreadyShown());
   status('Up to date', true);
   statusEl.title = `Version ${d.version.slice(0, 7)}`;
   banner.hidden = true;
@@ -1132,7 +1132,7 @@ async function rendered(d) {
     state.pendingRender = d;
     pendingBadge(true);
   } else if (!skip) {
-    load(d.html, d.version);
+    load(d.html, d.version, d.outputs);
   }
 }
 // Save as git commit (spec 012 US2)
@@ -1378,10 +1378,10 @@ function endSession(s, saved, { keepPending = false } = {}) {
   state.session = null;
   syncFocus();
   if (state.pendingRender && !keepPending) {
-    const { html, version } = state.pendingRender;
+    const { html, version, outputs } = state.pendingRender;
     state.pendingRender = null;
     pendingBadge(false);
-    load(html, version);
+    load(html, version, outputs);
   }
 }
 
