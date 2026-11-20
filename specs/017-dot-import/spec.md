@@ -174,8 +174,11 @@ positions matching the rendered ones.
   the cell's figure width and height are set so it shows at the drawing's
   size on the slide.
 - **Names** (the person's choice): boxes of a hand-written drawing are
-  named from their labels (lowercase, letters and digits), made unique
-  where two match.
+  named from their labels' first line (lowercase, letters and digits), made
+  unique where two match.
+- **Wider than the slide**: a drawing wider than the deck's slide is scaled
+  down to fit it, its shape kept (found trying real drawings, which are
+  often drawn larger and shrunk by CSS).
 - **Bends** (the person's choice): a bent line becomes one arrow between its
   boxes, routed by the diagram (`splines=ortho`); the drawn path isn't kept.
 - **Looks**: colours are written on each box, as spec 015 does; the

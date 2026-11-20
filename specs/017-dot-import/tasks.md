@@ -139,15 +139,15 @@ Paths are relative to the repo root.
 
 ## Phase 5: Polish
 
-- [ ] T015 [P] Docs:
+- [X] T015 [P] Docs:
   - `README.md`: `qd dot import`, under Diagrams;
   - `skills/quartz-deck/SKILL.md`: import an SVG, then refine it; check `left_out` and `notes` and tell the person.
 
   Run `skill_matches_cli`.
-- [ ] T016 Run quickstart §1–§7 and record it in `specs/017-dot-import/checklists/quickstart-run.md`.
-- [ ] T017 With the person: import their own drawing (SC-005), outside the repository, and record what needed touching up and how close the boxes landed. Tune R4's two distances if they need it. Nothing about their drawing goes into the repository.
-- [ ] T018 Final constitution re-check in `plan.md`; fmt, clippy (`--workspace --all-targets -D warnings`) and `cargo test --workspace --no-fail-fast` green.
-- [ ] T019 Concision audit (`/pr-audit`), the last task before each PR is marked ready. Then `cargo clean`, keeping `target/release/qd`.
+- [X] T016 Run quickstart §1–§7 and record it in `specs/017-dot-import/checklists/quickstart-run.md`.
+- [X] T017 With the person: import their own drawing (SC-005), outside the repository, and record what needed touching up and how close the boxes landed. Tune R4's two distances if they need it. Nothing about their drawing goes into the repository.
+- [X] T018 Final constitution re-check in `plan.md`; fmt, clippy (`--workspace --all-targets -D warnings`) and `cargo test --workspace --no-fail-fast` green.
+- [X] T019 Concision audit (`/pr-audit`), the last task before each PR is marked ready. Then `cargo clean`, keeping `target/release/qd`.
 
 ---
 

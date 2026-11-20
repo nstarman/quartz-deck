@@ -18,7 +18,7 @@ report is returned.
 
 | Field | From |
 |---|---|
-| `name` | Graphviz `<title>`; else the label lowercased to letters, digits and `_`, made unique (`data`, `data_2`) |
+| `name` | Graphviz `<title>`; else the label's first line, lowercased to letters and digits, made unique (`data`, `data_2`) |
 | `label` | its Texts, top to bottom, joined with `\n`; with a picture, the spacer label |
 | `pos` | centre ÷ 72, y up, normalised, pinned (`!`) |
 | `width`, `height`, `fixedsize` | bounding box ÷ 72 (`fixedsize=true`) |
