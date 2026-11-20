@@ -786,3 +786,64 @@ fn import_renders_where_drawn() {
         );
     }
 }
+
+/// Spec 017 US2 (T013): a Graphviz-rendered SVG imports with its box names and
+/// arrows (SC-004), each box pinned where it was drawn: the fixture's DOT
+/// placed them at (0,1) (2.5,1) (5,1) (5,-0.5) (2.5,-0.5) (0,-0.5).
+#[test]
+fn import_graphviz() {
+    let t = deck(SLIDE);
+    fs::write(
+        t.path().join("drawn.svg"),
+        include_str!("fixtures/dot-import/graphviz.svg"),
+    )
+    .unwrap();
+    let (ok, v) = json(t.path(), &["dot", "import", "drawn.svg", "--on", "flow"]);
+    assert!(ok, "{v}");
+    assert_eq!(v["kind"], "graphviz");
+    assert_eq!(v["left_out"], json!([]), "{v}");
+    let (_, s) = json(t.path(), &["dot", "show", v["cell"].as_str().unwrap()]);
+    let edges: Vec<(String, String)> = s["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| {
+            (
+                e["from"].as_str().unwrap().into(),
+                e["to"].as_str().unwrap().into(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        edges,
+        [
+            ("raw-data", "clean_set"),
+            ("clean_set", "model"),
+            ("model", "fit"),
+            ("fit", "plots"),
+            ("plots", "paper")
+        ]
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+    );
+    for (name, want) in [
+        ("raw-data", (0.0, 1.5)),
+        ("clean_set", (2.5, 1.5)),
+        ("model", (5.0, 1.5)),
+        ("fit", (5.0, 0.0)),
+        ("plots", (2.5, 0.0)),
+        ("paper", (0.0, 0.0)),
+    ] {
+        let n = s["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["name"] == name)
+            .unwrap();
+        let (x, y) = (n["pos"][0].as_f64().unwrap(), n["pos"][1].as_f64().unwrap());
+        assert!(
+            (x - want.0).abs() < 0.03 && (y - want.1).abs() < 0.03,
+            "{name}: ({x}, {y}) against {want:?}"
+        );
+        assert_eq!(n["pinned"], true);
+    }
+}

@@ -116,11 +116,22 @@ Paths are relative to the repo root.
 
 **Independent test**: spec US2's independent test.
 
-- [ ] T012 [US2] Make the fixture `crates/qd/tests/fixtures/dot-import/graphviz.svg`. Render a made-up directed DOT once with Quarto's Graphviz, and commit the SVG with its DOT in a comment beside the test. The DOT has 6 boxes, names with `-` and `_`, one ellipse and one linked box. Undirected titles (`a--b`) are covered by a unit test.
-- [ ] T013 [P] [US2] Write failing tests:
+- [X] T012 [US2] Make the fixture `crates/qd/tests/fixtures/dot-import/graphviz.svg`. Render a made-up directed DOT once with Quarto's Graphviz, and commit the SVG with its DOT in a comment beside the test. The DOT has 6 boxes, names with `-` and `_`, one ellipse and one linked box. Undirected titles (`a--b`) are covered by a unit test.
+- [X] T013 [P] [US2] Write failing tests:
   - unit tests in `crates/qd/src/dot_import.rs`: a Graphviz SVG is recognised (R7); nodes come from `<title>`, with `&#45;` unescaped; edges come from the edge titles, ports dropped;
   - CLI test `import_graphviz` in `crates/qd/tests/dot.rs`: the names and arrows equal the source DOT's (SC-004), each box is pinned where it was drawn, and `kind: "graphviz"`.
-- [ ] T014 [US2] Implement the Graphviz reading in `crates/qd/src/dot_import.rs`. T013 passes; US1's tests still pass.
+- [X] T014 [US2] Implement the Graphviz reading in `crates/qd/src/dot_import.rs`. T013 passes; US1's tests still pass.
+
+**As built (PR 2):**
+- **The fixture:** rendered with the Graphviz Quarto ships (`graphviz-wasm.js`, run by Quarto's own Deno with `QUARTO_SHARE_PATH` set), so it's Graphviz's own output. Quarto's HTML rewrites the SVG's attributes, so the SVG wasn't taken from it. The DOT it came from is in a comment in the fixture.
+- **DOCTYPE:** Graphviz writes one, which `roxmltree` refuses by default; the reader allows it.
+- **Reading:** a Graphviz drawing gets its own pass:
+  - boxes are `g.node`s, named by `<title>`, outlined by a polygon, a path (a rounded box) or an ellipse (a circle when its radii match);
+  - arrows come from `g.edge` titles, split where both sides are box names, since a name may hold `-`;
+  - an undirected drawing (`a--b`) becomes a `graph` with `--`.
+
+  Labels, looks, links, pictures, the cell and the report reuse PR 1.
+- **Tests:** the new tests were seen failing first. A first version read every string twice, because `descendants()` includes the element itself; the unit test caught it.
 
 **Checkpoint**: PR 2.
 

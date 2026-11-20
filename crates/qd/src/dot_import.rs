@@ -259,6 +259,9 @@ struct Drawing {
     pictures: Vec<Picture>,
     /// elements qd doesn't read: (tag, where)
     other: Vec<(String, P)>,
+    /// a Graphviz drawing's box names (one per shape) and arrow titles (`a->b`)
+    names: Vec<String>,
+    edges: Vec<String>,
 }
 
 /// A length attribute in drawing units (a trailing `px` allowed).
@@ -285,26 +288,33 @@ fn scale(m: &M) -> f64 {
 
 /// Read an SVG file's text into its shapes, texts, lines and pictures (R1, R2).
 fn read(svg: &str) -> Result<Drawing> {
-    let doc = roxmltree::Document::parse(svg)
+    // Graphviz writes a DOCTYPE; nothing in it is used
+    let opts = roxmltree::ParsingOptions {
+        allow_dtd: true,
+        ..Default::default()
+    };
+    let doc = roxmltree::Document::parse_with_options(svg, opts)
         .map_err(|e| QdError::InvalidArg(format!("not SVG: {e}")))?;
     let root = doc.root_element();
     if root.tag_name().name() != "svg" {
         return Err(QdError::InvalidArg("not SVG: the root isn't <svg>".into()));
     }
     let mut d = Drawing {
-        graphviz: root
-            .descendants()
-            .any(|n| n.attribute("class") == Some("graph")),
+        graphviz: root.descendants().any(|n| class_is(&n, "graph")),
         ..Default::default()
     };
-    walk(
-        root,
-        &Inherited {
-            m: ID,
-            ..Default::default()
-        },
-        &mut d,
-    );
+    if d.graphviz {
+        graphviz(root, &mut d);
+    } else {
+        walk(
+            root,
+            &Inherited {
+                m: ID,
+                ..Default::default()
+            },
+            &mut d,
+        );
+    }
     Ok(d)
 }
 
@@ -387,11 +397,7 @@ fn walk(n: roxmltree::Node, up: &Inherited, d: &mut Drawing) {
             "line" | "polyline" | "path" => {
                 let pts: Vec<P> = match tag {
                     "line" => vec![(len(c, "x1"), len(c, "y1")), (len(c, "x2"), len(c, "y2"))],
-                    "polyline" => numbers(c.attribute("points").unwrap_or(""))
-                        .chunks(2)
-                        .filter(|p| p.len() == 2)
-                        .map(|p| (p[0], p[1]))
-                        .collect(),
+                    "polyline" => points(c),
                     _ => path_points(c.attribute("d").unwrap_or("")),
                 };
                 let pts: Vec<P> = pts.into_iter().map(|p| at(m, p)).collect();
@@ -410,27 +416,148 @@ fn walk(n: roxmltree::Node, up: &Inherited, d: &mut Drawing) {
                         .push((tag.to_string(), pts.first().copied().unwrap_or_default())),
                 }
             }
-            "image" => {
-                let (x, y, w, h) = (len(c, "x"), len(c, "y"), len(c, "width"), len(c, "height"));
-                match href(c) {
-                    Some(h2) if !h2.starts_with("data:") => d.pictures.push(Picture {
-                        href: h2.to_string(),
-                        area: Rect::around(&[at(m, (x, y)), at(m, (x + w, y + h))]),
-                    }),
-                    _ => d.other.push(("image".into(), at(m, (x, y)))),
-                }
-            }
+            "image" => match picture(c, m) {
+                Some(p) => d.pictures.push(p),
+                None => d
+                    .other
+                    .push(("image".into(), at(m, (len(c, "x"), len(c, "y"))))),
+            },
             _ => {
                 // where it is: its first point, else its x, y
-                let first = c
-                    .attribute("points")
-                    .map(numbers)
-                    .filter(|v| v.len() >= 2)
-                    .map_or((len(c, "x"), len(c, "y")), |v| (v[0], v[1]));
+                let first = points(c)
+                    .first()
+                    .copied()
+                    .unwrap_or((len(c, "x"), len(c, "y")));
                 d.other.push((tag.to_string(), at(m, first)));
             }
         }
     }
+}
+
+/// The product of an element's own and its groups' transforms.
+fn matrix_of(n: roxmltree::Node) -> M {
+    // from the element out: each group's after what's inside it
+    n.ancestors()
+        .filter_map(|a| a.attribute("transform"))
+        .fold(ID, |m, t| mul(&transform(t), &m))
+}
+
+fn class_is(n: &roxmltree::Node, c: &str) -> bool {
+    n.attribute("class") == Some(c)
+}
+
+/// The text of an element's first `<title>` child.
+fn title(n: roxmltree::Node) -> Option<String> {
+    n.children()
+        .find(|c| c.has_tag_name("title"))?
+        .text()
+        .map(str::to_string)
+}
+
+/// A `points` list as points.
+fn points(n: roxmltree::Node) -> Vec<P> {
+    let v = numbers(n.attribute("points").unwrap_or(""));
+    v.as_chunks::<2>().0.iter().map(|&[x, y]| (x, y)).collect()
+}
+
+/// An `<image>` as a picture (a `data:` one isn't a file qd can name).
+fn picture(c: roxmltree::Node, m: &M) -> Option<Picture> {
+    let (x, y, w, h) = (len(c, "x"), len(c, "y"), len(c, "width"), len(c, "height"));
+    let href = href(c).filter(|h| !h.starts_with("data:"))?;
+    Some(Picture {
+        href: href.to_string(),
+        area: Rect::around(&[at(m, (x, y)), at(m, (x + w, y + h))]),
+    })
+}
+
+/// A Graphviz drawing (R7): each `g.node` a box named by its `<title>`, with its
+/// outline (a polygon, a path for a rounded box, an ellipse), texts, link and
+/// picture; each `g.edge` an arrow by its title. The graph's background isn't a box.
+fn graphviz(root: roxmltree::Node, d: &mut Drawing) {
+    let paint =
+        |n: roxmltree::Node, k: &str| prop(n, k).filter(|v| v != "none" && v != "transparent");
+    for g in root.descendants().filter(|n| class_is(n, "node")) {
+        let (Some(name), Some(shape)) = (
+            title(g),
+            g.descendants().find(|c| {
+                ["polygon", "path", "ellipse"]
+                    .iter()
+                    .any(|t| c.has_tag_name(*t))
+            }),
+        ) else {
+            continue;
+        };
+        let m = matrix_of(shape);
+        let (kind, area) = match shape.tag_name().name() {
+            "ellipse" => {
+                let (rx, ry) = (len(shape, "rx"), len(shape, "ry"));
+                let kind = if (rx - ry).abs() < 0.5 {
+                    Kind::Circle
+                } else {
+                    Kind::Ellipse
+                };
+                (
+                    kind,
+                    ellipse_box(&m, (len(shape, "cx"), len(shape, "cy")), rx, ry),
+                )
+            }
+            tag => {
+                let pts: Vec<P> = if tag == "path" {
+                    path_points(shape.attribute("d").unwrap_or(""))
+                } else {
+                    points(shape)
+                };
+                let pts: Vec<P> = pts.into_iter().map(|p| at(&m, p)).collect();
+                (
+                    Kind::Rect {
+                        rounded: tag == "path",
+                    },
+                    Rect::around(&pts),
+                )
+            }
+        };
+        let link = g
+            .descendants()
+            .find(|c| c.has_tag_name("a"))
+            .and_then(href)
+            .map(str::to_string);
+        d.shapes.push(Shape {
+            kind,
+            area,
+            fill: paint(shape, "fill"),
+            stroke: paint(shape, "stroke"),
+            href: link.clone(),
+        });
+        d.names.push(name);
+        for t in g.descendants().filter(|c| c.has_tag_name("text")) {
+            let here = Inherited {
+                m: matrix_of(t),
+                fill: paint(t, "fill"),
+                font_size: prop(t, "font-size").and_then(|v| v.parse().ok()),
+                href: link.clone(),
+                ..Default::default()
+            };
+            text(t, &here, d);
+        }
+        let images = g.descendants().filter(|c| c.has_tag_name("image"));
+        d.pictures
+            .extend(images.filter_map(|i| picture(i, &matrix_of(i))));
+    }
+    d.edges = root
+        .descendants()
+        .filter(|n| class_is(n, "edge"))
+        .filter_map(title)
+        .collect();
+}
+
+/// An arrow title's two box names: `a->b` (`a--b` undirected), split where both
+/// sides are boxes (a name may hold `-`), ports (`:p`) dropped.
+fn edge_ends(title: &str, op: &str, names: &[String]) -> Option<(String, String)> {
+    let base = |s: &str| s.split(':').next().unwrap_or(s).to_string();
+    title.match_indices(op).find_map(|(i, _)| {
+        let (a, b) = (base(&title[..i]), base(&title[i + op.len()..]));
+        (names.contains(&a) && names.contains(&b)).then_some((a, b))
+    })
 }
 
 /// A `<text>`: one line, or one per `<tspan>` placed on its own `y`.
@@ -562,15 +689,16 @@ fn make(d: &Drawing) -> Result<Made> {
     // names: from labels, unique; n1, n2… for boxes without text
     let mut names: Vec<String> = Vec::new();
     let mut labels: Vec<String> = Vec::new();
-    for ts in texts.iter_mut() {
+    for (i, ts) in texts.iter_mut().enumerate() {
         ts.sort_by(|a, b| a.at.1.total_cmp(&b.at.1).then(a.at.0.total_cmp(&b.at.0)));
         let label = ts
             .iter()
             .map(|t| t.text.as_str())
             .collect::<Vec<_>>()
             .join("\n");
-        // the label's letters and digits; `_2`… when taken; n1, n2… with no label
-        let base = name_from(&label);
+        // Graphviz's own name; else the label's letters and digits, `_2`… when
+        // taken, n1, n2… with no label
+        let base = d.names.get(i).cloned().unwrap_or_else(|| name_from(&label));
         let name = if !base.is_empty() && !names.contains(&base) {
             base
         } else {
@@ -652,8 +780,27 @@ fn make(d: &Drawing) -> Result<Made> {
         stmts.push(crate::dot::node_stmt(&names[i], &a));
         boxes.push(json!({"name": names[i], "label": labels[i]}));
     }
-    // arrows: a line whose two ends are at two different boxes (R4)
+    // a Graphviz drawing's arrows: its edges' titles (R7)
+    let op = if d
+        .edges
+        .iter()
+        .any(|t| !t.contains("->") && t.contains("--"))
+    {
+        "--"
+    } else {
+        "->"
+    };
     let mut arrows = Vec::new();
+    for t in &d.edges {
+        match edge_ends(t, op, &names) {
+            Some((a, b)) => {
+                stmts.push(format!("{} {op} {}", crate::dot::dot_value(&a), crate::dot::dot_value(&b)));
+                arrows.push(json!({"from": a, "to": b}));
+            }
+            None => left_out.push(json!({"what": format!("arrow {t}"), "at": "", "reason": "its ends aren't boxes in the drawing"})),
+        }
+    }
+    // arrows: a line whose two ends are at two different boxes (R4)
     for l in &d.lines {
         let e = l.ends;
         let (a, b) = (
@@ -703,9 +850,10 @@ fn make(d: &Drawing) -> Result<Made> {
     let all = Rect::around(&corners);
     let fig = |v: f64| ((v + 8.0) / 96.0 * 100.0).round() / 100.0;
     let cell = format!(
-        "```{{dot}}\n//| fig-width: {}\n//| fig-height: {}\ndigraph {{\n  layout=neato; splines=ortho;\n{}}}\n```",
+        "```{{dot}}\n//| fig-width: {}\n//| fig-height: {}\n{} {{\n  layout=neato; splines=ortho;\n{}}}\n```",
         fig(all.2 - all.0),
         fig(all.3 - all.1),
+        if op == "--" { "graph" } else { "digraph" },
         stmts
             .iter()
             .map(|s| format!("  {s};\n"))
@@ -906,6 +1054,76 @@ mod tests {
             )
             .is_ok()
         );
+    }
+
+    const GRAPHVIZ: &str = include_str!("../tests/fixtures/dot-import/graphviz.svg");
+
+    /// Spec 017 US2 (T013): a Graphviz SVG keeps its box names and arrows
+    /// (from the `<title>`s), its shapes, labels and links.
+    #[test]
+    fn reads_a_graphviz_drawing() {
+        let d = read(GRAPHVIZ).unwrap();
+        assert!(d.graphviz);
+        let m = make(&d).unwrap();
+        let names: Vec<&str> = m
+            .boxes
+            .iter()
+            .map(|b| b["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            names,
+            ["raw-data", "clean_set", "model", "fit", "plots", "paper"]
+        );
+        assert_eq!(m.boxes[0]["label"], "Raw data");
+        let arrows: Vec<String> = m
+            .arrows
+            .iter()
+            .map(|a| {
+                format!(
+                    "{}->{}",
+                    a["from"].as_str().unwrap(),
+                    a["to"].as_str().unwrap()
+                )
+            })
+            .collect();
+        assert_eq!(
+            arrows,
+            [
+                "raw-data->clean_set",
+                "clean_set->model",
+                "model->fit",
+                "fit->plots",
+                "plots->paper"
+            ]
+        );
+        assert!(m.left_out.is_empty(), "{:?}", m.left_out);
+        for want in [
+            "\"raw-data\" [label=\"Raw data\"",
+            "URL=\"https://example.org/model\"",
+            "shape=ellipse",
+            "\"raw-data\" -> clean_set;",
+        ] {
+            assert!(m.cell.contains(want), "{want}\n{}", m.cell);
+        }
+    }
+
+    #[test]
+    fn edge_titles_split_at_box_names() {
+        let names = ["a-b".to_string(), "c".to_string(), "a".to_string()];
+        assert_eq!(
+            edge_ends("a-b->c", "->", &names),
+            Some(("a-b".into(), "c".into()))
+        );
+        assert_eq!(
+            edge_ends("a--a-b", "--", &names),
+            Some(("a".into(), "a-b".into()))
+        );
+        assert_eq!(
+            edge_ends("a:e->c:w", "->", &names),
+            Some(("a".into(), "c".into())),
+            "ports dropped"
+        );
+        assert_eq!(edge_ends("x->y", "->", &names), None);
     }
 
     #[test]
