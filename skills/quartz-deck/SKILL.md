@@ -77,6 +77,7 @@ when the current directory has exactly one `.qmd`.
 | reorder | `qd move results --before intro` / `--after last`; several at once keep their order: `qd move a b c --after last` |
 | delete | `qd rm @4` (several: `qd rm a b`, one undo step) |
 | groups (sub-slides) | a group is a `#` section and the `##` slides after it, as Quarto stacks them; `qd slides` shows `head` and `in`. `qd indent b` puts b in the group above (the slide above may become a `#` head), `qd outdent b` makes b head a group of its own; `qd move d --after a --indent` lands it in one step. Only heading marks change. A whole group moves by naming its slides: `qd move a a1 a2 --after b2` |
+| navigation | `qd navigation vertical`: → goes from group to group and ↓ through a group's slides when presenting (`grid` keeps the depth; `linear`, Quarto's default, removes the option); `qd slides` shows `navigation_mode` |
 | retitle | `qd title results "Findings"` (`""` = untitled) |
 | replace content | `qd body results --md "New text"` (keeps positioned boxes) |
 | change a few characters anywhere (code, YAML, text) | `qd replace --old 'np.mean(xs' --new 'np.median(xs' --expect <version>` — `--old` must match exactly once (`E_AMBIGUOUS`: add surrounding text); only those bytes change |

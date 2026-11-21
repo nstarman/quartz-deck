@@ -2223,6 +2223,19 @@ for (const id of ['slide-indent', 'slide-outdent']) {
     },
   });
 }
+// how the presentation moves through groups, for the whole deck (spec 018 US4)
+const NAVIGATION = {
+  linear: '→ goes through every slide in order (Quarto’s default)',
+  vertical: '→ goes from group to group, ↓ through a group’s slides',
+  grid: 'Like Vertical, and → keeps the depth you are at',
+};
+for (const x of Object.keys(NAVIGATION)) {
+  keys.on(`navigation-${x}`, {
+    checked: () => state.deck?.navigation_mode === x,
+    why: () => NAVIGATION[x],
+    run: async () => { if (await op('navigation', { mode: x })) await fetchDeck(); },
+  });
+}
 const neighbour = (ctx, d) => { const ss = state.deck?.slides || []; return ss[ss.findIndex((x) => x.id === ctx.slide?.slideId) + d]; };
 for (const [id, d, where] of [['slide-move-up', -1, 'before'], ['slide-move-down', 1, 'after']]) {
   keys.on(id, {

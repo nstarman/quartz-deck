@@ -1467,3 +1467,23 @@ fn non_ascii_end_of_text() {
     let e = Env::with("## A {#a}\n\nCafé\n");
     assert_eq!(e.ok(&["show", "a"])["slide"]["id"], "a");
 }
+
+/// Spec 018 US4: `qd navigation` sets the presentation's navigation mode.
+#[test]
+fn navigation_mode() {
+    let src = "---\ntitle: T\nformat: revealjs\n---\n\n# A\n\n## A1\n";
+    let e = Env::with(src);
+    assert_eq!(e.ok(&["slides"])["navigation_mode"], "linear");
+    let v = e.ok(&["navigation", "vertical"]);
+    assert_edit(&v, "navigation");
+    assert_eq!(v["navigation_mode"], "vertical");
+    assert!(
+        e.text().contains("\nnavigation-mode: vertical\n---\n"),
+        "{}",
+        e.text()
+    );
+    assert_eq!(e.ok(&["slides"])["navigation_mode"], "vertical");
+    e.ok(&["undo"]);
+    assert_eq!(e.text(), src);
+    e.err(&["navigation", "sideways"], "E_INVALID_ARG", 1);
+}

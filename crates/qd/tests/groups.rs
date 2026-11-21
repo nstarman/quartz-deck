@@ -163,3 +163,70 @@ fn move_lands_indented_or_outdented() {
     assert_eq!(outline, ["a:H", "a2<a", "a1:H", "b<a1"]);
     assert_eq!(changed, ["a1"]);
 }
+
+// ---------- US4: the presentation's navigation mode (research R6) ----------
+
+/// The file after `qd navigation <mode>`.
+fn nav(src: &str, mode: &str) -> String {
+    let d = Deck::parse(src.into());
+    ops::apply(&d.text, &ops::navigation(&d, mode).unwrap()).unwrap()
+}
+
+#[test]
+fn navigation_goes_top_level_without_a_revealjs_mapping() {
+    let src = "---\ntitle: T # the talk\nformat: revealjs\n---\n\n## A\n";
+    let t = nav(src, "vertical");
+    assert_eq!(
+        t,
+        "---\ntitle: T # the talk\nformat: revealjs\nnavigation-mode: vertical\n---\n\n## A\n"
+    );
+    assert_eq!(Deck::parse(t.clone()).navigation_mode(), "vertical");
+    // linear is Quarto's default: the option goes
+    assert_eq!(nav(&t, "linear"), src);
+    assert_eq!(nav(src, "linear"), src);
+}
+
+#[test]
+fn navigation_joins_the_revealjs_options() {
+    let src = "---\ntitle: T\nformat:\n  revealjs:  # options\n    theme: dark  # mine\n    slide-level: 2\n  html: default\n---\n\n## A\n";
+    let t = nav(src, "grid");
+    assert_eq!(
+        t,
+        "---\ntitle: T\nformat:\n  revealjs:  # options\n    theme: dark  # mine\n    slide-level: 2\n    navigation-mode: grid\n  html: default\n---\n\n## A\n"
+    );
+    assert_eq!(Deck::parse(t.clone()).navigation_mode(), "grid");
+    // edited where it is, then removed
+    assert_eq!(
+        nav(&t, "vertical"),
+        t.replace("navigation-mode: grid", "navigation-mode: vertical")
+    );
+    assert_eq!(nav(&t, "linear"), src);
+}
+
+#[test]
+fn navigation_is_edited_where_it_already_is() {
+    let src = "---\nnavigation-mode: grid\nformat:\n  revealjs:\n    theme: dark\n---\n\n## A\n";
+    assert_eq!(Deck::parse(src.into()).navigation_mode(), "grid");
+    assert_eq!(nav(src, "vertical"), src.replace("grid", "vertical"));
+    assert_eq!(
+        nav(src, "linear"),
+        src.replace("navigation-mode: grid\n", "")
+    );
+    // under format: revealjs: it wins over the top-level one
+    let both = "---\nnavigation-mode: grid\nformat:\n  revealjs:\n    navigation-mode: vertical\n---\n\n## A\n";
+    assert_eq!(Deck::parse(both.into()).navigation_mode(), "vertical");
+    assert_eq!(
+        nav(both, "grid"),
+        both.replace("navigation-mode: vertical", "navigation-mode: grid")
+    );
+}
+
+#[test]
+fn navigation_refuses_an_unknown_mode() {
+    let d = Deck::parse("## A\n".into());
+    assert_eq!(d.navigation_mode(), "linear");
+    assert!(matches!(
+        ops::navigation(&d, "sideways"),
+        Err(QdError::InvalidArg(_))
+    ));
+}
