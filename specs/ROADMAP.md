@@ -20,6 +20,7 @@ open questions each spec must settle.
 | 011 | export-formats | done (PRs #46, #47 and the US4 + polish PR) | An **Export ▾** drop-down (and `qd export --to <format>`) for every format Quarto/Pandoc can write: PowerPoint, PDF (Beamer/LaTeX or Typst), Word, HTML, Markdown, Jupyter notebook, and more |
 | 012 | history | done (PRs #51–#54 and the polish PR) | Optional **save = git commit** (a setting), a **History** side panel to scroll back through versions with a side-by-side preview of the deck as it was, diff any version against now (source and rendered slides), and restore a whole version or just one slide/element |
 | 013 | run-on-slide | done (PRs #56–#59 and the polish PR) | A **Run ▶ button on the code shown on the slide** itself (the reveal.js side, not only the source pane), with the output updating in place; running through Quarto's own engines (Jupyter, knitr, Julia) so every language Quarto runs works, not only Python |
+| 018 | slide-groups | done (PRs #93, #97, #99, #101, #102, #104 and the polish PR) | **Slide groups** in the slide list: a Quarto `#` section and its slides, shown indented in a faint band and folded to one row; indent and outdent by Tab, menu or a sideways drag (`qd indent`/`qd outdent`, only heading levels change); a folded group drags, copies and deletes as one; the presentation's navigation mode (`qd navigation`) |
 
 Every PR — spec or small — passes a concision audit (`/pr-audit`,
 constitution 1.1.0) before it is marked ready.

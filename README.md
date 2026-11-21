@@ -253,6 +253,34 @@ extension.
   `_extensions/`.
 - **CLI:** `qd arrow add`, `move`, `bend`, `set`, `rm`, `show`, `list`.
 
+### Slide groups (spec [018](specs/018-slide-groups/spec.md))
+
+Put slides under another slide, as in a slide app's outline. A group is a
+Quarto section: a `#` slide and the `##` slides after it up to the next `#`,
+which Quarto already shows as one vertical stack. qd adds no syntax: making
+and undoing groups only changes heading levels.
+
+- **See and fold:** in the slide list a group sits in a faint band, its
+  slides a little smaller under its first slide. The triangle, or ← and →,
+  folds a group to its first slide with a count ("+3"); qd keeps which
+  groups are folded beside the deck, not in it. Showing a slide inside a
+  folded group opens it.
+- **Make and undo groups:** Tab and ⇧Tab (or ⌘] and ⌘[) indent the focused
+  slide into the group above or take it out; the slide menus have Indent
+  slide and Outdent slide, greyed with the reason when they don't apply;
+  dragging a slide 16 px sideways while moving it lands it one step in or
+  out. Escape leaves the list.
+- **A group as one:** on a folded group, drag, copy, cut, duplicate and
+  delete act on all its slides ("Copy group (4 slides)"). A moved or pasted
+  group lands before another group or at the end, so it never splits one.
+- **Presenting:** Slide ▸ Presentation navigation picks how the arrows move:
+  Linear (Quarto's default) goes through every slide, Vertical goes from
+  group to group with ↓ inside a group, Grid also keeps the depth.
+- **CLI:** `qd indent`, `qd outdent`, `qd move … --indent | --outdent`,
+  `qd navigation linear | vertical | grid`; `qd slides` shows each slide's
+  `head` and `in`. A whole group moves by naming its slides:
+  `qd move a a1 a2 --after b2`.
+
 ### Shared focus (spec [005](specs/005-shared-focus/spec.md))
 
 - **"This" means what you selected:** click an element, select a few words
