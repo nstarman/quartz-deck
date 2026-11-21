@@ -113,7 +113,7 @@ stderr with a stable `code` and a `hint`. Decks inside a Quarto project
 - **Shortcuts:** **?** (or Help ▸ Keyboard shortcuts) lists every key, by
   menu, with a search box. It comes from the same list as the menus and the
   keys themselves, so it can't be out of date.
-- **Settings** (File ▸ Settings…, ⌘,): source pane side and whether it starts
+- **Settings** (File ▸ Settings…, ⌘,): source pane place and whether it starts
   open, when the source pane saves, theme, confirm before deleting a slide,
   shortcuts in tooltips. They are yours, not the deck's: kept in qd's config
   folder, the same in every deck, after a restart and in VS Code's panel, and
@@ -124,7 +124,7 @@ stderr with a stable `code` and a `hint`. Decks inside a Quarto project
   so they paste into another deck too). Text from another app pastes as a
   plain paragraph. Every edit is one undo step, and focus always shows.
 - CLI: `qd actions` (every action, its menu and keys), `qd settings`, `qd
-  settings set source.side right`, `qd settings reset`, `qd paste --after
+  settings set source.side below`, `qd settings reset`, `qd paste --after
   intro --md -`.
 
 ### Made easy to use (spec [008](specs/008-usability/spec.md))
@@ -268,7 +268,10 @@ extension.
 ### Source and run (spec [004](specs/004-source-and-run/spec.md))
 
 - **Source pane:** the **Source** button shows the `.qmd` beside the slides
-  (resizable, or full width), with highlighting. Typing saves as you pause,
+  (resizable, or full width), with highlighting. Drag its title bar to dock
+  it before the slide list, beside it, right of the slide or below the slide
+  (spec [022](specs/022-source-dock/spec.md)); the place is a setting
+  (`source.side`). Typing saves as you pause,
   under the same conflict rules as every other edit; the caret shows its
   slide, and clicking a slide element scrolls the source to it.
 - **Environments:** each deck has its own locked Python environment —

@@ -6728,3 +6728,99 @@ async fn source_dock_narrow() {
         assert_place(&ed, p).await;
     }
 }
+
+/// Press on the pane's "Source" label and move `dx` px (12 starts a drag).
+async fn start_dock_drag(ed: &Ed, dx: f64) -> (f64, f64) {
+    let (x, y) = ed.editor_point("#srcpane .srcbar strong", None).await;
+    let to = (x + dx, y);
+    ed.press_and_move((x, y), to).await;
+    to
+}
+
+/// Spec 022 US1 (T018): a drag onto each zone docks the pane there.
+#[tokio::test(flavor = "multi_thread")]
+async fn source_dock_drag() {
+    use DispatchMouseEventType::*;
+    let Some(ed) = Ed::open(P2).await else { return };
+    ed.window(1280, 800).await;
+    ed.open_source().await;
+    for p in ["far-left", "below", "right", "left"] {
+        start_dock_drag(&ed, 12.0).await;
+        ed.wait("document.body.classList.contains('docking') && document.querySelectorAll('#dock-zones:not([hidden]) > [data-place]').length === 4")
+            .await;
+        assert_eq!(
+            ed.eval("[...document.querySelectorAll('#dock-zones > [data-place]')].map((z) => z.textContent)")
+                .await,
+            json!(["Before the slide list", "Beside the slide list", "Right of the slide", "Below the slide"])
+        );
+        let to = ed
+            .editor_point(&format!("#dock-zones > [data-place={p}]"), None)
+            .await;
+        ed.mouse(MouseMoved, to, false).await;
+        ed.wait(&format!(
+            "document.querySelector('#dock-zones > .over')?.dataset.place === {p:?}"
+        ))
+        .await;
+        ed.mouse(MouseReleased, to, false).await;
+        ed.wait(&format!("document.querySelector('main').dataset.source === {p:?} && document.querySelector('#dock-zones').hidden && !document.body.classList.contains('docking')"))
+            .await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_place(&ed, p).await;
+        assert_eq!(ed.cli(&["settings"])["values"]["source.side"], p);
+    }
+}
+
+/// Spec 022 US1 (T019): Esc, a drop outside the zones, a button and a short
+/// move change nothing; a narrow window offers only "below".
+#[tokio::test(flavor = "multi_thread")]
+async fn source_dock_drag_cancels() {
+    use DispatchMouseEventType::*;
+    let Some(ed) = Ed::open(P2).await else { return };
+    ed.window(1280, 800).await;
+    ed.open_source().await;
+    let side = "document.querySelector('main').dataset.source";
+    let zones_hidden = "document.querySelector('#dock-zones').hidden";
+    // Esc
+    let at = start_dock_drag(&ed, 12.0).await;
+    ed.wait(&format!("!{zones_hidden}")).await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait(zones_hidden).await;
+    ed.mouse(MouseReleased, at, false).await;
+    // released outside every zone: the middle of the slide
+    start_dock_drag(&ed, 12.0).await;
+    ed.wait(&format!("!{zones_hidden}")).await;
+    let mid = ed.editor_point("#stage", None).await;
+    ed.mouse(MouseMoved, mid, false).await;
+    ed.mouse(MouseReleased, mid, false).await;
+    ed.wait(zones_hidden).await;
+    assert_eq!(ed.eval(side).await, "left");
+    // a button in the bar: a press and a move inside it start no drag, and it still works
+    let full = ed.editor_point("#srcpane [data-act=full]", None).await;
+    let near = (full.0 + 8.0, full.1 + 2.0);
+    ed.press_and_move(full, near).await;
+    assert_eq!(ed.eval(zones_hidden).await, true, "no zones from a button");
+    ed.mouse(MouseReleased, near, false).await;
+    ed.wait("document.querySelector('main').classList.contains('source-full')")
+        .await;
+    ed.click_editor("#srcpane [data-act=full]").await;
+    ed.wait("!document.querySelector('main').classList.contains('source-full')")
+        .await;
+    // a move under 4 px is a click
+    let at = start_dock_drag(&ed, 2.0).await;
+    assert_eq!(ed.eval(zones_hidden).await, true, "no zones from 2 px");
+    ed.mouse(MouseReleased, at, false).await;
+    assert_eq!(ed.eval(side).await, "left");
+    assert_eq!(ed.cli(&["settings"])["values"]["source.side"], "left");
+    // a narrow window: only below
+    ed.window(650, 800).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let at = start_dock_drag(&ed, 12.0).await;
+    ed.wait(&format!("!{zones_hidden}")).await;
+    assert_eq!(
+        ed.eval("[...document.querySelectorAll('#dock-zones > [data-place]')].map((z) => z.dataset.place)")
+            .await,
+        json!(["below"])
+    );
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.mouse(MouseReleased, at, false).await;
+}

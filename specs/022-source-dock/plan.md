@@ -103,6 +103,19 @@ in CSS keyed on one attribute; the splitter stays in `editor.js`.
 
 Each PR passes `/pr-audit`.
 
+**Final re-check after the build (T026, 2026-11-20)**: pass.
+- **I.** Our own zone labels and look, drawn with the editor's accent
+  colour; no other product's screenshots or wording in the repo.
+- **II.** Nothing is stored in the deck.
+- **III.** No new edit. The place is `qd settings set source.side …`;
+  the drag only writes that setting.
+- **IV.** Unchanged.
+- **V.** The pane is laid out by CSS, never moved or rebuilt; a test types,
+  moves it three times and saves.
+- **VI.** Each story's browser tests were written first and failed first.
+- **VII.** No new dependency. One small module (`dock.js`, about 80
+  lines); the places are CSS `order` plus one grid.
+
 ## Complexity Tracking
 
 None: no principle is bent.

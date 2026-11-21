@@ -11,7 +11,7 @@
 - `main[data-source]` is the current value of `source.side`.
 - `#splitter[aria-orientation]` is `vertical` in side places and
   `horizontal` below the slide or on a window ≤ 700 px.
-- During a drag: `main.docking`, and `#dock-zones > [data-place]`, one per
+- During a drag: `body.docking`, and `#dock-zones > [data-place]`, one per
   place (only `below` on a window ≤ 700 px); the one under the pointer has
   class `over`. Each zone's text is its label.
 - After a drop or a cancel, `#dock-zones` is hidden.
