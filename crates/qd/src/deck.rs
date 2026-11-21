@@ -471,7 +471,14 @@ fn yaml_u64(meta: &Yaml, key: &str) -> Option<u64> {
 impl Deck {
     /// 1-based line range `[first, last]` of a span (spec 004: source ↔ slide sync).
     pub fn lines(&self, span: Span) -> [usize; 2] {
-        let line = |pos: usize| self.text[..pos].matches('\n').count() + 1;
+        // on bytes: a span can end inside a multi-byte character's last byte
+        let line = |pos: usize| {
+            self.text.as_bytes()[..pos]
+                .iter()
+                .filter(|&&b| b == b'\n')
+                .count()
+                + 1
+        };
         [line(span.start), line(span.end.max(span.start + 1) - 1)]
     }
 
@@ -487,7 +494,10 @@ impl Deck {
         let mut front_matter = None;
         let mut meta = Yaml::Null;
         let mut body_line = 0;
-        if ls.first().is_some_and(|l| l.text.trim_end() == "---")
+        // a byte-order mark (some Windows editors write one) comes before the opening ---
+        if ls
+            .first()
+            .is_some_and(|l| l.text.trim_start_matches('\u{feff}').trim_end() == "---")
             && let Some(close) =
                 (1..ls.len()).find(|&j| matches!(ls[j].text.trim_end(), "---" | "..."))
         {
@@ -901,6 +911,23 @@ mod tests {
 
     fn ids(d: &Deck) -> Vec<&str> {
         d.slides.iter().map(|s| s.id.as_str()).collect()
+    }
+
+    #[test]
+    fn front_matter_after_a_byte_order_mark() {
+        let d = deck("\u{feff}---\ntitle: T\n---\n\n## A\n\na\n");
+        assert!(d.front_matter.is_some());
+        assert_eq!(ids(&d), vec!["a"]);
+    }
+
+    #[test]
+    fn lines_of_text_ending_in_non_ascii() {
+        let d = deck("## A\n\nCafé\n\n## B\n\n→");
+        for s in &d.slides {
+            d.lines(s.span);
+        }
+        let b = d.blocks().last().unwrap();
+        assert_eq!(d.lines(b.span), [7, 7]);
     }
 
     #[test]

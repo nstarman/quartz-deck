@@ -1364,7 +1364,11 @@ impl Ctx<'_> {
         if let Some(s) = self.store {
             return Ok(s.clone());
         }
-        Store::open(&find_deck(&self.cli.deck)?)
+        let st = Store::open(&find_deck(&self.cli.deck)?)?;
+        if st.attached() && crate::server::running(&st).is_err() {
+            st.detach(); // VS Code's copy, left by a server that didn't stop cleanly: the .qmd is the deck
+        }
+        Ok(st)
     }
 
     /// `--expect`: refuse when the file is not at that version.

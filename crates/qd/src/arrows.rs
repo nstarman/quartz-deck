@@ -54,7 +54,7 @@ fn options(text: &str, mut at: usize) -> std::result::Result<(Vec<Opt>, usize), 
         while at < b.len() && b[at].is_ascii_whitespace() {
             at += 1;
         }
-        if text[at..].starts_with(">}}") {
+        if b[at..].starts_with(b">}}") {
             return Ok((opts, at));
         }
         if at >= b.len() {
@@ -86,16 +86,14 @@ fn options(text: &str, mut at: usize) -> std::result::Result<(Vec<Opt>, usize), 
                     ));
                 }
                 at = end + 1;
-                if !(at == b.len() || b[at].is_ascii_whitespace() || text[at..].starts_with(">}}"))
-                {
+                if !(at == b.len() || b[at].is_ascii_whitespace() || b[at..].starts_with(b">}}")) {
                     return Err(stop(format!("{key}'s quotes don't pair up"), end));
                 }
                 (v.to_string(), Some(q as char))
             }
             _ => {
                 let start = at;
-                while at < b.len() && !b[at].is_ascii_whitespace() && !text[at..].starts_with(">}}")
-                {
+                while at < b.len() && !b[at].is_ascii_whitespace() && !b[at..].starts_with(b">}}") {
                     if b[at] == b'"' || b[at] == b'\'' {
                         return Err(stop(format!("{key}'s value has a stray quote"), at));
                     }
@@ -505,6 +503,12 @@ mod tests {
     }
     fn why(t: &str) -> String {
         read(t).expect("an arrow").expect_err(t).reason
+    }
+
+    #[test]
+    fn non_ascii_value_is_read_whole() {
+        let a = ok(r#"{{< arrow from="10,20" to="300,400" position="absolute" label=café >}}"#);
+        assert!(a.opts.iter().any(|o| o.key == "label" && o.value == "café"));
     }
 
     #[test]
