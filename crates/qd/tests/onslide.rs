@@ -832,7 +832,47 @@ async fn toolbar_formats_and_unformats() {
         ed.session().await["draft"],
         "- *one*\n- **[two]{style=\"color:#00aa55\"}**"
     );
+    // a font from the Font sheet: a name that could break out of the style is refused
+    let sheet = "document.querySelector('dialog.sheet[open]')";
+    let font = |name: &str| {
+        format!(
+            "(() => {{ const i = {sheet}.querySelector('input[name=family]'); i.value = {name:?}; i.dispatchEvent(new Event('input', {{ bubbles: true }})); }})()"
+        )
+    };
+    ed.caret(list, Some("one")).await;
+    ed.click_editor("#fmtbar [data-fmt=more]").await;
+    ed.click_editor("#fmtbar [data-fmt=font]").await;
+    ed.wait(&format!(
+        "{sheet}?.querySelector('input[name=family]') != null"
+    ))
+    .await;
+    ed.eval(&font("x\"}")).await;
+    ed.wait(&format!(
+        "{sheet}.querySelector('button[value=ok]').disabled"
+    ))
+    .await;
+    ed.eval(&font("Avenir Next")).await;
+    ed.click_editor("dialog.sheet button[value=ok]").await;
+    ed.wait("window.qdSession().draft.includes('Avenir')").await; // applied a task after the sheet closes
+    assert_eq!(
+        ed.session().await["draft"],
+        "- *[one]{style=\"font-family:'Avenir Next'\"}*\n- **[two]{style=\"color:#00aa55\"}**"
+    );
+    // an empty name takes the font off again
+    ed.caret(list, Some("one")).await;
+    ed.click_editor("#fmtbar [data-fmt=more]").await;
+    ed.click_editor("#fmtbar [data-fmt=font]").await;
+    ed.wait(&format!(
+        "{sheet}?.querySelector('input[name=family]') != null"
+    ))
+    .await;
+    ed.eval(&font("")).await;
+    ed.click_editor("dialog.sheet button[value=ok]").await;
+    ed.wait("!window.qdSession().draft.includes('Avenir')")
+        .await;
     // remove all three again: the draft is byte-identical to the source
+    ed.caret(list, Some("two")).await;
+    ed.click_editor("#fmtbar [data-fmt=color]").await;
     ed.click_editor("#fmtbar [data-fmt=nocolor]").await;
     ed.caret(list, Some("two")).await;
     ed.click_editor("#fmtbar [data-fmt=bold]").await;
@@ -3582,6 +3622,7 @@ async fn browser_markup_still_saves() {
     md('<p><font color="#1e8449">green</font></p>'),
     md('<p><b style="font-weight: bold">b</b> <span style="font-size:1.2em">big</span></p>'),
     md('<p>a<img src="x.png"></p>'),
+    md(`<p><span style="font-family:'Gill Sans'">gill</span> <span style='font-family: "Futura"; color: rgb(1, 2, 3)'>fut</span> <span style="font-family: Arial, sans-serif">arial</span></p>`),
   ];
 })()"##,
         )
@@ -3595,6 +3636,7 @@ async fn browser_markup_still_saves() {
             "[green]{style=\"color:#1e8449\"}",
             "**b** [big]{style=\"font-size:1.2em\"}",
             "refused: IMG with attributes",
+            "[gill]{style=\"font-family:'Gill Sans'\"} [fut]{style=\"font-family:'Futura'\"} arial",
         ])
     );
 
