@@ -1044,9 +1044,11 @@ async fn events(
         app.focus.lock().unwrap().entry(tab.clone()).or_default().0 += 1;
         TabGuard(app.clone(), tab.clone())
     });
-    let rx = app.tx.subscribe();
-    let initial: Vec<Ev> = {
+    // subscribed under the lock a render's result is stored and sent under:
+    // the page gets that render once, as the last one or as news, never both
+    let (rx, initial) = {
         let st = app.st.lock().unwrap();
+        let rx = app.tx.subscribe();
         let mut v = Vec::new();
         if let Some((r, o)) = &st.rendered {
             v.push(Ev::Rendered(r.clone(), o.clone()));
@@ -1054,7 +1056,7 @@ async fn events(
         if let Some(e) = &st.error {
             v.push(Ev::RenderError(e.clone()));
         }
-        v
+        (rx, v)
     };
     let html = app.html.clone();
     let h2 = html.clone();
@@ -1105,9 +1107,9 @@ async fn render_loop(app: Shared) {
         })
         .await
         .unwrap_or_else(|join| Err(QdError::Io(std::io::Error::other(join))));
+        let mut st = app.st.lock().unwrap();
         let ev = match res {
             Ok(_) => {
-                let mut st = app.st.lock().unwrap();
                 st.rendered = now;
                 st.error = None;
                 Ev::Rendered(d.version, shown_outputs)
@@ -1117,11 +1119,11 @@ async fn render_loop(app: Shared) {
                     QdError::Render(log) => log.clone(),
                     other => other.to_string(),
                 };
-                app.st.lock().unwrap().error = Some(msg.clone());
+                st.error = Some(msg.clone());
                 Ev::RenderError(msg)
             }
         };
-        let _ = app.tx.send(ev);
+        let _ = app.tx.send(ev); // under the lock: see `events`
     }
 }
 
