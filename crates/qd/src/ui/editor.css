@@ -399,8 +399,8 @@ main.source-full:has(> #splitter[aria-orientation=horizontal]) > #srcpane { heig
 #srcpane .srcbar :is(button, .kernel) { cursor: auto; }
 #dock-zones { position: fixed; inset: 0; z-index: 40; pointer-events: none; }
 #dock-zones > div { position: fixed; display: grid; place-items: center; padding: 8px; text-align: center; font-size: 12px; font-weight: 600;
-  color: var(--accent); border: 2px dashed var(--accent); border-radius: 8px; background: color-mix(in srgb, var(--accent) 12%, transparent); }
-#dock-zones > .over { color: var(--accent-text); background: color-mix(in srgb, var(--accent) 70%, transparent); border-style: solid; }
+  color: var(--accent); border: 2px dashed var(--accent); border-radius: 8px; background: color-mix(in srgb, var(--accent) 12%, var(--panel)); } /* opaque: the label reads over the slide */
+#dock-zones > .over { color: var(--accent-text); background: var(--accent); border-style: solid; }
 #srcpane .srcbar { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
 #srcpane .srcbar .hint { color: var(--muted); margin-right: auto; }
 #srcpane .srcwrap { position: relative; flex: 1; overflow: hidden; min-height: 0; }
