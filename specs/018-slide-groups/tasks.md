@@ -124,7 +124,9 @@ text use made-up slides only, never the person's own talks, paths or names.
 - [X] T030 [P] A corpus test in `crates/qd/tests/roundtrip.rs`: for every corpus deck and every slide where `indent` or `outdent` is allowed, the patch changes only the heading lines of the slides in `changed` (every other line byte-identical), and `qd undo` restores the file byte for byte (SC-003). Indent and outdent aren't inverses (an indent may also promote the slide above), so the test doesn't chain them.
 - [X] T031 [P] Document groups, `qd indent`, `qd outdent`, `qd move --indent/--outdent` and `qd navigation` (and that a group moves by naming its slides) in `skills/quartz-deck/SKILL.md` and `README.md`.
 - [X] T032 Run `specs/018-slide-groups/quickstart.md` in a scratch folder, timing the two editor steps against SC-002's 10 seconds; record the run in `specs/018-slide-groups/checklists/quickstart-run.md`.
-- [ ] T033 Regroup one of the person's real talks with several parts in the list (SC-006), on a copy outside the repo; nothing of it is committed or named in PR text.
+- [X] T033 Regroup one of the person's real talks with several parts in the list (SC-006), on a copy outside the repo; nothing of it is committed or named in PR text.
+
+  **Skipped** at the person's request (2026-11-20): no real talk was regrouped. SC-006 is unchecked; the quickstart run and the browser tests cover the same gestures on made-up decks.
 - [X] T034 Final constitution re-check written into `specs/018-slide-groups/plan.md`, add a 018 row to `specs/ROADMAP.md`'s table marked done, and `/pr-audit` before each PR is marked ready.
 
 ---
