@@ -51,10 +51,7 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 button.danger { color: var(--danger); }
 button.wide { display: block; width: calc(100% - 16px); margin: 0 8px 8px; }
 
-/* ---------- settings (spec 007): the source pane on the right, the window ---------- */
-main.source-right #splitter { order: 2; }
-main.source-right #srcpane { order: 3; }
-main.source-right aside { order: 4; }
+/* ---------- settings (spec 007): the window ---------- */
 #settings, #shortcuts, dialog.sheet { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); padding: 16px 20px; }
 #settings::backdrop, #shortcuts::backdrop { background: rgba(0, 0, 0, 0.35); }
 #settings { width: min(520px, calc(100vw - 32px)); }
@@ -371,6 +368,31 @@ main.source-open > #splitter { display: block; }
   border-right: 1px solid var(--line); background: var(--panel); min-height: 0; }
 main.source-full > #stage, main.source-full > #splitter { display: none; }
 main.source-full > #srcpane { flex: 1; width: auto; }
+/* its place (spec 022): left (the DOM's order) by default; History stays by the list */
+main[data-source=far-left] > #srcpane { order: -2; }
+main[data-source=far-left] > #splitter { order: -1; }
+main[data-source=right] > #panel { order: 2; } /* the inspector next to the slide */
+main[data-source=right] > #splitter { order: 3; }
+main[data-source=right] > #srcpane { order: 4; }
+main[data-source=below] { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; grid-template-rows: minmax(0, 1fr) auto auto; }
+main[data-source=below] > :is(nav, #history, #panel) { grid-row: 1 / -1; }
+main[data-source=below] > #history { grid-column: 2; }
+main[data-source=below] > #panel { grid-column: 4; }
+main[data-source=below] > #stage { grid-column: 3; grid-row: 1; }
+main[data-source=below] > #splitter { grid-column: 3; grid-row: 2; }
+main[data-source=below] > #srcpane { grid-column: 3; grid-row: 3; }
+main[data-source=below].source-full > #srcpane { grid-row: 1 / -1; height: auto; }
+/* below the slide, and every place on a narrow window: as wide as the slide, the splitter across */
+main[data-source=below] > #srcpane { width: auto; min-width: 0; height: var(--srch, 35vh); border-right: 0; }
+main[data-source=below] > #splitter { width: auto; height: 6px; cursor: row-resize; }
+@media (max-width: 700px) {
+  main[data-source] { display: flex; }
+  main[data-source] > #stage { order: 1; }
+  main[data-source] > #splitter { order: 2; width: auto; height: 6px; cursor: row-resize; }
+  main[data-source] > #srcpane { order: 3; width: auto; min-width: 0; height: var(--srch, 35vh); border-right: 0; }
+  main[data-source] > #panel { order: 4; }
+  main.source-full[data-source] > #srcpane { flex: 1; height: auto; }
+}
 #srcpane .srcbar { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
 #srcpane .srcbar .hint { color: var(--muted); margin-right: auto; }
 #srcpane .srcwrap { position: relative; flex: 1; overflow: hidden; min-height: 0; }

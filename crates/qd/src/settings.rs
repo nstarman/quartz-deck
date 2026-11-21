@@ -58,9 +58,9 @@ const DEFS: &[Def] = &[
     ),
     def(
         "source.side",
-        "Source pane side",
-        "Which side of the slides the source pane sits on.",
-        Kind::Choice(&["left", "right"]),
+        "Source pane place",
+        "Where the source pane sits: before the slide list, beside it, right of the slide, or below the slide.",
+        Kind::Choice(&["far-left", "left", "right", "below"]),
         || json!("left"),
     ),
     def(
@@ -120,6 +120,7 @@ const DEFS: &[Def] = &[
         || json!(true), // spec 020 US2: a layout takes milliseconds
     ),
     ui("ui.source_width", Kind::Number, || Value::Null),
+    ui("ui.source_height", Kind::Number, || Value::Null), // below the slide (spec 022)
     ui("ui.source_was_open", Kind::Bool, || json!(false)),
     ui("ui.source_full", Kind::Bool, || json!(false)),
     ui("ui.form_panel", Kind::Bool, || json!(false)),
@@ -325,6 +326,24 @@ mod tests {
             std::os::unix::fs::PermissionsExt::mode(&fs::metadata(&p).unwrap().permissions())
                 & 0o777,
             0o600
+        );
+
+        // spec 022: four places; the old two keep their meaning
+        for place in ["far-left", "left", "right", "below"] {
+            assert_eq!(
+                set(&p, &m(json!({"source.side": place}))).unwrap()["source.side"],
+                place
+            );
+        }
+        assert_eq!(
+            set(&p, &m(json!({"source.side": "top"})))
+                .unwrap_err()
+                .code(),
+            "E_INVALID_SETTING"
+        );
+        assert_eq!(
+            set(&p, &m(json!({"ui.source_height": 300}))).unwrap()["ui.source_height"],
+            300
         );
 
         let v = reset(&p).unwrap();

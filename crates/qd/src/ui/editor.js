@@ -1723,31 +1723,46 @@ function setSource(open, remember) {
   if (open) pane.load();
 }
 const splitter = $('#splitter');
-let widthTimer = null;
-const setWidth = (px, remember = true) => {
-  mainEl.style.setProperty('--srcw', Math.max(240, Math.min(px, innerWidth - 320)) + 'px');
-  clearTimeout(widthTimer); // one write once the drag pauses
-  if (remember) widthTimer = setTimeout(() => settings.set({ 'ui.source_width': Math.round(px) }), 300);
+let sizeTimer = null;
+/** The pane's width beside the slide, or its height below it: each remembered apart (spec 022). */
+const setSize = (px, remember = true) => {
+  const across = vertical();
+  const room = across ? innerWidth - 320 : innerHeight - 160;
+  mainEl.style.setProperty(across ? '--srcw' : '--srch', Math.max(across ? 240 : 120, Math.min(px, room)) + 'px');
+  clearTimeout(sizeTimer); // one write once the drag pauses
+  if (remember) sizeTimer = setTimeout(() => settings.set({ [across ? 'ui.source_width' : 'ui.source_height']: Math.round(px) }), 300);
 };
-const onRight = () => mainEl.classList.contains('source-right');
+// below the slide (its place, or any place on a narrow window) the splitter runs across
+const narrow = matchMedia('(max-width: 700px)');
+const vertical = () => mainEl.dataset.source !== 'below' && !narrow.matches;
+const orient = () => splitter.setAttribute('aria-orientation', vertical() ? 'vertical' : 'horizontal');
+narrow.addEventListener('change', orient);
+/** How far the pointer is from the pane's far edge: its size. */
+function sizeAt(ev) {
+  const r = srcpane.getBoundingClientRect();
+  if (!vertical()) return r.bottom - ev.clientY;
+  return mainEl.dataset.source === 'right' ? r.right - ev.clientX : ev.clientX - r.left;
+}
 splitter.addEventListener('pointerdown', (e) => {
   splitter.setPointerCapture(e.pointerId);
-  const move = (ev) => {
-    const r = srcpane.getBoundingClientRect();
-    setWidth(onRight() ? r.right - ev.clientX : ev.clientX - r.left);
-  };
+  const move = (ev) => setSize(sizeAt(ev));
   splitter.addEventListener('pointermove', move);
   splitter.addEventListener('pointerup', () => splitter.removeEventListener('pointermove', move), { once: true });
 });
 splitter.addEventListener('keydown', (e) => {
-  const d = { ArrowLeft: -20, ArrowRight: 20 }[e.key];
-  if (d) { e.preventDefault(); setWidth(srcpane.getBoundingClientRect().width + (onRight() ? -d : d)); }
+  const v = vertical();
+  const d = (v ? { ArrowLeft: -20, ArrowRight: 20 } : { ArrowUp: 20, ArrowDown: -20 })[e.key];
+  if (!d) return;
+  e.preventDefault();
+  const r = srcpane.getBoundingClientRect();
+  setSize(v ? r.width + (mainEl.dataset.source === 'right' ? -d : d) : r.height + d);
 });
 
 // the person's settings: the layout once, then everything live (here, another editor, `qd settings`)
 const themed = new URLSearchParams(location.search).has('theme'); // VS Code sets the theme (spec 006)
 settings.onChange((v) => {
-  mainEl.classList.toggle('source-right', v['source.side'] === 'right');
+  mainEl.dataset.source = v['source.side']; // spec 022: far-left, left, right, below
+  orient();
   inspector.fit(); // ui.inspector
   if (!themed) {
     if (v.theme === 'system') delete document.documentElement.dataset.theme;
@@ -1760,7 +1775,8 @@ settings.onChange((v) => {
 await settings.ready((n) => say(n, true)).catch(() => say('settings could not be loaded; using the defaults', true));
 {
   const v = settings.get;
-  if (v('ui.source_width')) setWidth(v('ui.source_width'), false);
+  if (v('ui.source_width')) mainEl.style.setProperty('--srcw', v('ui.source_width') + 'px');
+  if (v('ui.source_height')) mainEl.style.setProperty('--srch', v('ui.source_height') + 'px');
   setPanel(v('ui.form_panel'));
   setFull(v('ui.source_full'));
   setSource(v('source.open') === 'open' || (v('source.open') === 'last' && v('ui.source_was_open')), false);
