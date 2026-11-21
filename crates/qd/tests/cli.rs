@@ -891,6 +891,15 @@ fn block_class_toggles_round_trip() {
         "E_INVALID_ARG",
         1,
     );
+    // a paragraph ending in a span: the class goes on the paragraph, not the span
+    let e = Env::with("## S {#s}\n\nSome text and [this]{.alert}\n");
+    e.ok(&["block", "class", "s/0", "--add", "fragment"]);
+    assert!(
+        e.text()
+            .contains("::: {.fragment}\nSome text and [this]{.alert}\n:::"),
+        "{}",
+        e.text()
+    );
 }
 
 // ---------- spec 004: line ranges, code cells, qd replace (T004, T006) ----------
@@ -1486,4 +1495,28 @@ fn navigation_mode() {
     e.ok(&["undo"]);
     assert_eq!(e.text(), src);
     e.err(&["navigation", "sideways"], "E_INVALID_ARG", 1);
+}
+
+/// Values sent to /api/op stay values: one starting with `-` is never read as a flag.
+#[test]
+fn api_values_are_not_flags() {
+    let e = Env::with("## A {#a}\n\nFirst.\n");
+    let st = e.store();
+    let before = e.text();
+    let r = quartz_deck::cli::run_op(
+        &st,
+        "edit",
+        &json!({"element": ["a/0", "--file=/etc/hosts"]}),
+        None,
+    );
+    assert!(r.is_err(), "a flag got through as a value: {r:?}");
+    assert_eq!(e.text(), before);
+    quartz_deck::cli::run_op(
+        &st,
+        "title",
+        &json!({"slide": "a", "text": "-5 degrees"}),
+        None,
+    )
+    .unwrap();
+    assert!(e.text().contains("## -5 degrees"), "{}", e.text());
 }

@@ -1593,6 +1593,8 @@ pub fn run_op(store: &Store, op: &str, args: &Value, expect: Option<&str>) -> Re
     let mut known = vec!["dry_run".to_string()];
     let mut positionals: Vec<&clap::Arg> = cmd.get_positionals().collect();
     positionals.sort_by_key(|a| a.get_index());
+    // after `--`, below: a value starting with `-` is a value, never a flag (`--file=…`)
+    let mut values = vec!["--".to_string()];
     for a in positionals {
         let id = a.get_id().as_str();
         known.push(id.into());
@@ -1600,10 +1602,10 @@ pub fn run_op(store: &Store, op: &str, args: &Value, expect: Option<&str>) -> Re
             // several values (`qd move a b …` as `{"slide": ["a", "b"]}`)
             Some(Value::Array(vs)) => {
                 for v in vs {
-                    argv.push(scalar(id, v)?);
+                    values.push(scalar(id, v)?);
                 }
             }
-            Some(v) => argv.push(scalar(id, v)?),
+            Some(v) => values.push(scalar(id, v)?),
             None => {}
         }
     }
@@ -1624,6 +1626,7 @@ pub fn run_op(store: &Store, op: &str, args: &Value, expect: Option<&str>) -> Re
             Some(v) => argv.extend([format!("--{long}"), scalar(long, v)?]),
         }
     }
+    argv.extend(values);
     if let Some(k) = obj.keys().find(|k| !known.contains(k)) {
         return Err(QdError::InvalidArg(format!(
             "unknown argument '{k}' for '{op}'"

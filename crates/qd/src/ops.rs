@@ -1042,6 +1042,8 @@ pub fn block_class(d: &Deck, element: &str, add: &[String], remove: &[String]) -
     // (line index, byte range of `{...}` in that line) of the element's attributes
     let found = if fenced {
         box_attrs_range(text, false).map(|(o, c)| (0, o, c))
+    } else if matches!(b.kind, BlockKind::Para | BlockKind::List | BlockKind::Quote) {
+        None // a `{...}` ending their text belongs to a span or link in it, not to them
     } else {
         let i = if b.kind == BlockKind::Heading {
             0

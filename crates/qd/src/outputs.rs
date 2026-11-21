@@ -41,6 +41,9 @@ impl Outputs {
                 let _ = std::fs::remove_file(self.dir.join(f));
             }
         }
+        // named after the cell as well as its text: two cells with the same code
+        // (a duplicated slide) each keep their own figures
+        let stem = format!("{fp}-{}", &crate::deck::version_of(cell.as_bytes())[..6]);
         let mut truncated = false;
         let mut items = vec![];
         for (i, o) in reply["outputs"]
@@ -52,7 +55,7 @@ impl Outputs {
             let mut o = o.clone();
             if let Some(src) = o["path"].as_str().map(PathBuf::from) {
                 let ext = src.extension().unwrap_or_default().to_string_lossy();
-                let name = format!("{fp}-{i}.{ext}");
+                let name = format!("{stem}-{i}.{ext}");
                 std::fs::copy(&src, self.dir.join(&name))?;
                 let _ = std::fs::remove_file(&src);
                 o.as_object_mut().unwrap().remove("path");
@@ -61,7 +64,7 @@ impl Outputs {
             if let Some(text) = o["text"].as_str()
                 && text.lines().count() > MAX_LINES
             {
-                let name = format!("{fp}-{i}.txt");
+                let name = format!("{stem}-{i}.txt");
                 std::fs::write(self.dir.join(&name), text)?;
                 let cut: Vec<&str> = text.lines().take(MAX_LINES).collect();
                 o["text"] = json!(cut.join("\n"));
@@ -160,6 +163,10 @@ mod tests {
         let rec = out.save(&id, &fp, &reply).unwrap();
         assert!(!fig.exists(), "figure moved into the store");
         let img = rec["items"][1]["file"].as_str().unwrap();
+        // another cell with the same code keeps its own figure
+        std::fs::write(&fig, b"twin").unwrap();
+        let twin = out.save("a/9", &fp, &reply).unwrap();
+        assert_ne!(twin["items"][1]["file"], rec["items"][1]["file"]);
         assert_eq!(std::fs::read(out.file(img).unwrap()).unwrap(), b"png");
         assert_eq!(
             rec["items"][0]["text"].as_str().unwrap().lines().count(),

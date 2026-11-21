@@ -286,6 +286,11 @@ export function reserialize(root, reg, hints) {
 function tidy(root) {
   const c = root.cloneNode(true);
   for (const n of [...c.querySelectorAll('*')].reverse()) { // deepest first
+    // the browser's indent puts the sublist beside the item; markdown nests it in the one before
+    if (n.matches(':is(ul, ol) > :is(ul, ol)') && n.previousElementSibling?.tagName === 'LI') {
+      n.previousElementSibling.append(n);
+      continue;
+    }
     if (n.tagName === 'FONT') {
       const span = n.ownerDocument.createElement('span');
       const col = n.getAttribute('color');
