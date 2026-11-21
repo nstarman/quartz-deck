@@ -2416,23 +2416,25 @@ async fn menu_bar_runs_every_action() {
         .await;
 }
 
+/// JS that picks `v` for setting `key` in the Settings window, as the person would.
+fn choose(key: &str, v: &str) -> String {
+    format!(
+        "(() => {{ const s = document.getElementById('set-{key}'); s.value = {v:?}; s.dispatchEvent(new Event('change')); }})()"
+    )
+}
+
 /// Spec 007 US2 (T013): settings apply at once, are the person's (the CLI sees
 /// them, and changes there reach the open editor), and stick: another deck on
 /// a new server opens with the same settings and layout.
 #[tokio::test(flavor = "multi_thread")]
 async fn settings_apply_live_and_stick() {
     let Some(ed) = Ed::open(P2).await else { return };
-    let main = "document.querySelector('main').classList";
+    let side = "document.querySelector('main').dataset.source";
     let theme = "document.documentElement.dataset.theme";
     ed.key(",", "Comma", 188, 2).await; // ⌘, (Ctrl+, works too)
     ed.wait("document.querySelector('#settings').open").await;
-    let choose = |key: &str, v: &str| {
-        format!(
-            "(() => {{ const s = document.getElementById('set-{key}'); s.value = {v:?}; s.dispatchEvent(new Event('change')); }})()"
-        )
-    };
     ed.eval(&choose("source.side", "right")).await;
-    ed.wait(&format!("{main}.contains('source-right')")).await;
+    ed.wait(&format!("{side} === 'right'")).await;
     ed.eval(&choose("theme", "dark")).await;
     ed.wait(&format!("{theme} === 'dark'")).await;
     ed.eval(&choose("source.save", "explicit")).await;
@@ -2462,7 +2464,7 @@ async fn settings_apply_live_and_stick() {
     let info = ed.cli(&["--deck", deck.to_str().unwrap(), "serve", "--detach"]);
     ed.visit(info["url"].as_str().unwrap()).await;
     ed.wait(&format!(
-        "!document.querySelector('#srcpane').hidden && {main}.contains('source-right') && {theme} === 'light'"
+        "!document.querySelector('#srcpane').hidden && {side} === 'right' && {theme} === 'light'"
     ))
     .await;
 
@@ -2474,10 +2476,8 @@ async fn settings_apply_live_and_stick() {
     ed.wait("document.querySelector('dialog.sheet[open]')?.textContent.includes('default')")
         .await;
     ed.click_editor("dialog.sheet button[value=ok]").await;
-    ed.wait(&format!(
-        "{theme} === undefined && !{main}.contains('source-right')"
-    ))
-    .await;
+    ed.wait(&format!("{theme} === undefined && {side} === 'left'"))
+        .await;
     ed.cli(&["--deck", deck.to_str().unwrap(), "stop"]);
 }
 
@@ -6472,4 +6472,259 @@ async fn resting_pointer_keeps_menu_focus() {
     );
     ed.key("Escape", "Escape", 27, 0).await; // out of the submenu
     ed.close_menu().await;
+}
+
+// ---------- spec 022: the source pane's place ----------
+
+/// `[left, top, right, bottom]` of an element of the editor.
+async fn rect(ed: &Ed, sel: &str) -> [f64; 4] {
+    let js = format!(
+        "(() => {{ const r = document.querySelector({sel:?}).getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; }})()"
+    );
+    serde_json::from_value(ed.eval(&js).await).unwrap()
+}
+
+/// Set `source.side` the way the CLI and Settings do, and wait for the layout.
+async fn place(ed: &Ed, p: &str) {
+    ed.eval(&format!(
+        "import('/ui/settings.js').then((s) => s.set({{'source.side': {p:?}}}))"
+    ))
+    .await;
+    ed.wait(&format!(
+        "document.querySelector('main').dataset.source === {p:?}"
+    ))
+    .await;
+    tokio::time::sleep(Duration::from_millis(100)).await; // one layout
+}
+
+/// Where the pane is against the slide list and the slide, as the data model's table says.
+async fn assert_place(ed: &Ed, p: &str) {
+    let (src, nav, stage) = (
+        rect(ed, "#srcpane").await,
+        rect(ed, "nav").await,
+        rect(ed, "#stage").await,
+    );
+    let ok = match p {
+        "far-left" => src[2] <= nav[0] + 1.0,
+        "left" => nav[2] <= src[0] + 1.0 && src[2] <= stage[0] + 1.0,
+        "right" => stage[2] <= src[0] + 1.0,
+        "below" => {
+            stage[3] <= src[1] + 1.0
+                && (src[0] - stage[0]).abs() < 1.0
+                && (src[2] - stage[2]).abs() < 1.0
+        }
+        _ => unreachable!(),
+    };
+    assert!(ok, "{p}: pane {src:?}, nav {nav:?}, stage {stage:?}");
+}
+
+/// Spec 022 US2 (T005): each place from the setting, after a reload too, and
+/// from the Settings window.
+#[tokio::test(flavor = "multi_thread")]
+async fn source_dock_places() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    ed.window(1280, 800).await;
+    ed.open_source().await;
+    assert_place(&ed, "left").await;
+    for p in ["far-left", "right", "below", "left"] {
+        place(&ed, p).await;
+        assert_place(&ed, p).await;
+    }
+    place(&ed, "below").await;
+    ed.page.reload().await.unwrap();
+    ed.wait_secs(READY, 60).await;
+    ed.wait("document.querySelector('main').dataset.source === 'below' && !document.querySelector('#srcpane').hidden")
+        .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_place(&ed, "below").await;
+    // the Settings window: the keyboard way
+    ed.key(",", "Comma", 188, 2).await;
+    ed.wait("document.querySelector('#settings').open").await;
+    ed.eval(&choose("source.side", "far-left")).await;
+    ed.wait("document.querySelector('main').dataset.source === 'far-left'")
+        .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_place(&ed, "far-left").await;
+}
+
+/// Spec 022 US2 (T006): a move keeps unsaved typing, the caret and the scroll.
+#[tokio::test(flavor = "multi_thread")]
+async fn source_dock_keeps_typing() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    ed.window(1280, 800).await;
+    ed.eval("import('/ui/settings.js').then((s) => s.set({'source.save': 'explicit'}))")
+        .await;
+    ed.open_source().await;
+    ed.pane_caret("Other slide.", false).await;
+    ed.type_text(" More").await;
+    let before = ed
+        .eval(&format!("[{PANE}.value, {PANE}.selectionStart]"))
+        .await;
+    for p in ["below", "right", "far-left"] {
+        place(&ed, p).await;
+        assert_eq!(
+            ed.eval(&format!("[{PANE}.value, {PANE}.selectionStart]"))
+                .await,
+            before,
+            "{p}"
+        );
+    }
+    assert!(!ed.file().contains("Other slide. More"), "not saved yet");
+    ed.key("s", "KeyS", 83, 4).await;
+    ed.wait_file(|f| f.contains("Other slide. More"), "saved the typing")
+        .await;
+}
+
+/// Spec 022 US3 (T010): the splitter's axis follows the place, and width and
+/// height are remembered apart.
+#[tokio::test(flavor = "multi_thread")]
+async fn source_dock_splitter() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    ed.window(1280, 800).await;
+    ed.open_source().await;
+    let orient = "document.querySelector('#splitter').getAttribute('aria-orientation')";
+    place(&ed, "below").await;
+    assert_eq!(ed.eval(orient).await, json!("horizontal"));
+    let h = |r: [f64; 4]| r[3] - r[1];
+    let w = |r: [f64; 4]| r[2] - r[0];
+    let (x, y) = ed.editor_point("#splitter", None).await;
+    let before = h(rect(&ed, "#srcpane").await);
+    ed.drag((x, y), (x, y - 60.0)).await;
+    let after = h(rect(&ed, "#srcpane").await);
+    assert!(
+        (after - before - 60.0).abs() < 4.0,
+        "drag up grows it: {before} → {after}"
+    );
+    ed.eval("document.querySelector('#splitter').focus()").await;
+    ed.key("ArrowUp", "ArrowUp", 38, 0).await;
+    let keyed = h(rect(&ed, "#srcpane").await);
+    assert!(
+        (keyed - after - 20.0).abs() < 2.0,
+        "↑ grows it: {after} → {keyed}"
+    );
+    ed.until_cli(
+        &["settings"],
+        |v| {
+            v["values"]["ui.source_height"]
+                .as_f64()
+                .is_some_and(|v| (v - keyed).abs() < 2.0)
+        },
+        "the height was not remembered",
+    )
+    .await;
+    // the side places keep their own width
+    place(&ed, "left").await;
+    assert_eq!(ed.eval(orient).await, json!("vertical"));
+    let side = w(rect(&ed, "#srcpane").await);
+    place(&ed, "far-left").await;
+    let (x, y) = ed.editor_point("#splitter", None).await;
+    ed.drag((x, y), (x + 40.0, y)).await;
+    let wider = w(rect(&ed, "#srcpane").await);
+    assert!(
+        (wider - side - 40.0).abs() < 4.0,
+        "far-left: drag right grows it: {side} → {wider}"
+    );
+    // and the height below is still the one set there
+    place(&ed, "below").await;
+    assert!((h(rect(&ed, "#srcpane").await) - keyed).abs() < 2.0);
+    ed.page.reload().await.unwrap();
+    ed.wait_secs(READY, 60).await;
+    ed.wait("!document.querySelector('#srcpane').hidden").await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(
+        (h(rect(&ed, "#srcpane").await) - keyed).abs() < 2.0,
+        "after a reload"
+    );
+}
+
+/// Spec 022 US3 (T011): Full width fills the slide's room in every place.
+#[tokio::test(flavor = "multi_thread")]
+async fn source_dock_full_width() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    ed.window(1280, 800).await;
+    ed.open_source().await;
+    let main = rect(&ed, "main").await;
+    let nav = rect(&ed, "nav").await;
+    for p in ["far-left", "left", "right", "below"] {
+        place(&ed, p).await;
+        let normal = rect(&ed, "#srcpane").await;
+        ed.click_editor("#srcpane [data-act=full]").await;
+        ed.wait("getComputedStyle(document.querySelector('#stage')).display === 'none' && getComputedStyle(document.querySelector('#splitter')).display === 'none'")
+            .await;
+        tokio::time::sleep(Duration::from_millis(200)).await; // the inspector, if it showed, goes with the slide
+        let full = rect(&ed, "#srcpane").await;
+        let room = (full[2] - full[0]) - (main[2] - main[0] - (nav[2] - nav[0]));
+        assert!(
+            room.abs() < 2.0,
+            "{p}: full {full:?}, main {main:?}, nav {nav:?}"
+        );
+        assert!(
+            (full[3] - full[1]) - (main[3] - main[1]) > -2.0,
+            "{p}: full height"
+        );
+        ed.click_editor("#srcpane [data-act=full]").await;
+        ed.wait("getComputedStyle(document.querySelector('#stage')).display !== 'none'")
+            .await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(rect(&ed, "#srcpane").await, normal, "{p}: back as it was");
+    }
+}
+
+/// Spec 022 US3 (T012): on the right, the inspector sits between the slide and the pane.
+#[tokio::test(flavor = "multi_thread")]
+async fn source_dock_inspector() {
+    let Some(ed) = inspecting().await else {
+        return;
+    };
+    ed.window(1700, 900).await;
+    ed.open_source().await;
+    // a narrow pane, so the slide keeps the inspector's 640 px beside it
+    ed.eval("document.querySelector('main').style.setProperty('--srcw', '300px')")
+        .await;
+    place(&ed, "right").await;
+    ed.wait(INSPECTING).await;
+    ed.go("a").await;
+    ed.select("[data-qd=\"a/0\"]").await;
+    ed.wait("[...document.querySelectorAll('#panel .tabs button')].some((b) => b.textContent === 'Position')")
+        .await;
+    let (stage, panel, src) = (
+        rect(&ed, "#stage").await,
+        rect(&ed, "#panel").await,
+        rect(&ed, "#srcpane").await,
+    );
+    assert!(
+        stage[2] <= panel[0] + 1.0 && panel[2] <= src[0] + 1.0,
+        "stage {stage:?}, panel {panel:?}, pane {src:?}"
+    );
+    place(&ed, "below").await;
+    ed.wait(INSPECTING).await;
+}
+
+/// Spec 022 US3 (T013): on a narrow window the pane is below the slide
+/// whatever its place, and the place is kept.
+#[tokio::test(flavor = "multi_thread")]
+async fn source_dock_narrow() {
+    let Some(ed) = Ed::open(P2).await else { return };
+    ed.window(1280, 800).await;
+    ed.open_source().await;
+    for p in ["far-left", "left", "right", "below"] {
+        place(&ed, p).await;
+        ed.window(650, 800).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let (stage, src) = (rect(&ed, "#stage").await, rect(&ed, "#srcpane").await);
+        assert!(
+            stage[3] <= src[1] + 1.0,
+            "{p} at 650 px: stage {stage:?}, pane {src:?}"
+        );
+        assert_eq!(
+            ed.eval("document.querySelector('#splitter').getAttribute('aria-orientation')")
+                .await,
+            json!("horizontal")
+        );
+        assert_eq!(ed.cli(&["settings"])["values"]["source.side"], p, "kept");
+        ed.window(1280, 800).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_place(&ed, p).await;
+    }
 }
