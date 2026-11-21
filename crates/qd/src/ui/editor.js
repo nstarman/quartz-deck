@@ -630,7 +630,9 @@ function hookFrame() {
     dot.mark();
     arrows.mark();
     markOffSlide(w);
-    w.MathJax?.startup?.promise?.then(() => slideList.refresh()); // math typesets after ready
+    // math typesets after ready: MathJax 3's promise, or (as Quarto's reveal.js loads) MathJax 2's queue
+    if (w.MathJax?.startup?.promise) w.MathJax.startup.promise.then(() => slideList.refresh());
+    else w.MathJax?.Hub?.Queue?.(() => slideList.refresh());
     onSlide();
     frame.removeAttribute('aria-busy');
   };
@@ -1265,7 +1267,9 @@ function beginSession(s, point) {
   on('focusout', () => { if (!s.hold && !s.failed) setTimeout(() => { if (state.session === s && !s.root.contains(doc.activeElement)) saveSession(); }, 0); });
   on('paste', (e) => {
     e.preventDefault(); // plain text only (formatting from other apps is dropped)
-    doc.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+    const text = e.clipboardData.getData('text/plain');
+    // a title or other one-line text: lines pasted into it join with spaces (a new line has no markdown there)
+    doc.execCommand('insertText', false, s.reg.mode === 'inline' ? text.replace(/\s*\n\s*/g, ' ') : text);
   });
   // text dragged in from elsewhere comes in as plain text where it was dropped, like a
   // paste (the browser would insert its markup, which markdown here can't hold)
@@ -1360,6 +1364,7 @@ async function saveSession() {
   let r;
   if (s.kind === 'block') r = await op('edit', { element: s.ref, md, 'expect-text': s.hash }, { fileExpect: false });
   else if (s.kind === 'title') r = await op('title', { slide: s.slide, text: md, 'expect-text': s.hash }, { fileExpect: false });
+  else if ((await fetchMeta())[s.key] !== s.source) { op.lastError = { code: 'E_CONFLICT' }; r = null; } // changed elsewhere while typing
   else r = await op('meta set', { key: s.key, value: JSON.stringify(md) }, { fileExpect: false });
   s.saving = false;
   if (!r) {
@@ -1476,8 +1481,9 @@ function showConflict(c) {
 async function conflict(s, mine, details) {
   let theirs = details?.current_source;
   if (theirs === undefined && s.kind === 'slide') theirs = blockOfBody((await fetchSlide(s.slide)) || { blocks: [] });
+  if (theirs === undefined && s.kind === 'meta') theirs = (await fetchMeta())[s.key];
   endSession(s, false);
-  showConflict({ kind: s.kind, ref: s.ref, slide: s.slide, anchor: s.root.closest?.('section')?.id || s.anchor, mine, theirs: theirs ?? '', hash: details?.current_hash });
+  showConflict({ kind: s.kind, ref: s.ref, slide: s.slide, key: s.key, anchor: s.root.closest?.('section')?.id || s.anchor, mine, theirs: theirs ?? '', hash: details?.current_hash });
   await fetchDeck();
 }
 
@@ -1497,6 +1503,8 @@ conflictBar.addEventListener('click', async (e) => {
     if (await beginSlideSource(doc?.getElementById(c.anchor), c.mine)) return;
   } else if (c.kind === 'title') {
     if (await op('title', { slide: c.slide, text: c.mine, 'expect-text': c.hash }, { fileExpect: false })) { await fetchDeck(); return; }
+  } else if (c.kind === 'meta') {
+    if (await op('meta set', { key: c.key, value: JSON.stringify(c.mine) }, { fileExpect: false })) { await fetchDeck(); return; }
   }
   // the element is gone (or changed again): keep the text safe on the clipboard
   try { await navigator.clipboard.writeText(c.mine); } catch { /* not allowed */ }

@@ -72,6 +72,21 @@ pub(crate) fn put(path: &Path, text: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+/// Write each other file's text from after the edit (`after`) or before it.
+fn put_all(also: &[OtherFile], after: bool) -> Result<()> {
+    for o in also {
+        put(
+            &o.path,
+            if after {
+                o.after.as_deref()
+            } else {
+                o.before.as_deref()
+            },
+        )?;
+    }
+    Ok(())
+}
+
 /// Each other file holds its text from after the edit (`after`) or before it, else `E_NO_UNDO`.
 fn others_at(also: &[OtherFile], after: bool, what: &str) -> Result<()> {
     for o in also {
@@ -102,11 +117,22 @@ pub fn as_person<T>(f: impl FnOnce() -> T) -> T {
     r
 }
 
-/// An edit in the undo journal, as history's commit messages read it.
+/// Size past which an undo journal is trimmed to its newest edits (about 250
+/// edits of a 30 KB deck).
+#[cfg(not(test))]
+const JOURNAL_MAX: u64 = 16 << 20;
+#[cfg(test)]
+const JOURNAL_MAX: u64 = 1 << 20;
+
+/// An edit in the undo journal, as history's commit messages read it
+/// (read straight from an entry, skipping its two copies of the deck).
+#[derive(Deserialize)]
 pub struct Edit {
     pub ts: u64,
     pub op: String,
+    #[serde(default = "agent")]
     pub by: String,
+    #[serde(default)]
     pub target: String,
 }
 
@@ -330,15 +356,11 @@ impl Store {
                 )));
             }
         }
-        for o in &also {
-            put(&o.path, o.after.as_deref())?;
-        }
+        put_all(&also, true)?;
         let version = match self.replace(&before.version, text) {
             Ok(v) => v,
             Err(e) => {
-                for o in &also {
-                    put(&o.path, o.before.as_deref())?;
-                }
+                put_all(&also, false)?;
                 return Err(e);
             }
         };
@@ -379,10 +401,16 @@ impl Store {
             self.push("undo", &e)?;
             return Err(err);
         }
-        for o in &e.also {
-            put(&o.path, o.before.as_deref())?;
-        }
-        let v = self.replace(&current, &e.before_text)?;
+        put_all(&e.also, false)?;
+        let v = match self.replace(&current, &e.before_text) {
+            Ok(v) => v,
+            Err(err) => {
+                // the deck didn't change: neither do its companions, and the edit stays undoable
+                put_all(&e.also, true)?;
+                self.push("undo", &e)?;
+                return Err(err);
+            }
+        };
         self.push("redo", &e)?;
         Ok((v, e.op))
     }
@@ -399,10 +427,15 @@ impl Store {
             self.push("redo", &e)?;
             return Err(err);
         }
-        for o in &e.also {
-            put(&o.path, o.after.as_deref())?;
-        }
-        let v = self.replace(&current, &e.after_text)?;
+        put_all(&e.also, true)?;
+        let v = match self.replace(&current, &e.after_text) {
+            Ok(v) => v,
+            Err(err) => {
+                put_all(&e.also, false)?;
+                self.push("redo", &e)?;
+                return Err(err);
+            }
+        };
         self.push("undo", &e)?;
         Ok((v, e.op))
     }
@@ -412,14 +445,8 @@ impl Store {
         fs::read_to_string(self.journal("undo"))
             .unwrap_or_default()
             .lines()
-            .filter_map(|l| serde_json::from_str::<Entry>(l).ok())
+            .filter_map(|l| serde_json::from_str::<Edit>(l).ok())
             .filter(|e| e.ts > ts)
-            .map(|e| Edit {
-                ts: e.ts,
-                op: e.op,
-                by: e.by,
-                target: e.target,
-            })
             .collect()
     }
 
@@ -429,11 +456,30 @@ impl Store {
 
     fn push(&self, name: &str, e: &Entry) -> Result<()> {
         fs::create_dir_all(&self.cache)?;
+        let path = self.journal(name);
         let mut f = fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open(self.journal(name))?;
+            .open(&path)?;
         writeln!(f, "{}", serde_json::to_string(e).unwrap())?;
+        // each entry holds the deck twice: past JOURNAL_MAX, keep the newest half
+        if f.metadata()?.len() > JOURNAL_MAX {
+            let text = fs::read_to_string(&path)?;
+            let lines: Vec<&str> = text.lines().collect();
+            let mut size = 0;
+            let keep = (lines.iter().rev())
+                .take_while(|l| {
+                    size += l.len() + 1;
+                    size <= JOURNAL_MAX as usize / 2
+                })
+                .count()
+                .max(1);
+            let rest: String = lines[lines.len() - keep..]
+                .iter()
+                .map(|l| format!("{l}\n"))
+                .collect();
+            fs::write(&path, rest)?;
+        }
         Ok(())
     }
 
@@ -469,6 +515,30 @@ mod tests {
 
     /// Spec 006 (T003): attached, every read/write/undo goes to the buffer
     /// overlay and the deck file is untouched; detached, back to the file.
+    #[test]
+    fn undo_journal_keeps_its_newest_edits() {
+        let (_d, st) = setup("## A\n");
+        let big = "x".repeat(64 << 10); // each entry holds the deck twice: 128 KB
+        for ts in 0..20 {
+            let e = Entry {
+                ts,
+                op: "edit".into(),
+                version_before: String::new(),
+                version_after: String::new(),
+                before_text: big.clone(),
+                after_text: big.clone(),
+                by: "person".into(),
+                target: String::new(),
+                also: vec![],
+            };
+            st.push("undo", &e).unwrap();
+        }
+        assert!(fs::metadata(st.journal("undo")).unwrap().len() <= JOURNAL_MAX);
+        let kept: Vec<u64> = st.edits_since(0).iter().map(|e| e.ts).collect();
+        assert_eq!(kept.last(), Some(&19), "the newest edit is kept");
+        assert!(kept.len() < 19, "nothing was dropped: {kept:?}");
+    }
+
     #[test]
     fn buffer_overlay_is_the_deck_while_attached() {
         let (_d, st) = setup("## A\n\nold\n");

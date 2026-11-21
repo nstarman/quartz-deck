@@ -6832,3 +6832,33 @@ async fn source_dock_drag_cancels() {
     ed.key("Escape", "Escape", 27, 0).await;
     ed.mouse(MouseReleased, at, false).await;
 }
+
+/// Tab in a list item indents it in markdown, and lines pasted into a title
+/// join with spaces: both drafts stay something the file can hold.
+#[tokio::test(flavor = "multi_thread")]
+async fn indent_and_title_paste_save() {
+    let Some(ed) = Ed::open(P2).await else {
+        return;
+    };
+    ed.go("a").await;
+    let list = "[data-qd=\"a/2\"]";
+    ed.click_in_slide(&format!("{list} li:last-child")).await;
+    ed.caret(list, Some("y")).await;
+    ed.key("Tab", "Tab", 9, 0).await;
+    ed.wait("window.qdSession()?.draft === '- x\\n  - y'").await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait_file(|f| f.contains("- x\n  - y"), "indented y under x")
+        .await;
+    ed.settle().await;
+
+    ed.click_in_slide("section.present h2").await;
+    ed.wait("window.qdSession()?.kind === 'title'").await;
+    ed.eval(
+        "(() => { const d = document.querySelector('#preview').contentDocument; const h = d.querySelector('section.present h2');
+          const r = d.createRange(); r.selectNodeContents(h); r.collapse(false); d.getSelection().removeAllRanges(); d.getSelection().addRange(r);
+          const dt = new DataTransfer(); dt.setData('text/plain', ' and\\nmore');
+          h.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); })()",
+    )
+    .await;
+    ed.wait("window.qdSession()?.draft === 'A and more'").await;
+}
