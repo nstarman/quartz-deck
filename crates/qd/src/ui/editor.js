@@ -13,6 +13,7 @@ import * as runslide from '/ui/runslide.js';
 import * as dot from '/ui/dot.js';
 import * as arrows from '/ui/arrows.js';
 import * as inspector from '/ui/inspector.js';
+import * as dock from '/ui/dock.js';
 import { openMenu, closeMenu, menuOpen } from '/ui/menu.js';
 import { makeList } from '/ui/list.js';
 import * as pane from '/ui/pane.js';
@@ -1792,6 +1793,9 @@ function properties(on) {
 }
 $('[data-act=full]', srcpane).addEventListener('click', () => setFull(!mainEl.classList.contains('source-full')));
 
+
+// drag the pane's title bar to another place (spec 022)
+dock.init((place) => settings.set({ 'source.side': place }));
 
 pane.initPane({
   op: (name, args) => op(name, args, { fileExpect: false }),

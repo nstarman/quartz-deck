@@ -56,18 +56,18 @@ the drag (US1) only writes the setting they read.
 
 **PR 2** (T018–T026).
 
-- [ ] T018 [US1] Browser tests in crates/qd/tests/onslide.rs at 1280×800: `press_and_move` from the "Source" label to the middle of each `#dock-zones > [data-place]` sets `source.side` to that place and moves the pane; during the move `#dock-zones` shows four zones with labels and the one under the pointer has `.over`; after release it is hidden
-- [ ] T019 [US1] Browser tests: a drag released outside any zone, and one ended with Esc, leave `source.side` unchanged; pressing on "Full width" and moving starts no drag and the button still toggles; a move under 4 px is a plain click; at 650 px wide only the `below` zone shows
-- [ ] T020 [US1] Create crates/qd/src/ui/dock.js: `init(set)`; `pointerdown` on `#srcpane .srcbar` unless `e.target.closest('button, input, select, a')`; after 4 px `setPointerCapture`, add `main.docking`, show the zones; `pointermove` sets `.over` from `document.elementsFromPoint`; `pointerup` over a zone calls `set(place)` if it differs; Esc, `pointercancel` and `lostpointercapture` cancel; zones hidden on every end
-- [ ] T021 [US1] In dock.js: place the zones from the live rects each time a drag starts: `far-left` a 64 px strip at `<main>`'s left edge, `left` a strip at the stage's left edge, `right` at `<main>`'s right edge, `below` a strip along the stage's bottom; only `below` when `matchMedia('(max-width: 700px)')` matches; labels "Before the slide list", "Beside the slide list", "Right of the slide", "Below the slide"
-- [ ] T022 [US1] Add `<div id="dock-zones" hidden></div>` to crates/qd/src/ui/index.html; serve `/ui/dock.js` the way the other modules are embedded in crates/qd/src/server.rs (`include_str`)
-- [ ] T023 [US1] In crates/qd/src/ui/editor.js: `dock.init((place) => settings.set({ 'source.side': place }))`
-- [ ] T024 [US1] In crates/qd/src/ui/editor.css: `#dock-zones` fixed, `pointer-events: none` on the container; zones `color-mix` of `--accent` with a dashed `--accent` border and the label centred, `.over` stronger; `main.docking { user-select: none; cursor: grabbing }`; `#srcpane .srcbar { cursor: grab }` on its empty part; check light, dark and `hc` themes (FR-011)
+- [x] T018 [US1] Browser tests in crates/qd/tests/onslide.rs at 1280×800: `press_and_move` from the "Source" label to the middle of each `#dock-zones > [data-place]` sets `source.side` to that place and moves the pane; during the move `#dock-zones` shows four zones with labels and the one under the pointer has `.over`; after release it is hidden
+- [x] T019 [US1] Browser tests: a drag released outside any zone, and one ended with Esc, leave `source.side` unchanged; pressing on "Full width" and moving starts no drag and the button still toggles; a move under 4 px is a plain click; at 650 px wide only the `below` zone shows
+- [x] T020 [US1] Create crates/qd/src/ui/dock.js: `init(set)`; `pointerdown` on `#srcpane .srcbar` unless `e.target.closest('button, input, select, a')`; after 4 px `setPointerCapture`, add `main.docking`, show the zones; `pointermove` sets `.over` from `document.elementsFromPoint`; `pointerup` over a zone calls `set(place)` if it differs; Esc, `pointercancel` and `lostpointercapture` cancel; zones hidden on every end
+- [x] T021 [US1] In dock.js: place the zones from the live rects each time a drag starts: `far-left` a 64 px strip at `<main>`'s left edge, `left` a strip at the stage's left edge, `right` at `<main>`'s right edge, `below` a strip along the stage's bottom; only `below` when `matchMedia('(max-width: 700px)')` matches; labels "Before the slide list", "Beside the slide list", "Right of the slide", "Below the slide"
+- [x] T022 [US1] Add `<div id="dock-zones" hidden></div>` to crates/qd/src/ui/index.html; serve `/ui/dock.js` the way the other modules are embedded in crates/qd/src/server.rs (`include_str`)
+- [x] T023 [US1] In crates/qd/src/ui/editor.js: `dock.init((place) => settings.set({ 'source.side': place }))`
+- [x] T024 [US1] In crates/qd/src/ui/editor.css: `#dock-zones` fixed, `pointer-events: none` on the container; zones `color-mix` of `--accent` with a dashed `--accent` border and the label centred, `.over` stronger; `main.docking { user-select: none; cursor: grabbing }`; `#srcpane .srcbar { cursor: grab }` on its empty part; check light, dark and `hc` themes (FR-011)
 
 ## Phase 6: Polish
 
-- [ ] T025 [P] README.md (the `qd settings set source.side` line near 127) and skills/quartz-deck/SKILL.md: the four places and the drag, one or two sentences
-- [ ] T026 Run quickstart.md in the browser pane; final constitution re-check in plan.md; `/pr-audit`, then open PR 2
+- [x] T025 [P] README.md (the `qd settings set source.side` line near 127) and skills/quartz-deck/SKILL.md: the four places and the drag, one or two sentences
+- [x] T026 Run quickstart.md in the browser pane; final constitution re-check in plan.md; `/pr-audit`, then open PR 2
 
 ## Dependencies
 

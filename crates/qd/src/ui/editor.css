@@ -138,7 +138,7 @@ nav ol { list-style: none; margin: 0; padding: 8px; }
 /* the slide list (spec 008 US1): thumbnails, a drag you can see */
 nav li { position: relative; border-radius: 8px; transition: transform 120ms ease; touch-action: none; }
 nav li + li { margin-top: 8px; }
-body.dragging-slide, body.dragging-slide * { cursor: grabbing !important; user-select: none; }
+body:is(.dragging-slide, .docking), body:is(.dragging-slide, .docking) * { cursor: grabbing !important; user-select: none; }
 nav li.dragging { opacity: 0; }
 nav li > button:first-child { all: unset; box-sizing: border-box; display: block; width: 100%; padding: 4px; border-radius: 8px;
   cursor: default; }
@@ -394,6 +394,13 @@ main.source-full:has(> #splitter[aria-orientation=horizontal]) > #srcpane { heig
   main[data-source] > #srcpane { order: 3; }
   main[data-source] > #panel { order: 4; }
 }
+/* dragging it by the title bar (spec 022): the zones, the one under the pointer stronger */
+#srcpane .srcbar { cursor: grab; }
+#srcpane .srcbar :is(button, .kernel) { cursor: auto; }
+#dock-zones { position: fixed; inset: 0; z-index: 40; pointer-events: none; }
+#dock-zones > div { position: fixed; display: grid; place-items: center; padding: 8px; text-align: center; font-size: 12px; font-weight: 600;
+  color: var(--accent); border: 2px dashed var(--accent); border-radius: 8px; background: color-mix(in srgb, var(--accent) 12%, transparent); }
+#dock-zones > .over { color: var(--accent-text); background: color-mix(in srgb, var(--accent) 70%, transparent); border-style: solid; }
 #srcpane .srcbar { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
 #srcpane .srcbar .hint { color: var(--muted); margin-right: auto; }
 #srcpane .srcwrap { position: relative; flex: 1; overflow: hidden; min-height: 0; }
