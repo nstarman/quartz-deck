@@ -1065,8 +1065,8 @@ function onKey(e) {
   if (menuOpen()) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeMenu(); } return; }
   if (state.session || editing()) return; // edits and form fields handle their own keys
   if (document.querySelector('dialog[open]')) return; // a sheet or dialog has the keys, not the slide behind it
-  // a focused button or tab takes Enter and Space itself; Backspace there deletes nothing
-  if (e.target.closest?.('button, [role=tab]') && ['Enter', ' ', 'Backspace', 'Delete'].includes(e.key)) return;
+  // a focused button or tab (not the slide list's, whose keys are actions) presses itself on Enter and Space
+  if (e.target.closest?.('button, [role=tab]') && !e.target.closest('nav') && ['Enter', ' '].includes(e.key)) return;
   // every other key is an action from the list (spec 007): the selected element first, then the slide
   // a diagram's selected box counts as an element (spec 015)
   keys.dispatch(e, state.sel || dot.selected() ? ['element', 'slide'] : [e.target.closest?.('nav') ? 'slides' : 'slide']);
