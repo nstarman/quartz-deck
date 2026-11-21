@@ -6333,3 +6333,45 @@ async fn open_head_deleted_alone() {
     )
     .await;
 }
+
+/// Keys in an open dialog stay in it, and the element panel's Apply checks the
+/// element it was opened on: a paragraph added above it elsewhere is a conflict,
+/// not an edit to whatever moved into its place.
+#[tokio::test(flavor = "multi_thread")]
+async fn dialogs_and_panels_guard_the_deck() {
+    let Some(ed) = Ed::open(P2).await else {
+        return;
+    };
+    ed.go("a").await;
+    ed.select("[data-qd=\"a/0\"] p").await;
+    ed.eval("import('/ui/sheet.js').then((m) => { m.ask({ title: 'Sure?' }); })")
+        .await;
+    ed.wait("document.querySelector('dialog.sheet[open]') != null")
+        .await;
+    ed.key("Backspace", "Backspace", 8, 0).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(
+        ed.file().contains("First para."),
+        "Backspace in a dialog deleted the selection"
+    );
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("!document.querySelector('dialog.sheet[open]')")
+        .await;
+
+    ed.menu("View", "Properties panel").await;
+    ed.wait("document.querySelector('form.element-form') != null")
+        .await;
+    ed.eval("document.querySelector('form.element-form').md.focus()")
+        .await; // typing in it
+    let outside = ed.file().replace("First para.", "New para.\n\nFirst para.");
+    std::fs::write(ed.dir.path().join("deck.qmd"), &outside).unwrap();
+    tokio::time::sleep(Duration::from_millis(800)).await; // the editor hears of the change
+    ed.eval("(() => { const f = document.querySelector('form.element-form'); f.md.value = 'Changed.'; f.requestSubmit(); })()")
+        .await;
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    assert_eq!(
+        ed.file(),
+        outside,
+        "the panel's Apply overwrote another element"
+    );
+}

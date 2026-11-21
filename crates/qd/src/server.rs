@@ -1246,6 +1246,13 @@ pub struct Session {
 /// Bind, then call `on_ready` (to print the URL) and serve until Ctrl-C.
 pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result<()> {
     crate::render::quarto()?;
+    // two servers on one deck would share (and delete) each other's session, preview and overlay
+    if let Ok(v) = running(&store) {
+        return Err(QdError::Conflict(format!(
+            "this deck is already open in qd serve at {}",
+            v["url"].as_str().unwrap_or("?")
+        )));
+    }
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
@@ -1367,6 +1374,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
                 tokio::select! {
                     _ = tokio::signal::ctrl_c() => {}
                     _ = app.stop.notified() => {}
+                    _ = closed() => {}
                 }
                 stopping.notify_one();
             }
@@ -1387,6 +1395,22 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
         let _ = std::fs::remove_file(&session_file);
         res.map_err(QdError::Io)
     })
+}
+
+/// SIGTERM or SIGHUP (a kill, a closed terminal): stop as cleanly as on Ctrl-C.
+async fn closed() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        if let (Ok(mut t), Ok(mut h)) = (
+            signal(SignalKind::terminate()),
+            signal(SignalKind::hangup()),
+        ) {
+            tokio::select! { _ = t.recv() => {} _ = h.recv() => {} }
+            return;
+        }
+    }
+    std::future::pending::<()>().await
 }
 
 /// The session file of the running server for this deck (`url`, `port`,

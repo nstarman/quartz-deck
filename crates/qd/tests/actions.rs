@@ -207,8 +207,8 @@ const WIDGET_KEYS: &[(&str, usize, &str)] = &[
     ),
     (
         "editor.js",
-        8,
-        "form submit, menu close, edit-session mechanics, splitter",
+        9,
+        "form submit, menu close, edit-session mechanics, splitter, a focused button keeping Enter/Space",
     ),
 ];
 

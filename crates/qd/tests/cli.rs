@@ -1444,3 +1444,26 @@ fn dup_several() {
     e.ok(&["dup", "b"]);
     assert_eq!(outline(&e.ok(&["slides"])).len(), 5);
 }
+
+/// A VS Code copy left by a server that died is not the deck: edits go to the .qmd.
+#[test]
+fn stale_overlay_is_dropped() {
+    let e = Env::new();
+    let st = e.store();
+    st.attach("## Stale\n\nold copy\n").unwrap();
+    let id = e.ok(&["slides"])["slides"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_ne!(id, "stale", "the leftover copy was read as the deck");
+    e.ok(&["title", &id, "Fresh"]);
+    assert!(e.text().contains("Fresh"));
+    assert!(!st.attached());
+}
+
+/// Text ending in a non-ASCII character is shown, not a crash.
+#[test]
+fn non_ascii_end_of_text() {
+    let e = Env::with("## A {#a}\n\nCafé\n");
+    assert_eq!(e.ok(&["show", "a"])["slide"]["id"], "a");
+}

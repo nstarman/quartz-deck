@@ -128,13 +128,14 @@ async function fetchMeta() {
  * Run one CLI op. Returns the result object, or null after reporting the error.
  * `fileExpect: false` skips the whole-file version check (on-slide saves check
  * just their element with `expect-text`, so edits elsewhere don't block them).
+ * `expect` is the version a form was opened on (default: the latest one seen).
  */
-async function op(name, args = {}, { fileExpect = true } = {}) {
+async function op(name, args = {}, { fileExpect = true, expect = state.version } = {}) {
   status('Saving…', true);
   const res = await fetch('/api/op', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-QD-Token': run.token },
-    body: JSON.stringify({ op: name, args, ...(fileExpect ? { expect: state.version } : {}) }),
+    body: JSON.stringify({ op: name, args, ...(fileExpect ? { expect } : {}) }),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -758,7 +759,8 @@ async function renderPanel() {
   f.body.value = blockOfBody(slide);
   f.bgpick.addEventListener('input', () => { f.bg.value = f.bgpick.value; });
   f.addEventListener('reset', (e) => { e.preventDefault(); renderPanel(); });
-  f.addEventListener('submit', (e) => { e.preventDefault(); applySlide(slide, f); });
+  const version = state.version; // what the form shows; a change elsewhere meanwhile is a conflict
+  f.addEventListener('submit', (e) => { e.preventDefault(); applySlide(slide, f, version); });
   view.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => slideAction(b.dataset.act, slide)));
   const addBox = $('form.add-box', view);
   addBox.addEventListener('submit', (e) => {
@@ -790,11 +792,13 @@ async function renderTitlePanel() {
   panel.replaceChildren(view);
 }
 
-async function applySlide(slide, f) {
+async function applySlide(slide, f, version) {
   let target = slide.id;
+  let expect = version; // then each op of ours moves it on
+  const step = async (name, args) => { const r = await op(name, args, { expect }); if (r) expect = state.version; return r; };
   const title = f.title.value.trim();
   if (title !== (slide.title || '')) {
-    const r = await op('title', { slide: target, text: title });
+    const r = await step('title', { slide: target, text: title });
     if (!r) return;
     target = r.target;
   }
@@ -810,12 +814,12 @@ async function applySlide(slide, f) {
   const cls = [...after].filter((c) => !before.has(c));
   const uncls = [...before].filter((c) => !after.has(c));
   if (attr.length || unset.length || cls.length || uncls.length) {
-    const r = await op('set', { slide: target, attr, unset, class: cls, unclass: uncls });
+    const r = await step('set', { slide: target, attr, unset, class: cls, unclass: uncls });
     if (!r) return;
     target = r.target;
   }
   if (f.body.value.trim() !== blockOfBody(slide).trim()) {
-    const r = await op('body', { slide: target, md: f.body.value });
+    const r = await step('body', { slide: target, md: f.body.value });
     if (!r) return;
   }
   await fetchDeck();
@@ -860,7 +864,7 @@ async function renderElementPanel() {
   f.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (f.md.value.trim() === block.text.trim()) return;
-    const r = await op('edit', { element: ref, md: f.md.value });
+    const r = await op('edit', { element: ref, md: f.md.value, 'expect-text': block.hash }, { fileExpect: false });
     if (r) { await fetchDeck(); await renderPanel(); }
   });
   f.md.addEventListener('keydown', (e) => {
@@ -868,6 +872,7 @@ async function renderElementPanel() {
   });
   $('[data-act=deselect]', view).addEventListener('click', () => select(null));
   if (block.kind === 'box') {
+    const expect = state.version; // what the form shows; a change elsewhere meanwhile is a conflict
     const g = $('form.geom-form', view);
     g.hidden = false;
     const el = elOf(ref);
@@ -879,11 +884,11 @@ async function renderElementPanel() {
     g.height.value = val('height', r?.h);
     g.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const res = await op('box resize', { box: ref, size: `${g.width.value},${g.height.value}`, at: `${g.left.value},${g.top.value}` });
+      const res = await op('box resize', { box: ref, size: `${g.width.value},${g.height.value}`, at: `${g.left.value},${g.top.value}` }, { expect });
       if (res) { await fetchDeck(); await renderPanel(); }
     });
     $('[data-act=rmbox]', g).addEventListener('click', async () => {
-      const res = await op('box rm', { box: ref });
+      const res = await op('box rm', { box: ref }, { expect });
       if (res) { await select(null); await fetchDeck(); }
     });
   }
@@ -1059,6 +1064,9 @@ function onKey(e) {
   // (and only that: an edit under a menu opened with the mouse stays open, one level per Esc)
   if (menuOpen()) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeMenu(); } return; }
   if (state.session || editing()) return; // edits and form fields handle their own keys
+  if (document.querySelector('dialog[open]')) return; // a sheet or dialog has the keys, not the slide behind it
+  // a focused button or tab (not the slide list's, whose keys are actions) presses itself on Enter and Space
+  if (e.target.closest?.('button, [role=tab]') && !e.target.closest('nav') && ['Enter', ' '].includes(e.key)) return;
   // every other key is an action from the list (spec 007): the selected element first, then the slide
   // a diagram's selected box counts as an element (spec 015)
   keys.dispatch(e, state.sel || dot.selected() ? ['element', 'slide'] : [e.target.closest?.('nav') ? 'slides' : 'slide']);
@@ -1346,12 +1354,15 @@ async function saveSession() {
   }
   if (md === s.source) { endSession(s, false); return; }
   s.saving = true;
+  const editable = s.root.contentEditable;
+  s.root.contentEditable = 'false'; // text typed now would be lost: it isn't in this save
   let r;
   if (s.kind === 'block') r = await op('edit', { element: s.ref, md, 'expect-text': s.hash }, { fileExpect: false });
   else if (s.kind === 'title') r = await op('title', { slide: s.slide, text: md, 'expect-text': s.hash }, { fileExpect: false });
   else r = await op('meta set', { key: s.key, value: JSON.stringify(md) }, { fileExpect: false });
   s.saving = false;
   if (!r) {
+    s.root.contentEditable = editable;
     if (op.lastError?.code === 'E_CONFLICT') { await conflict(s, md, op.lastError.details); return; }
     s.failed = true;
     s.root.focus();
@@ -1433,7 +1444,7 @@ async function beginSlideSource(sec, draft = null) {
   if (!slide || slide.opaque || state.session) return false;
   await fetchDeck(); // the save checks the whole file against this version
   const text = blockOfBody(slide);
-  startSourceSession({ kind: 'slide', mode: 'source', root: sec, slide: slide.id, source: text }, draft ?? text);
+  startSourceSession({ kind: 'slide', mode: 'source', root: sec, slide: slide.id, source: text, version: state.version }, draft ?? text);
   return true;
 }
 
@@ -1496,7 +1507,7 @@ async function saveSource(s) {
   if (md.trim() === s.source.trim()) { endSession(s, false); return; }
   s.saving = true;
   const r = s.kind === 'slide'
-    ? await op('body', { slide: s.slide, md })
+    ? await op('body', { slide: s.slide, md }, { expect: s.version })
     : await op('edit', { element: s.ref, md, 'expect-text': s.hash }, { fileExpect: false });
   s.saving = false;
   if (!r) {
