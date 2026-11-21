@@ -2416,6 +2416,13 @@ async fn menu_bar_runs_every_action() {
         .await;
 }
 
+/// JS that picks `v` for setting `key` in the Settings window, as the person would.
+fn choose(key: &str, v: &str) -> String {
+    format!(
+        "(() => {{ const s = document.getElementById('set-{key}'); s.value = {v:?}; s.dispatchEvent(new Event('change')); }})()"
+    )
+}
+
 /// Spec 007 US2 (T013): settings apply at once, are the person's (the CLI sees
 /// them, and changes there reach the open editor), and stick: another deck on
 /// a new server opens with the same settings and layout.
@@ -2426,11 +2433,6 @@ async fn settings_apply_live_and_stick() {
     let theme = "document.documentElement.dataset.theme";
     ed.key(",", "Comma", 188, 2).await; // ⌘, (Ctrl+, works too)
     ed.wait("document.querySelector('#settings').open").await;
-    let choose = |key: &str, v: &str| {
-        format!(
-            "(() => {{ const s = document.getElementById('set-{key}'); s.value = {v:?}; s.dispatchEvent(new Event('change')); }})()"
-        )
-    };
     ed.eval(&choose("source.side", "right")).await;
     ed.wait(&format!("{side} === 'right'")).await;
     ed.eval(&choose("theme", "dark")).await;
@@ -6475,10 +6477,11 @@ async fn resting_pointer_keeps_menu_focus() {
 // ---------- spec 022: the source pane's place ----------
 
 /// `[left, top, right, bottom]` of an element of the editor.
-const RECT: &str = "((s) => { const r = document.querySelector(s).getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; })";
-
 async fn rect(ed: &Ed, sel: &str) -> [f64; 4] {
-    serde_json::from_value(ed.eval(&format!("{RECT}({sel:?})")).await).unwrap()
+    let js = format!(
+        "(() => {{ const r = document.querySelector({sel:?}).getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; }})()"
+    );
+    serde_json::from_value(ed.eval(&js).await).unwrap()
 }
 
 /// Set `source.side` the way the CLI and Settings do, and wait for the layout.
@@ -6537,8 +6540,7 @@ async fn source_dock_places() {
     // the Settings window: the keyboard way
     ed.key(",", "Comma", 188, 2).await;
     ed.wait("document.querySelector('#settings').open").await;
-    ed.eval("(() => { const s = document.getElementById('set-source.side'); s.value = 'far-left'; s.dispatchEvent(new Event('change')); })()")
-        .await;
+    ed.eval(&choose("source.side", "far-left")).await;
     ed.wait("document.querySelector('main').dataset.source === 'far-left'")
         .await;
     ed.key("Escape", "Escape", 27, 0).await;
@@ -6586,8 +6588,7 @@ async fn source_dock_splitter() {
     assert_eq!(ed.eval(orient).await, json!("horizontal"));
     let h = |r: [f64; 4]| r[3] - r[1];
     let w = |r: [f64; 4]| r[2] - r[0];
-    let s = rect(&ed, "#splitter").await;
-    let (x, y) = ((s[0] + s[2]) / 2.0, (s[1] + s[3]) / 2.0);
+    let (x, y) = ed.editor_point("#splitter", None).await;
     let before = h(rect(&ed, "#srcpane").await);
     ed.drag((x, y), (x, y - 60.0)).await;
     let after = h(rect(&ed, "#srcpane").await);
@@ -6617,8 +6618,7 @@ async fn source_dock_splitter() {
     assert_eq!(ed.eval(orient).await, json!("vertical"));
     let side = w(rect(&ed, "#srcpane").await);
     place(&ed, "far-left").await;
-    let s = rect(&ed, "#splitter").await;
-    let (x, y) = ((s[0] + s[2]) / 2.0, (s[1] + s[3]) / 2.0);
+    let (x, y) = ed.editor_point("#splitter", None).await;
     ed.drag((x, y), (x + 40.0, y)).await;
     let wider = w(rect(&ed, "#srcpane").await);
     assert!(

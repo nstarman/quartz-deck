@@ -311,12 +311,17 @@ mod tests {
 
         let v = set(
             &p,
-            &m(json!({"source.side": "right", "ui.source_width": 420})),
+            &m(json!({"source.side": "right", "ui.source_width": 420, "ui.source_height": 300})),
         )
         .unwrap();
         assert_eq!(
-            (&v["source.side"], &v["theme"], &v["ui.source_width"]),
-            (&json!("right"), &json!("dark"), &json!(420))
+            (
+                &v["source.side"],
+                &v["theme"],
+                &v["ui.source_width"],
+                &v["ui.source_height"]
+            ),
+            (&json!("right"), &json!("dark"), &json!(420), &json!(300))
         );
         let stored =
             || -> Value { serde_json::from_str(&fs::read_to_string(&p).unwrap()).unwrap() };
@@ -340,10 +345,6 @@ mod tests {
                 .unwrap_err()
                 .code(),
             "E_INVALID_SETTING"
-        );
-        assert_eq!(
-            set(&p, &m(json!({"ui.source_height": 300}))).unwrap()["ui.source_height"],
-            300
         );
 
         let v = reset(&p).unwrap();

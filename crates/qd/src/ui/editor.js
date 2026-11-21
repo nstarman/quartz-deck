@@ -1725,12 +1725,12 @@ function setSource(open, remember) {
 const splitter = $('#splitter');
 let sizeTimer = null;
 /** The pane's width beside the slide, or its height below it: each remembered apart (spec 022). */
-const setSize = (px, remember = true) => {
+const setSize = (px) => {
   const across = vertical();
   const room = across ? innerWidth - 320 : innerHeight - 160;
   mainEl.style.setProperty(across ? '--srcw' : '--srch', Math.max(across ? 240 : 120, Math.min(px, room)) + 'px');
   clearTimeout(sizeTimer); // one write once the drag pauses
-  if (remember) sizeTimer = setTimeout(() => settings.set({ [across ? 'ui.source_width' : 'ui.source_height']: Math.round(px) }), 300);
+  sizeTimer = setTimeout(() => settings.set({ [across ? 'ui.source_width' : 'ui.source_height']: Math.round(px) }), 300);
 };
 // below the slide (its place, or any place on a narrow window) the splitter runs across
 const narrow = matchMedia('(max-width: 700px)');

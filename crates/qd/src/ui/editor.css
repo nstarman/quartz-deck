@@ -381,17 +381,18 @@ main[data-source=below] > #panel { grid-column: 4; }
 main[data-source=below] > #stage { grid-column: 3; grid-row: 1; }
 main[data-source=below] > #splitter { grid-column: 3; grid-row: 2; }
 main[data-source=below] > #srcpane { grid-column: 3; grid-row: 3; }
-main[data-source=below].source-full > #srcpane { grid-row: 1 / -1; height: auto; }
-/* below the slide, and every place on a narrow window: as wide as the slide, the splitter across */
-main[data-source=below] > #srcpane { width: auto; min-width: 0; height: var(--srch, 35vh); border-right: 0; }
-main[data-source=below] > #splitter { width: auto; height: 6px; cursor: row-resize; }
+main[data-source=below].source-full > #srcpane { grid-row: 1 / -1; }
+/* below the slide, and every place on a narrow window (editor.js sets the splitter's
+   orientation): as wide as the slide, the splitter across */
+main:has(> #splitter[aria-orientation=horizontal]) > #srcpane { width: auto; min-width: 0; height: var(--srch, 35vh); border-right: 0; }
+main.source-full:has(> #splitter[aria-orientation=horizontal]) > #srcpane { height: auto; }
+#splitter[aria-orientation=horizontal] { width: auto; height: 6px; cursor: row-resize; }
 @media (max-width: 700px) {
   main[data-source] { display: flex; }
   main[data-source] > #stage { order: 1; }
-  main[data-source] > #splitter { order: 2; width: auto; height: 6px; cursor: row-resize; }
-  main[data-source] > #srcpane { order: 3; width: auto; min-width: 0; height: var(--srch, 35vh); border-right: 0; }
+  main[data-source] > #splitter { order: 2; }
+  main[data-source] > #srcpane { order: 3; }
   main[data-source] > #panel { order: 4; }
-  main.source-full[data-source] > #srcpane { flex: 1; height: auto; }
 }
 #srcpane .srcbar { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
 #srcpane .srcbar .hint { color: var(--muted); margin-right: auto; }
