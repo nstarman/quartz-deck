@@ -6754,6 +6754,13 @@ async fn source_dock_drag() {
                 .await,
             json!(["Before the slide list", "Beside the slide list", "Right of the slide", "Below the slide"])
         );
+        // opaque, so each label reads over the slide in every theme
+        assert_eq!(
+            ed.eval("[...document.querySelectorAll('#dock-zones > div')].every((z) => !/\\/|rgba|transparent/.test(getComputedStyle(z).backgroundColor))")
+                .await,
+            true,
+            "{p}: a zone shows through"
+        );
         let to = ed
             .editor_point(&format!("#dock-zones > [data-place={p}]"), None)
             .await;
