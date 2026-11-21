@@ -5,6 +5,9 @@ use quartz_deck::deck::Deck;
 use quartz_deck::error::QdError;
 use quartz_deck::ops::{self, Depth, Pos};
 
+mod common;
+use common::have;
+
 /// The file after indenting (`In`) or outdenting `slide`, and the slides whose level changed.
 fn re(src: &str, slide: &str, depth: Depth) -> (String, Vec<String>) {
     let d = Deck::parse(src.into());
@@ -229,4 +232,79 @@ fn navigation_refuses_an_unknown_mode() {
         ops::navigation(&d, "sideways"),
         Err(QdError::InvalidArg(_))
     ));
+}
+
+// ---------- SC-004: Quarto renders the groups the list shows ----------
+
+/// The stacks of a rendered reveal.js deck: each top-level `<section>`'s slide
+/// ids (a lone slide, or a vertical stack's), the title slide left out.
+fn stacks(html: &str) -> Vec<Vec<String>> {
+    let slides = &html[html.find("<div class=\"slides\">").unwrap()..];
+    let tag = regex::Regex::new(r#"</section>|<section\b[^>]*?(?:\sid="([^"]*)")?[^>]*>"#).unwrap();
+    let (mut out, mut depth) = (Vec::<Vec<String>>::new(), 0);
+    for c in tag.captures_iter(slides) {
+        if c[0].starts_with("</") {
+            depth -= 1;
+            continue;
+        }
+        depth += 1;
+        let id = c.get(1).map(|m| m.as_str().to_string());
+        match (depth, out.last_mut()) {
+            (1, _) => out.push(id.into_iter().collect()),
+            (_, Some(stack)) => stack.extend(id),
+            _ => {}
+        }
+    }
+    out.retain(|s| s.first().is_some_and(|id| id != "title-slide"));
+    out
+}
+
+/// What the list shows: each head with its sub-slides, each top-level slide alone.
+fn listed(d: &Deck) -> Vec<Vec<String>> {
+    let mut out: Vec<Vec<String>> = Vec::new();
+    for s in &d.slides {
+        match s.parent {
+            Some(_) => out.last_mut().unwrap().push(s.id.clone()),
+            None => out.push(vec![s.id.clone()]),
+        }
+    }
+    out
+}
+
+#[test]
+fn quarto_stacks_match_the_groups() {
+    if !have("quarto") {
+        return;
+    }
+    let d = Deck::parse("---\ntitle: T\nformat: revealjs\n---\n\n## Intro {#intro}\n\n# Part A {#part-a}\n\n## A1 {#a1}\n\n## A2 {#a2}\n\n# Part B {#part-b}\n\n## B1 {#b1}\n".into());
+    assert_eq!(
+        listed(&d),
+        [
+            vec!["intro"],
+            vec!["part-a", "a1", "a2"],
+            vec!["part-b", "b1"]
+        ]
+    );
+    for mode in ["linear", "vertical"] {
+        let text = ops::apply(&d.text, &ops::navigation(&d, mode).unwrap()).unwrap();
+        let t = common::deck(&text);
+        let out = std::process::Command::new("quarto")
+            .args(["render", "talk.qmd"])
+            .current_dir(t.path())
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let html = std::fs::read_to_string(t.path().join("talk.html")).unwrap();
+        assert_eq!(stacks(&html), listed(&Deck::parse(text)), "{mode}");
+        // the mode reaches reveal.js (Quarto's vertical is reveal.js's default)
+        let want = if mode == "vertical" { "default" } else { mode };
+        assert!(
+            html.contains(&format!("navigationMode: '{want}'")),
+            "{mode}"
+        );
+    }
 }

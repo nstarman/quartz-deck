@@ -46,3 +46,57 @@ fn outlines() {
         insta::assert_snapshot!(name, Deck::parse(text).outline());
     }
 }
+
+/// Spec 018 SC-003: on every corpus deck, each indent and outdent qd allows
+/// changes only the headings of the slides it reports, and leaves the slides,
+/// their ids and every other byte as they were.
+#[test]
+fn indent_and_outdent_touch_only_headings() {
+    use quartz_deck::ops::{self, Depth};
+    let mut tried = 0;
+    for (name, text) in corpus() {
+        let d = Deck::parse(text.clone());
+        for s in &d.slides {
+            for depth in [Depth::In, Depth::Out] {
+                let Ok((p, changed)) = ops::relevel(&d, &s.id, depth) else {
+                    continue; // refused, with its reason (tests/groups.rs)
+                };
+                tried += 1;
+                let heads: Vec<_> = changed
+                    .iter()
+                    .map(|id| d.slide(id).unwrap().head.unwrap())
+                    .collect();
+                for (span, _) in &p.replacements {
+                    assert!(
+                        heads
+                            .iter()
+                            .any(|h| h.start <= span.start && span.end <= h.end),
+                        "{name}: {} {depth:?} edits outside the changed headings",
+                        s.id
+                    );
+                }
+                let after = Deck::parse(ops::apply(&text, &p).unwrap());
+                // the same slides; a `---` slide that became a head gets an id from its
+                // (empty) heading, so only its position reference `@N` may change
+                assert_eq!(
+                    after.slides.len(),
+                    d.slides.len(),
+                    "{name}: {} {depth:?}",
+                    s.id
+                );
+                for (a, b) in after.slides.iter().zip(&d.slides) {
+                    assert!(
+                        a.id == b.id || b.id.starts_with('@'),
+                        "{name}: {} became {}",
+                        b.id,
+                        a.id
+                    );
+                }
+            }
+        }
+    }
+    assert!(
+        tried > 20,
+        "the corpus exercised indent and outdent {tried} times"
+    );
+}

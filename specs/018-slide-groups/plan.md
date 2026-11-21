@@ -130,6 +130,15 @@ Each PR passes `/pr-audit`.
 - **Group commands** (R4): no `qd group …`; agents name the head and its
   sub-slides with the existing `qd move` and `qd rm`.
 
+**Final re-check after the build (T034, 2026-11-20)**: pass.
+- **I.** Groups follow Quarto's own sections and reveal.js's vertical stacks, checked by rendering made-up decks; the list's look and keys are our own. Tests use made-up decks only.
+- **II.** Groups are heading levels: indent and outdent change only the `#` marks (or a setext underline, or a `---` line), checked over the whole corpus (`indent_and_outdent_touch_only_headings`); `qd navigation` changes one front-matter line. Which groups are folded is view state in the deck's qd cache folder (`view.json`), never in the deck: `localStorage` was planned, but `qd serve` takes a new port each run and `localStorage` is per port.
+- **III.** Every edit is a command: `qd indent`, `qd outdent`, `qd move --indent/--outdent`, `qd dup` of several slides, `qd navigation`; `qd slides` reports `head`, `in`, `group_level` and `navigation_mode`; all in `qd schema`, `API_OPS`, the skill and the README. Folding is not an edit and has no command.
+- **IV.** Every change re-renders through the preview loop; folding never re-renders.
+- **V.** Ordinary ops with `--expect`, `--dry-run` and one undo step each; a drop that changes depth is one patch; opaque slides refuse.
+- **VI.** Core rules and patches have unit tests; each command a CLI test; each gesture a headless browser test; a Quarto render checks the stacks (`quarto_stacks_match_the_groups`). Some tests were written with their code rather than seen failing first; each PR says which.
+- **VII.** No new crates or modules: two fields in `deck.rs`, a few ops in `ops.rs`, the list in `list.js`, one small `/api/view` endpoint. Found along the way and fixed: a test-wait that panicked on a page reload, and menus whose focus a resting pointer could take.
+
 ## Complexity Tracking
 
 None: no principle is bent.
