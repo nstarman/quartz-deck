@@ -259,6 +259,17 @@ fn serve_renders_and_live_reloads() {
         .to_string();
     assert!(get(server.port, &html2).1.contains("Live Title"));
 
+    // an edit undone at once: what is shown is already rendered, so no render runs
+    let shown = std::fs::read_to_string(dir.join("deck.qmd")).unwrap();
+    std::fs::write(dir.join("deck.qmd"), shown.replace("Live Title", "Brief")).unwrap();
+    ev.wait("changed", Duration::from_secs(3))
+        .expect("changed event");
+    std::fs::write(dir.join("deck.qmd"), &shown).unwrap();
+    assert!(
+        ev.wait("rendering", Duration::from_secs(3)).is_none(),
+        "rendered again a deck it had just rendered"
+    );
+
     // an external editor writing a broken deck -> render_error, last good preview kept
     std::fs::write(dir.join("deck.qmd"), "---\ntitle: [unclosed\n---\n\n## X\n").unwrap();
     let err = ev

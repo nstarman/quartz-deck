@@ -171,8 +171,6 @@ export function makeList(api) {
     const li = el('li');
     li.dataset.id = s.id;
     li.dataset.anchor = s.anchor;
-    const cur = s.anchor === api.state.anchor || (!api.state.anchor && isTitle);
-    if (cur) li.classList.add('current');
     const b = el('button');
     b.type = 'button';
     li.append(b);
@@ -202,7 +200,6 @@ export function makeList(api) {
       b.setAttribute('aria-expanded', String(!shut));
       if (shut) meta.append(el('span', 'tag count', `+${subs}`));
     }
-    if (cur) b.setAttribute('aria-current', 'true');
     b.addEventListener('click', (e) => {
       if (justDragged || (!isTitle && pick(e, s.id))) return;
       api.state.sel = null;
@@ -244,19 +241,26 @@ export function makeList(api) {
     // under a press loses the click (the release lands on a new button)
     const old = new Map([...list.children].map((li) => [li.dataset.id, li]));
     const keep = (s, isTitle) => {
-      const sig = JSON.stringify([s, s.anchor === api.state.anchor || (!api.state.anchor && isTitle), isTitle && titleText(), folded.has(s.id), s.head && subsOf(s.id).length]);
-      const li = old.get(s.id);
-      if (li?.dataset.sig === sig) return li;
-      const fresh = item(s, isTitle);
-      fresh.dataset.sig = sig;
-      return fresh;
+      const { lines, ...drawn } = s; // where it sits in the file isn't drawn: an edit above it needn't rebuild it
+      const sig = JSON.stringify([drawn, isTitle && titleText(), folded.has(s.id), s.head && subsOf(s.id).length]);
+      let li = old.get(s.id);
+      if (li?.dataset.sig !== sig) {
+        li = item(s, isTitle);
+        li.dataset.sig = sig;
+      }
+      // the shown slide is marked in place, not by rebuilding its item
+      const cur = s.anchor === api.state.anchor || (!api.state.anchor && isTitle);
+      li.classList.toggle('current', cur);
+      if (cur) li.firstElementChild.setAttribute('aria-current', 'true'); else li.firstElementChild.removeAttribute('aria-current');
+      return li;
     };
     const items = deck.slides.map((s) => Object.assign(keep(s, false), { hidden: folded.has(s.in) }));
     if (deck.title_slide) items.unshift(keep({ id: 'title-slide', anchor: 'title-slide' }, true));
     // only what changed moves: an item already in its place isn't touched
-    items.forEach((li, i) => { if (list.children[i] !== li) list.insertBefore(li, list.children[i] ?? null); });
-    while (list.children.length > items.length) list.lastChild.remove();
-    Object.assign(nav, { scrollLeft, scrollTop });
+    let moved = false;
+    items.forEach((li, i) => { if (list.children[i] !== li) { list.insertBefore(li, list.children[i] ?? null); moved = true; } });
+    while (list.children.length > items.length) { list.lastChild.remove(); moved = true; }
+    if (moved) Object.assign(nav, { scrollLeft, scrollTop }); // writing it lays the whole list out: only when needed
     const current = list.querySelector('li.current');
     // only when the shown slide changed or moved (undo, an agent's edit): a redraw
     // must not scroll the list away from where the person scrolled it. On the next
