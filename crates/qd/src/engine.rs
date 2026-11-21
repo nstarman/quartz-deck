@@ -54,6 +54,8 @@ impl Engine {
 pub const FIG: [f64; 3] = [10.0, 5.0, 96.0];
 
 /// The languages of the deck's executable cells, in order of first use.
+/// Diagrams (`dot`, `mermaid`) aren't: Quarto draws them, no engine runs them,
+/// so a deck of diagrams and Python needn't ask `quarto inspect` (about 1 s).
 fn languages(d: &Deck) -> Vec<String> {
     let mut out: Vec<String> = vec![];
     for b in d
@@ -61,7 +63,7 @@ fn languages(d: &Deck) -> Vec<String> {
         .filter(|b| b.kind == crate::deck::BlockKind::Cell)
     {
         let l = crate::kernel::cell_lang(d, b).to_string();
-        if !out.contains(&l) {
+        if !out.contains(&l) && !matches!(l.as_str(), "dot" | "mermaid") {
             out.push(l);
         }
     }
@@ -195,6 +197,9 @@ mod tests {
             "---\njupyter:\n  kernelspec:\n    name: other\n---\n\n## A\n\n```{python}\n1\n```\n",
         );
         assert_eq!(local(&spec).unwrap().kernel.as_deref(), Some("other"));
+        // a diagram beside the Python doesn't need Quarto's answer
+        let drawn = deck("## A\n\n```{dot}\ndigraph { a -> b }\n```\n\n```{python}\n1\n```\n");
+        assert_eq!(local(&drawn).unwrap().language, "python");
         // anything else is Quarto's call
         assert_eq!(local(&deck("## A\n\n```{r}\n1\n```\n")), None);
         assert_eq!(

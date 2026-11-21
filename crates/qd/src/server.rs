@@ -98,6 +98,8 @@ struct App {
     tx: broadcast::Sender<Ev>,
     st: Mutex<St>,
     kick: Notify,
+    /// Render even when the deck and its outputs are what was last rendered (a references file changed).
+    force: AtomicBool,
     /// Required (`X-QD-Token`) to run code: only the editor page knows it (FR-015).
     token: String,
     /// The deck's live session, started on the first run.
@@ -1078,11 +1080,20 @@ async fn render_loop(app: Shared) {
         app.kick.notified().await;
         tokio::time::sleep(Duration::from_millis(150)).await;
         let Ok(d) = app.store.read() else { continue };
-        let _ = app.tx.send(Ev::Rendering);
         let outputs = Outputs::new(&app.store).report(&d);
-        let copy = preview_copy(&d, &outputs["cells"]);
         // what the render shows besides the deck's text: the editor reloads when it changes (spec 020)
         let shown_outputs = crate::deck::version_of(outputs["cells"].to_string().as_bytes());
+        // already rendered (an edit undone at once, a run that changed no output): say so, don't render
+        let now = Some((d.version.clone(), shown_outputs.clone()));
+        if !app.force.swap(false, Ordering::SeqCst) && {
+            let st = app.st.lock().unwrap();
+            st.error.is_none() && st.rendered == now
+        } {
+            let _ = app.tx.send(Ev::Rendered(d.version, shown_outputs));
+            continue;
+        }
+        let _ = app.tx.send(Ev::Rendering);
+        let copy = preview_copy(&d, &outputs["cells"]);
         let (path, out, a) = (app.store.path.clone(), app.out.clone(), app.clone());
         let res = tokio::task::spawn_blocking(move || {
             let closing = a.rendering.lock().unwrap();
@@ -1091,15 +1102,16 @@ async fn render_loop(app: Shared) {
             }
             render(&path, &copy, "preview", &out, true)
         })
-        .await;
+        .await
+        .unwrap_or_else(|join| Err(QdError::Io(std::io::Error::other(join))));
         let ev = match res {
-            Ok(Ok(_)) => {
+            Ok(_) => {
                 let mut st = app.st.lock().unwrap();
-                st.rendered = Some((d.version.clone(), shown_outputs.clone()));
+                st.rendered = now;
                 st.error = None;
                 Ev::Rendered(d.version, shown_outputs)
             }
-            Ok(Err(e)) => {
+            Err(e) => {
                 let msg = match &e {
                     QdError::Render(log) => log.clone(),
                     other => other.to_string(),
@@ -1107,7 +1119,6 @@ async fn render_loop(app: Shared) {
                 app.st.lock().unwrap().error = Some(msg.clone());
                 Ev::RenderError(msg)
             }
-            Err(join) => Ev::RenderError(join.to_string()),
         };
         let _ = app.tx.send(ev);
     }
@@ -1157,6 +1168,7 @@ fn watch(app: Shared) -> Result<notify::RecommendedWatcher> {
         }
         // the deck's references file changed alone (spec 014): render again
         if ev.paths.iter().any(|p| is_references(&a, p)) {
+            a.force.store(true, Ordering::SeqCst);
             let a = a.clone();
             rt.spawn(async move { a.kick.notify_one() });
             return;
@@ -1277,6 +1289,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
                 ..Default::default()
             }),
             kick: Notify::new(),
+            force: AtomicBool::new(false),
             token: token()?,
             kernel: Mutex::new(None),
             runs: AtomicU64::new(0),

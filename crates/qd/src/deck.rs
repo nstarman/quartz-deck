@@ -101,6 +101,8 @@ pub struct Deck {
     pub width: u32,
     pub height: u32,
     pub slides: Vec<Slide>,
+    /// Byte offsets of the text's newlines: a position's line without counting from the start.
+    newlines: Vec<usize>,
 }
 
 pub fn version_of(bytes: &[u8]) -> String {
@@ -471,14 +473,8 @@ fn yaml_u64(meta: &Yaml, key: &str) -> Option<u64> {
 impl Deck {
     /// 1-based line range `[first, last]` of a span (spec 004: source ↔ slide sync).
     pub fn lines(&self, span: Span) -> [usize; 2] {
-        // on bytes: a span can end inside a multi-byte character's last byte
-        let line = |pos: usize| {
-            self.text.as_bytes()[..pos]
-                .iter()
-                .filter(|&&b| b == b'\n')
-                .count()
-                + 1
-        };
+        // newlines before `pos`
+        let line = |pos: usize| self.newlines.partition_point(|&n| n < pos) + 1;
         [line(span.start), line(span.end.max(span.start + 1) - 1)]
     }
 
@@ -661,6 +657,7 @@ impl Deck {
             width,
             height,
             slides,
+            newlines: text.match_indices('\n').map(|(i, _)| i).collect(),
             text,
         }
     }
