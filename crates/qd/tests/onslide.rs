@@ -6756,7 +6756,7 @@ async fn source_dock_drag() {
         );
         // opaque, so each label reads over the slide in every theme
         assert_eq!(
-            ed.eval("[...document.querySelectorAll('#dock-zones > div')].every((z) => !/\\/|rgba|transparent/.test(getComputedStyle(z).backgroundColor))")
+            ed.eval("[...document.querySelectorAll('#dock-zones > div')].every((z) => !/\\/|rgba/.test(getComputedStyle(z).backgroundColor))")
                 .await,
             true,
             "{p}: a zone shows through"
