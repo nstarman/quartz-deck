@@ -6198,7 +6198,8 @@ async fn drag_sideways_sets_depth() {
 impl Ed {
     /// The middle of slide `id`'s row in the list, scrolled into view first.
     async fn row(&self, id: &str) -> (f64, f64) {
-        self.eval(&format!("document.querySelector('#slides li[data-id={id}]').scrollIntoView({{ block: 'center' }})"))
+        // until it is in view: a redraw of the list can scroll back to the shown slide
+        self.wait(&format!("(() => {{ const li = document.querySelector('#slides li[data-id={id}]'); const n = document.querySelector('nav').getBoundingClientRect(); const r = li.getBoundingClientRect(); if (r.top >= n.top && r.bottom <= n.bottom) return true; li.scrollIntoView({{ block: 'center' }}); return false; }})()"))
             .await;
         tokio::time::sleep(Duration::from_millis(200)).await;
         self.editor_point(&format!("#slides li[data-id={id}] > button"), None)
