@@ -6862,3 +6862,84 @@ async fn indent_and_title_paste_save() {
     .await;
     ed.wait("window.qdSession()?.draft === 'A and more'").await;
 }
+
+// ---------- spec 021: the diagram's source follows the cursor ----------
+
+const FOLLOW: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## Flow {#flow}\n\nIntro.\n\n```{dot}\ndigraph {\n  layout=neato; splines=ortho;\n  node [shape=box];\n  a [label=\"Data\", pos=\"0,1!\"];\n  b [label=\"Tool\", pos=\"2,1!\"];\n  c [label=\"Paper\", pos=\"2,0!\"];\n  a -> b -> c;\n}\n```\n";
+
+/// The source pane's caret `n` characters into `needle` (a keyboard move).
+fn caret_at(needle: &str, n: usize) -> String {
+    format!(
+        "(() => {{ const t = {PANE}; const i = t.value.indexOf({needle:?}) + {n}; t.focus(); t.setSelectionRange(i, i);
+          t.dispatchEvent(new KeyboardEvent('keyup', {{ key: 'ArrowDown' }})); }})()"
+    )
+}
+
+/// The `<title>`s of the diagram's elements outlined for the cursor, waited on until they're `want`.
+async fn followed(ed: &Ed, want: &[&str]) {
+    ed.wait(&format!(
+        "JSON.stringify([...document.querySelector('#preview').contentDocument.querySelectorAll('.qd-dot-cursor')].map((g) => g.querySelector('title')?.textContent)) === {:?}",
+        serde_json::to_string(want).unwrap()
+    ))
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn source_follow_outlines() {
+    let Some(ed) = Ed::open(FOLLOW).await else {
+        return;
+    };
+    ed.go("flow").await;
+    ed.wait("document.querySelector('#preview').contentDocument.querySelector('[data-qd-lang=dot] svg g.node') != null")
+        .await;
+    ed.select("[data-qd=\"flow/0\"]").await; // something else is selected, and stays so
+    ed.open_source().await;
+    for (needle, n, want) in [
+        ("a [label", 2, vec!["a"]),
+        ("b [label", 0, vec!["b"]),
+        ("a -> b -> c", 4, vec!["a->b"]),
+        ("a -> b -> c", 9, vec!["b->c"]),
+        ("a -> b -> c", 0, vec!["a->b", "b->c"]),
+        ("layout=neato", 3, vec![]),
+        ("a [label", 2, vec!["a"]),
+        ("Intro.", 2, vec![]),
+    ] {
+        ed.eval(&caret_at(needle, n)).await;
+        followed(&ed, &want).await;
+    }
+    assert_eq!(ed.eval(SEL).await, "flow/0", "the selection moved");
+    assert_eq!(
+        ed.eval("document.querySelector('#elbar').hidden").await,
+        false
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn source_follow_hover() {
+    let Some(ed) = Ed::open(FOLLOW).await else {
+        return;
+    };
+    ed.go("flow").await;
+    ed.wait("document.querySelector('#preview').contentDocument.querySelector('[data-qd-lang=dot] svg g.node') != null")
+        .await;
+    ed.open_source().await;
+    ed.eval(&caret_at("a [label", 2)).await;
+    followed(&ed, &["a"]).await;
+    // the pointer resting on c's line: c, until it leaves
+    let at = ed
+        .eval(&format!(
+            "(() => {{ const t = {PANE}; const line = t.value.slice(0, t.value.indexOf('c [label')).split('\\n').length - 1;
+              const r = document.querySelector('#srcpane .srcwrap pre').children[line].getBoundingClientRect();
+              return [r.left + 20, r.top + r.height / 2]; }})()"
+        ))
+        .await;
+    let (x, y) = (at[0].as_f64().unwrap(), at[1].as_f64().unwrap());
+    ed.mouse(DispatchMouseEventType::MouseMoved, (x, y), false)
+        .await;
+    followed(&ed, &["c"]).await;
+    ed.eval(&format!(
+        "{PANE}.dispatchEvent(new MouseEvent('mouseleave'))"
+    ))
+    .await;
+    followed(&ed, &["a"]).await;
+}

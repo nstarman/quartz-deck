@@ -59,7 +59,7 @@ Story 2.
 
 ## R4. The outline on the slide
 
-**Decision**: a class, `qd-dot-follow`, on the `<g class="node">`,
+**Decision**: a class, `qd-dot-cursor`, on the `<g class="node">`,
 `<g class="edge">` or `<g class="cluster">` of the cell's SVG in the
 preview. It is found with `nodeNamed` and `edgeNamed`, which `dot.js`
 already uses for selection, and a cluster by its `<title>`. Its look is a

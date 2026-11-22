@@ -192,22 +192,96 @@ export function reveal([first, last]) {
   syncScroll();
 }
 
+// ---------- a diagram's source follows the cursor (spec 021, research R5) ----------
+
+/** A `{dot}` cell: its opening fence line, its body, its closing fence (the editor's reload rule uses it too). */
+export const DOT_CELL = /^((`{3,})[ \t]*\{dot\b[^\n]*\n)([\s\S]*?)^\2[ \t]*$/gm;
+let followTimer = 0;
+let followSeq = 0; // an answer for an older cursor is dropped
+let hovering = false; // a resting pointer wins over the caret until it leaves, or the keyboard is used
+
+/** The `{dot}` cell around text position `pos`: its body, the position in it, and its fence's line; or null. */
+function dotAt(pos) {
+  for (const m of ta.value.matchAll(DOT_CELL)) {
+    const start = m.index + m[1].length;
+    if (pos >= start && pos <= start + m[3].length) {
+      return { body: m[3], offset: pos - start, line: ta.value.slice(0, m.index).split('\n').length };
+    }
+  }
+  return null;
+}
+
+/** Follow text position `pos` (the caret's, or the resting pointer's) a moment after it stops. */
+function follow(pos, wait = 60) {
+  clearTimeout(followTimer);
+  followTimer = setTimeout(async () => {
+    const n = ++followSeq;
+    const c = dotAt(pos);
+    const cell = c && (await api.dotCell(c.line));
+    if (n !== followSeq) return;
+    if (!cell) { api.unfollow(); return; }
+    // `dot at` counts bytes of the text as UTF-8
+    api.follow(cell, c.body, new TextEncoder().encode(c.body.slice(0, c.offset)).length);
+  }, wait);
+}
+
+function unfollow() {
+  clearTimeout(followTimer);
+  followSeq++;
+  api.unfollow();
+}
+
+/** The keyboard was used: the caret is what's followed again. */
+function followCaret() {
+  hovering = false;
+  follow(ta.selectionStart);
+}
+
+/** The text position under the pointer: a line from the coloured lines' boxes, a column from the font's width. */
+let charWidth = 0;
+function posAt(x, y) {
+  const lines = [...hl.children];
+  const i = lines.findIndex((l) => l.getBoundingClientRect().bottom > y);
+  if (i < 0) return null;
+  if (!charWidth) {
+    const ctx = document.createElement('canvas').getContext('2d');
+    ctx.font = getComputedStyle(ta).font;
+    charWidth = ctx.measureText('0').width;
+  }
+  const row = ta.value.split('\n');
+  if (i >= row.length) return null; // the colouring is a frame behind the text
+  const col = Math.max(0, Math.round((x - lines[i].getBoundingClientRect().left) / charWidth));
+  return row.slice(0, i).reduce((n, l) => n + l.length + 1, 0) + Math.min(col, row[i].length);
+}
+
 /** Caret line and selection → the editor's shared focus (spec 005). */
-function caretMoved() {
+function caretMoved(e) {
   const first = ta.value.slice(0, ta.selectionStart).split('\n').length;
   const text = ta.value.slice(ta.selectionStart, ta.selectionEnd);
   const line = first + text.split('\n').length - 1;
   api.onCaret({ line, first, last: line, text });
+  if (e?.key !== 'Escape') followCaret(); // Esc took the outline off: its keyup doesn't put it back
 }
 
 export function initPane(a) {
   api = a;
-  ta.addEventListener('input', () => { repaint(); schedule(); api.typed(); });
-  ta.addEventListener('blur', save);
+  ta.addEventListener('input', () => { repaint(); schedule(); api.typed(); followCaret(); });
+  ta.addEventListener('blur', () => { save(); if (!hovering) unfollow(); });
+  ta.addEventListener('mousemove', (e) => {
+    const pos = posAt(e.clientX, e.clientY);
+    if (pos === null) return;
+    hovering = true;
+    follow(pos, 300);
+  });
+  ta.addEventListener('mouseleave', () => {
+    hovering = false;
+    if (document.activeElement === ta) followCaret(); else unfollow();
+  });
   ta.addEventListener('scroll', syncScroll);
   ta.addEventListener('keyup', caretMoved);
   ta.addEventListener('click', caretMoved);
   ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') unfollow();
     keys.dispatch(e, ['source']); // only the source pane's own actions (⌘S, ⇧Enter)
     e.stopPropagation(); // the editor's slide shortcuts don't apply while typing source
   });

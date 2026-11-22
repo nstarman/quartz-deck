@@ -85,7 +85,7 @@ crates/qd/src/
     ├── dot.js          # follow(cell, text, offset): outline + #dot-peek pop-over
     ├── pane.js         # caret, typing and resting-pointer reports inside a {dot} fence
     ├── source.js       # the same from the cell editor on the slide (US3)
-    ├── editor.css      # .qd-dot-follow (in the preview's injected style), #dot-peek
+    ├── editor.css      # .qd-dot-cursor (in the preview's injected style), #dot-peek
     └── index.html      # #dot-peek
 crates/qd/tests/
 ├── dot.rs              # qd dot at

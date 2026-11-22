@@ -732,6 +732,15 @@ enum ArrowCmd {
 enum DotCmd {
     /// The diagram in a `{dot}` cell: boxes, arrows, settings, and whether qd can edit it
     Show { cell: String },
+    /// What is at a point of a diagram's text (as typed, saved or not): a box, an arrow, a cluster, a setting
+    At {
+        /// The cell's body (between its fences); - reads stdin
+        #[arg(long, allow_hyphen_values = true)]
+        text: String,
+        /// A byte offset in it
+        #[arg(long)]
+        at: usize,
+    },
     /// Place a box: its pinned position, in inches, snapped to 0.25 in
     Move {
         cell: String,
@@ -913,7 +922,7 @@ fn output_of(cmd: &str) -> &'static str {
             r#"show: {"ok","ref","from":[x,y],"to":[x,y],"control":[[x,y],...]|null,"options":{...},"editable":true} or {"ok","ref","editable":{"reason","at":{"line","column"}}}; list: {"ok","arrows":[<show>...]}"#
         }
         "dot" => {
-            r#"show: {"ok","kind":"dot","cell","directed","pinned","editable":true|{"reason","at":{"line","column"}},"settings":{...},"nodes":[{"name","label","look":{...},"url","image","spacer","pos":[x,y]|null,"pinned","size":{...},"locked"}],"edges":[{"from","to","index","attrs":{...},"locked"}]}; import: {"ok","cell","kind":"hand"|"graphviz","file","boxes":[{"name","label"}],"arrows":[{"from","to"}],"left_out":[{"what","at","reason"}],"notes":[...],"extension"?}"#
+            r#"show: {"ok","kind":"dot","cell","directed","pinned","editable":true|{"reason","at":{"line","column"}},"settings":{...},"nodes":[{"name","label","look":{...},"url","image","spacer","pos":[x,y]|null,"pinned","size":{...},"locked"}],"edges":[{"from","to","index","attrs":{...},"locked"}]}; at: {"ok","at":{"kind":"node"|"edge"|"cluster"|"setting"|"defaults","node"?,"edge"?,"edges"?,"cluster"?,"span":[start,end]}|null,"stopped"?:{"reason","at":{"line","column"}}}; import: {"ok","cell","kind":"hand"|"graphviz","file","boxes":[{"name","label"}],"arrows":[{"from","to"}],"left_out":[{"what","at","reason"}],"notes":[...],"extension"?}"#
         }
         "bib" => {
             r#"bare: {"ok","kind":"bib","where":"none|companion|embedded|both","files":[{"path","format","inside"}],"embedded","entries","missing":[{"key","slides"}]}; pull: {"ok","op":"bib-pull","version","diff","file"?,"created"?,"embedded"?,"added","changed":[{"id","fields"}],"merged":[{"id","from"}],"gone","warnings"}; embed: {...,"entries","left"}; extract: {...,"file","entries"}; convert: {...,"file","from"} — every write is an edit of the deck and its companion file together (--dry-run, --expect, one qd undo)"#
@@ -1179,14 +1188,19 @@ fn at<'a>(after: &'a Option<String>, before: &'a Option<String>) -> Pos<'a> {
     }
 }
 
+/// `t`, or stdin for `-`.
+fn text_or_stdin(t: &str) -> Result<String> {
+    if t != "-" {
+        return Ok(t.to_string());
+    }
+    let mut s = String::new();
+    std::io::stdin().read_to_string(&mut s)?;
+    Ok(s)
+}
+
 fn read_input(input: &Input) -> Result<Option<String>> {
     Ok(match (&input.md, &input.file) {
-        (Some(m), _) if m == "-" => {
-            let mut s = String::new();
-            std::io::stdin().read_to_string(&mut s)?;
-            Some(s)
-        }
-        (Some(m), _) => Some(m.clone()),
+        (Some(m), _) => Some(text_or_stdin(m)?),
         (None, Some(f)) => Some(
             std::fs::read_to_string(f)
                 .map_err(|e| QdError::InvalidArg(format!("{}: {e}", f.display())))?,
@@ -1501,6 +1515,7 @@ const API_OPS: &[&str] = &[
     "arrow show",
     "arrow list",
     "dot show",
+    "dot at",
     "dot move",
     "dot pin",
     "dot add",
@@ -1642,7 +1657,7 @@ pub fn run_op(store: &Store, op: &str, args: &Value, expect: Option<&str>) -> Re
     let reads_input = ["file", "old-file", "new-file"]
         .iter()
         .any(|k| obj.contains_key(*k))
-        || ["md", "old", "new"]
+        || ["md", "old", "new", "text"]
             .iter()
             .any(|k| obj.get(*k).is_some_and(|m| m == "-"));
     if reads_input {
@@ -1767,12 +1782,17 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                 ArrowCmd::List { slide } => crate::arrows::list(&d, slide),
             }
         }
+        // reads only the text it is given: no deck needed
+        Cmd::Dot {
+            action: DotCmd::At { text, at },
+        } => crate::dot::at(&text_or_stdin(text)?, *at),
         Cmd::Dot { action } => {
             let d = read()?.1;
             // an edit, with what the command adds to its output
             use crate::dot;
             match action {
                 DotCmd::Show { cell } => dot::show(&d, cell),
+                DotCmd::At { .. } => unreachable!("answered above, without a deck"),
                 DotCmd::Move {
                     cell,
                     node,

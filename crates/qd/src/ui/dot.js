@@ -413,6 +413,7 @@ export async function mark() {
     wire(c);
   }
   reselect();
+  outline();
 }
 
 /** An arrow is a thin line: a wider, invisible copy of each takes the clicks. */
@@ -518,6 +519,45 @@ export async function changed(drawn) {
     if (await drawCell(ref)) drawn(all.indexOf(c), v.text);
   }
   if (any) reselect();
+}
+
+// ---------- the source follows the cursor (spec 021) ----------
+
+let cursor = null; // { cell, at }: the last good answer of `dot at` for the cursor in a diagram's source
+let asked = 0;
+
+/**
+ * The cursor sits at byte `offset` of `text`, the body of diagram `cell` as
+ * typed (saved or not): outline on the slide what is there (research R1, R4).
+ * Text that can't be read mid-typing keeps the last outline (R2).
+ */
+export async function cursorAt(cell, text, offset) {
+  const n = ++asked;
+  const r = await read('dot at', { text, at: offset });
+  if (n !== asked || !r || r.stopped) return; // a newer cursor came first, or it can't be read yet
+  cursor = r.at ? { cell, at: r.at } : null;
+  outline();
+}
+
+/** The cursor left the diagram's source: no outline. */
+export function cursorGone() {
+  asked++;
+  cursor = null;
+  outline();
+}
+
+/** The cursor's box, arrows or cluster marked on the slide (again after a reload); the selection is left alone. */
+function outline() {
+  const doc = api.frame.contentDocument;
+  for (const g of doc?.querySelectorAll('.qd-dot-cursor') || []) g.classList.remove('qd-dot-cursor');
+  const cellEl = cursor && api.elOf(cursor.cell);
+  if (!cellEl) return;
+  const { at } = cursor;
+  const marked = at.kind === 'node' ? [nodeNamed(cellEl, at.node)]
+    : at.kind === 'edge' ? (at.edge ? [at.edge] : at.edges).map((r) => edgeNamed(cellEl, r))
+    : at.kind === 'cluster' ? [...cellEl.querySelectorAll('svg g.cluster')].filter((g) => nameOf(g) === at.cluster)
+    : [];
+  for (const g of marked) g?.classList.add('qd-dot-cursor');
 }
 
 /** A diagram qd can edit. */

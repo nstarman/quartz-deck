@@ -183,8 +183,7 @@ function noteShown(version, outputs) {
     shown.source = s && s.version === version ? s.text : null; // moved on already: the next render reloads
   });
 }
-// a {dot} cell: its opening fence line, its body, its closing fence
-const DOT_CELL = /^((`{3,})[ \t]*\{dot\b[^\n]*\n)([\s\S]*?)^\2[ \t]*$/gm;
+const { DOT_CELL } = pane;
 /**
  * The preview shows the deck as it is now: its text is the loaded render's,
  * but for the diagrams drawn into it since. Then no render needs loading, of
@@ -265,6 +264,10 @@ const PREVIEW_CSS = `html:not(.qd-present) {
   /* a diagram's boxes (spec 015) */
   [data-qd-lang=dot] g.node { cursor: move; }
   .qd-dot-sel > :is(polygon, ellipse, path), .qd-dot-sel a > :is(polygon, ellipse) { stroke: #2563eb !important; stroke-width: 3 !important; }
+  /* the box or arrow at the cursor in the diagram's source (spec 021): dashed, unlike the selection */
+  :is(g.node, g.cluster).qd-dot-cursor > :is(polygon, ellipse, path), g.node.qd-dot-cursor a > :is(polygon, ellipse) {
+    stroke: #2563eb !important; stroke-width: 2.5 !important; stroke-dasharray: 6 3; }
+  g.edge.qd-dot-cursor > path:not(.qd-dot-hit) { stroke: #2563eb !important; stroke-width: 3 !important; stroke-dasharray: 6 3; }
   line.qd-dot-guide { stroke: #d6249f; stroke-width: 1; vector-effect: non-scaling-stroke; pointer-events: none; }
   line.qd-dot-provisional, line.qd-dot-follow { stroke: #6b7480; stroke-width: 1.5; stroke-dasharray: 4 3; pointer-events: none; }
   [data-qd-lang=dot] g.edge { cursor: pointer; }
@@ -1830,7 +1833,15 @@ pane.initPane({
   conflict: (theirs, mine, onMine, onTheirs) => showConflict({ kind: 'source', theirs, mine, onMine, onTheirs }),
   onCaret: sourceFocus,
   typed: focus.typed,
+  follow: dot.cursorAt,
+  unfollow: dot.cursorGone,
+  dotCell,
 });
+
+/** The `{dot}` cell whose fence is on source `line` (spec 021), by the saved deck's lines; or null. */
+async function dotCell(line) {
+  return (await blocksAt(line, line)).blocks.find((b) => b.kind === 'cell' && b.lines[0] === line)?.id ?? null;
+}
 
 /** The slide view's part of the shared focus (spec 005): slide, element, text selected while editing. */
 function syncFocus() {
@@ -1849,12 +1860,18 @@ function syncFocus() {
 /** The source pane's part: the caret's slide, every block the selection touches (or the caret's). */
 let sourceTimer = null;
 let seq = 0;
+/** The slides holding source lines `first`–`last`, and all their blocks. */
+async function blocksAt(first, last) {
+  const hit = (state.deck?.slides || []).filter((x) => x.lines[0] <= last && first <= x.lines[1]);
+  const blocks = (await Promise.all(hit.map((x) => fetchSlide(x.id)))).flatMap((sl) => sl?.blocks || []);
+  return { hit, blocks };
+}
+
 function sourceFocus({ line, first, last, text }) {
   clearTimeout(sourceTimer);
   sourceTimer = setTimeout(async () => {
     const n = ++seq;
-    const hit = (state.deck?.slides || []).filter((x) => x.lines[0] <= last && first <= x.lines[1]);
-    const blocks = (await Promise.all(hit.map((x) => fetchSlide(x.id)))).flatMap((sl) => sl?.blocks || []);
+    const { hit, blocks } = await blocksAt(first, last);
     if (n !== seq) return; // a newer focus arrived meanwhile
     focus.set({
       slide: hit.at(-1)?.id ?? null, // the caret (= the selection's end) is in the last one

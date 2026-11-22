@@ -76,6 +76,13 @@ pub struct Stmt {
     pub kind: Kind,
 }
 
+impl Stmt {
+    /// Its end, `;` included.
+    pub fn end(&self) -> usize {
+        self.term.map_or(self.span.end, |t| t.end)
+    }
+}
+
 /// One `{dot}` cell's graph.
 #[derive(Debug, Clone)]
 pub struct Graph {
@@ -140,6 +147,8 @@ pub struct Edge {
     pub chain: Option<(usize, usize)>,
     /// Its top-level statement (the subgraph's, inside one).
     pub stmt: usize,
+    /// Its own statement's span.
+    pub span: Span,
     pub attrs: Vec<Attr>,
     pub locked: bool,
 }
@@ -771,6 +780,7 @@ impl Graph {
                                         index,
                                         chain: (links > 1).then_some((k, links)),
                                         stmt: top.unwrap_or(i),
+                                        span: s.span,
                                         attrs: list_attrs(lists),
                                         locked,
                                     });
@@ -914,6 +924,71 @@ pub fn show(d: &Deck, r: &str) -> Result<Value> {
         "editable": true, "text": text, "settings": attrs_json(&g.settings()), "nodes": nodes, "edges": edges,
         "starters": starters}),
     )
+}
+
+// ---------- what is at a point of the text (spec 021) ----------
+
+/// The innermost statement of `stmts` holding `offset`.
+fn stmt_at(stmts: &[Stmt], offset: usize) -> Option<&Stmt> {
+    let s = stmts
+        .iter()
+        .find(|s| (s.span.start..=s.end()).contains(&offset))?;
+    match &s.kind {
+        Kind::Subgraph { body, .. } => stmt_at(body, offset).or(Some(s)),
+        _ => Some(s),
+    }
+}
+
+/// `qd dot at` (contracts/cli.md): the statement of a cell's `text` (as
+/// typed, saved or not) at byte `offset`: a box, an arrow (the link under
+/// the cursor in a chain), a cluster, a setting or defaults, or nothing.
+pub fn at(text: &str, offset: usize) -> Result<Value> {
+    if offset > text.len() || !text.is_char_boundary(offset) {
+        return Err(QdError::InvalidArg(format!(
+            "{offset} is not a character position in the text"
+        )));
+    }
+    let g = match parse_cell(text) {
+        Ok(g) => g,
+        Err(s) => {
+            let line = text[..s.at].matches('\n').count() + 1;
+            let column = s.at - text[..s.at].rfind('\n').map_or(0, |n| n + 1) + 1;
+            return Ok(json!({"ok": true, "at": null,
+                "stopped": {"reason": s.reason, "at": {"line": line, "column": column}}}));
+        }
+    };
+    let Some(s) = stmt_at(&g.stmts, offset) else {
+        return Ok(json!({"ok": true, "at": null}));
+    };
+    let span = json!([s.span.start, s.end()]);
+    let at = match &s.kind {
+        Kind::Node { name, .. } => json!({"kind": "node", "node": name, "span": span}),
+        Kind::Edge { ops, .. } => {
+            let mine: Vec<Edge> = g.edges().into_iter().filter(|e| e.span == s.span).collect();
+            let name = |e: &Edge| format!("{}{}{}#{}", e.from, g.op(), e.to, e.index);
+            let end = |o: &Operand| match o {
+                Operand::Node { span, .. } => Some(span.end),
+                Operand::Group(_) => None,
+            };
+            // the link the cursor is on: past its left end, up to its right end
+            let link = (0..ops.len() - 1).find(|&k| {
+                matches!((end(&ops[k]), end(&ops[k + 1])), (Some(a), Some(b)) if offset > a && offset <= b)
+            });
+            let on: Vec<&Edge> = (mine.iter())
+                .filter(|e| e.chain.is_none_or(|(k, _)| Some(k) == link))
+                .collect();
+            let one = (on.len() == 1).then(|| name(on[0]));
+            let refs: Vec<String> = mine.iter().map(name).collect();
+            json!({"kind": "edge", "edge": one, "edges": refs, "span": span})
+        }
+        Kind::Subgraph { id: Some(id), .. } if id.starts_with("cluster") => {
+            json!({"kind": "cluster", "cluster": id, "span": span})
+        }
+        Kind::Subgraph { .. } => Value::Null,
+        Kind::Setting(_) => json!({"kind": "setting", "span": span}),
+        Kind::Defaults { .. } => json!({"kind": "defaults", "span": span}),
+    };
+    Ok(json!({"ok": true, "at": at}))
 }
 
 // ---------- editing (spec 015 US1, research R7) ----------
@@ -1361,7 +1436,7 @@ fn edge(g: &Graph, r: &str) -> Result<Edge> {
 
 /// A statement removed: its whole line when alone on it, else it and its spaces.
 fn remove_stmt(text: &str, s: &Stmt) -> (Span, String) {
-    let end = s.term.map_or(s.span.end, |t| t.end);
+    let end = s.end();
     let ls = text[..s.span.start].rfind('\n').map_or(0, |n| n + 1);
     let le = text[end..].find('\n').map_or(text.len(), |n| end + n + 1);
     let none = |t: &str| t.trim().is_empty();
@@ -1944,6 +2019,73 @@ mod tests {
             .into_iter()
             .map(|e| format!("{}{}{}#{}", e.from, g.op(), e.to, e.index))
             .collect()
+    }
+
+    // ---------- spec 021: what is at a point of the text ----------
+
+    const FOLLOW: &str = "digraph {\n  // the boxes\n  layout=neato;\n  node [shape=box];\n  data [label=Data];\n  \"my box\" [label=<<b>Mine</b>>];\n  a:e -> b;\n  a -> b;\n  a -> b -> c [color=red];\n  subgraph cluster_x {\n    label=X;\n    inner;\n  }\n\n}\n";
+
+    /// What `at` says at the `n`-th character of `needle` (an offset inside it).
+    fn at_in(needle: &str, n: usize) -> Value {
+        let i = FOLLOW
+            .find(needle)
+            .unwrap_or_else(|| panic!("{needle} not in FOLLOW"));
+        at(FOLLOW, i + n).unwrap()["at"].clone()
+    }
+
+    #[test]
+    fn at_finds_boxes_and_arrows() {
+        for n in [0, 3, 18] {
+            assert_eq!(at_in("data [label=Data];", n)["node"], "data", "at {n}");
+        }
+        assert_eq!(at_in("data [label=Data];", 0)["kind"], "node");
+        assert_eq!(at_in("\"my box\"", 3)["node"], "my box");
+        // a port, then a repeated arrow: numbered as `dot show` does
+        assert_eq!(at_in("a:e -> b", 5)["edge"], "a->b#1");
+        assert_eq!(at_in("a -> b;", 2)["edge"], "a->b#2");
+        // a chain: the link under the cursor, else every link
+        let chain = "a -> b -> c [color=red]";
+        assert_eq!(at_in(chain, 4)["edge"], "a->b#3");
+        assert_eq!(at_in(chain, 9)["edge"], "b->c#1");
+        for n in [0, 15] {
+            let v = at_in(chain, n);
+            assert_eq!(v["edge"], Value::Null, "at {n}");
+            assert_eq!(v["edges"], json!(["a->b#3", "b->c#1"]), "at {n}");
+        }
+    }
+
+    #[test]
+    fn at_finds_a_link_after_a_group() {
+        let text = "digraph {\n  {a b} -> c -> d;\n}\n";
+        let i = text.find("c -> d").unwrap() + 3;
+        let v = at(text, i).unwrap()["at"].clone();
+        assert_eq!(v["edge"], "c->d#1", "{v}");
+        assert_eq!(v["edges"], json!(["a->c#1", "b->c#1", "c->d#1"]));
+    }
+
+    #[test]
+    fn at_finds_clusters_settings_and_nothing() {
+        assert_eq!(at_in("subgraph cluster_x", 3)["cluster"], "cluster_x");
+        assert_eq!(at_in("inner;", 1)["node"], "inner"); // inside it, its own statement
+        assert_eq!(at_in("layout=neato", 2)["kind"], "setting");
+        assert_eq!(at_in("node [shape=box]", 6)["kind"], "defaults");
+        for needle in ["// the boxes", "digraph {"] {
+            assert_eq!(at_in(needle, 1), Value::Null, "{needle}");
+        }
+        assert_eq!(at(FOLLOW, FOLLOW.len() - 3).unwrap()["at"], Value::Null); // the blank line
+        let span = at_in("data [label=Data];", 2)["span"].clone();
+        let [a, b] = [0, 1].map(|i| span[i].as_u64().unwrap() as usize);
+        assert_eq!(&FOLLOW[a..b], "data [label=Data];");
+    }
+
+    #[test]
+    fn at_stops_on_text_it_cant_read() {
+        let text = "digraph {\n  a [label=\"open];\n}\n";
+        let v = at(text, 14).unwrap();
+        assert_eq!(v["at"], Value::Null);
+        assert_eq!(v["stopped"]["at"]["line"], 2, "{v}");
+        assert!(at(text, text.len() + 1).is_err());
+        assert!(at("digraph { é }", 11).is_err(), "inside a character");
     }
 
     /// Every corpus file reads; statement spans are in order, inside the

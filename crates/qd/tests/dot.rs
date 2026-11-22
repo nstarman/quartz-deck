@@ -847,3 +847,31 @@ fn import_graphviz() {
         assert_eq!(n["pinned"], true);
     }
 }
+
+/// Spec 021: `qd dot at` reads only the text it's given (stdin or inline), on
+/// the CLI and through `/api/op` alike.
+#[test]
+fn at_answers_on_the_cli_and_the_api() {
+    let body = "digraph {\n  a [label=A];\n  a -> b -> c;\n}\n";
+    let dir = deck(DECK);
+    let mut cmd = common::qd(dir.path());
+    let mut child = (cmd.args(["dot", "at", "--text", "-", "--at", "14"]))
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::io::Write::write_all(&mut child.stdin.take().unwrap(), body.as_bytes()).unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success());
+    let cli: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(cli["at"]["node"], "a");
+    let path = dir.path().join("talk.qmd");
+    let st = quartz_deck::store::Store::open_in(&path, &dir.path().join(".cache")).unwrap();
+    let api =
+        quartz_deck::cli::run_op(&st, "dot at", &json!({"text": body, "at": 14}), None).unwrap();
+    assert_eq!(api, cli);
+    let bad = quartz_deck::cli::run_op(&st, "dot at", &json!({"text": body, "at": 999}), None);
+    assert_eq!(bad.unwrap_err().code(), "E_INVALID_ARG");
+    let stdin = quartz_deck::cli::run_op(&st, "dot at", &json!({"text": "-", "at": 0}), None);
+    assert!(stdin.is_err(), "the API never reads stdin");
+}

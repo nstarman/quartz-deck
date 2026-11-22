@@ -33,18 +33,18 @@ talk in the repository.
 
 ## Phase 1: Foundational, `qd dot at` (blocks every story)
 
-- [ ] T001 [P] Write failing unit tests for `at(text, offset)` in `crates/qd/src/dot.rs` (contracts/cli.md § Tests):
+- [X] T001 [P] Write failing unit tests for `at(text, offset)` in `crates/qd/src/dot.rs` (contracts/cli.md § Tests):
   - **What it finds:** each of these at the start, middle and end of its statement: a box, an arrow, each link of `a -> b -> c` and the chain's own `[...]`, a `subgraph cluster_x {` line, `layout=neato;`, `node [shape=box];`, a blank line, a comment and `digraph {`;
   - **Names:** a quoted name with spaces, an HTML label, a port (`a:e -> b`);
   - **Arrow refs:** a repeated arrow's ref is `a->b#2`, matching `dot show`'s `index`;
   - **Stops:** an unclosed quote gives a stop with line and column inside the body.
-- [ ] T002 Implement `pub fn at(text: &str, offset: usize) -> Result<Value>` in `crates/qd/src/dot.rs` on `parse_cell` (research R1, R2):
+- [X] T002 Implement `pub fn at(text: &str, offset: usize) -> Result<Value>` in `crates/qd/src/dot.rs` on `parse_cell` (research R1, R2):
   - walk the statements (into subgraphs) for the innermost span holding `offset`;
   - name a box by its name, an arrow by `from->to#k` with the edge numbering `Graph::edges()` already uses, and the link under the cursor when the offset falls in one operand pair;
   - answer `{"ok": true, "at": {...}}`, `{"ok": true, "at": null}`, or `{"ok": true, "at": null, "stopped": {reason, at}}` (data-model "Statement at the cursor");
   - an offset past the end or inside a character gives `E_INVALID_ARG`.
   T001 passes.
-- [ ] T003 Add `qd dot at --text BODY --at OFFSET` in `crates/qd/src/cli.rs` (`DotCmd::At`): `--text -` reads stdin, the schema line goes in `qd schema`, and the op is read-only. Write a failing test first in `crates/qd/tests/dot.rs`:
+- [X] T003 Add `qd dot at --text BODY --at OFFSET` in `crates/qd/src/cli.rs` (`DotCmd::At`): `--text -` reads stdin, the schema line goes in `qd schema`, and the op is read-only. Write a failing test first in `crates/qd/tests/dot.rs`:
   - the CLI answers a box at an offset;
   - `/api/op` with `{"op": "dot at", "args": {"text": …, "at": …}}` gives the same answer;
   - a bad offset is `E_INVALID_ARG`.
@@ -59,25 +59,25 @@ talk in the repository.
 
 **Independent test**: spec US1's independent test.
 
-- [ ] T004 [US1] Write failing browser tests in `crates/qd/tests/onslide.rs` (contracts/editor.md § Tests), on a made-up deck with one diagram of three boxes and a chain:
+- [X] T004 [US1] Write failing browser tests in `crates/qd/tests/onslide.rs` (contracts/editor.md § Tests), on a made-up deck with one diagram of three boxes and a chain:
   - **`source_follow_outlines`:**
     - in the source pane, the caret on each box's line, then each link of the chain, then `layout=…`, then a line outside the cell;
-    - after each, exactly the matching `g.node`/`g.edge` carries `qd-dot-follow`, or none does;
+    - after each, exactly the matching `g.node`/`g.edge` carries `qd-dot-cursor`, or none does;
     - an element selected beforehand (a text box) stays selected, with its bar shown;
   - **`source_follow_hover`:** the pointer resting over another box's line moves the outline there; a `mouseleave` gives it back to the caret's box.
-- [ ] T005 [US1] Implement `follow(cell, text, offset)` and `unfollow()` in `crates/qd/src/ui/dot.js` (research R4):
+- [X] T005 [US1] Implement `follow(cell, text, offset)` and `unfollow()` in `crates/qd/src/ui/dot.js` (research R4):
   - call `dot at` and keep the last good answer (data-model "Follow state");
-  - put `qd-dot-follow` on the matching element through `nodeNamed`/`edgeNamed` (several for a whole chain), or a cluster by its `<title>`, and take it off everywhere else;
+  - put `qd-dot-cursor` on the matching element through `nodeNamed`/`edgeNamed` (several for a whole chain), or a cluster by its `<title>`, and take it off everywhere else;
   - leave `sel`, the bars and the panel alone;
   - re-apply after `mark()` (a preview reload);
   - do nothing while presenting.
-- [ ] T006 [US1] Report the cursor from `crates/qd/src/ui/pane.js` (research R5):
+- [X] T006 [US1] Report the cursor from `crates/qd/src/ui/pane.js` (research R5):
   - on caret moves and typing, debounced 60 ms, find the ```` ```{dot} ```` fence in `ta.value` that holds the caret;
   - send its body and the caret's offset in it, with the cell's ref from `onCaret`'s block lookup in `editor.js`;
   - otherwise call `unfollow()`;
   - Esc and blur clear;
   - hover: a `mousemove` resting 300 ms maps the pointer to a line (the highlight layer's line elements) and a column (character width), then takes the same path; `mouseleave` gives it back to the caret.
-- [ ] T007 [P] [US1] Style `qd-dot-follow` in the CSS `dot.js` injects into the preview: a dashed accent outline for boxes and clusters, a wider dashed stroke for arrows, in light, dark and high contrast. T004 passes.
+- [X] T007 [P] [US1] Style `qd-dot-cursor` in the CSS `dot.js` injects into the preview: a dashed accent outline for boxes and clusters, a wider dashed stroke for arrows, in light, dark and high contrast. T004 passes.
 
 **Checkpoint**: PR 1. Moving through a diagram's source shows which element each line is.
 

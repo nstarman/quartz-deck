@@ -12,7 +12,7 @@
 
 1. Takes the cell's body and the offset as the textarea has them, and asks
    `dot at`.
-2. **Outline** (FR-002, FR-003): adds `qd-dot-follow` to the matching
+2. **Outline** (FR-002, FR-003): adds `qd-dot-cursor` to the matching
    `g.node`, `g.edge` (one or several) or `g.cluster` in the cell's SVG on
    the slide, and removes it everywhere else. It doesn't touch the
    selection, the bars or the inspector.
@@ -28,7 +28,7 @@
 
 ## Look
 
-- `qd-dot-follow`: a dashed 2 px outline in the accent colour, distinct
+- `qd-dot-cursor`: a dashed 2 px outline in the accent colour, distinct
   from the selection's solid outline. Arrows get a wider dashed stroke.
 - `#dot-peek`: the panel's background and border, a soft shadow, at most
   240 × 160 px, the drawing scaled down to fit.
