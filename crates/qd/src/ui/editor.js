@@ -132,12 +132,11 @@ async function fetchMeta() {
  * `expect` is the version a form was opened on (default: the latest one seen).
  */
 function op(...a) {
-  let drew;
-  drawing = Promise.all([drawing, new Promise((r) => { drew = r; })]);
   const p = runOp(...a);
   // a diagram edit shows at once (spec 020), once the caller has taken the result
   // (a flip selects the reversed arrow, an add the new box)
-  p.then((body) => (body ? setTimeout(() => dot.changed((i, text) => shown.drawn.set(i, text)).finally(drew)) : drew()), drew);
+  const drew = p.then((body) => body && new Promise((r) => setTimeout(r)).then(() => dot.changed((i, text) => shown.drawn.set(i, text))));
+  drawing = Promise.all([drawing, drew.catch(() => {})]);
   return p;
 }
 // ops in flight, each until it has drawn its diagrams: till then the file is ahead of the preview
