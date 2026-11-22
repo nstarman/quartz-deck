@@ -54,10 +54,22 @@ function highlight(text) {
   return out.join('\n') + '\n';
 }
 
+let painted = null; // the coloured lines on screen, one element each
+/** Recolour only the lines that changed: a keystroke touches one or two, not the whole file's layout. */
+function paint() {
+  const now = highlight(ta.value).split('\n').slice(0, -1);
+  if (!painted) { hl.textContent = ''; painted = []; }
+  const { start: a, endA, endB } = region(painted, now);
+  for (let k = a; k < endA; k++) hl.children[a].remove();
+  const fresh = now.slice(a, endB).map((l) => `<div>${l || ' '}</div>`).join('');
+  hl.insertBefore(document.createRange().createContextualFragment(fresh), hl.children[a] ?? null);
+  painted = now;
+}
+
 let raf = 0;
 function repaint() {
   cancelAnimationFrame(raf);
-  raf = requestAnimationFrame(() => { hl.innerHTML = highlight(ta.value); syncScroll(); });
+  raf = requestAnimationFrame(() => { paint(); syncScroll(); });
 }
 function syncScroll() {
   hl.style.transform = `translate(${-ta.scrollLeft}px, ${-ta.scrollTop}px)`;

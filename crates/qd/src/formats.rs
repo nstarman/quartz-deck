@@ -403,6 +403,7 @@ pub fn run(
         ext,
         &["--metadata-file", &meta_s],
         true,
+        None,
     )?;
     // a text output (Markdown, the html page, rst, LaTeX, …) refers to figures
     // and libraries in `<name>_files/` (FR-009): it moves with the file, under
