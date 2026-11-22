@@ -270,6 +270,22 @@ fn serve_renders_and_live_reloads() {
         "rendered again a deck it had just rendered"
     );
 
+    // an edit while a render runs stops that render: the next one shown is the newest
+    std::fs::write(dir.join("deck.qmd"), shown.replace("Live Title", "Middle")).unwrap();
+    ev.wait("rendering", Duration::from_secs(5))
+        .expect("rendering the middle edit");
+    std::fs::write(dir.join("deck.qmd"), shown.replace("Live Title", "Final")).unwrap();
+    let last = serde_json::from_str::<Value>(&get(server.port, "/api/source").1).unwrap();
+    let r: Value = serde_json::from_str(
+        &ev.wait("rendered", Duration::from_secs(20))
+            .expect("rendered after the last edit"),
+    )
+    .unwrap();
+    assert_eq!(
+        r["version"], last["version"],
+        "the stale render was shown first"
+    );
+
     // an external editor writing a broken deck -> render_error, last good preview kept
     std::fs::write(dir.join("deck.qmd"), "---\ntitle: [unclosed\n---\n\n## X\n").unwrap();
     let err = ev
@@ -279,7 +295,7 @@ fn serve_renders_and_live_reloads() {
     let (status, body) = get(server.port, &html2);
     assert_eq!(status, 200);
     assert!(
-        body.contains("Live Title"),
+        body.contains("Final"),
         "last good render must stay available"
     );
 
@@ -1283,4 +1299,40 @@ fn view_over_http() {
         serde_json::json!({"collapsed": ["part-a"]})
     );
     assert_eq!(std::fs::read(dir.join("deck.qmd")).unwrap(), deck);
+}
+
+/// A restart on a deck that hasn't changed shows the last preview at once,
+/// with no render; a change made while it was stopped renders as before.
+#[test]
+fn restart_shows_the_last_preview() {
+    if !have("quarto") {
+        return;
+    }
+    let (_tmp, dir) = setup();
+    let server = start(&dir);
+    let mut ev = Events::open(server.port, "/events");
+    ev.wait("rendered", Duration::from_secs(60))
+        .expect("initial render");
+    drop((ev, server));
+
+    let server = start(&dir);
+    let mut ev = Events::open(server.port, "/events");
+    ev.wait("rendered", Duration::from_secs(2))
+        .expect("the last preview, at once");
+    assert!(
+        ev.wait("rendering", Duration::from_secs(3)).is_none(),
+        "rendered a deck that hadn't changed"
+    );
+    drop((ev, server));
+
+    // a references file written while qd was stopped: render again
+    std::thread::sleep(Duration::from_millis(20));
+    std::fs::write(dir.join("refs.bib"), "@misc{a, title={A}}\n").unwrap();
+    let server = start(&dir);
+    let mut ev = Events::open(server.port, "/events");
+    assert!(
+        ev.wait("rendering", Duration::from_secs(5)).is_some(),
+        "didn't render after a file beside the deck changed"
+    );
+    drop(server);
 }

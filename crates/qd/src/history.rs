@@ -12,16 +12,21 @@ use std::process::Command;
 
 /// `git -C dir args…`: stdout, or `E_NO_GIT` / `E_GIT` with git's message.
 /// The person's configuration applies untouched (signing, hooks: FR-011).
+/// Starting git failed: `E_NO_GIT` when it isn't installed.
+fn spawn_err(e: std::io::Error) -> QdError {
+    match e.kind() {
+        std::io::ErrorKind::NotFound => QdError::NoGit,
+        _ => QdError::Io(e),
+    }
+}
+
 pub fn git(dir: &Path, args: &[&str]) -> Result<String> {
     let o = Command::new("git")
         .arg("-C")
         .arg(dir)
         .args(args)
         .output()
-        .map_err(|e| match e.kind() {
-            std::io::ErrorKind::NotFound => QdError::NoGit,
-            _ => QdError::Io(e),
-        })?;
+        .map_err(spawn_err)?;
     if !o.status.success() {
         return Err(QdError::Git(
             String::from_utf8_lossy(&o.stderr).trim().to_string(),
@@ -121,6 +126,51 @@ impl Repo {
     pub fn text_at(&self, rev: &str, path: &str) -> Result<String> {
         git(&self.dir, &["show", &format!("{rev}:{path}")])
             .map_err(|_| QdError::NotFound(format!("the deck at {rev}")))
+    }
+
+    /// [`Repo::text_at`] for many `(rev, path)`s, from one `git cat-file --batch`
+    /// (a `git show` each took about 14 ms); `None` where git has no such file.
+    pub fn texts_at(&self, wanted: &[(String, String)]) -> Result<Vec<Option<String>>> {
+        use std::io::{BufRead, Read, Write};
+        use std::process::Stdio;
+        let mut child = Command::new("git")
+            .arg("-C")
+            .arg(&self.dir)
+            .args(["cat-file", "--batch"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(spawn_err)?;
+        // written from another thread: git's answers would fill the pipe while we still write
+        let mut stdin = child.stdin.take().unwrap();
+        let asks: String = wanted.iter().map(|(r, p)| format!("{r}:{p}\n")).collect();
+        let writer = std::thread::spawn(move || stdin.write_all(asks.as_bytes()));
+        let mut out = std::io::BufReader::new(child.stdout.take().unwrap());
+        let mut texts = Vec::with_capacity(wanted.len());
+        for _ in wanted {
+            let mut head = String::new();
+            out.read_line(&mut head)?;
+            // `<sha> blob <size>`, then the text and a newline; anything else (`<name> missing`,
+            // whose name may hold spaces and numbers) has none
+            let mut w = head.split(' ');
+            let size = match (w.next(), w.next(), w.next()) {
+                (Some(_), Some("blob"), Some(n)) => n.trim().parse::<usize>().ok(),
+                _ => None,
+            };
+            texts.push(match size {
+                Some(size) => {
+                    let mut b = vec![0; size + 1];
+                    out.read_exact(&mut b)?;
+                    b.pop();
+                    Some(String::from_utf8_lossy(&b).into_owned())
+                }
+                None => None,
+            });
+        }
+        let _ = writer.join();
+        let _ = child.wait();
+        Ok(texts)
     }
 }
 
@@ -492,7 +542,7 @@ pub fn history(
             // walk every version, keep the ones where the text changed from
             // the version before it (oldest last; trailing blank lines aside:
             // a slide moved to the end has none); ponytail: a parse per
-            // commit, fine for hundreds; --limit bounds what is returned
+            // commit (one git process for them all), fine for thousands; --limit bounds what is returned
             let text_in = |d: &Deck| -> Option<String> {
                 let s = match_slide(d, ts, true)?;
                 let span = match tb {
@@ -502,10 +552,12 @@ pub fn history(
                 Some(d.slice(span).trim_end().to_string())
             };
             let (all, _) = log(&repo, ALL, 0)?;
-            let text_of = |v: &Version| -> Option<String> {
-                text_in(&Deck::parse(repo.text_at(v.rev.as_deref()?, &v.path).ok()?))
-            };
-            let texts: Vec<Option<String>> = all.iter().map(text_of).collect();
+            let asks: Vec<(String, String)> = (all.iter())
+                .map(|v| (v.rev.clone().unwrap_or_default(), v.path.clone()))
+                .collect();
+            let texts: Vec<Option<String>> = (repo.texts_at(&asks)?.into_iter().zip(&all))
+                .map(|(t, v)| text_in(&Deck::parse(t.filter(|_| v.rev.is_some())?)))
+                .collect();
             let now = text_in(current);
             if uncommitted && skip == 0 && texts.first() == Some(&now) {
                 out.clear(); // the slide is the same as committed

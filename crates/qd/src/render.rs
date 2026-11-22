@@ -6,7 +6,8 @@ use crate::error::{QdError, Result};
 use serde_json::Value;
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// `$QD_QUARTO`, else `quarto` on `PATH`.
 pub fn quarto() -> Result<PathBuf> {
@@ -67,10 +68,44 @@ fn quarto_cmd(dir: &Path, text: &str, args: &[&OsStr]) -> Result<(Command, bool)
 /// render and File ▸ Render or Export at once failed with "writefile …
 /// project-cache"). ponytail: one lock for this process; a `qd render` from
 /// another process can still overlap, add a lock file in `.quarto/` if that bites.
-fn run_quarto(cmd: &mut Command) -> std::io::Result<std::process::Output> {
+///
+/// With `cancel`, the run stops (`ErrorKind::Interrupted`) as soon as it is set:
+/// the live preview drops a render that a newer edit has made stale.
+fn run_quarto(
+    cmd: &mut Command,
+    cancel: Option<&AtomicBool>,
+) -> std::io::Result<std::process::Output> {
     static ONE: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
-    cmd.output()
+    let Some(cancel) = cancel else {
+        return cmd.output();
+    };
+    #[cfg(unix)] // its own process group: stopping it stops Quarto's own helpers too
+    std::os::unix::process::CommandExt::process_group(cmd, 0);
+    // no terminal input: a background process group that reads it is stopped
+    let child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let pid = child.id();
+    let run = std::thread::spawn(move || child.wait_with_output());
+    while !run.is_finished() {
+        if cancel.load(Ordering::SeqCst) {
+            // ponytail: `kill` the command, not a libc dependency (as kernel.rs)
+            let _ = Command::new("kill")
+                .args(["-KILL", "--", &format!("-{pid}")])
+                .status();
+            let _ = run.join();
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "a newer edit came in",
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    run.join()
+        .unwrap_or_else(|_| Err(std::io::Error::other("the Quarto run panicked")))
 }
 
 /// A failed Quarto run: `E_LOCK_STALE` if the environment refused a stale lock.
@@ -296,14 +331,32 @@ pub fn render(
     out_dir: &Path,
     preview: bool,
 ) -> Result<PathBuf> {
-    // stored outputs are in the preview copy; the preview never runs code (R7)
-    let extra: &[&str] = if preview {
-        &["-M", "embed-resources:false", "--no-execute"]
-    } else {
-        &[]
-    };
+    let extra: &[&str] = if preview { PREVIEW } else { &[] };
     render_to(
-        deck_path, text, tag, out_dir, "revealjs", "html", extra, !preview,
+        deck_path, text, tag, out_dir, "revealjs", "html", extra, !preview, None,
+    )
+}
+
+/// A preview's Quarto arguments: stored outputs are in the preview copy; the preview never runs code (R7).
+const PREVIEW: &[&str] = &["-M", "embed-resources:false", "--no-execute"];
+
+/// The live preview's [`render`]: stops early (`ErrorKind::Interrupted`) once `cancel` is set.
+pub fn render_preview(
+    deck_path: &Path,
+    text: &str,
+    out_dir: &Path,
+    cancel: &AtomicBool,
+) -> Result<PathBuf> {
+    render_to(
+        deck_path,
+        text,
+        "preview",
+        out_dir,
+        "revealjs",
+        "html",
+        PREVIEW,
+        false,
+        Some(cancel),
     )
 }
 
@@ -319,6 +372,7 @@ pub(crate) fn render_to(
     ext: &str,
     extra: &[&str],
     execute: bool,
+    cancel: Option<&AtomicBool>,
 ) -> Result<PathBuf> {
     let dir = deck_path.parent().unwrap_or(Path::new("."));
     let stem = deck_path.file_stem().unwrap_or_default().to_string_lossy();
@@ -336,7 +390,7 @@ pub(crate) fn render_to(
     let (mut quarto, wrapped) = quarto_cmd(dir, if execute { text } else { "" }, &args)?;
     std::fs::create_dir_all(out_dir)?;
     std::fs::write(&copy, text)?;
-    let out = run_quarto(&mut quarto);
+    let out = run_quarto(&mut quarto, cancel);
     let _ = std::fs::remove_file(&copy);
     let out = out?;
     if !out.status.success() {
@@ -372,7 +426,7 @@ pub fn render_deck(deck_path: &Path, to: Option<&str>) -> Result<(PathBuf, Strin
     }
     let text = std::fs::read_to_string(deck_path)?;
     let (mut cmd, wrapped) = quarto_cmd(dir, &text, &args)?;
-    let out = run_quarto(&mut cmd)?;
+    let out = run_quarto(&mut cmd, None)?;
     let log = log(&out);
     if !out.status.success() {
         return Err(failed(&log, wrapped, "\u{0}"));

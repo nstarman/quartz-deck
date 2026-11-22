@@ -7,7 +7,7 @@ use crate::error::{QdError, Result};
 use crate::focus::Snapshot;
 use crate::kernel::{Session as Kernel, runnable};
 use crate::outputs::Outputs;
-use crate::render::{preview_copy, render};
+use crate::render::preview_copy;
 use crate::store::Store;
 use axum::extract::{DefaultBodyLimit, Path as UrlPath, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -101,6 +101,8 @@ struct App {
     kick: Notify,
     /// Render even when the deck and its outputs are what was last rendered (a references file changed).
     force: AtomicBool,
+    /// The deck changed since the render in progress read it: stop that render.
+    stale: AtomicBool,
     /// Required (`X-QD-Token`) to run code: only the editor page knows it (FR-015).
     token: String,
     /// The deck's live session, started on the first run.
@@ -1077,15 +1079,63 @@ async fn events(
     Sse::new(first.chain(live)).keep_alive(KeepAlive::default())
 }
 
+/// What a preview render shows besides the deck's text: its cells' outputs, and
+/// the newest change to the files around it (references, `_quarto.yml`, the
+/// theme, pictures). Kept beside the render, so a restart can tell it is current.
+/// qd's and Quarto's own versions count too: either one draws the preview differently.
+fn render_key(app: &App, version: &str, shown_outputs: &str) -> Value {
+    let dir = app.store.path.parent().unwrap_or(Path::new("."));
+    let quarto = crate::render::quarto()
+        .ok()
+        .and_then(|q| std::fs::metadata(q).ok()?.modified().ok());
+    json!({"version": version, "outputs": shown_outputs, "qd": env!("CARGO_PKG_VERSION"),
+        "quarto": quarto.map(|t| format!("{t:?}")), "files": newest_change(&crate::env::home(dir))})
+}
+
+/// The newest modification time (ns) under `dir`, or 0 (unknown) past a few
+/// thousand entries. Hidden folders, Quarto's `_files` and qd's copies don't count.
+fn newest_change(dir: &Path) -> u64 {
+    fn walk(d: &Path, newest: &mut u64, left: &mut u32) {
+        let Ok(rd) = std::fs::read_dir(d) else { return };
+        for e in rd.flatten() {
+            if *left == 0 {
+                return;
+            }
+            *left -= 1;
+            let name = e.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with('.') || name.ends_with("_files") || name.contains(".qd-") {
+                continue;
+            }
+            let Ok(m) = std::fs::metadata(e.path()) else {
+                continue;
+            }; // through links: a linked references file
+            if m.is_dir() {
+                walk(&e.path(), newest, left);
+            } else if let Ok(t) = m.modified() {
+                let ns = t
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_nanos() as u64);
+                *newest = (*newest).max(ns);
+            }
+        }
+    }
+    let (mut newest, mut left) = (0, 5000);
+    walk(dir, &mut newest, &mut left);
+    if left == 0 { 0 } else { newest }
+}
+
 /// One render at a time; triggers that arrive meanwhile coalesce into one more.
 async fn render_loop(app: Shared) {
     loop {
         app.kick.notified().await;
         tokio::time::sleep(Duration::from_millis(150)).await;
+        app.stale.store(false, Ordering::SeqCst); // set again by any change after this read
         let Ok(d) = app.store.read() else { continue };
         let outputs = Outputs::new(&app.store).report(&d);
         // what the render shows besides the deck's text: the editor reloads when it changes (spec 020)
         let shown_outputs = crate::deck::version_of(outputs["cells"].to_string().as_bytes());
+        let key = render_key(&app, &d.version, &shown_outputs);
         // already rendered (an edit undone at once, a run that changed no output): say so, don't render
         let now = Some((d.version.clone(), shown_outputs.clone()));
         if !app.force.swap(false, Ordering::SeqCst) && {
@@ -1098,18 +1148,23 @@ async fn render_loop(app: Shared) {
         let _ = app.tx.send(Ev::Rendering);
         let copy = preview_copy(&d, &outputs["cells"]);
         let (path, out, a) = (app.store.path.clone(), app.out.clone(), app.clone());
+        // the preview is changing: until it's done, a restart can't take it as current
+        let _ = std::fs::remove_file(app.out.join("qd-rendered.json"));
         let res = tokio::task::spawn_blocking(move || {
             let closing = a.rendering.lock().unwrap();
             if *closing {
                 return Err(QdError::NoServer);
             }
-            render(&path, &copy, "preview", &out, true)
+            crate::render::render_preview(&path, &copy, &out, &a.stale)
         })
         .await
         .unwrap_or_else(|join| Err(QdError::Io(std::io::Error::other(join))));
         let mut st = app.st.lock().unwrap();
         let ev = match res {
+            // a newer edit stopped it: its own render comes next (the kick is waiting)
+            Err(QdError::Io(e)) if e.kind() == std::io::ErrorKind::Interrupted => continue,
             Ok(_) => {
+                let _ = std::fs::write(app.out.join("qd-rendered.json"), key.to_string());
                 st.rendered = now;
                 st.error = None;
                 Ev::Rendered(d.version, shown_outputs)
@@ -1209,6 +1264,7 @@ fn watch(app: Shared) -> Result<notify::RecommendedWatcher> {
         if st.version != v {
             st.version = v.clone();
             drop(st);
+            a.stale.store(true, Ordering::SeqCst);
             let _ = a.tx.send(Ev::Changed(v));
             if a.setting("history.commit") == true {
                 a.pending.store(true, Ordering::SeqCst);
@@ -1293,6 +1349,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             }),
             kick: Notify::new(),
             force: AtomicBool::new(false),
+            stale: AtomicBool::new(false),
             token: token()?,
             kernel: Mutex::new(None),
             runs: AtomicU64::new(0),
@@ -1381,7 +1438,19 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
         let _watcher = watch(app.clone())?;
         tokio::spawn(render_loop(app.clone()));
         tokio::spawn(commit_loop(app.clone()));
-        app.kick.notify_one();
+        // the last session's preview is still current: show it, no render at start (5–10 s on a long deck)
+        let outputs = Outputs::new(&app.store).report(&d);
+        let shown = crate::deck::version_of(outputs["cells"].to_string().as_bytes());
+        let key = render_key(&app, &d.version, &shown);
+        let last = std::fs::read_to_string(out.join("qd-rendered.json")).ok();
+        if key["files"] != 0
+            && last.as_deref() == Some(&key.to_string())
+            && out.join(format!("{stem}.qd-preview.html")).exists()
+        {
+            app.st.lock().unwrap().rendered = Some((d.version.clone(), shown));
+        } else {
+            app.kick.notify_one();
+        }
         on_ready(&session);
         let stopping = Arc::new(Notify::new());
         let server = axum::serve(listener, router).with_graceful_shutdown({
@@ -1392,6 +1461,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
                     _ = app.stop.notified() => {}
                     _ = closed() => {}
                 }
+                app.stale.store(true, Ordering::SeqCst); // a render in progress stops: don't wait for it
                 stopping.notify_one();
             }
         });
