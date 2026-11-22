@@ -220,8 +220,9 @@ function follow(pos, wait = 60) {
     const cell = c && (await api.dotCell(c.line));
     if (n !== followSeq) return;
     if (!cell) { api.unfollow(); return; }
-    // `dot at` counts bytes of the text as UTF-8
-    api.follow(cell, c.body, new TextEncoder().encode(c.body.slice(0, c.offset)).length);
+    // `dot at` counts bytes of the text as UTF-8; the drawing goes beside the line on screen
+    const row = hl.children[ta.value.slice(0, pos).split('\n').length - 1];
+    api.follow(cell, c.body, new TextEncoder().encode(c.body.slice(0, c.offset)).length, row?.getBoundingClientRect());
   }, wait);
 }
 
@@ -277,7 +278,7 @@ export function initPane(a) {
     hovering = false;
     if (document.activeElement === ta) followCaret(); else unfollow();
   });
-  ta.addEventListener('scroll', syncScroll);
+  ta.addEventListener('scroll', () => { syncScroll(); api.peekAway(); });
   ta.addEventListener('keyup', caretMoved);
   ta.addEventListener('click', caretMoved);
   ta.addEventListener('keydown', (e) => {

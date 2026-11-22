@@ -119,6 +119,13 @@ const DEFS: &[Def] = &[
         Kind::Bool,
         || json!(true), // spec 020 US2: a layout takes milliseconds
     ),
+    def(
+        "diagrams.source-preview",
+        "Preview the box at the cursor",
+        "With the cursor on a box's or an arrow's line in a diagram's source, a small drawing of it shows beside the line. Off: the box is only outlined on the slide.",
+        Kind::Bool,
+        || json!(true), // spec 021 US2
+    ),
     ui("ui.source_width", Kind::Number, || Value::Null),
     ui("ui.source_height", Kind::Number, || Value::Null), // below the slide (spec 022)
     ui("ui.source_was_open", Kind::Bool, || json!(false)),
@@ -276,9 +283,10 @@ mod tests {
         assert_eq!(v["confirm.slide_delete"], true);
         assert_eq!(v["placement.snap"], true);
         assert_eq!(v["diagrams.live-layout"], true, "spec 020 US2");
+        assert_eq!(v["diagrams.source-preview"], true, "spec 021 US2");
         assert_eq!(v["ui.inspector"], true, "spec 019: on where it fits");
         assert!(notices.is_empty());
-        assert_eq!(defs().as_array().unwrap().len(), 10, "ui.* are not shown");
+        assert_eq!(defs().as_array().unwrap().len(), 11, "ui.* are not shown");
     }
 
     #[test]

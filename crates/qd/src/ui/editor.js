@@ -1751,7 +1751,7 @@ const setFull = (on) => { $('[data-act=full]', srcpane).setAttribute('aria-press
 function setSource(open, remember) {
   layout('source-open', 'ui.source_was_open', open, remember);
   srcpane.hidden = !open;
-  if (open) pane.load();
+  if (open) pane.load(); else dot.cursorGone();
 }
 const splitter = $('#splitter');
 let sizeTimer = null;
@@ -1835,6 +1835,7 @@ pane.initPane({
   typed: focus.typed,
   follow: dot.cursorAt,
   unfollow: dot.cursorGone,
+  peekAway: dot.peekAway,
   dotCell,
 });
 

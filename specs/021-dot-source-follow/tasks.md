@@ -89,24 +89,24 @@ talk in the repository.
 
 **Independent test**: spec US2's independent test.
 
-- [ ] T008 [P] [US2] Write failing unit tests for `alone` in `crates/qd/src/dot.rs` (contracts/cli.md):
+- [X] T008 [P] [US2] Write failing unit tests for `alone` in `crates/qd/src/dot.rs` (contracts/cli.md):
   - a box's graph keeps its merged attributes and the `node` defaults in force at it, and drops `pos`, `layout`, `splines`, `size`;
   - an arrow's graph has its two ends' boxes and the arrow with its attributes;
   - defaults written after the box don't apply;
   - with Graphviz installed, `dot -Tsvg` draws it and the label is in the SVG.
-- [ ] T009 [US2] Add `alone` to `at()`'s answer for boxes and arrows in `crates/qd/src/dot.rs`, writing statements with `node_stmt` and the existing attribute merging (research R3). T008 passes.
-- [ ] T010 [P] [US2] Write failing browser tests in `crates/qd/tests/onslide.rs`, with Quarto slowed by 3 s:
+- [X] T009 [US2] Add `alone` to `at()`'s answer for boxes and arrows in `crates/qd/src/dot.rs`, writing statements with `node_stmt` and the existing attribute merging (research R3). T008 passes.
+- [X] T010 [P] [US2] Write failing browser tests in `crates/qd/tests/onslide.rs`, with Quarto slowed by 3 s:
   - **`source_follow_preview`:**
     - the caret on a box's line shows `#dot-peek` beside it, not over it, with the box's label;
     - typing a new `fillcolor` redraws it with that fill before the slide's render lands;
     - typing an unclosed quote leaves the last drawing with `.stale`;
     - Esc closes it;
   - **`source_follow_setting_off`:** with `diagrams.source-preview` false, no `#dot-peek`, and the outline still there.
-- [ ] T011 [US2] Implement the pop-over:
+- [X] T011 [US2] Implement the pop-over:
   - `#dot-peek` in `crates/qd/src/ui/index.html`, styled in `crates/qd/src/ui/editor.css` (at most 240 × 160, the panel's colours, `aria-hidden`);
   - in `dot.js`, lay out `alone` with `graphviz()`, add pictures with `pictures()`, and place it beside the line's rectangle (from `pane.js`), kept inside the window;
   - `.stale` on a stop; hidden for `setting`, `defaults`, `cluster` and nothing.
-- [ ] T012 [US2] Add `diagrams.source-preview` (default `true`) to `crates/qd/src/settings.rs` with its test, and read it in `dot.js` (research R7). T010 passes.
+- [X] T012 [US2] Add `diagrams.source-preview` (default `true`) to `crates/qd/src/settings.rs` with its test, and read it in `dot.js` (research R7). T010 passes.
 
 **Checkpoint**: PR 2.
 
