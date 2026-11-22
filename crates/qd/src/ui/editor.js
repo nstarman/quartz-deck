@@ -131,7 +131,17 @@ async function fetchMeta() {
  * just their element with `expect-text`, so edits elsewhere don't block them).
  * `expect` is the version a form was opened on (default: the latest one seen).
  */
-async function op(name, args = {}, { fileExpect = true, expect = state.version } = {}) {
+function op(...a) {
+  const p = runOp(...a);
+  // a diagram edit shows at once (spec 020), once the caller has taken the result
+  // (a flip selects the reversed arrow, an add the new box)
+  const drew = p.then((body) => body && new Promise((r) => setTimeout(r)).then(() => dot.changed((i, text) => shown.drawn.set(i, text))));
+  drawing = Promise.all([drawing, drew.catch(() => {})]);
+  return p;
+}
+// ops in flight, each until it has drawn its diagrams: till then the file is ahead of the preview
+let drawing = Promise.resolve();
+async function runOp(name, args = {}, { fileExpect = true, expect = state.version } = {}) {
   status('Saving…', true);
   const res = await fetch('/api/op', {
     method: 'POST',
@@ -157,22 +167,21 @@ async function op(name, args = {}, { fileExpect = true, expect = state.version }
   if (body.version) state.version = body.version;
   status('Saved', true);
   say(`${name} ✓`);
-  // a diagram edit shows at once (spec 020), once the caller has taken the result
-  // (a flip selects the reversed arrow, an add the new box)
-  setTimeout(() => dot.changed((i, text) => shown.drawn.set(i, text)));
   return body;
 }
 
 // What the preview shows (spec 020): the source of the render loaded in it, and
 // the diagrams drawn into it since (by their place among the deck's {dot} cells).
 // A render that changes only those, to what is drawn, needn't reload.
-const shown = { outputs: null, source: null, drawn: new Map() };
+// `noted` settles once `source` is the shown render's: until then it is the one before.
+const shown = { outputs: null, source: null, drawn: new Map(), noted: null };
 const source = () => fetch('/api/source').then((r) => r.json()).catch(() => null);
-async function noteShown(version, outputs) {
+function noteShown(version, outputs) {
   shown.outputs = outputs; // the cell outputs that render showed (the server's fingerprint)
   shown.drawn.clear();
-  const s = await source();
-  shown.source = s && s.version === version ? s.text : null; // moved on already: the next render reloads
+  shown.noted = source().then((s) => {
+    shown.source = s && s.version === version ? s.text : null; // moved on already: the next render reloads
+  });
 }
 // a {dot} cell: its opening fence line, its body, its closing fence
 const DOT_CELL = /^((`{3,})[ \t]*\{dot\b[^\n]*\n)([\s\S]*?)^\2[ \t]*$/gm;
@@ -183,8 +192,15 @@ const DOT_CELL = /^((`{3,})[ \t]*\{dot\b[^\n]*\n)([\s\S]*?)^\2[ \t]*$/gm;
  * drop while a slow deck renders).
  */
 async function alreadyShown() {
+  await shown.noted;
   if (shown.source == null) return false;
-  const s = await source();
+  // the file and the drawings as of the same moment: no op between its write and its drawing
+  let s, ops;
+  do {
+    ops = drawing;
+    await ops;
+    s = await source();
+  } while (ops !== drawing);
   if (!s) return false;
   const bodies = (t) => [...t.matchAll(DOT_CELL)].map((m) => m[3]);
   const rest = (t) => t.replace(DOT_CELL, '$1');
@@ -1135,7 +1151,10 @@ async function rendered(d) {
   // decided before "Up to date" shows: until then the preview may still reload.
   // New cell outputs (a run's) aren't in the text: a render with others reloads.
   // A render of what's on screen already (the same render twice) needn't.
-  const skip = !hold && d.outputs === shown.outputs && (await alreadyShown());
+  // The server says "rendered" again on every check that found nothing new (an edit
+  // and its undo: twice), and when this page connects: the render loading now is it.
+  const loading = frame.hasAttribute('aria-busy') && d.version === state.loading && d.outputs === state.loadingOutputs;
+  const skip = !hold && (loading || (d.outputs === shown.outputs && (await alreadyShown())));
   status('Up to date', true);
   statusEl.title = `Version ${d.version.slice(0, 7)}`;
   banner.hidden = true;
