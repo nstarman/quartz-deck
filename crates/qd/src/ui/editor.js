@@ -1831,6 +1831,7 @@ splitter.addEventListener('keydown', (e) => {
 const themed = new URLSearchParams(location.search).has('theme'); // VS Code sets the theme (spec 006)
 settings.onChange((v) => {
   mainEl.dataset.source = v['source.side']; // spec 022: far-left, left, right, below
+  mainEl.dataset.props = v['properties.side']; // spec 023: the same four
   orient();
   inspector.fit(); // ui.inspector
   if (!themed) {
@@ -1856,8 +1857,9 @@ $('[data-act=form]', srcpane).addEventListener('click', toggleProperties);
 $('[data-act=full]', srcpane).addEventListener('click', () => setFull(!mainEl.classList.contains('source-full')));
 
 
-// drag the pane's title bar to another place (spec 022)
-dock.init((place) => settings.set({ 'source.side': place }));
+// drag the pane's title bar, or the column's, to another place (specs 022, 023)
+dock.init(srcpane, $('.srcbar', srcpane), () => mainEl.dataset.source, (place) => settings.set({ 'source.side': place }));
+dock.init($('#panel'), $('#panel .propbar'), () => mainEl.dataset.props, (place) => settings.set({ 'properties.side': place }));
 
 pane.initPane({
   op: (name, args) => op(name, args, { fileExpect: false }),

@@ -64,6 +64,13 @@ const DEFS: &[Def] = &[
         || json!("left"),
     ),
     def(
+        "properties.side",
+        "Properties column place",
+        "Where the properties column sits: before the slide list, beside it, right of the slide, or below the slide.",
+        Kind::Choice(&["far-left", "left", "right", "below"]),
+        || json!("right"),
+    ),
+    def(
         "source.open",
         "Source pane when the editor opens",
         "Open, closed, or as it was last time.",
@@ -344,6 +351,14 @@ mod tests {
         for place in ["far-left", "left", "right", "below"] {
             assert_eq!(
                 set(&p, &m(json!({"source.side": place}))).unwrap()["source.side"],
+                place
+            );
+        }
+        // spec 023: the properties column has the same four, on the right by default
+        assert_eq!(load(&p).0["properties.side"], "right");
+        for place in ["far-left", "left", "right", "below"] {
+            assert_eq!(
+                set(&p, &m(json!({"properties.side": place}))).unwrap()["properties.side"],
                 place
             );
         }

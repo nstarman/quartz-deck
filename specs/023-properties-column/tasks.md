@@ -158,9 +158,14 @@ tests are in `tests/ops.rs`, beside the other `meta` tests.
 
 **Independent test**: spec US4's independent test.
 
-- [ ] T018 [P] [US4] Write failing browser tests **`props_dock`** and **`props_keyboard`** in `crates/qd/tests/onslide.rs` (contracts/editor.md § Tests): each place, after a reload; narrow puts it below; View ▸ Properties hides and shows; with the source pane on the same side, both show in the set order (research R5). For the keyboard: F6 in and Esc out, arrows along the views and tabs.
-- [ ] T019 [US4] Add `properties.side` (right, far-left, left, below; default right) and `ui.properties_width`/`ui.properties_height` to `crates/qd/src/settings.rs`, with tests.
-- [ ] T020 [US4] Make `crates/qd/src/ui/dock.js` take a pane, its header and its setting, and use it for the column's header. Lay the column out from `main[data-props]` in `crates/qd/src/ui/editor.css`, with the shared order beside the source pane and the narrow-window stack. T018 passes, and spec 022's `source_dock_*` tests still pass.
+- [X] T018 [P] [US4] Write failing browser tests **`props_dock`** and **`props_keyboard`** in `crates/qd/tests/onslide.rs` (contracts/editor.md § Tests): each place, after a reload; narrow puts it below; View ▸ Properties hides and shows; with the source pane on the same side, both show in the set order (research R5). For the keyboard: F6 in and Esc out, arrows along the views and tabs.
+- [X] T019 [US4] Add `properties.side` (right, far-left, left, below; default right) and `ui.properties_width`/`ui.properties_height` to `crates/qd/src/settings.rs`, with tests.
+- [X] T020 [US4] Make `crates/qd/src/ui/dock.js` take a pane, its header and its setting, and use it for the column's header. Lay the column out from `main[data-props]` in `crates/qd/src/ui/editor.css`, with the shared order beside the source pane and the narrow-window stack. T018 passes, and spec 022's `source_dock_*` tests still pass.
+
+**As built (PR 4)**:
+- The panes are laid out by one CSS grid on `main`, with a column for each pane in each place. Each pane is placed from its own setting alone.
+- `ui.properties_width` and `ui.properties_height` were left out: the column keeps its width, and it is at most 35% of the window's height below the slide.
+- On a narrow window the source pane stays right under the slide, as in spec 022, and the column comes after it.
 
 **Checkpoint**: PR 4's code.
 
@@ -168,9 +173,9 @@ tests are in `tests/ops.rs`, beside the other `meta` tests.
 
 ## Phase 6: Polish (PR 4)
 
-- [ ] T021 [P] Docs: `README.md` and `skills/quartz-deck/SKILL.md` describe the column, its views, `qd build set/list/order`, dotted `qd meta set`, `qd meta size`, and `properties.side`, in our own words.
-- [ ] T022 Run quickstart §1–§5 on a copy of the showcase. Record it in `specs/023-properties-column/checklists/quickstart-run.md`, with SC-001's item-by-item check of every old control's new home.
-- [ ] T023 Final constitution re-check in `plan.md`; fmt, clippy (`--workspace --all-targets -D warnings`) and `cargo test --workspace --no-fail-fast` green.
+- [X] T021 [P] Docs: `README.md` and `skills/quartz-deck/SKILL.md` describe the column, its views, `qd build set/list/order`, dotted `qd meta set`, `qd meta size`, and `properties.side`, in our own words.
+- [X] T022 Run quickstart §1–§5 on a copy of the showcase. Record it in `specs/023-properties-column/checklists/quickstart-run.md`, with SC-001's item-by-item check of every old control's new home.
+- [X] T023 Final constitution re-check in `plan.md`; fmt, clippy (`--workspace --all-targets -D warnings`) and `cargo test --workspace --no-fail-fast` green.
 - [ ] T024 With the person: on a copy of their talk, set a background, a transition and two builds from the column (SC-006). Nothing about the talk goes into the repository.
 - [ ] T025 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
 

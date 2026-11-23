@@ -365,36 +365,47 @@ body:has(> #fmtbar:not([hidden])) #panel .fmt-tab > .note { display: none; }
 /* ---------- spec 004: source pane ---------- */
 #splitter { display: none; flex: none; width: 6px; cursor: col-resize; background: var(--line); }
 main.source-open > #splitter { display: block; }
-#srcpane { flex: none; width: var(--srcw, 40%); min-width: 240px; display: flex; flex-direction: column;
+#srcpane { flex: none; width: var(--srcw, 40vw); min-width: 240px; display: flex; flex-direction: column;
   border-right: 1px solid var(--line); background: var(--panel); min-height: 0; }
 main.source-full > :is(#stage, #splitter, #panel) { display: none; }
-main.source-full > #srcpane { flex: 1; width: auto; }
-/* its place (spec 022): left (the DOM's order) by default; History stays by the list */
-main[data-source=far-left] > #srcpane { order: -2; }
-main[data-source=far-left] > #splitter { order: -1; }
-main[data-source=right] > #panel { order: 2; } /* the inspector next to the slide */
-main[data-source=right] > #splitter { order: 3; }
-main[data-source=right] > #srcpane { order: 4; }
-main[data-source=below] { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; grid-template-rows: minmax(0, 1fr) auto auto; }
-main[data-source=below] > :is(nav, #history, #panel) { grid-row: 1 / -1; }
-main[data-source=below] > #history { grid-column: 2; }
-main[data-source=below] > #panel { grid-column: 4; }
-main[data-source=below] > #stage { grid-column: 3; grid-row: 1; }
-main[data-source=below] > #splitter { grid-column: 3; grid-row: 2; }
-main[data-source=below] > #srcpane { grid-column: 3; grid-row: 3; }
-main[data-source=below].source-full > #srcpane { grid-row: 1 / -1; }
+/* where the source pane (spec 022) and the properties column (spec 023) sit: one
+   slot per pane and place, so each is laid out from its own setting alone. An
+   empty column or row takes no room. Beside each other: left, the source pane
+   further out; right, the slide, the column, then the pane; below, the same. */
+main { display: grid; grid-template-columns: repeat(8, auto) minmax(0, 1fr) repeat(3, auto);
+  grid-template-rows: minmax(0, 1fr) auto auto auto; }
+main > * { grid-row: 1 / -1; }
+main > nav { grid-column: 4; }
+main > #history { grid-column: 5; }
+main > #srcpane { grid-column: 6; }
+main > #splitter { grid-column: 7; }
+main > #stage { grid-column: 9; grid-row: 1; }
+main > #panel { grid-column: 10; }
+main[data-source=far-left] > #srcpane { grid-column: 1; }
+main[data-source=far-left] > #splitter { grid-column: 2; }
+main[data-props=far-left] > #panel { grid-column: 3; }
+main[data-props=left] > #panel { grid-column: 8; }
+main[data-source=right] > #splitter { grid-column: 11; }
+main[data-source=right] > #srcpane { grid-column: 12; }
+main[data-props=below] > #panel { grid-column: 9; grid-row: 2; width: auto; max-height: 35vh; border: 0; border-top: 1px solid var(--line); }
+main[data-source=below] > #splitter { grid-column: 9; grid-row: 3; }
+main[data-source=below] > #srcpane { grid-column: 9; grid-row: 4; }
+main.source-full > #srcpane { grid-column: 6 / -1; grid-row: 1 / -1; width: auto; }
 /* below the slide, and every place on a narrow window (editor.js sets the splitter's
    orientation): as wide as the slide, the splitter across */
 main:has(> #splitter[aria-orientation=horizontal]) > #srcpane { width: auto; min-width: 0; height: var(--srch, 35vh); border-right: 0; }
 main.source-full:has(> #splitter[aria-orientation=horizontal]) > #srcpane { height: auto; }
 #splitter[aria-orientation=horizontal] { width: auto; height: 6px; cursor: row-resize; }
 @media (max-width: 700px) {
-  main[data-source] { display: flex; }
-  main[data-source] > #stage { order: 1; }
-  main[data-source] > #splitter { order: 2; }
-  main[data-source] > #srcpane { order: 3; }
-  main[data-source] > #panel { order: 4; }
+  main { display: flex; }
+  /* the source pane first, as spec 022 had it: the column is the taller to scroll */
+  main > #stage { order: 1; }
+  main > #splitter { order: 2; }
+  main > #srcpane { order: 3; }
+  main > #panel { order: 4; }
 }
+/* the column's title bar: drag it to another place (spec 023) */
+#panel > .propbar { margin: -4px 0 8px; font-size: 12px; color: var(--muted); cursor: grab; user-select: none; }
 /* dragging it by the title bar (spec 022): the zones, the one under the pointer stronger */
 #srcpane .srcbar { cursor: grab; }
 #srcpane .srcbar :is(button, .kernel) { cursor: auto; }

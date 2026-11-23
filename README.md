@@ -88,17 +88,25 @@ stderr with a stable `code` and a `hint`. Decks inside a Quarto project
   selection; ⌘C/⌘X/⌘V/⌘D, ⌫, ⌥↑/⌥↓ act on it.
 - **The properties column** (specs [019](specs/019-mac-inspector/spec.md),
   [023](specs/023-properties-column/spec.md)): every slide and element setting
-  is in one column on the right, so nothing floats over the slide but the text
+  is in one column, on the right unless you move it, so nothing floats over the slide but the text
   toolbar while you type. **Format** has tabs that follow the selection:
   **Slide** (background, image, hidden, title, classes, its markdown) or
   **Title** (title, subtitle, author, date) with nothing selected; **Look**,
   **Text** and **Arrange** for an element, with Run, Edit, Markdown and Delete
-  at the foot. **Animate** has the slide's transition, or whether the element
-  appears on a click. **Deck** has the theme, the slide size (a new size
-  scales placed boxes and arrows with the slide), slide numbers, the default
-  transition and the navigation mode, written under `format: revealjs:`. View ▸ Properties (⌥⌘0) hides and shows it (setting
-  `ui.inspector`); F6 goes to it and back, ← → move along its tabs, Esc in a
-  field returns to the slide. On a window 700 px wide or less it is below the
+  at the foot. **Animate** has the slide's transition, its speed and whether
+  it morphs into the next slide; with an element selected, how it appears
+  and leaves on a click; and the slide's builds in the order they show, to
+  drag or move with ⌥↑ ⌥↓. CLI: `qd build set REF --appear grow --leave
+  fade-out`, `qd build list SLIDE`, `qd build order SLIDE REF…`. **Deck**
+  has the theme, the slide size (a new size scales placed boxes and arrows
+  with the slide), slide numbers, the default transition and the navigation
+  mode, written under `format: revealjs:`.
+  Drag the column by its title to the right of the slide, before the slide
+  list, beside it or below the slide (setting `properties.side`); beside the
+  source pane on the same side, the source pane is the further out.
+  View ▸ Properties (⌥⌘0) hides and shows it (setting `ui.inspector`); F6
+  goes to it and back, ← → move along its views and tabs, Esc in a field
+  returns to the slide. On a window 700 px wide or less it is below the
   slide.
 - **With an agent:** you and Claude can edit at the same time. Saves are
   checked per element (`qd edit … --expect-text <hash>`, hashes in `qd

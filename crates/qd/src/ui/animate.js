@@ -85,6 +85,11 @@ export function render({ kv, element, builds = [], current }, api) {
       label('Appear ', select('appear', [['none', 'None'], ...APPEARS], element.appear || 'none', (v) => api.build(v, null))),
       label('Leave ', select('leave', [['none', 'None'], ...LEAVES], element.leave || 'none', (v) => api.build(null, v))),
     );
+    // one effect per click: a leave follows fading in, or nothing (`qd build set`)
+    if (!['none', 'fade-in', undefined].includes(element.appear)) {
+      out.querySelector('[name=leave]').disabled = true;
+      out.append(el('p', { className: 'hint', textContent: 'Only an element that fades in, or has no appear effect, can also leave.' }));
+    }
     if (element.list) out.append(check('incremental', 'One item at a time', element.incremental, api.incremental));
   } else if (kv) {
     out.append(

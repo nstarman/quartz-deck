@@ -4743,6 +4743,10 @@ async fn props_animate() {
     ed.eval(&pick("appear", "fade-up")).await;
     ed.wait_file(|f| f.contains(".fade-up"), "fades up").await;
     ed.settle().await;
+    // fading up takes the click: no leave to choose
+    ed.select("[data-qd=\"a/1\"]").await;
+    ed.wait("document.querySelector('#panel .anim [name=appear]')?.value === 'fade-up' && document.querySelector('#panel .anim [name=leave]').disabled")
+        .await;
     // the list, the selected one marked; ⌥↓ moves the first after the second
     let rows = "[...document.querySelectorAll('#panel .builds li')].map((li) => li.dataset.ref)";
     ed.select("[data-qd=\"a/1\"]").await;
@@ -4788,6 +4792,159 @@ async fn props_animate() {
     )
     .await;
     ed.settle().await;
+}
+
+/// Set `properties.side` the way the CLI and Settings do, and wait for the layout.
+async fn props_place(ed: &Ed, p: &str) {
+    ed.eval(&format!(
+        "import('/ui/settings.js').then((s) => s.set({{'properties.side': {p:?}}}))"
+    ))
+    .await;
+    ed.wait(&format!(
+        "document.querySelector('main').dataset.props === {p:?}"
+    ))
+    .await;
+    tokio::time::sleep(Duration::from_millis(100)).await; // one layout
+}
+
+/// Where the column is against the slide list and the slide.
+async fn assert_props_place(ed: &Ed, p: &str) {
+    let (nav, stage, col) = (
+        rect(ed, "nav").await,
+        rect(ed, "#stage").await,
+        rect(ed, "#panel").await,
+    );
+    let ok = match p {
+        "far-left" => col[2] <= nav[0] + 1.0,
+        "left" => nav[2] <= col[0] + 1.0 && col[2] <= stage[0] + 1.0,
+        "right" => stage[2] <= col[0] + 1.0,
+        _ => stage[3] <= col[1] + 1.0 && (col[0] - stage[0]).abs() < 2.0,
+    };
+    assert!(ok, "{p}: nav {nav:?}, stage {stage:?}, column {col:?}");
+}
+
+/// Spec 023 US4 (T018): the column dragged by its title to each place, kept
+/// after a reload; below the slide in a narrow window; View ▸ Properties hides
+/// and shows it; beside the source pane on the same side, in the set order.
+#[tokio::test(flavor = "multi_thread")]
+async fn props_dock() {
+    use DispatchMouseEventType::*;
+    let Some(ed) = inspecting().await else {
+        return;
+    };
+    ed.window(1280, 800).await;
+    assert_props_place(&ed, "right").await;
+    for p in ["far-left", "left", "below", "right"] {
+        let (x, y) = ed.editor_point("#panel .propbar", None).await;
+        ed.press_and_move((x, y), (x + 12.0, y)).await;
+        ed.wait("document.body.classList.contains('docking') && document.querySelectorAll('#dock-zones:not([hidden]) > [data-place]').length === 4")
+            .await;
+        let to = ed
+            .editor_point(&format!("#dock-zones > [data-place={p}]"), None)
+            .await;
+        ed.mouse(MouseMoved, to, false).await;
+        ed.mouse(MouseReleased, to, false).await;
+        ed.wait(&format!(
+            "document.querySelector('main').dataset.props === {p:?} && document.querySelector('#dock-zones').hidden"
+        ))
+        .await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_props_place(&ed, p).await;
+        assert_eq!(ed.cli(&["settings"])["values"]["properties.side"], p);
+        assert_eq!(
+            ed.cli(&["settings"])["values"]["source.side"],
+            "left",
+            "the source pane stays"
+        );
+    }
+    props_place(&ed, "left").await;
+    ed.page.reload().await.unwrap();
+    ed.wait_secs(READY, 60).await;
+    ed.wait(&format!(
+        "document.querySelector('main').dataset.props === 'left' && {INSPECTING}"
+    ))
+    .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_props_place(&ed, "left").await;
+    // a narrow window: below the slide, the place kept for a wide one
+    ed.window(650, 800).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let (stage, col) = (rect(&ed, "#stage").await, rect(&ed, "#panel").await);
+    assert!(
+        stage[3] <= col[1] + 1.0,
+        "650 px: stage {stage:?}, column {col:?}"
+    );
+    ed.window(1280, 800).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_props_place(&ed, "left").await;
+    // View ▸ Properties
+    ed.menu("View", "Properties").await;
+    ed.wait("getComputedStyle(document.querySelector('#panel')).display === 'none'")
+        .await;
+    ed.menu("View", "Properties").await;
+    ed.wait(INSPECTING).await;
+    // with the source pane on the same side: left, the pane further out; right and below, the slide, the column, the pane
+    ed.open_source().await;
+    for p in ["left", "right", "below"] {
+        place(&ed, p).await;
+        props_place(&ed, p).await;
+        let (stage, col, src) = (
+            rect(&ed, "#stage").await,
+            rect(&ed, "#panel").await,
+            rect(&ed, "#srcpane").await,
+        );
+        let ok = match p {
+            "left" => src[2] <= col[0] + 1.0 && col[2] <= stage[0] + 1.0,
+            "right" => stage[2] <= col[0] + 1.0 && col[2] <= src[0] + 1.0,
+            _ => stage[3] <= col[1] + 1.0 && col[3] <= src[1] + 1.0,
+        };
+        assert!(
+            ok,
+            "both {p}: stage {stage:?}, column {col:?}, pane {src:?}"
+        );
+    }
+}
+
+/// Spec 023 US4 (T018): F6 into the column and back, ← → along the views and
+/// tabs, Esc from a field back to the slide.
+#[tokio::test(flavor = "multi_thread")]
+async fn props_keyboard() {
+    let Some(ed) = inspecting().await else {
+        return;
+    };
+    ed.go("a").await;
+    let inside = "document.querySelector('#panel').contains(document.activeElement)";
+    ed.key("F6", "F6", 117, 0).await;
+    ed.wait(&format!(
+        "{inside} && document.activeElement.id === 'tab-slide'"
+    ))
+    .await;
+    ed.key("F6", "F6", 117, 0).await;
+    ed.wait(&format!("!{inside}")).await;
+    // the views: → from Format to Animate to Deck, and round to Format
+    ed.eval("document.querySelector('#panel .views [aria-selected=true]').focus()")
+        .await;
+    for v in ["animate", "deck", "format"] {
+        ed.key("ArrowRight", "ArrowRight", 39, 0).await;
+        ed.wait(&format!("document.querySelector('#panel').dataset.view === '{v}' && document.activeElement.dataset.view === '{v}'"))
+            .await;
+    }
+    // the tabs: an element's Look, Text, Arrange
+    ed.select("[data-qd=\"a/0\"]").await;
+    ed.wait("!!document.querySelector('#tab-element')").await;
+    ed.eval("document.querySelector('#tab-element').focus()")
+        .await;
+    ed.key("ArrowRight", "ArrowRight", 39, 0).await;
+    ed.wait("document.activeElement.id === 'tab-text' && document.activeElement.ariaSelected === 'true'")
+        .await;
+    ed.key("ArrowLeft", "ArrowLeft", 37, 0).await;
+    ed.wait("document.activeElement.id === 'tab-element'").await;
+    // Esc in a field: back to the slide
+    props(&ed, "deck").await;
+    ed.eval("document.querySelector('#panel .deck [name=theme]').focus()")
+        .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait(&format!("!{inside}")).await;
 }
 
 /// Spec 023 US3 (T016): the theme, the slide size (a placed box keeps its

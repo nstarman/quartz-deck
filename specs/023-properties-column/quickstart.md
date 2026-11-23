@@ -12,7 +12,7 @@
 ```bash
 cd <copy of examples/showcase>
 qd build list builds
-qd build set builds/1 --appear grow --leave fade-out
+qd build set builds/1 --appear fade-in --leave fade-out
 qd build order builds builds/2 builds/1
 qd build list builds
 qd meta set format.revealjs.slide-number false
@@ -37,7 +37,9 @@ Expected:
 
 1. With nothing selected, choose Zoom, fast, and "Morph into the next
    slide".
-2. Select a picture and choose Appear: Grow, Leave: Fade out.
+2. Select a picture and choose Appear: Grow. Leave is greyed out: an
+   element has one effect per click, so only one that fades in (or has no
+   appear effect) can also leave.
 3. Drag it to the top of the build list.
 4. Present the slide and click through: the picture grows first.
 
