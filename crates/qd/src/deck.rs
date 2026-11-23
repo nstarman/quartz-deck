@@ -463,9 +463,9 @@ pub fn auto_identifier(title: &str) -> String {
 }
 
 fn yaml_u64(meta: &Yaml, key: &str) -> Option<u64> {
-    meta.get(key)
-        .and_then(Yaml::as_u64)
-        .or_else(|| meta.get("format")?.get("revealjs")?.get(key)?.as_u64())
+    // under `format: revealjs:` wins, as in Quarto
+    (|| meta.get("format")?.get("revealjs")?.get(key)?.as_u64())()
+        .or_else(|| meta.get(key).and_then(Yaml::as_u64))
 }
 
 // ---------- deck ----------

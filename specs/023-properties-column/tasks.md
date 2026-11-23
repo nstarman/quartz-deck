@@ -128,13 +128,13 @@ about the talk in the repository.
 
 **Independent test**: spec US3's independent test.
 
-- [ ] T014 [P] [US3] Write failing unit tests in `crates/qd/src/ops.rs`:
+- [X] T014 [P] [US3] Write failing unit tests in `crates/qd/src/ops.rs`:
   - dotted `meta set` and `unset` on a deck without `format:`, with `format: revealjs:`, and with `format: html` (refused);
   - empty maps removed on unset;
   - `meta size` with `--keep-places` scaling every positioned box's `left/top/width/height` and every arrow's points.
-- [ ] T015 [US3] Implement dotted keys in `meta_set`/`meta_unset` and `meta_size` in `crates/qd/src/ops.rs`, and `MetaCmd::Size` in `crates/qd/src/cli.rs` (research R4). T014 passes; existing `meta` tests still pass.
-- [ ] T016 [P] [US3] Write a failing browser test **`props_deck`** in `crates/qd/tests/onslide.rs`: change the theme, then the slide size to 4:3 (a placed box keeps its place relative to the slide), slide numbers and the default transition. Check the front matter and the preview.
-- [ ] T017 [US3] Build Deck in `crates/qd/src/ui/props/deck.js` (contracts/editor.md § Deck):
+- [X] T015 [US3] Implement dotted keys in `meta_set`/`meta_unset` and `meta_size` in `crates/qd/src/ops.rs`, and `MetaCmd::Size` in `crates/qd/src/cli.rs` (research R4). T014 passes; existing `meta` tests still pass.
+- [X] T016 [P] [US3] Write a failing browser test **`props_deck`** in `crates/qd/tests/onslide.rs`: change the theme, then the slide size to 4:3 (a placed box keeps its place relative to the slide), slide numbers and the default transition. Check the front matter and the preview.
+- [X] T017 [US3] Build Deck in `crates/qd/src/ui/props/deck.js` (contracts/editor.md § Deck):
   - the theme select: Quarto's built-in theme names, plus the deck's `.scss`;
   - size presets and custom;
   - slide numbers;
@@ -142,6 +142,11 @@ about the talk in the repository.
   - navigation through spec 018's op.
 
   T016 passes.
+
+**As built (PR 3)**: dotted keys are `format.revealjs.KEY` only. Removing
+the mapping's last key leaves `revealjs: default`, so the deck stays a
+reveal.js deck. The view is `ui/deck.js`, beside `ui/animate.js`; the unit
+tests are in `tests/ops.rs`, beside the other `meta` tests.
 
 **Checkpoint**: PR 3.
 

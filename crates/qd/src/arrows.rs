@@ -288,6 +288,30 @@ pub fn move_arrow(
     Ok((p, json!({"ref": r, "from": from, "to": to})))
 }
 
+/// The edits scaling an arrow paragraph's points by `sx`, `sy` (`qd meta size
+/// --keep-places`); `None` when it isn't an arrow qd can edit.
+pub(crate) fn scaled(
+    d: &Deck,
+    span: Span,
+    sx: f64,
+    sy: f64,
+) -> Option<Result<Vec<(Span, String)>>> {
+    let text = d.slice(span);
+    let a = read(text)?.ok()?;
+    let s = |p: (f64, f64)| pt((p.0 * sx, p.1 * sy));
+    let points: Vec<_> = [("from", a.from), ("to", a.to)]
+        .into_iter()
+        .chain(
+            ["control1", "control2"]
+                .into_iter()
+                .zip(a.control.iter().copied()),
+        )
+        .map(|(k, p)| (k, s(p)))
+        .collect();
+    let changes: Vec<_> = points.iter().map(|(k, v)| (*k, Some(v.as_str()))).collect();
+    Some(patch("", "", span, text, &a, &changes).map(|p| p.replacements))
+}
+
 /// The patch making `changes` (`None` removes) to the arrow `a`, whose
 /// paragraph `text` is at `span`. New options go in together after the last
 /// one, in the order given.

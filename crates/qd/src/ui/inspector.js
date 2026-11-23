@@ -1,5 +1,5 @@
 // The properties column (specs 019, 023): beside the slide whenever the person
-// keeps it (View ▸ Properties), with its views (Format, Animate) above its tabs,
+// keeps it (View ▸ Properties), with its views (Format, Animate, Deck) above its tabs,
 // the tabs following the selection. Each control is the one it was: only where
 // it sits changes.
 
@@ -7,7 +7,7 @@ import { get as setting } from '/ui/settings.js';
 import { el } from '/ui/run.js';
 
 const NAMES = { slide: 'Slide', title: 'Title', element: 'Look', text: 'Text', position: 'Arrange' };
-const VIEWS = { format: 'Format', animate: 'Animate' };
+const VIEWS = { format: 'Format', animate: 'Animate', deck: 'Deck' };
 
 const main = document.querySelector('main');
 const panel = document.querySelector('#panel');
@@ -49,7 +49,7 @@ const tabButton = (name, label, click) => {
   return b;
 };
 
-/** A view of the column (Format, Animate): the panel's data-view, which the CSS shows. */
+/** A view of the column (Format, Animate, Deck): the panel's data-view, which the CSS shows. */
 function view(name) {
   panel.dataset.view = name;
   for (const b of views.children) {

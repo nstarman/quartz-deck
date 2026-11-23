@@ -890,3 +890,102 @@ fn stacking_reorders_only_boxes() {
     assert!(why(ops::box_order(&d, "b-1", "backward")).contains("back"));
     assert!(why(ops::box_order(&d, "a/0", "front")).contains("placed"));
 }
+
+/// The file after `ops::meta_set`/`meta_unset` (`None` value) on `src`.
+fn meta(src: &str, key: &str, v: Option<&str>) -> String {
+    let d = Deck::parse(src.into());
+    let p = match v {
+        Some(v) => ops::meta_set(&d, key, v),
+        None => ops::meta_unset(&d, key),
+    };
+    ops::apply(&d.text, &p.unwrap()).unwrap()
+}
+
+#[test]
+fn meta_dotted_revealjs_keys() {
+    let k = "format.revealjs.theme";
+    // no format: the mapping is written
+    let bare = "---\ntitle: T\n---\n\n## A\n";
+    let t = meta(bare, k, Some("dark"));
+    assert_eq!(
+        t,
+        "---\ntitle: T\nformat:\n  revealjs:\n    theme: dark\n---\n\n## A\n"
+    );
+    // removing its only key leaves `revealjs: default`
+    assert_eq!(
+        meta(&t, k, None),
+        "---\ntitle: T\nformat:\n  revealjs: default\n---\n\n## A\n"
+    );
+    // `format: revealjs` becomes the mapping
+    let short = "---\nformat: revealjs\n---\n\n## A\n";
+    assert_eq!(
+        meta(short, k, Some("sky")),
+        "---\nformat:\n  revealjs:\n    theme: sky\n---\n\n## A\n"
+    );
+    // an existing mapping: comments and other keys kept, edited where it is
+    let src = "---\nformat:\n  revealjs:  # mine\n    theme: dark  # dark\n    slide-number: true\n---\n\n## A\n";
+    assert_eq!(
+        meta(src, k, Some("moon")),
+        src.replace("theme: dark  # dark", "theme: moon")
+    );
+    assert_eq!(
+        meta(src, k, None),
+        src.replace("    theme: dark  # dark\n", "")
+    );
+    let t = meta(src, "format.revealjs.transition", Some("fade"));
+    assert_eq!(
+        t,
+        src.replace(
+            "slide-number: true\n",
+            "slide-number: true\n    transition: fade\n"
+        )
+    );
+    // a top-level key is edited where it is
+    let top = "---\ntheme: dark\nformat: revealjs\n---\n\n## A\n";
+    assert_eq!(meta(top, k, Some("sky")), top.replace("dark", "sky"));
+    assert_eq!(meta(top, k, None), top.replace("theme: dark\n", ""));
+
+    let html = Deck::parse("---\nformat: html\n---\n\n## A\n".into());
+    assert_eq!(
+        ops::meta_set(&html, k, "dark").unwrap_err().code(),
+        "E_UNSAFE_EDIT"
+    );
+    let d = Deck::parse(short.into());
+    assert_eq!(ops::meta_unset(&d, k).unwrap_err().code(), "E_NOT_FOUND");
+    assert_eq!(
+        ops::meta_set(&d, "format.revealjs.a.b", "x")
+            .unwrap_err()
+            .code(),
+        "E_INVALID_ARG"
+    );
+}
+
+#[test]
+fn meta_size_keeps_places() {
+    let src = "---\nformat: revealjs\n---\n\n## A\n\n::: {#b-1 .absolute left=105 top=70 width=210 height=140}\nx\n:::\n\n![](p.png){#b-2 .absolute left=10% top=350}\n\n{{< arrow from=\"0,70\" to=\"1050,700\" control1=\"525,350\" position=\"absolute\" >}}\n";
+    let d = Deck::parse(src.into());
+    assert_eq!((d.width, d.height), (1050, 700));
+    let t = ops::apply(&d.text, &ops::meta_size(&d, 1050, 350, true).unwrap()).unwrap();
+    let a = Deck::parse(t.clone());
+    assert_eq!((a.width, a.height), (1050, 350));
+    assert!(
+        t.contains("{#b-1 .absolute left=105 top=35 width=210 height=70}"),
+        "{t}"
+    );
+    // non-px values are left alone
+    assert!(t.contains("{#b-2 .absolute left=10% top=175}"), "{t}");
+    assert!(
+        t.contains("from=\"0,35\" to=\"1050,350\" control1=\"525,175\""),
+        "{t}"
+    );
+    // without --keep-places, only the size changes
+    let t = ops::apply(&d.text, &ops::meta_size(&d, 1050, 350, false).unwrap()).unwrap();
+    assert!(
+        t.contains("top=70 width=210 height=140") && t.contains("height: 350"),
+        "{t}"
+    );
+    assert_eq!(
+        ops::meta_size(&d, 0, 5, true).unwrap_err().code(),
+        "E_INVALID_ARG"
+    );
+}

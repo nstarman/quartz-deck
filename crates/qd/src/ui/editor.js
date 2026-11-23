@@ -14,6 +14,7 @@ import * as dot from '/ui/dot.js';
 import * as arrows from '/ui/arrows.js';
 import * as inspector from '/ui/inspector.js';
 import * as animate from '/ui/animate.js';
+import * as deckView from '/ui/deck.js';
 import * as dock from '/ui/dock.js';
 import { openMenu, closeMenu, menuOpen } from '/ui/menu.js';
 import { makeList } from '/ui/list.js';
@@ -97,6 +98,7 @@ async function fetchDeck() {
   focus.setVersion(state.version);
   slideList.render();
   renderAnimate();
+  renderDeckView();
 }
 
 // slides as of the deck version we last saw: menus and keys resolve their target
@@ -1727,13 +1729,14 @@ new ResizeObserver(() => requestAnimationFrame(() => requestAnimationFrame(place
 
 // the column's Animate view (spec 023): the slide's transition and builds, an element's build
 const anim = $('#panel .anim');
+let animating = 0; // the newest call draws: an older one may hold the builds from before an edit
 async function renderAnimate() {
+  const turn = ++animating;
   placeEmptyadd();
   const cur = slideByAnchor(state.anchor);
   const ref = state.sel;
   const t = ref && (await elementTarget(ref));
   const builds = cur ? (await run.read('build list', { slide: cur.id }))?.builds || [] : [];
-  if (ref !== state.sel) return; // a newer selection is drawing
   let element = null;
   if (t && arrows.is(ref)) element = { arrow: true, appears: !!actions.checked('fragment', t) };
   else if (t) {
@@ -1741,6 +1744,7 @@ async function renderAnimate() {
     element = { appear: b?.appear, leave: b?.leave, list: t.block.kind === 'list' || /^\s*[-*+] /m.test(t.block.text), incremental: !!actions.checked('class-incremental', t) };
   }
   const kv = cur && !ref ? (await fetchSlide(cur.id))?.attrs?.kv || {} : null;
+  if (turn !== animating) return; // a newer call is drawing
   const next = cur && state.deck.slides[state.deck.slides.findIndex((s) => s.id === cur.id) + 1];
   anim.replaceChildren(animate.render({ kv, element, builds, current: ref }, {
     setAttr: async (key, v) => {
@@ -1756,6 +1760,21 @@ async function renderAnimate() {
   }));
 }
 new MutationObserver(renderAnimate).observe(panel, { childList: true }); // a new selection
+
+// the column's Deck view (spec 023): the deck's theme, size, slide numbers, transition, navigation
+const deckEl = $('#panel .deck');
+let decking = 0;
+async function renderDeckView() {
+  const turn = ++decking;
+  const meta = await fetchMeta();
+  if (turn !== decking) return; // a newer call is drawing
+  const { width, height, navigation_mode: navigation } = state.deck;
+  deckEl.replaceChildren(deckView.render({ meta, width, height, navigation }, {
+    set: (k, value) => op(value != null ? 'meta set' : 'meta unset', { key: `format.revealjs.${k}`, ...(value != null && { value }) }),
+    size: (w, h) => op('meta size', { width: w, height: h, 'keep-places': true }),
+    navigation: (mode) => op('navigation', { mode }),
+  }));
+}
 
 // layout: the source pane (which side, open, width, full width),
 // remembered in the person's settings (spec 007), so the same in every deck and in VS Code

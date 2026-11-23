@@ -84,7 +84,9 @@ when the current directory has exactly one `.qmd`.
 | edit one block | `qd edit results/0 --md "- three"` |
 | slide attributes | `qd set results --attr background-color=aquamarine --class center` |
 | remove attribute/class | `qd set results --unset background-color --unclass center` |
-| front matter key | `qd meta set theme dark` / `qd meta unset theme` |
+| front matter key | `qd meta set title '"My talk"'` / `qd meta unset subtitle` |
+| reveal.js option | `qd meta set format.revealjs.theme dark` / `qd meta unset format.revealjs.slide-number` (under `format: revealjs:`, made when missing) |
+| slide size | `qd meta size 1050 590 --keep-places` (`--keep-places` scales every placed box and arrow with the slide) |
 | positioned text box | `qd box add results --text "Note" --at 700,80 --size 300,100` |
 | positioned image | `qd box add results --image figures/plot.png --at 100,150 --size 600,400` |
 | move / resize / delete box | `qd box move #b-1a2b --by 0,40`, `qd box resize #b-1a2b --size 400,300`, `qd box rm #b-1a2b` |
@@ -411,8 +413,9 @@ qd box move #b-xxxx --by 0,-20              # use the id from the add result's t
 - Section slides are `#` headings (with the default `slide-level: 2`); a `---`
   rule starts an untitled slide. Content before the first heading is an
   untitled slide too.
-- `qd meta set` edits top-level keys only. For nested options under
-  `format: revealjs:`, edit the front matter by hand (then `qd check`).
+- `qd meta set` edits top-level keys, and reveal.js options as
+  `format.revealjs.KEY`. For other nested options, edit the front matter by
+  hand (then `qd check`).
 - Speaker notes are `::: {.notes}` blocks; incremental reveal is `. . .`.
 - With the deck open in VS Code's quartz-deck panel, `qd` reads and edits the
   person's unsaved VS Code buffer, not the file: your edits show up in their
