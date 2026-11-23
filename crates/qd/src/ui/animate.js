@@ -13,15 +13,15 @@ const APPEARS = [['fade-in', 'Fade in'], ['fade-up', 'Fade up'], ['fade-down', '
 const LEAVES = [['fade-out', 'Fade out'], ['semi-fade-out', 'Fade part way']];
 const NAMES = Object.fromEntries([...APPEARS, ...LEAVES]);
 
-const label = (...kids) => { const l = el('label', {}); l.append(...kids); return l; };
-function select(name, options, value, change) {
+export const label = (...kids) => { const l = el('label', {}); l.append(...kids); return l; };
+export function select(name, options, value, change) {
   const s = el('select', { name });
   s.append(...options.map(([v, t]) => el('option', { value: v, textContent: t })));
   s.value = value;
   s.addEventListener('change', () => change(s.value));
   return s;
 }
-function check(name, text, on, change) {
+export function check(name, text, on, change) {
   const box = el('input', { type: 'checkbox', name, checked: on });
   box.addEventListener('change', () => change(box.checked));
   return label(box, ' ' + text);

@@ -94,7 +94,9 @@ stderr with a stable `code` and a `hint`. Decks inside a Quarto project
   **Title** (title, subtitle, author, date) with nothing selected; **Look**,
   **Text** and **Arrange** for an element, with Run, Edit, Markdown and Delete
   at the foot. **Animate** has the slide's transition, or whether the element
-  appears on a click. View ▸ Properties (⌥⌘0) hides and shows it (setting
+  appears on a click. **Deck** has the theme, the slide size (a new size
+  scales placed boxes and arrows with the slide), slide numbers, the default
+  transition and the navigation mode, written under `format: revealjs:`. View ▸ Properties (⌥⌘0) hides and shows it (setting
   `ui.inspector`); F6 goes to it and back, ← → move along its tabs, Esc in a
   field returns to the slide. On a window 700 px wide or less it is below the
   slide.

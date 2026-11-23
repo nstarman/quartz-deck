@@ -920,14 +920,23 @@ enum BibCmd {
 
 #[derive(Subcommand)]
 enum MetaCmd {
-    /// Set a top-level key to a single-line YAML value
+    /// Set a key to a single-line YAML value: a top-level key, or a reveal.js
+    /// option as `format.revealjs.KEY` (e.g. `format.revealjs.theme`)
     Set {
         key: String,
         #[arg(allow_hyphen_values = true)]
         value: String,
     },
-    /// Remove a top-level key
+    /// Remove a top-level key, or `format.revealjs.KEY`
     Unset { key: String },
+    /// Set the slide size (`format.revealjs.width`, `.height`), in px
+    Size {
+        width: u32,
+        height: u32,
+        /// Scale every positioned box and arrow with the slide
+        #[arg(long)]
+        keep_places: bool,
+    },
 }
 
 fn parse_kv(s: &str) -> std::result::Result<(String, String), String> {
@@ -1580,6 +1589,7 @@ const API_OPS: &[&str] = &[
     "meta",
     "meta set",
     "meta unset",
+    "meta size",
     "check",
     "add",
     "dup",
@@ -1730,6 +1740,14 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
         Cmd::Meta {
             action: Some(MetaCmd::Unset { key }),
         } => ctx.edit(|d| ops::meta_unset(d, key)),
+        Cmd::Meta {
+            action:
+                Some(MetaCmd::Size {
+                    width,
+                    height,
+                    keep_places,
+                }),
+        } => ctx.edit(|d| ops::meta_size(d, *width, *height, *keep_places)),
         Cmd::Arrow { action } => {
             let d = read()?.1;
             use crate::arrows;

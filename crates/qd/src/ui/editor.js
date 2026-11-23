@@ -14,6 +14,7 @@ import * as dot from '/ui/dot.js';
 import * as arrows from '/ui/arrows.js';
 import * as inspector from '/ui/inspector.js';
 import * as animate from '/ui/animate.js';
+import * as deckView from '/ui/deck.js';
 import * as dock from '/ui/dock.js';
 import { openMenu, closeMenu, menuOpen } from '/ui/menu.js';
 import { makeList } from '/ui/list.js';
@@ -97,6 +98,7 @@ async function fetchDeck() {
   focus.setVersion(state.version);
   slideList.render();
   renderAnimate();
+  renderDeckView();
 }
 
 // slides as of the deck version we last saw: menus and keys resolve their target
@@ -1756,6 +1758,20 @@ async function renderAnimate() {
   }));
 }
 new MutationObserver(renderAnimate).observe(panel, { childList: true }); // a new selection
+
+// the column's Deck view (spec 023): the deck's theme, size, slide numbers, transition, navigation
+const deckEl = $('#panel .deck');
+async function renderDeckView() {
+  const meta = await fetchMeta();
+  const has = (k) => meta.format?.revealjs?.[k] !== undefined || meta[k] !== undefined;
+  const { width, height, navigation_mode: navigation } = state.deck;
+  deckEl.replaceChildren(deckView.render({ meta, width, height, navigation }, {
+    set: (k, value) => value != null ? op('meta set', { key: `format.revealjs.${k}`, value })
+      : has(k) && op('meta unset', { key: `format.revealjs.${k}` }),
+    size: (w, h) => op('meta size', { width: w, height: h, 'keep-places': true }),
+    navigation: (mode) => op('navigation', { mode }),
+  }));
+}
 
 // layout: the source pane (which side, open, width, full width),
 // remembered in the person's settings (spec 007), so the same in every deck and in VS Code

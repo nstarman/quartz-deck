@@ -1470,6 +1470,24 @@ pub fn navigation(d: &Deck, mode: &str) -> Result<Patch> {
     }
     let key = "navigation-mode";
     let value = (mode != "linear").then_some(mode);
+    match revealjs_key(d, key, value) {
+        Some(reps) => Ok(patch("navigation", key.into(), reps, vec![])),
+        None if value.is_none() && d.meta.get(key).is_none() => {
+            Ok(patch("navigation", key.into(), vec![], vec![])) // already linear
+        }
+        None => Ok(Patch {
+            op: "navigation".into(),
+            ..replace_key(d, key, value.map(|v| format!("{key}: {v}{}", d.nl)))?
+        }),
+    }
+}
+
+/// The edit setting (or, for `None`, removing) `key` in the front matter's
+/// `format: revealjs:` mapping, keeping every other byte: a line already there
+/// is edited where it is, else a new one joins the mapping. Removing its last
+/// key leaves `revealjs: default`. Nothing to remove is no replacements.
+/// `None` when the key is at the top level, or there is no such mapping.
+fn revealjs_key(d: &Deck, key: &str, value: Option<&str>) -> Option<Vec<(Span, String)>> {
     let fm = d.front_matter.map_or("", |s| d.slice(s));
     let base = d.front_matter.map_or(0, |s| s.start);
     // the front matter's lines: (start, full end, text)
@@ -1492,61 +1510,188 @@ pub fn navigation(d: &Deck, mode: &str) -> Result<Patch> {
     // `k:` with nothing but a comment after it: a mapping follows
     let opens =
         |l: &str, k: &str| value_of(l, k).is_some_and(|v| v.is_empty() || v.starts_with('#'));
-    // the `format: revealjs:` mapping: its child indent, where a new line goes, an existing one
-    let mut nested = None;
     let inner: Vec<&str> = lines
         .iter()
         .map(|(_, _, l)| *l)
         .skip(1)
         .take(lines.len().saturating_sub(2))
         .collect();
-    if let Some((f, end)) = key_extent(&inner, "format").filter(|&(f, _)| opens(inner[f], "format"))
-    {
-        let block = &lines[f + 2..end + 1]; // `inner` starts after the opening `---`
-        if let Some(r) = block.iter().position(|(_, _, l)| opens(l, "revealjs")) {
-            let own = indent(block[r].2);
-            let kids: Vec<_> = block[r + 1..]
-                .iter()
-                .take_while(|(_, _, l)| l.trim().is_empty() || indent(l) > own)
-                .filter(|(_, _, l)| !l.trim().is_empty())
-                .collect();
-            let child = kids.first().map_or(own + 2, |(_, _, l)| indent(l));
-            let end = kids.last().map_or(block[r].1, |(_, e, _)| *e);
-            let line = kids
-                .iter()
-                .find(|(_, _, l)| indent(l) == child && value_of(l, key).is_some())
-                .map(|(s, e, _)| Span { start: *s, end: *e });
-            nested = Some((child, end, line));
-        }
-    }
-    let text = |child: usize, v: &str| format!("{}{key}: {v}{}", " ".repeat(child), d.nl);
+    // the `format: revealjs:` mapping: its line, its child indent, its children
+    let (f, end) = key_extent(&inner, "format").filter(|&(f, _)| opens(inner[f], "format"))?;
+    let block = &lines[f + 2..end + 1]; // `inner` starts after the opening `---`
+    let r = block.iter().position(|(_, _, l)| opens(l, "revealjs"))?;
+    let own = indent(block[r].2);
+    let kids: Vec<_> = block[r + 1..]
+        .iter()
+        .take_while(|(_, _, l)| l.trim().is_empty() || indent(l) > own)
+        .filter(|(_, _, l)| !l.trim().is_empty())
+        .collect();
+    let child = kids.first().map_or(own + 2, |(_, _, l)| indent(l));
+    let at = kids.last().map_or(block[r].1, |(_, e, _)| *e);
+    let line = kids
+        .iter()
+        .find(|(_, _, l)| indent(l) == child && value_of(l, key).is_some())
+        .map(|(s, e, _)| Span { start: *s, end: *e });
+    let text = |v: &str| format!("{}{key}: {v}{}", " ".repeat(child), d.nl);
     let top = d.meta.get(key).is_some();
-    let reps = match (nested, value) {
-        (Some((child, _, Some(line))), v) => {
-            vec![(line, v.map_or(String::new(), |v| text(child, v)))]
+    match (line, value) {
+        (Some(line), Some(v)) => Some(vec![(line, text(v))]),
+        (Some(line), None) if kids.len() == 1 => {
+            let (s, e, _) = block[r];
+            let open = format!("{}revealjs: default{}", " ".repeat(own), d.nl);
+            Some(vec![
+                (Span { start: s, end: e }, open),
+                (line, String::new()),
+            ])
         }
-        (Some((child, end, None)), Some(v)) if !top => {
-            vec![(Span { start: end, end }, text(child, v))]
-        }
-        (_, None) if !top => vec![], // already linear
-        _ => {
-            let p = replace_key(d, key, value.map(|v| text(0, v)))?;
-            return Ok(Patch {
-                op: "navigation".into(),
-                ..p
-            });
-        }
-    };
-    Ok(patch("navigation", key.into(), reps, vec![]))
+        (Some(line), None) => Some(vec![(line, String::new())]),
+        (None, Some(v)) if !top => Some(vec![(Span { start: at, end: at }, text(v))]),
+        (None, None) if !top => Some(vec![]),
+        _ => None,
+    }
 }
 
-/// Set a top-level front matter key to a single-line YAML value.
+/// `format.revealjs.KEY`'s key, for `qd meta set`/`unset` (spec 023 R4).
+fn revealjs_name(key: &str) -> Option<&str> {
+    key.strip_prefix("format.revealjs.")
+}
+
+/// Set `format: revealjs: KEY`: in its mapping, or the top-level key when
+/// that's where it is, or by writing `format:` as that mapping.
+fn revealjs_set(d: &Deck, key: &str, v: &str) -> Result<Patch> {
+    if !valid_name(key) || key.contains('.') {
+        return Err(QdError::InvalidArg(format!("'{key}' is not a valid key")));
+    }
+    single_line(v, "value")?;
+    let value: serde_yaml_ng::Value = serde_yaml_ng::from_str(&format!("{key}: {v}"))
+        .ok()
+        .and_then(|m: serde_yaml_ng::Value| m.get(key).cloned())
+        .ok_or_else(|| QdError::InvalidArg(format!("'{v}' is not a valid YAML value")))?;
+    let target = format!("format.revealjs.{key}");
+    if let Some(reps) = revealjs_key(d, key, Some(v)) {
+        return Ok(patch("meta", target, reps, vec![]));
+    }
+    if d.meta.get(key).is_some() {
+        return edit_front_matter(d, key, Some(v));
+    }
+    use serde_yaml_ng::{Mapping, Value as Y};
+    let mut format = match d.meta.get("format") {
+        None => Mapping::new(),
+        Some(Y::String(s)) if s == "revealjs" => Mapping::new(),
+        Some(Y::Mapping(m)) => m.clone(),
+        Some(other) => {
+            return Err(QdError::UnsafeEdit(format!(
+                "format is {}, not reveal.js",
+                serde_yaml_ng::to_string(other).unwrap_or_default().trim()
+            )));
+        }
+    };
+    let mut reveal = match format.get("revealjs") {
+        Some(Y::Mapping(m)) => m.clone(),
+        _ => Mapping::new(),
+    };
+    reveal.insert(key.into(), value);
+    format.insert("revealjs".into(), Y::Mapping(reveal));
+    let mut p = meta_set_yaml(d, "format", &Y::Mapping(format))?;
+    p.target = target;
+    Ok(p)
+}
+
+fn revealjs_unset(d: &Deck, key: &str) -> Result<Patch> {
+    let target = format!("format.revealjs.{key}");
+    match revealjs_key(d, key, None) {
+        Some(reps) if !reps.is_empty() => Ok(patch("meta", target, reps, vec![])),
+        None if d.meta.get(key).is_some() => edit_front_matter(d, key, None),
+        _ => Err(QdError::NotFound(format!("front matter key '{target}'"))),
+    }
+}
+
+/// Set a front matter key to a single-line YAML value: a top-level key, or
+/// `format.revealjs.KEY`.
 pub fn meta_set(d: &Deck, key: &str, value: &str) -> Result<Patch> {
-    edit_front_matter(d, key, Some(value))
+    match revealjs_name(key) {
+        Some(k) => revealjs_set(d, k, value),
+        None => edit_front_matter(d, key, Some(value)),
+    }
 }
 
 pub fn meta_unset(d: &Deck, key: &str) -> Result<Patch> {
-    edit_front_matter(d, key, None)
+    match revealjs_name(key) {
+        Some(k) => revealjs_unset(d, k),
+        None => edit_front_matter(d, key, None),
+    }
+}
+
+/// `qd meta size W H`: the slide size under `format: revealjs:`. With
+/// `keep_places`, every positioned box and arrow on every slide is scaled
+/// with the slide, in the same edit (spec 023 R4).
+pub fn meta_size(d: &Deck, w: u32, h: u32, keep_places: bool) -> Result<Patch> {
+    if !(1..=10000).contains(&w) || !(1..=10000).contains(&h) {
+        return Err(QdError::InvalidArg(
+            "the width and height are 1 to 10000 px".into(),
+        ));
+    }
+    let (sx, sy) = (w as f64 / d.width as f64, h as f64 / d.height as f64);
+    let mut text = d.text.clone();
+    if keep_places {
+        let mut reps = vec![];
+        for s in &d.slides {
+            for b in &s.blocks {
+                let t = d.slice(b.span);
+                if b.kind == BlockKind::Box {
+                    let image = t.trim_start().starts_with("![");
+                    let Some((a0, a1)) = box_attrs_range(t, image) else {
+                        continue;
+                    };
+                    let Some(mut a) = Attrs::parse(&t[a0..a1]) else {
+                        continue;
+                    };
+                    for (k, f) in [
+                        ("left", sx),
+                        ("width", sx),
+                        ("right", sx),
+                        ("top", sy),
+                        ("height", sy),
+                        ("bottom", sy),
+                    ] {
+                        if let Some(v) = a.get(k).and_then(Length::parse).and_then(|v| v.px()) {
+                            a.set(k, &px(v * f));
+                        }
+                    }
+                    let at = b.span.start;
+                    reps.push((
+                        Span {
+                            start: at + a0,
+                            end: at + a1,
+                        },
+                        a.render(),
+                    ));
+                } else if b.kind == BlockKind::Para {
+                    if let Some(r) = crate::arrows::scaled(d, b.span, sx, sy) {
+                        reps.extend(r?);
+                    }
+                }
+            }
+        }
+        text = apply(&text, &patch("", String::new(), reps, vec![]))?;
+    }
+    for (k, v) in [("width", w), ("height", h)] {
+        let d = Deck::parse(text.clone());
+        text = apply(
+            &text,
+            &meta_set(&d, &format!("format.revealjs.{k}"), &v.to_string())?,
+        )?;
+    }
+    let all = Span {
+        start: 0,
+        end: d.text.len(),
+    };
+    Ok(patch(
+        "meta size",
+        "format.revealjs".into(),
+        vec![(all, text)],
+        vec![],
+    ))
 }
 
 /// Text of a minimal reveal.js deck.

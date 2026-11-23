@@ -4700,8 +4700,13 @@ async fn props_title_slide() {
 
 /// Spec 023 T011: choose a select in the Animate view, as the person does.
 fn pick(name: &str, value: &str) -> String {
+    pick_in("anim", name, value)
+}
+
+/// `pick` in the column's `view` (`anim`, `deck`).
+fn pick_in(view: &str, name: &str, value: &str) -> String {
     format!(
-        "(() => {{ const s = document.querySelector('#panel .anim [name={name}]'); s.value = '{value}'; s.dispatchEvent(new Event('change', {{ bubbles: true }})); }})()"
+        "(() => {{ const s = document.querySelector('#panel .{view} [name={name}]'); s.value = '{value}'; s.dispatchEvent(new Event('change', {{ bubbles: true }})); }})()"
     )
 }
 
@@ -4781,6 +4786,63 @@ async fn props_animate() {
         "this slide and the next morph",
     )
     .await;
+    ed.settle().await;
+}
+
+/// Spec 023 US3 (T016): the theme, the slide size (a placed box keeps its
+/// place on the slide), slide numbers and the default transition, in the
+/// front matter and in the preview.
+#[tokio::test(flavor = "multi_thread")]
+async fn props_deck() {
+    let deck = "---\ntitle: T\nformat: revealjs\n---\n\n## A {#a}\n\n::: {#b-1 .absolute left=105 top=70 width=210 height=140}\nBox\n:::\n";
+    let Some(ed) = Ed::open(deck).await else {
+        return;
+    };
+    ed.wait(INSPECTING).await;
+    props(&ed, "deck").await;
+    let reveal = "document.querySelector('#preview').contentWindow.Reveal";
+    ed.eval(&pick_in("deck", "theme", "dark")).await;
+    ed.wait_file(
+        |f| f.contains("format:\n  revealjs:\n    theme: dark\n"),
+        "dark",
+    )
+    .await;
+    ed.settle().await;
+    let bg =
+        "getComputedStyle(document.querySelector('#preview').contentDocument.body).backgroundColor";
+    ed.wait(&format!("{bg} !== 'rgb(255, 255, 255)'")).await;
+    // 4:3: the box keeps its place relative to the slide
+    ed.eval(&pick_in("deck", "size", "1050x788")).await;
+    ed.wait_file(
+        |f| f.contains("height: 788") && f.contains("top=79 width=210 height=158"),
+        "4:3, the box scaled",
+    )
+    .await;
+    ed.settle().await;
+    ed.wait(&format!("{reveal}.getConfig().height === 788"))
+        .await;
+    assert_eq!(
+        ed.eval("document.querySelector('#panel .deck [name=size]').value")
+            .await,
+        json!("1050x788")
+    );
+    ed.click_editor("#panel .deck [name=slide-number]").await;
+    ed.wait_file(|f| f.contains("slide-number: true"), "numbered")
+        .await;
+    ed.settle().await;
+    // (the editor hides them while editing: the rendered deck's own config has them)
+    ed.wait("document.querySelector('#preview').contentDocument.documentElement.innerHTML.includes(\"slideNumber: 'c/t'\")")
+        .await;
+    ed.eval(&pick_in("deck", "transition", "fade")).await;
+    ed.wait_file(|f| f.contains("transition: fade"), "fades")
+        .await;
+    ed.settle().await;
+    ed.wait(&format!("{reveal}.getConfig().transition === 'fade'"))
+        .await;
+    // back to the default: the key goes
+    ed.eval(&pick_in("deck", "transition", "")).await;
+    ed.wait_file(|f| !f.contains("transition:"), "default")
+        .await;
     ed.settle().await;
 }
 
