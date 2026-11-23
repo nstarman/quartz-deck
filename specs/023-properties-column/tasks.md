@@ -20,7 +20,7 @@ one PR:
 
 Paths are relative to the repo root. **Privacy and clean room:** tests,
 docs and the showcase use made-up content only. No file names any other
-presentation app. Trying it on the person's talk (T035) leaves nothing
+presentation app. Trying it on the person's talk (T024) leaves nothing
 about the talk in the repository.
 
 ## Format: `[ID] [P?] [Story] Description`
