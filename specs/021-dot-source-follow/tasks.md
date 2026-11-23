@@ -118,8 +118,8 @@ talk in the repository.
 
 **Independent test**: spec US3's independent test.
 
-- [ ] T013 [US3] Write a failing browser test **`source_follow_cell_editor`** in `crates/qd/tests/onslide.rs`: open a diagram cell's source on the slide, move the caret to a box's line, and check the outline and the pop-over.
-- [ ] T014 [US3] Report the cursor from `crates/qd/src/ui/source.js` (research R6) when the edit is a `{dot}` cell: the body is the textarea's text inside its fences, and the pop-over sits beside the textarea's line. T013 passes.
+- [X] T013 [US3] Write a failing browser test **`source_follow_cell_editor`** in `crates/qd/tests/onslide.rs`: open a diagram cell's source on the slide, move the caret to a box's line, and check the outline and the pop-over.
+- [X] T014 [US3] Report the cursor from `crates/qd/src/ui/source.js` (research R6) when the edit is a `{dot}` cell: the body is the textarea's text inside its fences, and the pop-over sits beside the textarea's line. T013 passes.
 
 **Checkpoint**: every place a diagram's source is typed follows the cursor.
 
@@ -127,11 +127,12 @@ talk in the repository.
 
 ## Phase 5: Polish (PR 3)
 
-- [ ] T015 [P] Docs: `README.md` and `skills/quartz-deck/SKILL.md` describe `qd dot at`, the outline, the preview and its setting.
-- [ ] T016 [P] Add the `qd dot at` line to `qd schema`'s test.
-- [ ] T017 Check SC-003: in `crates/qd/tests/onslide.rs`, 200 keystrokes in a 20-box diagram's source each appear within one frame with following on, as with it off (or record the measurement in the quickstart run if a test is too flaky under load).
-- [ ] T018 Run quickstart §1–§3 and record it in `specs/021-dot-source-follow/checklists/quickstart-run.md`, with the SC-002 timing.
-- [ ] T019 Final constitution re-check in `plan.md`; fmt, clippy (`--workspace --all-targets -D warnings`) and `cargo test --workspace --no-fail-fast` green.
+- [X] T015 [P] Docs: `README.md` and `skills/quartz-deck/SKILL.md` describe `qd dot at`, the outline, the preview and its setting.
+- [X] T016 [P] Add the `qd dot at` line to `qd schema`'s test.
+- [X] T017 Check SC-003: in `crates/qd/tests/onslide.rs`, 200 keystrokes in a 20-box diagram's source each appear within one frame with following on, as with it off (or record the measurement in the quickstart run if a test is too flaky under load).
+  **As built:** measured with a throwaway test and recorded in `checklists/quickstart-run.md` (one frame per keystroke inside and outside a diagram); frame timing is too noisy for CI under load.
+- [X] T018 Run quickstart §1–§3 and record it in `specs/021-dot-source-follow/checklists/quickstart-run.md`, with the SC-002 timing.
+- [X] T019 Final constitution re-check in `plan.md`; fmt, clippy (`--workspace --all-targets -D warnings`) and `cargo test --workspace --no-fail-fast` green.
 - [ ] T020 With the person: on a copy of their talk's diagram, check SC-005 (they can tell which line is which box, and adjust a box's look from the preview). Nothing about the talk goes into the repository.
 - [ ] T021 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
 

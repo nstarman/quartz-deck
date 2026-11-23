@@ -7022,3 +7022,26 @@ async fn source_follow_setting_off() {
         true
     );
 }
+
+/// Spec 021 US3: the diagram's source edited over the slide follows the caret too.
+#[tokio::test(flavor = "multi_thread")]
+async fn source_follow_cell_editor() {
+    let Some(ed) = Ed::open(FOLLOW).await else {
+        return;
+    };
+    ed.go("flow").await;
+    ed.wait("document.querySelector('#preview').contentDocument.querySelector('[data-qd-lang=dot] svg g.node') != null")
+        .await;
+    ed.popup("[data-qd=\"flow/1\"] svg").await;
+    ed.eval(&format!(
+        "(() => {{ const t = {SRC}; const i = t.value.indexOf('c [label') + 2; t.setSelectionRange(i, i);
+          t.dispatchEvent(new KeyboardEvent('keyup', {{ key: 'ArrowUp' }})); }})()"
+    ))
+    .await;
+    followed(&ed, &["c"]).await;
+    ed.wait("!document.querySelector('#dot-peek').hidden && document.querySelector('#dot-peek svg')?.textContent.includes('Paper')")
+        .await;
+    ed.key("Escape", "Escape", 27, 0).await; // saves and closes: nothing followed
+    followed(&ed, &[]).await;
+    ed.wait("document.querySelector('#dot-peek').hidden").await;
+}

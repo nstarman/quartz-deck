@@ -200,12 +200,16 @@ let followTimer = 0;
 let followSeq = 0; // an answer for an older cursor is dropped
 let hovering = false; // a resting pointer wins over the caret until it leaves, or the keyboard is used
 
-/** The `{dot}` cell around text position `pos`: its body, the position in it, and its fence's line; or null. */
-function dotAt(pos) {
-  for (const m of ta.value.matchAll(DOT_CELL)) {
+/**
+ * The `{dot}` cell of `text` around position `pos`: its body, the position in
+ * it as UTF-8 bytes (as `dot at` counts), and its fence's line; or null.
+ */
+export function dotAt(text, pos) {
+  for (const m of text.matchAll(DOT_CELL)) {
     const start = m.index + m[1].length;
     if (pos >= start && pos <= start + m[3].length) {
-      return { body: m[3], offset: pos - start, line: ta.value.slice(0, m.index).split('\n').length };
+      const bytes = new TextEncoder().encode(m[3].slice(0, pos - start)).length;
+      return { body: m[3], bytes, line: text.slice(0, m.index).split('\n').length };
     }
   }
   return null;
@@ -216,13 +220,13 @@ function follow(pos, wait = 60) {
   clearTimeout(followTimer);
   followTimer = setTimeout(async () => {
     const n = ++followSeq;
-    const c = dotAt(pos);
+    const c = dotAt(ta.value, pos);
     const cell = c && (await api.dotCell(c.line));
     if (n !== followSeq) return;
     if (!cell) { api.unfollow(); return; }
-    // `dot at` counts bytes of the text as UTF-8; the drawing goes beside the line on screen
+    // the drawing goes beside the line on screen
     const row = hl.children[ta.value.slice(0, pos).split('\n').length - 1];
-    api.follow(cell, c.body, new TextEncoder().encode(c.body.slice(0, c.offset)).length, row?.getBoundingClientRect());
+    api.follow(cell, c.body, c.bytes, row?.getBoundingClientRect());
   }, wait);
 }
 

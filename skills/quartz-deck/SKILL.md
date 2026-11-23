@@ -239,6 +239,15 @@ has `pos="x,y!"`, so boxes stay where they're placed. DOT that can't be
 read safely is reported in `editable` with the line, and stays editable
 as text. So is a `//| file: x.dot` diagram, which lives in another file.
 
+`qd dot at --text BODY --at OFFSET` says what is at a byte offset of a
+cell's body (the text between its fences, `-` for stdin), saved or not: a
+box (`node`), an arrow (`edge`, the link under the cursor in a chain, and
+every link in `edges`), a cluster, a setting or defaults, or `null`. Text
+that can't be read yet gives `stopped` with a line and column. For a box or
+an arrow, `alone` is a small DOT graph drawing just it, with the cell's
+defaults. It changes nothing and needs no deck: use it to answer "which box
+is on line 4".
+
 `qd dot pin CELL` pins a diagram where Graphviz put it: it adds
 `layout=neato` and a `pos` for every box, read from the preview (or from
 `--positions '{"a":[0,1],...}'` in inches). It adds `splines=ortho` (right
@@ -283,6 +292,9 @@ a box's handles to connect, double-click to rename, and View ▸ Properties
 panel for the details. Each gesture runs one of these commands. The setting
 `diagrams.live-layout` (on by default; `qd settings set diagrams.live-layout false`
 when they ask) routes arrows while they drag; it changes nothing that's saved.
+With the cursor on a box's or an arrow's line of a diagram's source, the
+editor outlines it on the slide and draws it alone beside the line;
+`diagrams.source-preview` (on by default) turns the drawing off.
 On a wide window the details are in the inspector on the right instead of a
 panel; `ui.inspector` (on by default) turns it off when they ask.
 
