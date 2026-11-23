@@ -1032,6 +1032,33 @@ pub fn block_dup(d: &Deck, element: &str) -> Result<Patch> {
 /// element without one is wrapped in `::: {.class}`, and that wrapper goes
 /// again when its last class is removed.
 pub fn block_class(d: &Deck, element: &str, add: &[String], remove: &[String]) -> Result<Patch> {
+    let (index, b, new) = with_attrs(d, element, |a| {
+        for c in remove {
+            if !a.remove_class(c) {
+                return Err(QdError::InvalidArg(format!(
+                    "'{element}' has no class '{c}'"
+                )));
+            }
+        }
+        for c in add {
+            a.add_class(c);
+        }
+        Ok(())
+    })?;
+    keep_structure(
+        d,
+        patch("block class", b.id.clone(), vec![(b.span, new)], Vec::new()),
+        index,
+    )
+}
+
+/// Element `element`'s text with its attributes changed by `change`, and its
+/// slide's index (`block class`, `build set`, `build order`).
+fn with_attrs<'d>(
+    d: &'d Deck,
+    element: &str,
+    change: impl FnOnce(&mut Attrs) -> Result<()>,
+) -> Result<(usize, &'d Block, String)> {
     let (s, b) = d.element(element)?;
     let text = d.slice(b.span);
     let nl = d.nl;
@@ -1055,19 +1082,6 @@ pub fn block_class(d: &Deck, element: &str, add: &[String], remove: &[String]) -
             (Some(o), true) if Attrs::parse(&l[o..]).is_some() => Some((i, o, l.len())),
             _ => None,
         }
-    };
-    let change = |a: &mut Attrs| -> Result<()> {
-        for c in remove {
-            if !a.remove_class(c) {
-                return Err(QdError::InvalidArg(format!(
-                    "'{element}' has no class '{c}'"
-                )));
-            }
-        }
-        for c in add {
-            a.add_class(c);
-        }
-        Ok(())
     };
     let new = match found {
         Some((i, o, c)) => {
@@ -1096,9 +1110,244 @@ pub fn block_class(d: &Deck, element: &str, add: &[String], remove: &[String]) -
             format!("::: {}{nl}{text}{nl}:::", a.render())
         }
     };
+    Ok((s.index, b, new))
+}
+
+// ---------- builds (spec 023 US2): reveal.js fragments, as Quarto writes them ----------
+
+/// How an element can appear on a click; `fade-in` is a bare `.fragment`.
+pub const APPEARS: &[&str] = &[
+    "fade-in",
+    "fade-up",
+    "fade-down",
+    "fade-left",
+    "fade-right",
+    "grow",
+    "shrink",
+    "strike",
+    "highlight-red",
+    "highlight-green",
+    "highlight-blue",
+    "highlight-current-red",
+    "highlight-current-green",
+    "highlight-current-blue",
+];
+/// How it can leave on a click.
+pub const LEAVES: &[&str] = &["fade-out", "semi-fade-out"];
+/// A fade-in and a leave in one class each, as reveal.js names them.
+const BOTH: &[(&str, &str)] = &[
+    ("fade-out", "fade-in-then-out"),
+    ("semi-fade-out", "fade-in-then-semi-out"),
+];
+
+/// An element's build: (appear, leave), both `None` when it is not one.
+pub fn build_of(a: Option<&Attrs>) -> (Option<&'static str>, Option<&'static str>) {
+    let Some(a) = a.filter(|a| a.has_class("fragment")) else {
+        return (None, None);
+    };
+    if let Some((l, _)) = BOTH.iter().find(|(_, c)| a.has_class(c)) {
+        return (Some("fade-in"), Some(l));
+    }
+    let leave = LEAVES.iter().copied().find(|c| a.has_class(c));
+    let appear = APPEARS.iter().copied().find(|c| a.has_class(c));
+    (
+        appear.or(if leave.is_some() {
+            None
+        } else {
+            Some("fade-in")
+        }),
+        leave,
+    )
+}
+
+/// `qd build set`: `appear`/`leave` are `Some("none")` for none, `None` to keep.
+pub fn build_set(
+    d: &Deck,
+    element: &str,
+    appear: Option<&str>,
+    leave: Option<&str>,
+) -> Result<Patch> {
+    let known = |v: Option<&str>, all: &[&str], what: &str| match v {
+        Some(x) if x != "none" && !all.contains(&x) => Err(QdError::InvalidArg(format!(
+            "unknown {what} '{x}': one of none, {}",
+            all.join(", ")
+        ))),
+        _ => Ok(()),
+    };
+    known(appear, APPEARS, "appear")?;
+    known(leave, LEAVES, "leave")?;
+    let (_, b) = d.element(element)?;
+    let (was_appear, was_leave) = build_of(b.attrs.as_ref());
+    let pick = |v: Option<&str>, was: Option<&'static str>| match v {
+        Some("none") => None,
+        Some(x) => Some(x.to_string()),
+        None => was.map(str::to_string),
+    };
+    let (appear, leave) = (pick(appear, was_appear), pick(leave, was_leave));
+    let mut add: Vec<&str> = Vec::new();
+    match (appear.as_deref(), leave.as_deref()) {
+        (None, None) => {}
+        (Some("fade-in"), Some(l)) => {
+            add.extend(["fragment", BOTH.iter().find(|(x, _)| *x == l).unwrap().1])
+        }
+        (Some(_), Some(_)) => {
+            return Err(QdError::InvalidArg(
+                "an element takes one effect per click: a leave goes with fade-in or with no appear".into(),
+            ));
+        }
+        (Some(a), None) => add.extend(
+            ["fragment"]
+                .into_iter()
+                .chain((a != "fade-in").then_some(a)),
+        ),
+        (None, Some(l)) => add.extend(["fragment", l]),
+    }
+    let (index, b, new) = with_attrs(d, element, |a| {
+        let all = APPEARS
+            .iter()
+            .chain(LEAVES)
+            .copied()
+            .chain(BOTH.iter().map(|b| b.1));
+        for c in std::iter::once("fragment").chain(all) {
+            a.remove_class(c);
+        }
+        if add.is_empty() {
+            a.unset("fragment-index");
+        }
+        for c in &add {
+            a.add_class(c);
+        }
+        Ok(())
+    })?;
+    let mut p = keep_structure(
+        d,
+        patch("build set", b.id.clone(), vec![(b.span, new)], Vec::new()),
+        index,
+    )?;
+    p.target = b.id.clone();
+    Ok(p)
+}
+
+/// A build's name in a list: the start of its text, or its kind.
+pub fn build_name(d: &Deck, b: &Block) -> String {
+    let line = d
+        .slice(b.span)
+        .lines()
+        .find(|l| !l.trim_start().starts_with(":::"))
+        .unwrap_or("");
+    let alt = line
+        .split_once("![")
+        .and_then(|(_, r)| r.split_once(']'))
+        .map(|(a, _)| a);
+    let text = alt
+        .unwrap_or(line)
+        .trim_start_matches(['#', '-', '*', '+', '>', ' '])
+        .trim();
+    match text.char_indices().nth(40) {
+        _ if text.is_empty() => format!("{:?}", b.kind),
+        Some((i, _)) => format!("{}…", &text[..i]),
+        None => text.to_string(),
+    }
+}
+
+/// One build of a slide: its element, how it shows, and its `fragment-index`.
+pub struct Build<'d> {
+    pub block: &'d Block,
+    pub appear: Option<&'static str>,
+    pub leave: Option<&'static str>,
+    pub index: Option<u32>,
+    /// An incremental list's items, which appear one at a time after the ordered builds.
+    pub items: Option<Vec<String>>,
+}
+
+/// `qd build list`: the slide's builds in the order they show: by
+/// `fragment-index` where set, then source order (as reveal.js sorts them).
+pub fn build_list<'d>(d: &'d Deck, slide: &str) -> Result<Vec<Build<'d>>> {
+    let s = d.slide(slide)?;
+    let mut out: Vec<Build> = s
+        .blocks
+        .iter()
+        .filter_map(|b| {
+            let (appear, leave) = build_of(b.attrs.as_ref());
+            let incremental = b.attrs.as_ref().is_some_and(|a| a.has_class("incremental"));
+            let items = (incremental && appear.is_none() && leave.is_none()).then(|| {
+                d.slice(b.span)
+                    .lines()
+                    .filter_map(|l| {
+                        let l = l.strip_prefix(['-', '*', '+']).or_else(|| {
+                            l.split_once(". ")
+                                .filter(|(n, _)| n.parse::<u32>().is_ok())
+                                .map(|(_, t)| t)
+                        })?;
+                        Some(l.trim().to_string())
+                    })
+                    .collect()
+            });
+            (appear.is_some() || leave.is_some() || items.is_some()).then(|| Build {
+                block: b,
+                appear: appear.or(items.as_ref().map(|_| "fade-in")),
+                leave,
+                index: b
+                    .attrs
+                    .as_ref()
+                    .and_then(|a| a.get("fragment-index")?.parse().ok()),
+                items,
+            })
+        })
+        .collect();
+    out.sort_by_key(|b| {
+        if b.items.is_some() {
+            u32::MAX
+        } else {
+            b.index.unwrap_or(u32::MAX - 1)
+        }
+    });
+    Ok(out)
+}
+
+/// `qd build order`: the slide's builds in the order of `refs`, every one
+/// named once (an incremental list's items keep coming after them). Source
+/// order needs no `fragment-index`, so it removes them.
+pub fn build_order(d: &Deck, slide: &str, refs: &[String]) -> Result<Patch> {
+    let s = d.slide(slide)?;
+    let ordered: Vec<&str> = build_list(d, slide)?
+        .iter()
+        .filter(|b| b.items.is_none())
+        .map(|b| b.block.id.as_str())
+        .collect();
+    let mut named: Vec<&str> = refs.iter().map(String::as_str).collect();
+    named.sort_unstable();
+    let mut want = ordered.clone();
+    want.sort_unstable();
+    if named != want {
+        return Err(QdError::InvalidArg(format!(
+            "name each of the slide's builds once: {}",
+            ordered.join(" ")
+        )));
+    }
+    let source = s
+        .blocks
+        .iter()
+        .map(|b| b.id.as_str())
+        .filter(|id| ordered.contains(id));
+    let in_source = source.eq(refs.iter().map(String::as_str));
+    let mut reps = Vec::new();
+    for (i, r) in refs.iter().enumerate() {
+        let (_, b, new) = with_attrs(d, r, |a| {
+            if in_source {
+                a.unset("fragment-index");
+            } else {
+                a.set("fragment-index", &(i + 1).to_string());
+            }
+            Ok(())
+        })?;
+        if new != d.slice(b.span) {
+            reps.push((b.span, new));
+        }
+    }
     keep_structure(
         d,
-        patch("block class", b.id.clone(), vec![(b.span, new)], Vec::new()),
+        patch("build order", s.id.clone(), reps, Vec::new()),
         s.index,
     )
 }

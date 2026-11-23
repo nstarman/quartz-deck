@@ -1522,3 +1522,158 @@ fn api_values_are_not_flags() {
     .unwrap();
     assert!(e.text().contains("## -5 degrees"), "{}", e.text());
 }
+
+// ---------- spec 023 US2: builds ----------
+
+const BUILDS: &str = "## Results {#results}\n\nFirst point.\n\nSecond point.\n\n![A picture](pic.png){.wide}\n\n- One\n- Two\n";
+
+/// T009: `qd build set` writes each appear and leave as reveal.js's fragment
+/// classes, keeps other classes, and goes back to none.
+#[test]
+fn build_set_effects() {
+    let e = Env::with(BUILDS);
+    e.ok(&["build", "set", "results/0", "--appear", "fade-in"]);
+    assert!(
+        e.text().contains("::: {.fragment}\nFirst point.\n:::"),
+        "{}",
+        e.text()
+    );
+    let v = e.ok(&["build", "set", "results/0", "--appear", "fade-up"]);
+    assert_eq!(
+        (v["appear"].as_str(), v["leave"].as_str()),
+        (Some("fade-up"), None)
+    );
+    assert!(
+        e.text().contains("::: {.fragment .fade-up}"),
+        "{}",
+        e.text()
+    );
+    // with fade-in, a leave is fade-in-then-out
+    e.ok(&[
+        "build",
+        "set",
+        "results/0",
+        "--appear",
+        "fade-in",
+        "--leave",
+        "fade-out",
+    ]);
+    assert!(
+        e.text().contains("::: {.fragment .fade-in-then-out}"),
+        "{}",
+        e.text()
+    );
+    e.ok(&["build", "set", "results/0", "--leave", "semi-fade-out"]);
+    assert!(
+        e.text().contains("::: {.fragment .fade-in-then-semi-out}"),
+        "{}",
+        e.text()
+    );
+    // only leaving: shown, then gone on a click
+    e.ok(&[
+        "build",
+        "set",
+        "results/0",
+        "--appear",
+        "none",
+        "--leave",
+        "fade-out",
+    ]);
+    assert!(
+        e.text().contains("::: {.fragment .fade-out}"),
+        "{}",
+        e.text()
+    );
+    e.ok(&["build", "set", "results/0", "--leave", "none"]);
+    assert_eq!(e.text(), BUILDS, "back to none, bytes as before");
+    // another class is kept
+    e.ok(&["build", "set", "results/2", "--appear", "grow"]);
+    assert!(e.text().contains("{.wide .fragment .grow}"), "{}", e.text());
+    e.ok(&["build", "set", "results/2", "--appear", "none"]);
+    assert_eq!(e.text(), BUILDS);
+    // errors
+    e.err(
+        &["build", "set", "results/0", "--appear", "spin"],
+        "E_INVALID_ARG",
+        1,
+    );
+    e.err(
+        &[
+            "build",
+            "set",
+            "results/0",
+            "--appear",
+            "grow",
+            "--leave",
+            "fade-out",
+        ],
+        "E_INVALID_ARG",
+        1,
+    );
+    e.err(
+        &["build", "set", "results/9", "--appear", "grow"],
+        "E_NOT_FOUND",
+        1,
+    );
+}
+
+/// T009: `qd build list` gives the builds in the order they show, and
+/// `qd build order` changes it, back to source order without indexes.
+#[test]
+fn build_list_and_order() {
+    let e = Env::with(BUILDS);
+    for (el, fx) in [("results/0", "fade-up"), ("results/2", "grow")] {
+        e.ok(&["build", "set", el, "--appear", fx]);
+    }
+    e.ok(&["block", "class", "results/3", "--add", "incremental"]);
+    let refs = |v: &Value| {
+        v["builds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|b| b["ref"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>()
+    };
+    let v = e.ok(&["build", "list", "results"]);
+    assert_eq!(refs(&v), ["results/0", "results/2", "results/3"]);
+    assert_eq!(v["builds"][1]["appear"], "grow");
+    assert_eq!(v["builds"][2]["items"], serde_json::json!(["One", "Two"]));
+    let before = e.text();
+    e.ok(&["build", "order", "results", "results/2", "results/0"]); // a list's items come after
+    assert!(e.text().contains("fragment-index=1"), "{}", e.text());
+    assert_eq!(
+        refs(&e.ok(&["build", "list", "results"])),
+        ["results/2", "results/0", "results/3"]
+    );
+    e.ok(&["build", "order", "results", "results/0", "results/2"]);
+    assert_eq!(e.text(), before, "source order: no indexes");
+    e.err(
+        &["build", "order", "results", "results/0"],
+        "E_INVALID_ARG",
+        1,
+    );
+    e.err(
+        &[
+            "build",
+            "order",
+            "results",
+            "results/0",
+            "results/0",
+            "results/2",
+        ],
+        "E_INVALID_ARG",
+        1,
+    );
+    e.err(
+        &[
+            "build",
+            "order",
+            "results",
+            "results/0",
+            "results/1",
+            "results/2",
+        ],
+        "E_INVALID_ARG",
+        1,
+    );
+}

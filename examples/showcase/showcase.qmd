@@ -34,12 +34,16 @@ Inline math: $E = mc^2$.
 - Always shown
 - Appears on click
 
-::: {.fragment .fade-up}
+::: {.fragment .fade-up fragment-index=2}
 - Fades up on the next click
 :::
 
-::: {.fragment .highlight-red}
+::: {.fragment .highlight-red fragment-index=3}
 - Turns red last
+:::
+
+::: {.fragment .fade-in-then-out fragment-index=1}
+Comes in first, and goes on the next click
 :::
 
 1. Numbered
@@ -79,7 +83,7 @@ The results, in three slides you go down through.
 :::
 ::::
 
-# Placed boxes {#boxes background-color="#f4f1ea" transition="zoom"}
+# Placed boxes {#boxes background-color="#f4f1ea" transition="zoom" transition-speed=slow}
 
 ::: {#box-note .absolute left=60 top=150 width=380}
 A box placed by hand, with its own position.

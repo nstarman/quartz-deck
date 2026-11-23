@@ -86,27 +86,39 @@ about the talk in the repository.
 
 **Independent test**: spec US2's independent test.
 
-- [ ] T009 [P] [US2] Write failing CLI tests in `crates/qd/tests/cli.rs` (contracts/cli.md):
+- [X] T009 [P] [US2] Write failing CLI tests in `crates/qd/tests/cli.rs` (contracts/cli.md):
   - `qd build set`: each appear effect; each leave with fade-in and with another appear; back to none; other classes kept; errors.
   - `qd build list`: the order, with and without `fragment-index`; an incremental list's items.
   - `qd build order`: a new order; back to source order removes the indexes; a missing or repeated build is `E_INVALID_ARG`.
-- [ ] T010 [US2] Implement `build_set`, `build_list` and `build_order` in `crates/qd/src/ops.rs` on the existing class and attribute edits (research R3), and `BuildCmd` with schema lines in `crates/qd/src/cli.rs`. T009 passes.
-- [ ] T011 [P] [US2] Write failing browser tests in `crates/qd/tests/onslide.rs`:
+- [X] T010 [US2] Implement `build_set`, `build_list` and `build_order` in `crates/qd/src/ops.rs` on the existing class and attribute edits (research R3), and `BuildCmd` with schema lines in `crates/qd/src/cli.rs`. T009 passes.
+- [X] T011 [P] [US2] Write failing browser tests in `crates/qd/tests/onslide.rs`:
   - **`props_animate`:**
     - with nothing selected, set Zoom, fast and morph; check the slide's attrs;
     - select two elements and set their appear and leave; check the classes;
     - reorder the build list by drag and by ⌥↑; check `fragment-index`;
   - **`build_order_presents`:** in the preview, `Reveal.next()` through the slide shows the builds in the list's order.
-- [ ] T012 [US2] Build Animate in `crates/qd/src/ui/props/animate.js` (contracts/editor.md § Animate):
+- [X] T012 [US2] Build Animate in `crates/qd/src/ui/props/animate.js` (contracts/editor.md § Animate):
   - transition, speed and morph through `qd set`;
   - appear and leave selects through `qd build set`;
   - "One item at a time" for lists (the existing incremental action);
   - the build list from `qd build list`, reordered through `qd build order` (drag, and ⌥↑/⌥↓).
 
   Remove "Appears on click" from Format's footer. It stays in the right-click menu. T011 passes.
-- [ ] T013 [P] [US2] Showcase: give `examples/showcase/showcase.qmd`'s Lists and builds slide an appear-and-leave build and a changed build order. Give the Placed boxes slide a transition speed. Check `qd check`.
+- [X] T013 [P] [US2] Showcase: give `examples/showcase/showcase.qmd`'s Lists and builds slide an appear-and-leave build and a changed build order. Give the Placed boxes slide a transition speed. Check `qd check`.
 
 **Checkpoint**: PR 2.
+
+**As built (PR 2):**
+- reveal.js gives an element one effect per click, so a leave goes with
+  fade-in (`fade-in-then-out`, `fade-in-then-semi-out`) or with no appear.
+  Another appear with a leave is `E_INVALID_ARG`.
+- An incremental list is listed with its items, but `qd build order` takes
+  only the slide's fragments: reveal.js shows the list's items after the
+  ordered builds, and the list says so.
+- "Morph into the next slide" sets `auto-animate=true` on this slide and the
+  next, since reveal.js morphs between two slides that both have it.
+- The browser tests were written alongside the view rather than before it;
+  the CLI tests came first.
 
 ---
 

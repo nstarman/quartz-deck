@@ -1725,18 +1725,39 @@ async function placeElbar() {
 // reveal.js has laid out again
 new ResizeObserver(() => requestAnimationFrame(() => requestAnimationFrame(placeElbar))).observe(frame);
 
-// the column's Animate view (spec 023): the slide's transition, an element's build
+// the column's Animate view (spec 023): the slide's transition and builds, an element's build
 const anim = $('#panel .anim');
+/** The slide's builds, in the order they show (`qd build list`, without op()'s status). */
+async function fetchBuilds(slide) {
+  const res = await fetch('/api/op', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: 'build list', args: { slide } }) });
+  return res.ok ? (await res.json()).builds : [];
+}
 async function renderAnimate() {
   placeEmptyadd();
   const cur = slideByAnchor(state.anchor);
   const ref = state.sel;
   const t = ref && (await elementTarget(ref));
+  const builds = cur ? await fetchBuilds(cur.id) : [];
   if (ref !== state.sel) return; // a newer selection is drawing
+  let element = null;
+  if (t && arrows.is(ref)) element = { arrow: true, appears: !!actions.checked('fragment', t) };
+  else if (t) {
+    const b = builds.find((x) => x.ref === ref && !x.items);
+    element = { appear: b?.appear, leave: b?.leave, list: t.block.kind === 'list' || /^\s*[-*+] /m.test(t.block.text), incremental: !!actions.checked('class-incremental', t) };
+  }
   const kv = cur && !ref ? (await fetchSlide(cur.id))?.attrs?.kv || {} : null;
-  anim.replaceChildren(animate.render(t ? { fragment: !!actions.checked('fragment', t) } : { kv }, {
-    transition: (v) => cur && actions.setAttr({ slideId: cur.id }, 'transition', v || null),
-    toggleFragment: () => t && actions.run('fragment', t),
+  const next = cur && state.deck.slides[state.deck.slides.findIndex((s) => s.id === cur.id) + 1];
+  anim.replaceChildren(animate.render({ kv, element, builds, current: ref }, {
+    setAttr: async (key, v) => {
+      if (!cur) return;
+      await actions.setAttr({ slideId: cur.id }, key, v || null);
+      // morphing takes both slides: the next one too
+      if (key === 'auto-animate' && v && next) await actions.setAttr({ slideId: next.id }, key, v);
+    },
+    build: (appear, leave) => actions.op('build set', { element: ref, ...(appear && { appear }), ...(leave && { leave }) }),
+    incremental: () => t && actions.run('class-incremental', t),
+    toggleArrow: () => t && actions.run('fragment', t),
+    order: (refs) => cur && actions.op('build order', { slide: cur.id, elements: refs }),
   }));
 }
 new MutationObserver(renderAnimate).observe(panel, { childList: true }); // a new selection
