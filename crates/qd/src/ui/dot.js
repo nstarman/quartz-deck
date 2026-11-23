@@ -525,30 +525,60 @@ export async function changed(drawn) {
 
 let cursor = null; // { cell, at }: the last good answer of `dot at` for the cursor in a diagram's source
 let asked = 0;
+const peek = document.querySelector('#dot-peek');
 
 /**
  * The cursor sits at byte `offset` of `text`, the body of diagram `cell` as
- * typed (saved or not): outline on the slide what is there (research R1, R4).
- * Text that can't be read mid-typing keeps the last outline (R2).
+ * typed (saved or not): outline on the slide what is there (research R1, R4),
+ * and draw it alone beside `line`, the cursor's line on screen (R3).
+ * Text that can't be read mid-typing keeps the last of both, the drawing marked out of date (R2).
  */
-export async function cursorAt(cell, text, offset) {
+export async function cursorAt(cell, text, offset, line) {
   const n = ++asked;
   const r = await read('dot at', { text, at: offset });
-  if (n !== asked || !r || r.stopped) return; // a newer cursor came first, or it can't be read yet
+  if (n !== asked || !r) return; // a newer cursor came first
+  if (r.stopped) { peek.classList.add('stale'); return; }
   cursor = r.at ? { cell, at: r.at } : null;
   outline();
+  await draw(cell, r.at?.alone, line, () => n === asked);
 }
 
-/** The cursor left the diagram's source: no outline. */
+/** The source scrolled: the drawing no longer sits beside its line. */
+export const peekAway = () => { peek.hidden = true; };
+
+/** The cursor left the diagram's source: no outline, no drawing. */
 export function cursorGone() {
   asked++;
   cursor = null;
   outline();
+  peek.hidden = true;
+}
+
+/** `alone` drawn by the page's Graphviz into the pop-over, below `line` (above it if there's no room); or hidden. */
+async function draw(cell, alone, line, current) {
+  const gv = alone && line && setting('diagrams.source-preview') !== false && (await graphviz());
+  if (!current()) return; // a newer cursor's drawing is in hand
+  if (!gv) { peek.hidden = true; return; }
+  let svg;
+  try {
+    svg = (await laidOut(gv, { settings: { layout: 'dot' } }, alone)).documentElement;
+  } catch { if (current()) peek.classList.add('stale'); return; } // Graphviz refused what qd's reader took: keep the last
+  if (!current()) return;
+  pictures(svg, info.get(cell) ?? {}, api.elOf(cell)?.querySelector('svg'));
+  svg.removeAttribute('width');
+  svg.removeAttribute('height');
+  peek.replaceChildren(svg);
+  peek.classList.remove('stale');
+  peek.hidden = false;
+  const p = peek.getBoundingClientRect();
+  const below = line.bottom + 4 + p.height <= innerHeight;
+  peek.style.top = `${below ? line.bottom + 4 : Math.max(4, line.top - 4 - p.height)}px`;
+  peek.style.left = `${Math.max(4, Math.min(line.left + 24, innerWidth - p.width - 4))}px`;
 }
 
 /** The cursor's box, arrows or cluster marked on the slide (again after a reload); the selection is left alone. */
 function outline() {
-  const doc = api.frame.contentDocument;
+  const doc = api?.frame.contentDocument; // (the source pane can close before diagrams are set up)
   for (const g of doc?.querySelectorAll('.qd-dot-cursor') || []) g.classList.remove('qd-dot-cursor');
   const cellEl = cursor && api.elOf(cursor.cell);
   if (!cellEl) return;

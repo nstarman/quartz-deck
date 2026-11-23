@@ -6943,3 +6943,82 @@ async fn source_follow_hover() {
     .await;
     followed(&ed, &["a"]).await;
 }
+
+/// Spec 021 US2: a drawing of the cursor's box beside its line, redrawn as
+/// it's typed (before the slide's render lands), kept and dimmed while the
+/// text can't be read, gone on Esc.
+#[tokio::test(flavor = "multi_thread")]
+async fn source_follow_preview() {
+    let slow = tempfile::tempdir().unwrap();
+    let Some(q) = slow_quarto(slow.path(), 4) else {
+        return;
+    };
+    let Some(ed) = Ed::open_with(FOLLOW, &[("QD_QUARTO", q.to_str().unwrap())], |_| {}).await
+    else {
+        return;
+    };
+    ed.go("flow").await;
+    ed.wait("document.querySelector('#preview').contentDocument.querySelector('[data-qd-lang=dot] svg g.node') != null")
+        .await;
+    ed.open_source().await;
+    ed.eval(&caret_at("a [label", 2)).await;
+    let peek = "document.querySelector('#dot-peek')";
+    ed.wait(&format!(
+        "!{peek}.hidden && {peek}.querySelector('svg')?.textContent.includes('Data')"
+    ))
+    .await;
+    // beside the line, not over it
+    let apart = format!(
+        "(() => {{ const t = {PANE}; const i = t.value.slice(0, t.value.indexOf('a [label')).split('\\n').length - 1;
+          const l = document.querySelector('#srcpane .srcwrap pre').children[i].getBoundingClientRect(), p = {peek}.getBoundingClientRect();
+          return p.bottom <= l.top || l.bottom <= p.top; }})()"
+    );
+    assert_eq!(ed.eval(&apart).await, true, "the drawing covers its line");
+    // a new fill, typed: drawn before the render lands
+    ed.eval(&format!(
+        "(() => {{ const t = {PANE}; const i = t.value.indexOf('a [label') + 2; t.setSelectionRange(i, i);
+          document.execCommand('insertText', false, ' [fillcolor=\"#ff0000\", style=filled]'); }})()"
+    ))
+    .await;
+    ed.wait(&format!(
+        "{peek}.querySelector('svg [fill=\"#ff0000\"]') != null"
+    ))
+    .await;
+    assert_eq!(
+        ed.eval("document.querySelector('#preview').contentDocument.querySelector('[data-qd-lang=dot] svg [fill=\"#ff0000\"]') == null").await,
+        true,
+        "drawn only once the slide showed it"
+    );
+    // an unclosed quote: the last drawing stays, marked out of date
+    ed.eval(&format!(
+        "(() => {{ const t = {PANE}; document.execCommand('insertText', false, ' label=\"open'); }})()"
+    ))
+    .await;
+    ed.wait(&format!(
+        "{peek}.classList.contains('stale') && !{peek}.hidden"
+    ))
+    .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait(&format!("{peek}.hidden")).await;
+}
+
+/// Spec 021 FR-010: with `diagrams.source-preview` off, the outline alone.
+#[tokio::test(flavor = "multi_thread")]
+async fn source_follow_setting_off() {
+    let Some(ed) = Ed::open(FOLLOW).await else {
+        return;
+    };
+    ed.cli(&["settings", "set", "diagrams.source-preview", "false"]);
+    ed.go("flow").await;
+    ed.wait("document.querySelector('#preview').contentDocument.querySelector('[data-qd-lang=dot] svg g.node') != null")
+        .await;
+    ed.open_source().await;
+    ed.eval(&caret_at("b [label", 2)).await;
+    followed(&ed, &["b"]).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        ed.eval("document.querySelector('#dot-peek')?.hidden ?? true")
+            .await,
+        true
+    );
+}

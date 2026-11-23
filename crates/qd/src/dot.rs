@@ -928,6 +928,79 @@ pub fn show(d: &Deck, r: &str) -> Result<Value> {
 
 // ---------- what is at a point of the text (spec 021) ----------
 
+/// Graph settings a lone element's drawing leaves out: where things sit, and the page.
+const PLACING: [&str; 7] = [
+    "layout", "splines", "size", "ratio", "overlap", "sep", "esep",
+];
+
+/// A small graph drawing one box (and, for an arrow, its two ends' boxes and
+/// the arrow) as the cell would (research R3): the cell's graph settings but
+/// [`PLACING`], the `node`/`edge` defaults written before the statement, and
+/// its attributes as written, `pos` aside.
+fn alone(text: &str, g: &Graph, s: &Stmt, boxes: &[&str], arrow: Option<&Edge>) -> String {
+    let raw = |a: &Attr| {
+        format!(
+            "{}={}",
+            &text[a.key_span.start..a.key_span.end],
+            &text[a.value_span.start..a.value_span.end]
+        )
+    };
+    let list = |attrs: &[Attr]| -> String {
+        let kept: Vec<String> = attrs.iter().filter(|a| a.key != "pos").map(raw).collect();
+        if kept.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", kept.join(", "))
+        }
+    };
+    let graph: Vec<Attr> = (g.settings().into_iter())
+        .filter(|a| !PLACING.contains(&a.key.as_str()))
+        .collect();
+    let mut out = vec![format!(
+        "{} {{",
+        if g.directed { "digraph" } else { "graph" }
+    )];
+    if !graph.is_empty() {
+        out.push(format!("  graph{};", list(&graph)));
+    }
+    // the defaults written before it, in the subgraphs around it too
+    fn defaults<'a>(stmts: &'a [Stmt], at: usize, out: &mut Vec<(&'a str, Vec<Attr>)>) {
+        for d in stmts.iter().filter(|d| d.span.start < at) {
+            match &d.kind {
+                Kind::Defaults { target, lists } if target != "graph" => {
+                    out.push((target, list_attrs(lists)))
+                }
+                Kind::Subgraph { body, .. } if at <= d.end() => defaults(body, at, out),
+                _ => {}
+            }
+        }
+    }
+    let mut found = vec![];
+    defaults(&g.stmts, s.span.start, &mut found);
+    for (target, attrs) in found {
+        out.push(format!("  {target}{};", list(&attrs)));
+    }
+    let nodes = g.nodes();
+    for name in boxes {
+        let attrs = nodes
+            .iter()
+            .find(|n| n.name == *name)
+            .map_or(&[][..], |n| &n.attrs[..]);
+        out.push(format!("  {}{};", dot_value(name), list(attrs)));
+    }
+    if let Some(e) = arrow {
+        out.push(format!(
+            "  {} {} {}{};",
+            dot_value(&e.from),
+            g.op(),
+            dot_value(&e.to),
+            list(&e.attrs)
+        ));
+    }
+    out.push("}".into());
+    out.join("\n")
+}
+
 /// The innermost statement of `stmts` holding `offset`.
 fn stmt_at(stmts: &[Stmt], offset: usize) -> Option<&Stmt> {
     let s = stmts
@@ -962,7 +1035,9 @@ pub fn at(text: &str, offset: usize) -> Result<Value> {
     };
     let span = json!([s.span.start, s.end()]);
     let at = match &s.kind {
-        Kind::Node { name, .. } => json!({"kind": "node", "node": name, "span": span}),
+        Kind::Node { name, .. } => {
+            json!({"kind": "node", "node": name, "span": span, "alone": alone(text, &g, s, &[name], None)})
+        }
         Kind::Edge { ops, .. } => {
             let mine: Vec<Edge> = g.edges().into_iter().filter(|e| e.span == s.span).collect();
             let name = |e: &Edge| format!("{}{}{}#{}", e.from, g.op(), e.to, e.index);
@@ -979,7 +1054,10 @@ pub fn at(text: &str, offset: usize) -> Result<Value> {
                 .collect();
             let one = (on.len() == 1).then(|| name(on[0]));
             let refs: Vec<String> = mine.iter().map(name).collect();
-            json!({"kind": "edge", "edge": one, "edges": refs, "span": span})
+            // a lone link's drawing: the one under the cursor, else the statement's first
+            let shown = (on.len() == 1).then(|| on[0]).or(mine.first());
+            let lone = shown.map(|e| alone(text, &g, s, &[&e.from, &e.to], Some(e)));
+            json!({"kind": "edge", "edge": one, "edges": refs, "span": span, "alone": lone})
         }
         Kind::Subgraph { id: Some(id), .. } if id.starts_with("cluster") => {
             json!({"kind": "cluster", "cluster": id, "span": span})
@@ -2051,6 +2129,64 @@ mod tests {
             let v = at_in(chain, n);
             assert_eq!(v["edge"], Value::Null, "at {n}");
             assert_eq!(v["edges"], json!(["a->b#3", "b->c#1"]), "at {n}");
+        }
+    }
+
+    #[test]
+    fn alone_draws_one_element_with_its_defaults() {
+        let text = "digraph {\n  layout=neato; splines=ortho; bgcolor=\"#eef\";\n  node [shape=box];\n  edge [color=gray];\n  a [label=\"Data\", pos=\"0,1!\", fillcolor=white];\n  b [label=<<b>Tool</b>>, pos=\"2,1!\"];\n  a -> b [style=dashed];\n  node [shape=ellipse];\n}\n";
+        let alone = |needle: &str| {
+            at(text, text.find(needle).unwrap() + 1).unwrap()["at"]["alone"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        let a = alone("a [label");
+        assert!(a.starts_with("digraph {"), "{a}");
+        for want in [
+            "node [shape=box]",
+            "label=\"Data\"",
+            "fillcolor=white",
+            "bgcolor=\"#eef\"",
+        ] {
+            assert!(a.contains(want), "{want} missing from {a}");
+        }
+        for gone in ["pos=", "layout", "splines", "ellipse", "-> b"] {
+            assert!(!a.contains(gone), "{gone} in {a}");
+        }
+        // a box in a subgraph takes the subgraph's defaults too
+        let sub = "digraph {\n  subgraph s {\n    node [shape=circle];\n    x [label=X];\n  }\n}\n";
+        let v = at(sub, sub.find("x [").unwrap() + 1).unwrap();
+        assert!(
+            v["at"]["alone"]
+                .as_str()
+                .unwrap()
+                .contains("node [shape=circle]"),
+            "{v}"
+        );
+        let e = alone("a -> b");
+        for want in [
+            "edge [color=gray]",
+            "label=<<b>Tool</b>>",
+            "label=\"Data\"",
+            "a -> b [style=dashed]",
+        ] {
+            assert!(e.contains(want), "{want} missing from {e}");
+        }
+        assert_eq!(
+            at(text, text.find("layout").unwrap()).unwrap()["at"]["alone"],
+            Value::Null
+        );
+        // Graphviz draws it, label and all
+        if let Ok(mut dot) = std::process::Command::new("dot")
+            .arg("-Tsvg")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+        {
+            std::io::Write::write_all(&mut dot.stdin.take().unwrap(), a.as_bytes()).unwrap();
+            let svg = String::from_utf8(dot.wait_with_output().unwrap().stdout).unwrap();
+            assert!(svg.contains(">Data<"), "{svg}");
         }
     }
 
