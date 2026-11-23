@@ -1,0 +1,4 @@
+/.quarto/
+**/*.quarto_ipynb
+# quarto-arrows has no licence file: qd downloads it into a deck, never ships it
+/_extensions/emilhvitfeldt/

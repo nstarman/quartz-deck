@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 240" width="400" height="240">
+  <rect width="400" height="240" fill="#ffffff"/>
+  <g fill="#2a5bd7">
+    <rect x="40" y="160" width="50" height="60"/>
+    <rect x="120" y="120" width="50" height="100"/>
+    <rect x="200" y="80" width="50" height="140"/>
+    <rect x="280" y="30" width="50" height="190"/>
+  </g>
+  <line x1="30" y1="220" x2="370" y2="220" stroke="#333" stroke-width="2"/>
+  <text x="200" y="20" font-family="sans-serif" font-size="14" text-anchor="middle" fill="#333">Readers per quarter</text>
+</svg>
