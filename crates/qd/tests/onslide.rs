@@ -7041,6 +7041,23 @@ async fn source_follow_cell_editor() {
     followed(&ed, &["c"]).await;
     ed.wait("!document.querySelector('#dot-peek').hidden && document.querySelector('#dot-peek svg')?.textContent.includes('Paper')")
         .await;
+    // the pointer resting on a's line: a, until it leaves
+    let at = ed
+        .eval(&format!(
+            "(() => {{ const t = {SRC}; const cs = getComputedStyle(t), r = t.getBoundingClientRect();
+              const line = t.value.slice(0, t.value.indexOf('a [label')).split('\\n').length - 1;
+              return [r.left + parseFloat(cs.paddingLeft) + 20, r.top + parseFloat(cs.paddingTop) + (line + 0.5) * parseFloat(cs.lineHeight) - t.scrollTop]; }})()"
+        ))
+        .await;
+    let (x, y) = (at[0].as_f64().unwrap(), at[1].as_f64().unwrap());
+    ed.mouse(DispatchMouseEventType::MouseMoved, (x, y), false)
+        .await;
+    followed(&ed, &["a"]).await;
+    ed.eval(&format!(
+        "{SRC}.dispatchEvent(new MouseEvent('mouseleave'))"
+    ))
+    .await;
+    followed(&ed, &["c"]).await;
     ed.key("Escape", "Escape", 27, 0).await; // saves and closes: nothing followed
     followed(&ed, &[]).await;
     ed.wait("document.querySelector('#dot-peek').hidden").await;

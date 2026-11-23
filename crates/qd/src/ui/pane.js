@@ -243,20 +243,25 @@ function followCaret() {
 }
 
 /** The text position under the pointer: a line from the coloured lines' boxes, a column from the font's width. */
-let charWidth = 0;
 function posAt(x, y) {
   const lines = [...hl.children];
   const i = lines.findIndex((l) => l.getBoundingClientRect().bottom > y);
-  if (i < 0) return null;
-  if (!charWidth) {
+  // (the colouring can be a frame behind the text: textPos refuses a row past it)
+  return i < 0 ? null : textPos(ta, i, x - lines[i].getBoundingClientRect().left);
+}
+
+/** The position `dx` px into row `i` of text box `t` (monospace, not wrapping); null past its last row. */
+const widths = new WeakMap();
+export function textPos(t, i, dx) {
+  const rows = t.value.split('\n');
+  if (i < 0 || i >= rows.length) return null;
+  if (!widths.has(t)) {
     const ctx = document.createElement('canvas').getContext('2d');
-    ctx.font = getComputedStyle(ta).font;
-    charWidth = ctx.measureText('0').width;
+    ctx.font = getComputedStyle(t).font;
+    widths.set(t, ctx.measureText('0').width);
   }
-  const row = ta.value.split('\n');
-  if (i >= row.length) return null; // the colouring is a frame behind the text
-  const col = Math.max(0, Math.round((x - lines[i].getBoundingClientRect().left) / charWidth));
-  return row.slice(0, i).reduce((n, l) => n + l.length + 1, 0) + Math.min(col, row[i].length);
+  const col = Math.max(0, Math.round(dx / widths.get(t)));
+  return rows.slice(0, i).reduce((n, l) => n + l.length + 1, 0) + Math.min(col, rows[i].length);
 }
 
 /** Caret line and selection → the editor's shared focus (spec 005). */
