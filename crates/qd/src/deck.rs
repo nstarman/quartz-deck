@@ -208,7 +208,7 @@ fn div_close(l: &str) -> bool {
     indent(l) <= 3 && t.len() >= 3 && t.chars().all(|c| c == ':')
 }
 
-fn is_list_item(l: &str) -> bool {
+pub(crate) fn is_list_item(l: &str) -> bool {
     let t = l.trim_start();
     if t == "-"
         || t == "*"

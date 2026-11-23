@@ -206,6 +206,11 @@ const WIDGET_KEYS: &[(&str, usize, &str)] = &[
         "moving along the slide list (↑ ↓), folding a group (← →, spec 018), Enter adding a slide there, Esc cancelling a drag",
     ),
     (
+        "animate.js",
+        1,
+        "⌥↑ ⌥↓ moving a row of the build list (spec 023), not the selected element",
+    ),
+    (
         "pane.js",
         1,
         "Esc in the source pane takes off a diagram's cursor outline (spec 021)",

@@ -1211,7 +1211,7 @@ async fn bars_set_properties_and_source_panel_is_hidden() {
         .await;
     ed.eval(&hide(false)).await;
     ed.wait_file(|f| f == P2, "unhidden, bytes as before").await;
-    // Animate: "Appears on click" = .fragment, and back again byte-identical
+    // Animate: Appear "Fade in" = .fragment, and None back again byte-identical
     props(&ed, "animate").await;
     for (sel, want) in [
         ("[data-qd=\"a/1\"] p", "::: {.fragment}\nSecond para.\n:::"),
@@ -1220,7 +1220,12 @@ async fn bars_set_properties_and_source_panel_is_hidden() {
         ed.settle().await;
         ed.go("a").await;
         ed.select(sel).await;
-        ed.click_editor("#panel .anim [name=fragment]").await;
+        let to = if want.contains("fragment") {
+            "fade-in"
+        } else {
+            "none"
+        };
+        ed.eval(&pick("appear", to)).await;
         ed.wait_file(|f| f.contains(want), "fragment toggled").await;
     }
     assert_eq!(ed.file(), P2, "fragment removed, bytes as before");
@@ -4693,25 +4698,121 @@ async fn props_title_slide() {
     .await;
 }
 
-/// Spec 023 US1: the slide's transition moved from the slide bar to Animate, and
-/// writes as before, one undo step (its "Appears on click": the bars test).
+/// Spec 023 T011: choose a select in the Animate view, as the person does.
+fn pick(name: &str, value: &str) -> String {
+    format!(
+        "(() => {{ const s = document.querySelector('#panel .anim [name={name}]'); s.value = '{value}'; s.dispatchEvent(new Event('change', {{ bubbles: true }})); }})()"
+    )
+}
+
+/// Spec 023 US2 (T011): the slide's transition, speed and morphing; two
+/// elements' appear and leave; the build list reordered by ⌥↓ and by a drag.
 #[tokio::test(flavor = "multi_thread")]
-async fn props_animate_moved() {
+async fn props_animate() {
     let Some(ed) = inspecting().await else {
         return;
     };
     ed.go("a").await;
     props(&ed, "animate").await;
+    // two builds (first: the slide's zoom would move them mid-click): a grow that fades out, then a fade up
+    ed.go("a").await;
+    ed.select("[data-qd=\"a/0\"]").await;
+    ed.wait("!!document.querySelector('#panel .anim [name=appear]')")
+        .await;
+    ed.eval(&pick("appear", "fade-in")).await;
+    ed.wait_file(|f| f.contains("::: {.fragment}\nFirst words"), "a build")
+        .await;
+    ed.settle().await;
+    ed.select("[data-qd=\"a/0\"]").await;
+    ed.wait("document.querySelector('#panel .anim [name=appear]')?.value === 'fade-in'")
+        .await;
+    ed.eval(&pick("leave", "fade-out")).await;
+    ed.wait_file(|f| f.contains(".fade-in-then-out"), "in, then out")
+        .await;
+    ed.settle().await;
+    ed.select("[data-qd=\"a/1\"]").await;
+    // its own view, not a/0's
+    ed.wait("document.querySelector('#panel .anim [name=appear]')?.value === 'none'")
+        .await;
+    ed.eval(&pick("appear", "fade-up")).await;
+    ed.wait_file(|f| f.contains(".fade-up"), "fades up").await;
+    ed.settle().await;
+    // the list, the selected one marked; ⌥↓ moves the first after the second
+    let rows = "[...document.querySelectorAll('#panel .builds li')].map((li) => li.dataset.ref)";
+    ed.select("[data-qd=\"a/1\"]").await;
+    ed.wait(&format!("JSON.stringify({rows}) === '[\"a/0\",\"a/1\"]' && document.querySelector('#panel .builds [aria-current=true]')?.dataset.ref === 'a/1'")).await;
+    ed.eval("document.querySelector('#panel .builds li[data-ref=\"a/0\"]').focus()")
+        .await;
+    ed.key("ArrowDown", "ArrowDown", 40, 1).await;
+    ed.wait_file(|f| f.matches("fragment-index").count() == 2, "reordered")
+        .await;
+    ed.settle().await;
+    // a drag puts it back: source order, no indexes
+    ed.go("a").await;
+    ed.wait(&format!("JSON.stringify({rows}) === '[\"a/1\",\"a/0\"]'"))
+        .await;
+    ed.eval("(() => { const [a, b] = document.querySelectorAll('#panel .builds li'); const dt = new DataTransfer(); b.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true })); a.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); })()").await;
+    ed.wait_file(|f| !f.contains("fragment-index"), "back in source order")
+        .await;
+    ed.settle().await;
+    ed.go("a").await;
+    ed.select("[data-qd=\"a/2\"]").await;
+    ed.key("Escape", "Escape", 27, 0).await; // back to the slide
+    ed.wait("!!document.querySelector('#panel .anim [name=transition]')")
+        .await;
     let before = ed.file();
-    ed.eval("(() => { const s = document.querySelector('#panel .anim [name=transition]'); s.value = 'fade'; s.dispatchEvent(new Event('change', { bubbles: true })); })()").await;
-    ed.wait_file(|f| f.contains("transition=fade"), "faded")
+    ed.eval(&pick("transition", "zoom")).await;
+    ed.wait_file(|f| f.contains("transition=zoom"), "zoomed")
         .await;
     ed.settle().await;
     ed.undo_to(&before).await; // one undo step
     ed.settle().await;
-    ed.select("[data-qd=\"a/0\"]").await;
-    props(&ed, "format").await;
-    ed.wait(&format!("{TABS}[1] === 'Look'")).await;
+    ed.eval(&pick("transition", "zoom")).await;
+    ed.wait_file(|f| f.contains("transition=zoom"), "zoomed")
+        .await;
+    ed.settle().await;
+    ed.eval(&pick("speed", "fast")).await;
+    ed.wait_file(|f| f.contains("transition-speed=fast"), "fast")
+        .await;
+    ed.settle().await;
+    ed.click_editor("#panel .anim [name=morph]").await;
+    ed.wait_file(
+        |f| f.matches("auto-animate=true").count() == 2,
+        "this slide and the next morph",
+    )
+    .await;
+    ed.settle().await;
+}
+
+/// Spec 023 US2 (T011): presenting, the builds show in the list's order.
+#[tokio::test(flavor = "multi_thread")]
+async fn build_order_presents() {
+    let Some(ed) = inspecting().await else {
+        return;
+    };
+    for (el, fx) in [("a/0", "fade-in"), ("a/1", "fade-up")] {
+        ed.cli(&["build", "set", el, "--appear", fx]);
+    }
+    ed.cli(&["build", "order", "a", "a/1", "a/0"]);
+    ed.settle().await;
+    ed.go("a").await;
+    let shown = format!(
+        "[...{FRAME}.querySelectorAll('section.present .fragment.visible')].map((f) => f.textContent.trim())"
+    );
+    let mut order = Vec::new();
+    for _ in 0..2 {
+        ed.eval(&format!("{FRAME}.defaultView.Reveal.nextFragment()"))
+            .await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        order.push(ed.eval(&shown).await);
+    }
+    assert_eq!(
+        order,
+        [
+            json!(["Second words"]),
+            json!(["First words", "Second words"])
+        ]
+    );
 }
 
 // ---------- spec 015 US1: diagrams on the slide ----------

@@ -405,6 +405,11 @@ enum Cmd {
         #[command(subcommand)]
         action: BlockCmd,
     },
+    /// How elements appear and leave on a click, and in what order (reveal.js fragments)
+    Build {
+        #[command(subcommand)]
+        action: BuildCmd,
+    },
     /// Revert the last qd edit
     Undo,
     /// Re-apply the last undone edit
@@ -626,6 +631,29 @@ enum BlockCmd {
     },
     /// Put a placed element back in the flow
     Unplace { element: String },
+}
+
+#[derive(Subcommand)]
+enum BuildCmd {
+    /// Set how an element appears and leaves on a click (`none`: not a build)
+    Set {
+        element: String,
+        /// fade-in, fade-up, fade-down, fade-left, fade-right, grow, shrink, strike,
+        /// highlight-red|green|blue, highlight-current-red|green|blue, or none
+        #[arg(long)]
+        appear: Option<String>,
+        /// fade-out, semi-fade-out, or none
+        #[arg(long)]
+        leave: Option<String>,
+    },
+    /// List a slide's builds in the order they show
+    List { slide: String },
+    /// Put a slide's builds in this order (each named once)
+    Order {
+        slide: String,
+        #[arg(required = true)]
+        elements: Vec<String>,
+    },
 }
 
 #[derive(Args)]
@@ -1544,6 +1572,9 @@ const API_OPS: &[&str] = &[
     "block place",
     "block unplace",
     "block class",
+    "build set",
+    "build list",
+    "build order",
     "slides",
     "show",
     "meta",
@@ -2531,6 +2562,42 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                 ops::block_place(d, element, *at, w, h)
             }),
             BlockCmd::Unplace { element } => ctx.edit(|d| ops::block_unplace(d, element)),
+        },
+        Cmd::Build { action } => match action {
+            BuildCmd::Set {
+                element,
+                appear,
+                leave,
+            } => {
+                if appear.is_none() && leave.is_none() {
+                    return Err(QdError::InvalidArg("give --appear or --leave".into()));
+                }
+                let mut v =
+                    ctx.edit(|d| ops::build_set(d, element, appear.as_deref(), leave.as_deref()))?;
+                let d = read()?.1;
+                let (_, b) = d.element(element)?;
+                let (appear, leave) = ops::build_of(b.attrs.as_ref());
+                v["appear"] = json!(appear.unwrap_or("none"));
+                v["leave"] = json!(leave);
+                Ok(v)
+            }
+            BuildCmd::List { slide } => {
+                let d = read()?.1;
+                let builds: Vec<Value> = ops::build_list(&d, slide)?
+                    .iter()
+                    .map(|b| {
+                        let mut v = json!({"ref": b.block.id, "name": ops::build_name(&d, b.block), "appear": b.appear, "leave": b.leave, "index": b.index});
+                        if let Some(items) = &b.items {
+                            v["items"] = json!(items);
+                        }
+                        v
+                    })
+                    .collect();
+                Ok(json!({"ok": true, "slide": d.slide(slide)?.id, "builds": builds}))
+            }
+            BuildCmd::Order { slide, elements } => {
+                ctx.edit(|d| ops::build_order(d, slide, elements))
+            }
         },
         Cmd::Undo => {
             let (v, op) = ctx.store()?.undo()?;

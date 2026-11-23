@@ -186,6 +186,7 @@ export function makeActions(api) {
     empty: (t) => resolve(emptyArea, t),
     insert: insertMenu,
     setAttr,
+    op: api.op, // an op, with the editor's redraw after it
     /** Run action `id` of a table on `t` (keyboard shortcuts, bars, the menu bar). */
     run: (id, t, table = 'element') => (can(id, t, table) ? find(id, table).run(t) : null),
     /** Whether action `id` applies to `t` now, and its checkmark (the menu bar). */

@@ -327,6 +327,11 @@ main:not(.panel-open, .inspector) > #panel { display: none; }
 body:has(> #fmtbar:not([hidden])) #panel .fmt-tab > .note { display: none; }
 #panel > #elbar { position: static; flex-wrap: wrap; width: auto; margin: 12px 0 0; padding: 0; border: 0; box-shadow: none; background: none; }
 #panel .off { display: none; } /* another tab's (inspector.js) */
+#panel .builds h3 { font-size: 13px; margin: 16px 0 6px; }
+#panel .builds ol { margin: 0; padding-left: 22px; font-size: 12px; }
+#panel .builds li { padding: 4px 6px; border-radius: 6px; cursor: grab; }
+#panel .builds li[aria-current=true] { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+#panel .builds li:focus-visible { outline: 2px solid var(--accent); }
 
 #ctxmenu { position: fixed; z-index: 30; }
 #ctxmenu ul { list-style: none; margin: 0; padding: 4px; min-width: 210px; background: var(--panel); color: var(--text);
