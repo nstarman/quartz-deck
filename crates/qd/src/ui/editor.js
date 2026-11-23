@@ -1729,13 +1729,14 @@ new ResizeObserver(() => requestAnimationFrame(() => requestAnimationFrame(place
 
 // the column's Animate view (spec 023): the slide's transition and builds, an element's build
 const anim = $('#panel .anim');
+let animating = 0; // the newest call draws: an older one may hold the builds from before an edit
 async function renderAnimate() {
+  const turn = ++animating;
   placeEmptyadd();
   const cur = slideByAnchor(state.anchor);
   const ref = state.sel;
   const t = ref && (await elementTarget(ref));
   const builds = cur ? (await run.read('build list', { slide: cur.id }))?.builds || [] : [];
-  if (ref !== state.sel) return; // a newer selection is drawing
   let element = null;
   if (t && arrows.is(ref)) element = { arrow: true, appears: !!actions.checked('fragment', t) };
   else if (t) {
@@ -1743,6 +1744,7 @@ async function renderAnimate() {
     element = { appear: b?.appear, leave: b?.leave, list: t.block.kind === 'list' || /^\s*[-*+] /m.test(t.block.text), incremental: !!actions.checked('class-incremental', t) };
   }
   const kv = cur && !ref ? (await fetchSlide(cur.id))?.attrs?.kv || {} : null;
+  if (turn !== animating) return; // a newer call is drawing
   const next = cur && state.deck.slides[state.deck.slides.findIndex((s) => s.id === cur.id) + 1];
   anim.replaceChildren(animate.render({ kv, element, builds, current: ref }, {
     setAttr: async (key, v) => {
@@ -1761,8 +1763,11 @@ new MutationObserver(renderAnimate).observe(panel, { childList: true }); // a ne
 
 // the column's Deck view (spec 023): the deck's theme, size, slide numbers, transition, navigation
 const deckEl = $('#panel .deck');
+let decking = 0;
 async function renderDeckView() {
+  const turn = ++decking;
   const meta = await fetchMeta();
+  if (turn !== decking) return; // a newer call is drawing
   const { width, height, navigation_mode: navigation } = state.deck;
   deckEl.replaceChildren(deckView.render({ meta, width, height, navigation }, {
     set: (k, value) => op(value != null ? 'meta set' : 'meta unset', { key: `format.revealjs.${k}`, ...(value != null && { value }) }),
