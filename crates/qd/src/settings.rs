@@ -130,7 +130,6 @@ const DEFS: &[Def] = &[
     ui("ui.source_height", Kind::Number, || Value::Null), // below the slide (spec 022)
     ui("ui.source_was_open", Kind::Bool, || json!(false)),
     ui("ui.source_full", Kind::Bool, || json!(false)),
-    ui("ui.form_panel", Kind::Bool, || json!(false)),
     ui("ui.inspector", Kind::Bool, || json!(true)),
     ui("ui.last_layout", Kind::Name, || json!("title-content")),
 ];
@@ -284,7 +283,7 @@ mod tests {
         assert_eq!(v["placement.snap"], true);
         assert_eq!(v["diagrams.live-layout"], true, "spec 020 US2");
         assert_eq!(v["diagrams.source-preview"], true, "spec 021 US2");
-        assert_eq!(v["ui.inspector"], true, "spec 019: on where it fits");
+        assert_eq!(v["ui.inspector"], true, "spec 023: shown");
         assert!(notices.is_empty());
         assert_eq!(defs().as_array().unwrap().len(), 11, "ui.* are not shown");
     }

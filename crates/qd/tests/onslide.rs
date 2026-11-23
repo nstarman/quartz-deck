@@ -176,6 +176,8 @@ impl Ed {
             _slot: slot,
             _watchdog: watchdog,
         };
+        // room for the slide beside the list, the properties column and the source pane (spec 023)
+        ed.window(1600, 800).await;
         ed.wait_secs(READY, 60).await;
         ed.eval(EVENT_LOG).await;
         Some(ed)
@@ -1193,28 +1195,24 @@ async fn context_menus_list_and_run_actions() {
 async fn bars_set_properties_and_source_panel_is_hidden() {
     let Some(ed) = Ed::open(P2).await else { return };
     ed.go("a").await;
-    assert_eq!(
-        ed.eval("document.querySelector('main').classList.contains('panel-open')")
-            .await,
-        false
-    );
-    assert_eq!(
-        ed.eval("getComputedStyle(document.querySelector('#panel')).display")
-            .await,
-        "none"
-    );
-    // slide bar: hidden toggle = visibility attribute
-    ed.wait("document.querySelector('#slidebar').style.visibility !== 'hidden'")
+    // the column's Format: Hidden = visibility attribute, and back byte-identical
+    let hide = |on: bool| {
+        format!(
+            "(() => {{ const f = document.querySelector('#panel .slide-form'); f.hidden.checked = {on}; f.requestSubmit(); }})()"
+        )
+    };
+    ed.wait("!!document.querySelector('#panel .slide-form')")
         .await;
-    ed.click_editor("#slidebar [name=hidden]").await;
+    ed.eval(&hide(true)).await;
     ed.wait_file(|f| f.contains("## A {#a visibility=hidden}"), "hidden")
         .await;
     ed.settle().await;
-    ed.wait("document.querySelector('#slidebar [name=hidden]').checked")
+    ed.wait("document.querySelector('#panel .slide-form')?.hidden.checked")
         .await;
-    ed.click_editor("#slidebar [name=hidden]").await;
+    ed.eval(&hide(false)).await;
     ed.wait_file(|f| f == P2, "unhidden, bytes as before").await;
-    // element bar: "On click" = .fragment, and back again byte-identical
+    // Animate: "Appears on click" = .fragment, and back again byte-identical
+    props(&ed, "animate").await;
     for (sel, want) in [
         ("[data-qd=\"a/1\"] p", "::: {.fragment}\nSecond para.\n:::"),
         ("[data-qd=\"a/1\"]", "\n\nSecond para.\n\n"),
@@ -1222,28 +1220,17 @@ async fn bars_set_properties_and_source_panel_is_hidden() {
         ed.settle().await;
         ed.go("a").await;
         ed.select(sel).await;
-        ed.click_editor("#elbar [data-act=fragment]").await;
+        ed.click_editor("#panel .anim [name=fragment]").await;
         ed.wait_file(|f| f.contains(want), "fragment toggled").await;
     }
     assert_eq!(ed.file(), P2, "fragment removed, bytes as before");
-    // the Source button shows the source pane; its Form button the old properties panel
+    // the source pane's Properties button hides the column and shows it again
     ed.toggle_source().await;
     ed.wait("!document.querySelector('#srcpane').hidden").await;
-    // the element bar follows the element when the layout moves; it never sits over other controls
-    ed.wait("(() => { const b = document.querySelector('#elbar'); if (b.hidden) return true; const r = b.getBoundingClientRect(), f = document.querySelector('#srcpane [data-act=form]').getBoundingClientRect(); return r.right < f.left || f.right < r.left || r.bottom < f.top || f.bottom < r.top; })()").await;
-    ed.eval("window.__clicked = []; document.addEventListener('click', (e) => __clicked.push(e.target.outerHTML.slice(0, 60)), true)").await;
     ed.click_editor("#srcpane [data-act=form]").await;
-    let opened = ed
-        .eval("new Promise((r) => { const t = Date.now(); (function f() { if (getComputedStyle(document.querySelector('#panel')).display === 'block') r(true); else if (Date.now() - t > 5000) r(false); else setTimeout(f, 50); })(); })")
-        .await;
-    assert_eq!(
-        opened,
-        true,
-        "the Form button did not open the panel: main={} clicked={} under the button now={}",
-        ed.eval("document.querySelector('main').className").await,
-        ed.eval("JSON.stringify(window.__clicked)").await,
-        ed.eval("(() => { const r = document.querySelector('#srcpane [data-act=form]').getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.outerHTML.slice(0, 80); })()").await,
-    );
+    ed.wait(&format!("!{INSPECTING}")).await;
+    ed.click_editor("#srcpane [data-act=form]").await;
+    ed.wait(INSPECTING).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -2834,7 +2821,7 @@ const MEASURE: &str = r#"(() => {
 /// The element under the open element bar or formatting bar, if any (null when
 /// none is shown or it covers nothing): a bar must never cover what the slide shows
 /// (an element's contents, not the empty end of a block such as a short heading).
-const OVERLAP: &str = "(() => { const f = document.querySelector('#preview'); const a = f.getBoundingClientRect(); const bar = [...document.querySelectorAll('#elbar, #fmtbar')].find((b) => !b.hidden && b.getClientRects().length); if (!bar) return null; const r = bar.getBoundingClientRect(); const hit = [...f.contentDocument.querySelectorAll('section.present [data-qd], section.present > h2')].filter((el) => !el.classList.contains('qd-sel') && !el.classList.contains('qd-editing')).find((el) => { const g = el.ownerDocument.createRange(); g.selectNodeContents(el); const c = g.getBoundingClientRect(); const e = c.width && c.height ? c : el.getBoundingClientRect(); const x = a.left + e.left, y = a.top + e.top; return x < r.right && x + e.width > r.left && y < r.bottom && y + e.height > r.top; }); return hit ? (hit.dataset.qd || hit.tagName) : null; })()";
+const OVERLAP: &str = "(() => { const f = document.querySelector('#preview'); const a = f.getBoundingClientRect(); const bar = document.querySelector('#fmtbar'); if (!bar || bar.hidden || !bar.getClientRects().length) return null; const r = bar.getBoundingClientRect(); const hit = [...f.contentDocument.querySelectorAll('section.present [data-qd], section.present > h2')].filter((el) => !el.classList.contains('qd-sel') && !el.classList.contains('qd-editing')).find((el) => { const g = el.ownerDocument.createRange(); g.selectNodeContents(el); const c = g.getBoundingClientRect(); const e = c.width && c.height ? c : el.getBoundingClientRect(); const x = a.left + e.left, y = a.top + e.top; return x < r.right && x + e.width > r.left && y < r.bottom && y + e.height > r.top; }); return hit ? (hit.dataset.qd || hit.tagName) : null; })()";
 
 /// T004 (spec 008 SC-004, SC-005, SC-003): in light, dark and high contrast,
 /// every text and control in the editor meets the contrast and size minimums,
@@ -3350,11 +3337,11 @@ async fn tidier_bars_and_fuller_insert() {
         )
     };
 
-    // the slide bar: one height, a name on each control, a colour menu with None
+    // the column's views and tabs: one height, a name on each
     ed.go("b").await;
-    ed.wait("document.querySelector('#slidebar').style.visibility !== 'hidden'")
+    ed.wait("!!document.querySelector('#panel .tabs button')")
         .await;
-    let bar = shown("#slidebar");
+    let bar = shown("#panel :is(.views, .tabs)");
     assert_eq!(
         ed.eval(&format!("new Set({bar}.map((b) => b.offsetHeight)).size"))
             .await,
@@ -3366,7 +3353,9 @@ async fn tidier_bars_and_fuller_insert() {
         0,
         "every control named"
     );
-    ed.click_editor("#slidebar [data-act=bg]").await;
+    // the slide's background menu, from its menu (⇧F10), has None
+    ed.key("F10", "F10", 121, 8).await;
+    ed.click_menu("Background colour…").await;
     ed.wait(&format!(
         "{sheet}?.querySelector('[data-value=\"\"]') != null"
     ))
@@ -3474,12 +3463,12 @@ async fn narrow_window() {
     ed.wait("document.querySelector('#preview').contentWindow.Reveal.getCurrentSlide()?.id === 'b' && document.querySelector('#slide-picker').textContent.includes('B')")
         .await;
 
-    // the slide's properties are under ···
+    // the column is below the slide, and the slide's menu (⇧F10) has its properties
     assert_eq!(
-        ed.eval("[...document.querySelectorAll('#slidebar > *')].filter((c) => c.offsetParent).map((c) => c.dataset.act)").await,
-        json!(["more"])
+        ed.eval("document.querySelector('#panel').getBoundingClientRect().top >= document.querySelector('#stage').getBoundingClientRect().bottom - 1").await,
+        json!(true)
     );
-    ed.click_editor("#slidebar [data-act=more]").await;
+    ed.key("F10", "F10", 121, 8).await;
     let labels = ed.menu_labels().await;
     for l in [
         "Background colour…",
@@ -3492,7 +3481,7 @@ async fn narrow_window() {
     ed.close_menu().await;
 
     // nothing runs off the window
-    let fits = "[document.documentElement, document.body, ...document.querySelectorAll('header, #slidebar, #fmtbar, #elbar')].filter((e) => e.checkVisibility()).every((e) => e.scrollWidth <= e.clientWidth + 1)";
+    let fits = "[document.documentElement, document.body, ...document.querySelectorAll('header, #panel, #fmtbar')].filter((e) => e.checkVisibility()).every((e) => e.scrollWidth <= e.clientWidth + 1)";
     assert_eq!(ed.eval(fits).await, true, "something overflows");
 
     // typing still works, with the formatting bar inside the window too
@@ -4428,53 +4417,23 @@ async fn history_commit_notice() {
     );
 }
 
-// ---------- spec 019: the inspector on a wide window ----------
+// ---------- spec 019: the inspector (the properties column, spec 023) ----------
 
-const INSPECTOR_DECK: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## A {#a}\n\nFirst words\n\nSecond words\n\n## B {#b}\n\n```{python}\nprint(1)\n```\n";
+const INSPECTOR_DECK: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## A {#a}\n\nFirst words\n\nSecond words\n\n![A picture](pic.png)\n\n## B {#b}\n\n```{python}\nprint(1)\n```\n";
 const INSPECTING: &str = "document.querySelector('main').classList.contains('inspector')";
 /// The inspector's tab names, in order, and the selected one.
 const TABS: &str = "[[...document.querySelectorAll('#panel .tabs [role=tab]')].map((t) => t.textContent), document.querySelector('#panel .tabs [aria-selected=true]')?.textContent]";
 
-/// The editor on a window wide enough for the inspector, with it showing.
+/// The editor with the column showing.
 async fn inspecting() -> Option<Ed> {
     let ed = Ed::open(INSPECTOR_DECK).await?;
-    ed.window(1440, 900).await;
     ed.wait(INSPECTING).await;
     Some(ed)
 }
 
-/// Spec 019 T004: the inspector is there on a wide window, gone on a narrower
-/// one, and gone when the person turned it off.
-#[tokio::test(flavor = "multi_thread")]
-async fn inspector_shows_when_wide() {
-    let Some(ed) = inspecting().await else {
-        return;
-    };
-    ed.go("a").await;
-    ed.wait(&format!(
-        "JSON.stringify({TABS}) === JSON.stringify([['Slide'], 'Slide'])"
-    ))
-    .await;
-    assert_eq!(
-        ed.eval("document.querySelector('#panel .tabs').getAttribute('role') === 'tablist' && !!document.querySelector('#panel #slidebar')").await,
-        json!(true),
-        "a tablist, and the slide bar inside it"
-    );
-    ed.window(1000, 800).await;
-    ed.wait(&format!(
-        "!{INSPECTING} && !document.querySelector('#panel #slidebar')"
-    ))
-    .await;
-    ed.window(1440, 900).await;
-    ed.wait(INSPECTING).await;
-    ed.eval("import('/ui/settings.js').then((s) => s.set({'ui.inspector': false}))")
-        .await;
-    ed.wait(&format!("!{INSPECTING}")).await;
-}
-
-/// Spec 019 US1 (T007): with an element selected on a wide window nothing
-/// floats over the slide; Element, Text and Position hold its controls, and
-/// each does what it does from the bar.
+/// Spec 019 US1 (T007), spec 023: with an element selected nothing floats over
+/// the slide; Look, Text and Arrange hold its controls, and the chosen tab
+/// stays for the next element.
 #[tokio::test(flavor = "multi_thread")]
 async fn inspector_element_tabs() {
     let Some(ed) = inspecting().await else {
@@ -4483,7 +4442,7 @@ async fn inspector_element_tabs() {
     ed.go("a").await;
     ed.select("[data-qd=\"a/0\"]").await;
     ed.wait(&format!(
-        "JSON.stringify({TABS}) === JSON.stringify([['Element', 'Text', 'Position'], 'Element'])"
+        "JSON.stringify({TABS}) === JSON.stringify([['Look', 'Text', 'Arrange'], 'Look'])"
     ))
     .await;
     assert_eq!(
@@ -4491,9 +4450,9 @@ async fn inspector_element_tabs() {
         json!(true),
         "the element bar is in the inspector, not floating"
     );
-    // Position: Move down puts it after the next
+    // Arrange: Move down puts it after the next
     ed.click_editor("#tab-position").await;
-    ed.wait(&format!("{TABS}[1] === 'Position'")).await;
+    ed.wait(&format!("{TABS}[1] === 'Arrange'")).await;
     ed.click_editor("#panel .body [data-tab=position] [data-act=down]")
         .await;
     ed.wait_file(
@@ -4504,173 +4463,38 @@ async fn inspector_element_tabs() {
     ed.settle().await;
     // the chosen element tab stays for the next element
     ed.select("[data-qd=\"a/0\"]").await;
-    ed.wait(&format!("{TABS}[1] === 'Position'")).await;
-    // typing: the Text tab, with the formatting bar in it
+    ed.wait(&format!("{TABS}[1] === 'Arrange'")).await;
+    // typing: the Text tab
     ed.click_in_slide("[data-qd=\"a/0\"]").await; // a click on text types into it
-    ed.wait(&format!(
-        "{TABS}[1] === 'Text' && !!document.querySelector('#panel #fmtbar:not([hidden])')"
-    ))
-    .await;
+    ed.wait(&format!("{TABS}[1] === 'Text'")).await;
     ed.key("Escape", "Escape", 27, 0).await;
-    ed.settle().await;
-    // Appears on click, from the bar in the Element tab, as from the floating bar
-    ed.select("[data-qd=\"a/0\"]").await;
-    ed.click_editor("#tab-element").await;
-    ed.click_editor("#panel #elbar [data-act=fragment]").await;
-    ed.wait_file(|f| f.contains(".fragment"), "a fragment")
-        .await;
     ed.settle().await;
     // a code cell: no Text tab
     ed.go("b").await;
     ed.select("[data-qd=\"b/0\"]").await;
     ed.wait(&format!(
-        "JSON.stringify({TABS}[0]) === JSON.stringify(['Element', 'Position'])"
+        "JSON.stringify({TABS}[0]) === JSON.stringify(['Look', 'Arrange'])"
     ))
     .await;
 }
 
-/// Spec 019 US2 (T011): with nothing selected the Slide tab holds the slide
-/// bar (no row above the slide) and the slide's form, each control once.
-#[tokio::test(flavor = "multi_thread")]
-async fn inspector_slide_tab() {
-    let Some(ed) = inspecting().await else {
-        return;
-    };
-    ed.go("a").await;
-    ed.wait(&format!(
-        "JSON.stringify({TABS}) === JSON.stringify([['Slide'], 'Slide'])"
-    ))
-    .await;
-    assert_eq!(
-        ed.eval("!document.querySelector('#stage > #slidebar') && !!document.querySelector('#panel #slidebar')").await,
-        json!(true),
-        "no slide bar row above the slide"
-    );
-    // each control once: the bar's (applied at once), not the form's copy too
-    assert_eq!(
-        ed.eval("['select[name=transition]', 'input[name=bg], [data-act=bg]'].map((s) => [...document.querySelectorAll('#panel ' + s)].filter((x) => x.offsetParent).length)").await,
-        json!([1, 1]),
-        "one transition, one background"
-    );
-    // the bar's transition writes at once, one undo step
-    let before = ed.file();
-    ed.eval("(() => { const s = document.querySelector('#panel #slidebar [name=transition]'); s.value = 'fade'; s.dispatchEvent(new Event('change', { bubbles: true })); })()").await;
-    ed.wait_file(|f| f.contains("transition=fade"), "faded")
-        .await;
-    ed.settle().await;
-    ed.undo_to(&before).await;
-    ed.settle().await;
-    // Hidden, from the bar in the inspector
-    ed.click_editor("#panel #slidebar [name=hidden]").await;
-    ed.wait_file(|f| f.contains("visibility=hidden"), "hidden")
-        .await;
-}
-
-/// Spec 019 US2 (T011): on the title slide the Title tab has the deck's title.
-#[tokio::test(flavor = "multi_thread")]
-async fn inspector_title_tab() {
-    let Some(ed) = inspecting().await else {
-        return;
-    };
-    ed.go("title-slide").await;
-    ed.wait(&format!(
-        "JSON.stringify({TABS}) === JSON.stringify([['Title'], 'Title'])"
-    ))
-    .await;
-    ed.eval("(() => { const f = document.querySelector('#panel .body form'); f.title.value = 'Renamed'; f.requestSubmit(); })()").await;
-    ed.wait_file(|f| f.contains("title: \"Renamed\""), "the front matter")
-        .await;
-}
-
-/// Spec 019 quickstart §4–§5 (T017): Bold from the Text tab while typing,
-/// and a box's left edge from the Position tab, as from the floating bar and
-/// the Properties panel.
-#[tokio::test(flavor = "multi_thread")]
-async fn inspector_text_and_position() {
-    let Some(ed) = inspecting().await else {
-        return;
-    };
-    ed.go("a").await;
-    let p = "[data-qd=\"a/1\"]";
-    ed.click_in_slide(p).await;
-    ed.caret(p, Some("Second")).await;
-    ed.wait(&format!("{TABS}[1] === 'Text'")).await;
-    ed.click_editor("#panel #fmtbar [data-fmt=bold]").await;
-    ed.key("Escape", "Escape", 27, 0).await; // saves
-    ed.wait_file(|f| f.contains("**Second** words"), "bold")
-        .await;
-    ed.settle().await;
-    // a box: its left edge from Position
-    ed.cli(&["box", "add", "a", "--text", "Box"]);
-    ed.settle().await;
-    ed.go("a").await;
-    ed.click_in_slide("#a .absolute").await;
-    ed.click_editor("#tab-position").await;
-    ed.eval("(() => { const g = document.querySelector('#panel .body form.geom-form'); g.left.value = '123'; g.requestSubmit(); })()").await;
-    ed.wait_file(|f| num(f, "left") == 123.0, "the box moved")
-        .await;
-}
-
-/// Spec 019 US3 (T013): across the width where the inspector comes and goes,
-/// the selection, the tab, a typing session and an unsaved field stay.
-#[tokio::test(flavor = "multi_thread")]
-async fn inspector_follows_the_width() {
-    let Some(ed) = inspecting().await else {
-        return;
-    };
-    ed.go("a").await;
-    ed.select("[data-qd=\"a/0\"]").await;
-    ed.click_editor("#tab-position").await;
-    ed.window(1000, 800).await;
-    ed.wait(&format!("!{INSPECTING} && !document.querySelector('#elbar').hidden && getComputedStyle(document.querySelector('#elbar')).position === 'fixed' && !!{FRAME}.querySelector('.qd-sel')")).await;
-    ed.window(1440, 900).await;
-    ed.wait(&format!(
-        "{INSPECTING} && {TABS}[1] === 'Position' && !!{FRAME}.querySelector('.qd-sel')"
-    ))
-    .await;
-    // an unsaved edit in the Element tab's markdown
-    ed.click_editor("#tab-element").await;
-    ed.eval("document.querySelector('#panel .body textarea[name=md]').value = 'a draft'")
-        .await;
-    ed.window(1000, 800).await;
-    ed.wait(&format!("!{INSPECTING}")).await;
-    ed.window(1440, 900).await;
-    ed.wait(&format!("{INSPECTING} && document.querySelector('#panel .body textarea[name=md]')?.value === 'a draft'")).await;
-    // typing on the slide
-    ed.click_in_slide("[data-qd=\"a/1\"]").await;
-    ed.wait("window.qdSession() !== null").await;
-    ed.window(1000, 800).await;
-    ed.wait(&format!(
-        "!{INSPECTING} && window.qdSession() !== null && !document.querySelector('#fmtbar').hidden"
-    ))
-    .await;
-    ed.window(1440, 900).await;
-    ed.wait(&format!("{INSPECTING} && window.qdSession() !== null && !!document.querySelector('#panel #fmtbar:not([hidden])')")).await;
-}
-
-/// Spec 019 US3 (T013): the source and History panes take the room it needs;
-/// it goes, and comes back when they close.
+/// Spec 023: the column stays beside the source and History panes, and the
+/// slide keeps its room.
 #[tokio::test(flavor = "multi_thread")]
 async fn inspector_and_panes() {
     let Some(ed) = inspecting().await else {
         return;
     };
-    ed.window(1300, 900).await;
-    ed.wait(INSPECTING).await;
     for act in ["toggle-source", "history"] {
         let run = format!("import('/ui/keys.js').then((k) => k.run('{act}'))");
         ed.eval(&run).await;
-        ed.wait(&format!("!{INSPECTING}")).await;
-        assert!(
-            ed.eval("document.querySelector('#stage').getBoundingClientRect().width")
-                .await
-                .as_f64()
-                .unwrap()
-                > 0.0,
-            "{act}: the slide keeps its room"
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(
+            ed.eval(&format!("{INSPECTING} && document.querySelector('#stage').getBoundingClientRect().width > 300")).await,
+            json!(true),
+            "{act}: the column stays, and the slide keeps its room"
         );
         ed.eval(&run).await;
-        ed.wait(INSPECTING).await;
     }
 }
 
@@ -4727,6 +4551,167 @@ async fn inspector_keyboard() {
     ed.key("F6", "F6", 117, 0).await;
     ed.wait("!document.querySelector('#panel').contains(document.activeElement)")
         .await;
+}
+
+// ---------- spec 023: one properties column ----------
+
+/// Spec 023 T002: show a view of the column by its tab (Format, Animate).
+async fn props(ed: &Ed, view: &str) {
+    ed.click_editor(&format!("#panel .views [data-view={view}]"))
+        .await;
+    ed.wait(&format!(
+        "document.querySelector('#panel').dataset.view === '{view}'"
+    ))
+    .await;
+}
+
+/// Spec 023 T002: no bar over the slide; the element's actions are the column's footer.
+async fn no_bars(ed: &Ed) {
+    assert_eq!(
+        ed.eval("!document.querySelector('#slidebar') && [...document.querySelectorAll('#elbar')].every((b) => b.closest('#panel') && getComputedStyle(b).position === 'static')").await,
+        json!(true),
+        "no slide bar, and no element bar outside the column"
+    );
+}
+
+/// Spec 023 US1 (T003): with nothing selected, Format has the slide's
+/// background, image, hidden, title, classes and source, at the default window.
+#[tokio::test(flavor = "multi_thread")]
+async fn props_format_slide() {
+    let Some(ed) = inspecting().await else {
+        return;
+    };
+    ed.go("a").await;
+    ed.wait(&format!(
+        "JSON.stringify({TABS}) === JSON.stringify([['Slide'], 'Slide'])"
+    ))
+    .await;
+    no_bars(&ed).await;
+    assert_eq!(
+        ed.eval("['bg', 'bgpick', 'bgimage', 'hidden', 'title', 'classes', 'body'].filter((n) => !document.querySelector(`#panel .slide-form [name=${n}]`)?.offsetParent)").await,
+        json!([]),
+        "every slide setting shows"
+    );
+    ed.eval("(() => { const f = document.querySelector('#panel .slide-form'); f.bg.value = '#123456'; f.bgimage.value = 'pic.png'; f.hidden.checked = true; f.title.value = 'Aa'; f.classes.value = 'smaller'; f.requestSubmit(); })()").await;
+    ed.wait_file(
+        |f| {
+            f.contains("## Aa {#a")
+                && f.contains("#123456")
+                && f.contains("background-image=")
+                && f.contains("visibility=hidden")
+                && f.contains(".smaller")
+        },
+        "the slide's settings",
+    )
+    .await;
+}
+
+/// Spec 023 US1 (T003): a paragraph, a picture, a placed box and a code cell
+/// each show their tabs (Text only for text); Arrange and the footer act.
+#[tokio::test(flavor = "multi_thread")]
+async fn props_format_element() {
+    let Some(ed) = inspecting().await else {
+        return;
+    };
+    ed.go("a").await;
+    ed.select("[data-qd=\"a/0\"]").await;
+    no_bars(&ed).await;
+    ed.select("[data-qd=\"a/2\"]").await;
+    ed.wait(&format!(
+        "JSON.stringify({TABS}[0]) === JSON.stringify(['Look', 'Arrange'])"
+    ))
+    .await;
+    ed.go("b").await;
+    ed.select("[data-qd=\"b/0\"]").await;
+    ed.wait("!document.querySelector('#panel #elbar [data-act=run]').hidden")
+        .await;
+    // a placed box: its left edge from Arrange
+    ed.cli(&["box", "add", "a", "--text", "Box"]);
+    ed.settle().await;
+    ed.go("a").await;
+    ed.click_in_slide("#a .absolute").await;
+    ed.click_editor("#tab-position").await;
+    ed.wait(&format!("{TABS}[1] === 'Arrange'")).await;
+    ed.eval("(() => { const g = document.querySelector('#panel .body form.geom-form'); g.left.value = '123'; g.requestSubmit(); })()").await;
+    ed.wait_file(|f| num(f, "left") == 123.0, "the box moved")
+        .await;
+    ed.settle().await;
+    // the footer's Delete
+    ed.go("a").await;
+    ed.select("[data-qd=\"a/0\"]").await;
+    ed.click_editor("#panel #elbar [data-act=delete]").await;
+    ed.wait_file(|f| !f.contains("First words"), "deleted")
+        .await;
+}
+
+/// Spec 023 US1 (T003): while typing the toolbar floats beside the text, and
+/// the Text tab's Bold bolds the selected word too.
+#[tokio::test(flavor = "multi_thread")]
+async fn props_text_tab() {
+    let Some(ed) = inspecting().await else {
+        return;
+    };
+    ed.go("a").await;
+    let p = "[data-qd=\"a/1\"]";
+    ed.click_in_slide(p).await;
+    ed.caret(p, Some("Second")).await;
+    ed.wait(&format!("{TABS}[1] === 'Text' && !document.querySelector('#fmtbar').hidden && !document.querySelector('#fmtbar').closest('#panel')")).await;
+    ed.click_editor("#panel .bars [data-tab=text] [data-fmt=bold]")
+        .await;
+    assert_eq!(
+        ed.eval(&format!("{FRAME}.getSelection().toString()")).await,
+        json!("Second"),
+        "the selection is kept"
+    );
+    ed.key("Escape", "Escape", 27, 0).await; // saves
+    ed.wait_file(|f| f.contains("**Second** words"), "bold")
+        .await;
+}
+
+/// Spec 023 US1 (T003): on the title slide Format has the title, subtitle,
+/// author and date, and each saves.
+#[tokio::test(flavor = "multi_thread")]
+async fn props_title_slide() {
+    let Some(ed) = inspecting().await else {
+        return;
+    };
+    ed.go("title-slide").await;
+    ed.wait(&format!(
+        "JSON.stringify({TABS}) === JSON.stringify([['Title'], 'Title'])"
+    ))
+    .await;
+    ed.eval("(() => { const f = document.querySelector('#panel .body form'); f.title.value = 'Renamed'; f.subtitle.value = 'Sub'; f.author.value = 'Ann'; f.date.value = '2026-01-02'; f.requestSubmit(); })()").await;
+    ed.wait_file(
+        |f| {
+            f.contains("title: \"Renamed\"")
+                && f.contains("subtitle: \"Sub\"")
+                && f.contains("author: \"Ann\"")
+                && f.contains("date: \"2026-01-02\"")
+        },
+        "the front matter",
+    )
+    .await;
+}
+
+/// Spec 023 US1: the slide's transition moved from the slide bar to Animate, and
+/// writes as before, one undo step (its "Appears on click": the bars test).
+#[tokio::test(flavor = "multi_thread")]
+async fn props_animate_moved() {
+    let Some(ed) = inspecting().await else {
+        return;
+    };
+    ed.go("a").await;
+    props(&ed, "animate").await;
+    let before = ed.file();
+    ed.eval("(() => { const s = document.querySelector('#panel .anim [name=transition]'); s.value = 'fade'; s.dispatchEvent(new Event('change', { bubbles: true })); })()").await;
+    ed.wait_file(|f| f.contains("transition=fade"), "faded")
+        .await;
+    ed.settle().await;
+    ed.undo_to(&before).await; // one undo step
+    ed.settle().await;
+    ed.select("[data-qd=\"a/0\"]").await;
+    props(&ed, "format").await;
+    ed.wait(&format!("{TABS}[1] === 'Look'")).await;
 }
 
 // ---------- spec 015 US1: diagrams on the slide ----------
@@ -4902,15 +4887,10 @@ impl Ed {
         self.page.click(Point { x: e.0, y: e.1 }).await.unwrap();
         self.wait(DOT_SEL).await;
     }
-    /// View ▸ Properties panel, open.
+    /// View ▸ Properties, shown.
     async fn properties(&self) {
-        if !self
-            .eval("document.querySelector('main')?.classList.contains('panel-open') ?? false")
-            .await
-            .as_bool()
-            .unwrap_or(false)
-        {
-            self.menu("View", "Properties panel").await;
+        if !self.eval(INSPECTING).await.as_bool().unwrap_or(false) {
+            self.menu("View", "Properties").await;
         }
         self.wait("!!document.querySelector('form.dot-form, form.arrow-form')")
             .await;
@@ -5941,7 +5921,7 @@ async fn arrow_label_by_double_click() {
     ed.wait_file(|f| !f.contains("label="), "unlabelled").await;
 }
 
-/// Spec 016 US4: the element bar's "Appears on click" turns an arrow's
+/// Spec 016 US4: Animate's "Appears on click" turns an arrow's
 /// draw-in on and off (`fragment="true"`, quarto-arrows' own), not a class.
 #[tokio::test(flavor = "multi_thread")]
 async fn arrow_appears_on_click() {
@@ -5950,16 +5930,11 @@ async fn arrow_appears_on_click() {
     };
     ed.go("a").await;
     ed.settle().await;
+    props(&ed, "animate").await;
     ed.select_arrow_at(350.0, 512.5).await;
-    ed.wait("!document.querySelector('#elbar').hidden").await;
-    assert_eq!(
-        ed.eval(
-            "document.querySelector('#elbar [data-act=fragment]').getAttribute('aria-pressed')"
-        )
-        .await,
-        json!("false")
-    );
-    ed.click_editor("#elbar [data-act=fragment]").await;
+    ed.wait("document.querySelector('#panel .anim [name=fragment]')?.checked === false")
+        .await;
+    ed.click_editor("#panel .anim [name=fragment]").await;
     ed.wait_file(
         |f| f.contains("position=\"absolute\" fragment=\"true\" >}}"),
         "appears on click",
@@ -5972,8 +5947,9 @@ async fn arrow_appears_on_click() {
     ))
     .await;
     ed.select_arrow_at(350.0, 512.5).await;
-    ed.wait("document.querySelector('#elbar [data-act=fragment]')?.getAttribute('aria-pressed') === 'true'").await;
-    ed.click_editor("#elbar [data-act=fragment]").await;
+    ed.wait("document.querySelector('#panel .anim [name=fragment]')?.checked === true")
+        .await;
+    ed.click_editor("#panel .anim [name=fragment]").await;
     ed.wait_file(|f| !f.contains("fragment"), "off again").await;
 }
 
@@ -6359,7 +6335,6 @@ async fn dialogs_and_panels_guard_the_deck() {
     ed.wait("!document.querySelector('dialog.sheet[open]')")
         .await;
 
-    ed.menu("View", "Properties panel").await;
     ed.wait("document.querySelector('form.element-form') != null")
         .await;
     ed.eval("document.querySelector('form.element-form').md.focus()")
@@ -6680,14 +6655,13 @@ async fn source_dock_inspector() {
     };
     ed.window(1700, 900).await;
     ed.open_source().await;
-    // a narrow pane, so the slide keeps the inspector's 640 px beside it
     ed.eval("document.querySelector('main').style.setProperty('--srcw', '300px')")
         .await;
     place(&ed, "right").await;
     ed.wait(INSPECTING).await;
     ed.go("a").await;
     ed.select("[data-qd=\"a/0\"]").await;
-    ed.wait("[...document.querySelectorAll('#panel .tabs button')].some((b) => b.textContent === 'Position')")
+    ed.wait("[...document.querySelectorAll('#panel .tabs button')].some((b) => b.textContent === 'Arrange')")
         .await;
     let (stage, panel, src) = (
         rect(&ed, "#stage").await,

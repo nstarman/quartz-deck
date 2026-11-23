@@ -1,21 +1,18 @@
-// The inspector (spec 019): on a window wide enough, the Properties panel
-// stays beside the slide, its tabs following the selection, and the slide,
-// element and formatting bars move into it instead of floating (research
-// R2). Each control is the one it was: only where it sits changes.
+// The properties column (specs 019, 023): beside the slide whenever the person
+// keeps it (View ▸ Properties), with its views (Format, Animate) above its tabs,
+// the tabs following the selection. Each control is the one it was: only where
+// it sits changes.
 
 import { get as setting } from '/ui/settings.js';
 import { el } from '/ui/run.js';
 
-const WIDE = 1200; // px of window it needs (research R3: tune on real screens)
-const SLIDE_MIN = 640; // px the slide keeps beside it
-const WIDTH = 320; // its own, as the panel's
-const NAMES = { slide: 'Slide', title: 'Title', element: 'Element', text: 'Text', position: 'Position' };
+const NAMES = { slide: 'Slide', title: 'Title', element: 'Look', text: 'Text', position: 'Arrange' };
+const VIEWS = { format: 'Format', animate: 'Animate' };
 
 const main = document.querySelector('main');
 const panel = document.querySelector('#panel');
+const views = panel.querySelector('.views');
 const tabs = panel.querySelector('.tabs');
-const bars = panel.querySelector('.bars');
-const stage = document.querySelector('#stage');
 const fmtbar = document.querySelector('#fmtbar');
 let what = () => ({}); // the editor's selection: { kind, typeable, title }
 let tab = null;
@@ -23,26 +20,12 @@ let elementTab = 'element'; // the one last chosen for an element, kept for the 
 
 export const shown = () => main.classList.contains('inspector');
 
-/** It would fit: the window is wide, and the slide keeps its room beside it. */
-export function fits() {
-  const besides = shown() || main.classList.contains('panel-open') ? 0 : WIDTH;
-  return innerWidth >= WIDE && stage.getBoundingClientRect().width - besides >= SLIDE_MIN;
-}
-
-/** Show it when the person wants it and it fits; else everything as before. */
+/** Show it when the person keeps it. */
 export function fit() {
-  const on = !!setting('ui.inspector') && fits();
+  const on = !!setting('ui.inspector');
   if (on === shown()) return;
   main.classList.toggle('inspector', on);
-  for (const [bar, name] of [[document.querySelector('#slidebar'), 'slide'], [document.querySelector('#elbar'), 'element'], [fmtbar, 'text']]) {
-    bar.dataset.tab = name;
-    // back home: the slide bar heads the stage, the floating bars live in the body
-    if (on) bars.append(bar);
-    else if (name === 'slide') stage.prepend(bar);
-    else document.body.append(bar);
-  }
   update();
-  dispatchEvent(new Event('qd-inspector'));
 }
 
 /** The tabs for what is selected now, and the one to show (data-model "Which tabs show"). */
@@ -52,16 +35,28 @@ function update() {
   // (typing on the slide, nothing is selected: the text's formatting is what's there)
   const have = kind ? ['element', typeable && 'text', 'position'].filter(Boolean) : typing ? ['text'] : [title ? 'title' : 'slide'];
   tab = typing && have.includes('text') ? 'text' : kind ? (have.includes(elementTab) ? elementTab : 'element') : have[0];
-  tabs.replaceChildren(...have.map((name) => {
-    const b = el('button', { type: 'button', textContent: NAMES[name], id: `tab-${name}`, role: 'tab' });
-    b.addEventListener('click', () => {
-      if (kind) elementTab = name;
-      tab = name;
-      show();
-    });
-    return b;
-  }));
+  tabs.replaceChildren(...have.map((name) => tabButton(name, NAMES[name], () => {
+    if (kind) elementTab = name;
+    tab = name;
+    show();
+  })));
   show();
+}
+
+const tabButton = (name, label, click) => {
+  const b = el('button', { type: 'button', textContent: label, id: `tab-${name}`, role: 'tab' });
+  b.addEventListener('click', click);
+  return b;
+};
+
+/** A view of the column (Format, Animate): the panel's data-view, which the CSS shows. */
+function view(name) {
+  panel.dataset.view = name;
+  for (const b of views.children) {
+    const on = b.dataset.view === name;
+    b.ariaSelected = String(on);
+    b.tabIndex = on ? 0 : -1;
+  }
 }
 
 function show() {
@@ -75,21 +70,27 @@ function show() {
 
 let toSlide = () => {};
 
-/** F6: from the slide to the tab shown, and from the inspector back to the slide. */
+/** F6: from the slide to the tab shown, and from the column back to the slide. */
 export function toggleFocus() {
   if (panel.contains(document.activeElement)) toSlide();
-  else tabs.querySelector('[aria-selected=true]')?.focus();
+  else (panel.dataset.view === 'format' && tabs.querySelector('[aria-selected=true]') || views.querySelector('[aria-selected=true]'))?.focus();
 }
 
 export function init(get, slide) {
   what = get;
   toSlide = slide;
-  // the tablist's own keys: ← → move along the tabs (WAI-ARIA tabs)
-  tabs.addEventListener('keydown', (e) => {
+  views.replaceChildren(...Object.entries(VIEWS).map(([name, label]) => {
+    const b = tabButton(`view-${name}`, label, () => view(name));
+    b.dataset.view = name;
+    return b;
+  }));
+  view('format');
+  // each tablist's own keys: ← → move along its tabs (WAI-ARIA tabs)
+  for (const list of [views, tabs]) list.addEventListener('keydown', (e) => {
     const d = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
     if (!d) return;
     e.preventDefault();
-    const all = [...tabs.children];
+    const all = [...list.children];
     const next = all[(all.indexOf(document.activeElement) + d + all.length) % all.length];
     next.click();
     next.focus();
@@ -104,8 +105,5 @@ export function init(get, slide) {
   // the panel redrawn (a new selection), typing begun or ended
   new MutationObserver(update).observe(panel.querySelector('.body'), { childList: true });
   new MutationObserver(update).observe(fmtbar, { attributes: true, attributeFilter: ['hidden'] });
-  // the window, the source or History pane, the panel: room for it or not
-  new ResizeObserver(fit).observe(stage);
-  addEventListener('resize', fit);
   fit();
 }
