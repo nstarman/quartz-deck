@@ -69,9 +69,12 @@ function frameWin() {
 }
 
 /** Deck slide for a preview anchor; null for the front-matter title slide. */
+/** Quarto's title slide, made from the front matter (a slide of the file may have that id too). */
+const madeTitle = (anchor) => anchor === 'title-slide' && !!state.deck?.title_slide;
+
 function slideByAnchor(anchor) {
   const slides = state.deck?.slides || [];
-  if (anchor === 'title-slide') return null;
+  if (madeTitle(anchor)) return null;
   return slides.find((s) => s.anchor === anchor) || (anchor ? null : slides[0] || null);
 }
 
@@ -942,7 +945,7 @@ async function undoRedo(kind) {
   await fetchDeck();
   // the slide on screen went away (an add or a duplicate undone): show the one it was
   // copied from, else its neighbour, not the first slide (spec 008 US9)
-  if (state.anchor && state.anchor !== 'title-slide' && !slideByAnchor(state.anchor)) {
+  if (state.anchor && !madeTitle(state.anchor) && !slideByAnchor(state.anchor)) {
     const i = was.findIndex((s) => s.anchor === state.anchor);
     const near = [copiedFrom.get(state.anchor), was[i - 1]?.anchor, was[i + 1]?.anchor].find((a) => a && slideByAnchor(a));
     if (near) { state.goAfterRender = near; go(near); }
@@ -1221,7 +1224,7 @@ function editTarget(node) {
   if (el) return el.classList.contains('absolute') && !el.matches('.qd-ph[data-ph=text]') ? null : { kind: 'block', root: el };
   const sec = node.closest?.('section');
   if (!sec) return null;
-  if (sec.id === 'title-slide') {
+  if (madeTitle(sec.id)) {
     for (const [key, sel] of META_FIELDS) {
       const f = node.closest(sel);
       if (f && sec.contains(f)) return { kind: 'meta', key, root: f };

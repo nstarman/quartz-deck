@@ -59,3 +59,28 @@ rendering:
 
 None is reachable only from a floating bar except the text toolbar's, which
 the Text tab also has.
+
+## T024: on a copy of the person's talk
+
+Run 2026-11-23 on a scratch copy, in the editor and from the column. The
+talk itself was not changed, and nothing from it is in this repository.
+
+- [x] A background colour on one slide (Format ▸ Slide), and a fade
+  transition on it (Animate).
+- [x] Two builds on another slide: a picture fading in and a list fading up,
+  then the list moved first with ⌥↑ in the build list. Presenting showed the
+  list on the first click and the picture on the second.
+
+Found, and fixed in the same PR:
+- A slide of the file whose id is `title-slide`, in a deck with no `title:`,
+  was taken for Quarto's title slide. Format showed the front matter's title
+  form, and its Apply would have added a `title:`. It is now treated as the
+  slide it is (test `props_own_title_slide`).
+- A build's name kept markdown marks (a bold first word left a stray `**`), and a picture
+  with no alt text was named "Image" though it had a `fig-alt` (test
+  `build_names`).
+
+Left for later:
+- Elements inside `.columns` can't be selected or given builds one by one.
+- On a slide filled by a picture, a click lands on the picture; Tab reaches
+  the elements under it.

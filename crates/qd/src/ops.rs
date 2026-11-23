@@ -1226,19 +1226,30 @@ pub fn build_name(d: &Deck, b: &Block) -> String {
         .lines()
         .find(|l| !l.trim_start().starts_with(":::"))
         .unwrap_or("");
+    // a picture: its alt text, else its `fig-alt`
     let alt = line
         .split_once("![")
         .and_then(|(_, r)| r.split_once(']'))
-        .map(|(a, _)| a);
+        .map(|(a, _)| a)
+        .filter(|a| !a.trim().is_empty())
+        .or_else(|| line.contains("![").then(|| fig_alt(line)).flatten());
+    // without its list or heading marker, and without emphasis and code marks
     let text = alt
         .unwrap_or(line)
-        .trim_start_matches(['#', '-', '*', '+', '>', ' '])
-        .trim();
+        .trim_start_matches(['#', '-', '+', '>', ' '])
+        .replace(['*', '`'], "");
+    let text = text.trim();
     match text.char_indices().nth(40) {
         _ if text.is_empty() => format!("{:?}", b.kind),
         Some((i, _)) => format!("{}…", &text[..i]),
         None => text.to_string(),
     }
+}
+
+/// `fig-alt="…"` in a picture's attributes.
+fn fig_alt(line: &str) -> Option<&str> {
+    let (_, rest) = line.split_once("fig-alt=\"")?;
+    rest.split_once('"').map(|(a, _)| a)
 }
 
 /// One build of a slide: its element, how it shows, and its `fragment-index`.
