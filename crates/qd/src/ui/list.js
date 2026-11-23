@@ -539,6 +539,6 @@ const THUMB_CSS = `
   opacity: 1 !important; visibility: visible !important; width: 100% !important; height: 100% !important; }
 .reveal .fragment { opacity: 1 !important; visibility: visible !important; transform: none !important; }
 /* reveal.js centres these slides with script, which a copy doesn't run */
-.reveal .slides > section.center, .reveal .slides > section#title-slide { display: flex !important; flex-direction: column;
+.reveal .slides > section.center, .reveal .slides > section#title-slide:has(> .title) { display: flex !important; flex-direction: column;
   justify-content: center; }
 `;

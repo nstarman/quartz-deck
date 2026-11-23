@@ -68,10 +68,10 @@ function frameWin() {
   try { return frame.contentWindow; } catch { return null; }
 }
 
-/** Deck slide for a preview anchor; null for the front-matter title slide. */
 /** Quarto's title slide, made from the front matter (a slide of the file may have that id too). */
 const madeTitle = (anchor) => anchor === 'title-slide' && !!state.deck?.title_slide;
 
+/** Deck slide for a preview anchor; null for the front-matter title slide. */
 function slideByAnchor(anchor) {
   const slides = state.deck?.slides || [];
   if (madeTitle(anchor)) return null;

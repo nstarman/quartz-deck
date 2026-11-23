@@ -1230,11 +1230,17 @@ pub fn build_name(d: &Deck, b: &Block) -> String {
     let alt = line
         .split_once("![")
         .and_then(|(_, r)| r.split_once(']'))
-        .map(|(a, _)| a)
-        .filter(|a| !a.trim().is_empty())
-        .or_else(|| line.contains("![").then(|| fig_alt(line)).flatten());
+        .and_then(|(a, rest)| match a.trim() {
+            "" => rest
+                .find('{')
+                .and_then(|p| Attrs::parse(rest[p..].trim_end()))?
+                .get("fig-alt")
+                .map(str::to_string),
+            a => Some(a.to_string()),
+        });
     // without its list or heading marker, and without emphasis and code marks
     let text = alt
+        .as_deref()
         .unwrap_or(line)
         .trim_start_matches(['#', '-', '+', '>', ' '])
         .replace(['*', '`'], "");
@@ -1244,12 +1250,6 @@ pub fn build_name(d: &Deck, b: &Block) -> String {
         Some((i, _)) => format!("{}…", &text[..i]),
         None => text.to_string(),
     }
-}
-
-/// `fig-alt="…"` in a picture's attributes.
-fn fig_alt(line: &str) -> Option<&str> {
-    let (_, rest) = line.split_once("fig-alt=\"")?;
-    rest.split_once('"').map(|(a, _)| a)
 }
 
 /// One build of a slide: its element, how it shows, and its `fragment-index`.
