@@ -4743,6 +4743,10 @@ async fn props_animate() {
     ed.eval(&pick("appear", "fade-up")).await;
     ed.wait_file(|f| f.contains(".fade-up"), "fades up").await;
     ed.settle().await;
+    // fading up takes the click: no leave to choose
+    ed.select("[data-qd=\"a/1\"]").await;
+    ed.wait("document.querySelector('#panel .anim [name=appear]')?.value === 'fade-up' && document.querySelector('#panel .anim [name=leave]').disabled")
+        .await;
     // the list, the selected one marked; ⌥↓ moves the first after the second
     let rows = "[...document.querySelectorAll('#panel .builds li')].map((li) => li.dataset.ref)";
     ed.select("[data-qd=\"a/1\"]").await;
@@ -4788,6 +4792,126 @@ async fn props_animate() {
     )
     .await;
     ed.settle().await;
+}
+
+/// Spec 023 US4 (T018): the column dragged by its title to each place, kept
+/// after a reload; below the slide in a narrow window; View ▸ Properties hides
+/// and shows it; beside the source pane on the same side, in the set order.
+#[tokio::test(flavor = "multi_thread")]
+async fn props_dock() {
+    use DispatchMouseEventType::*;
+    let Some(ed) = inspecting().await else {
+        return;
+    };
+    ed.window(1280, 800).await;
+    assert_at(&ed, "#panel", "right").await;
+    for p in ["far-left", "left", "below", "right"] {
+        start_drag_at(&ed, "#panel .propbar", 12.0).await;
+        ed.wait("document.body.classList.contains('docking') && document.querySelectorAll('#dock-zones:not([hidden]) > [data-place]').length === 4")
+            .await;
+        let to = ed
+            .editor_point(&format!("#dock-zones > [data-place={p}]"), None)
+            .await;
+        ed.mouse(MouseMoved, to, false).await;
+        ed.mouse(MouseReleased, to, false).await;
+        ed.wait(&format!(
+            "document.querySelector('main').dataset.props === {p:?} && document.querySelector('#dock-zones').hidden"
+        ))
+        .await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_at(&ed, "#panel", p).await;
+        let v = &ed.cli(&["settings"])["values"];
+        assert_eq!(v["properties.side"], p);
+        assert_eq!(v["source.side"], "left", "the source pane stays");
+    }
+    set_side(&ed, "properties.side", "props", "left").await;
+    ed.page.reload().await.unwrap();
+    ed.wait_secs(READY, 60).await;
+    ed.wait(&format!(
+        "document.querySelector('main').dataset.props === 'left' && {INSPECTING}"
+    ))
+    .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_at(&ed, "#panel", "left").await;
+    // a narrow window: below the slide, the place kept for a wide one
+    ed.window(650, 800).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let (stage, col) = (rect(&ed, "#stage").await, rect(&ed, "#panel").await);
+    assert!(
+        stage[3] <= col[1] + 1.0,
+        "650 px: stage {stage:?}, column {col:?}"
+    );
+    ed.window(1280, 800).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_at(&ed, "#panel", "left").await;
+    // View ▸ Properties
+    ed.menu("View", "Properties").await;
+    ed.wait("getComputedStyle(document.querySelector('#panel')).display === 'none'")
+        .await;
+    ed.menu("View", "Properties").await;
+    ed.wait(INSPECTING).await;
+    // with the source pane on the same side: left, the pane further out; right and below, the slide, the column, the pane
+    ed.open_source().await;
+    for p in ["left", "right", "below"] {
+        place(&ed, p).await;
+        set_side(&ed, "properties.side", "props", p).await;
+        let (stage, col, src) = (
+            rect(&ed, "#stage").await,
+            rect(&ed, "#panel").await,
+            rect(&ed, "#srcpane").await,
+        );
+        let ok = match p {
+            "left" => src[2] <= col[0] + 1.0 && col[2] <= stage[0] + 1.0,
+            "right" => stage[2] <= col[0] + 1.0 && col[2] <= src[0] + 1.0,
+            _ => stage[3] <= col[1] + 1.0 && col[3] <= src[1] + 1.0,
+        };
+        assert!(
+            ok,
+            "both {p}: stage {stage:?}, column {col:?}, pane {src:?}"
+        );
+    }
+}
+
+/// Spec 023 US4 (T018): F6 into the column and back, ← → along the views and
+/// tabs, Esc from a field back to the slide.
+#[tokio::test(flavor = "multi_thread")]
+async fn props_keyboard() {
+    let Some(ed) = inspecting().await else {
+        return;
+    };
+    ed.go("a").await;
+    let inside = "document.querySelector('#panel').contains(document.activeElement)";
+    ed.key("F6", "F6", 117, 0).await;
+    ed.wait(&format!(
+        "{inside} && document.activeElement.id === 'tab-slide'"
+    ))
+    .await;
+    ed.key("F6", "F6", 117, 0).await;
+    ed.wait(&format!("!{inside}")).await;
+    // the views: → from Format to Animate to Deck, and round to Format
+    ed.eval("document.querySelector('#panel .views [aria-selected=true]').focus()")
+        .await;
+    for v in ["animate", "deck", "format"] {
+        ed.key("ArrowRight", "ArrowRight", 39, 0).await;
+        ed.wait(&format!("document.querySelector('#panel').dataset.view === '{v}' && document.activeElement.dataset.view === '{v}'"))
+            .await;
+    }
+    // the tabs: an element's Look, Text, Arrange
+    ed.select("[data-qd=\"a/0\"]").await;
+    ed.wait("!!document.querySelector('#tab-element')").await;
+    ed.eval("document.querySelector('#tab-element').focus()")
+        .await;
+    ed.key("ArrowRight", "ArrowRight", 39, 0).await;
+    ed.wait("document.activeElement.id === 'tab-text' && document.activeElement.ariaSelected === 'true'")
+        .await;
+    ed.key("ArrowLeft", "ArrowLeft", 37, 0).await;
+    ed.wait("document.activeElement.id === 'tab-element'").await;
+    // Esc in a field: back to the slide
+    props(&ed, "deck").await;
+    ed.eval("document.querySelector('#panel .deck [name=theme]').focus()")
+        .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait(&format!("!{inside}")).await;
 }
 
 /// Spec 023 US3 (T016): the theme, the slide size (a placed box keeps its
@@ -6625,12 +6749,17 @@ async fn rect(ed: &Ed, sel: &str) -> [f64; 4] {
 
 /// Set `source.side` the way the CLI and Settings do, and wait for the layout.
 async fn place(ed: &Ed, p: &str) {
+    set_side(ed, "source.side", "source", p).await;
+}
+
+/// Set a pane's place `key` (its `main` dataset field `data`), and wait for the layout.
+async fn set_side(ed: &Ed, key: &str, data: &str, p: &str) {
     ed.eval(&format!(
-        "import('/ui/settings.js').then((s) => s.set({{'source.side': {p:?}}}))"
+        "import('/ui/settings.js').then((s) => s.set({{{key:?}: {p:?}}}))"
     ))
     .await;
     ed.wait(&format!(
-        "document.querySelector('main').dataset.source === {p:?}"
+        "document.querySelector('main').dataset.{data} === {p:?}"
     ))
     .await;
     tokio::time::sleep(Duration::from_millis(100)).await; // one layout
@@ -6638,8 +6767,13 @@ async fn place(ed: &Ed, p: &str) {
 
 /// Where the pane is against the slide list and the slide, as the data model's table says.
 async fn assert_place(ed: &Ed, p: &str) {
+    assert_at(ed, "#srcpane", p).await;
+}
+
+/// Where the pane `sel` is against the slide list and the slide.
+async fn assert_at(ed: &Ed, sel: &str, p: &str) {
     let (src, nav, stage) = (
-        rect(ed, "#srcpane").await,
+        rect(ed, sel).await,
         rect(ed, "nav").await,
         rect(ed, "#stage").await,
     );
@@ -6654,7 +6788,7 @@ async fn assert_place(ed: &Ed, p: &str) {
         }
         _ => unreachable!(),
     };
-    assert!(ok, "{p}: pane {src:?}, nav {nav:?}, stage {stage:?}");
+    assert!(ok, "{sel} {p}: pane {src:?}, nav {nav:?}, stage {stage:?}");
 }
 
 /// Spec 022 US2 (T005): each place from the setting, after a reload too, and
@@ -6869,7 +7003,12 @@ async fn source_dock_narrow() {
 
 /// Press on the pane's "Source" label and move `dx` px (12 starts a drag).
 async fn start_dock_drag(ed: &Ed, dx: f64) -> (f64, f64) {
-    let (x, y) = ed.editor_point("#srcpane .srcbar strong", None).await;
+    start_drag_at(ed, "#srcpane .srcbar strong", dx).await
+}
+
+/// Press on `handle` and move `dx` px.
+async fn start_drag_at(ed: &Ed, handle: &str, dx: f64) -> (f64, f64) {
+    let (x, y) = ed.editor_point(handle, None).await;
     let to = (x + dx, y);
     ed.press_and_move((x, y), to).await;
     to

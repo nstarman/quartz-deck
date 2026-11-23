@@ -64,6 +64,12 @@ text being typed.
 
 Gate: **pass**.
 
+**Final re-check (T023, PR 4)**: still passes.
+- II: the column's place is the person's setting (`properties.side`), not the deck's.
+- III: everything the Deck and Animate views set has an op (`qd build set/list/order`, `qd meta set format.revealjs.KEY`, `qd meta size`).
+- V: a size change, with its boxes and arrows scaled, is one patch and one undo step.
+- VII: the docking reuses `dock.js` for both panes. No new dependency.
+
 ## Project Structure
 
 ### Documentation (this feature)

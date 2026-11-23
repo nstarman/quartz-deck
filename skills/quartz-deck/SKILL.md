@@ -86,6 +86,7 @@ when the current directory has exactly one `.qmd`.
 | remove attribute/class | `qd set results --unset background-color --unclass center` |
 | front matter key | `qd meta set title '"My talk"'` / `qd meta unset subtitle` |
 | reveal.js option | `qd meta set format.revealjs.theme dark` / `qd meta unset format.revealjs.slide-number` (under `format: revealjs:`, made when missing) |
+| builds (appear on a click) | `qd build set results/1 --appear fade-up --leave fade-out` (`--appear none` makes it always shown), `qd build list results` (in the order they show), `qd build order results results/2 results/1` (every build named once; source order removes the indexes) |
 | slide size | `qd meta size 1050 590 --keep-places` (`--keep-places` scales every placed box and arrow with the slide) |
 | positioned text box | `qd box add results --text "Note" --at 700,80 --size 300,100` |
 | positioned image | `qd box add results --image figures/plot.png --at 100,150 --size 600,400` |
