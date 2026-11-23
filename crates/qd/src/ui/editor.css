@@ -132,7 +132,7 @@ header .split button + button { border-radius: 0 6px 6px 0; border-left: 0; padd
 #banner .msg { flex: 1; min-width: 0; }
 #banner .close { flex: none; width: 28px; height: 28px; padding: 0; font-size: 16px; position: sticky; top: 0; }
 
-main { flex: 1; display: flex; min-height: 0; }
+main { flex: 1; min-height: 0; } /* a grid: see the panes' places below */
 nav { width: 220px; flex: none; overflow: auto; border-right: 1px solid var(--line); background: var(--panel); }
 nav ol { list-style: none; margin: 0; padding: 8px; }
 /* the slide list (spec 008 US1): thumbnails, a drag you can see */
@@ -216,7 +216,6 @@ aside .status.fail { color: var(--danger); }
 
 @media (max-width: 1000px) { aside { width: 260px; } nav { width: 180px; } }
 @media (max-width: 700px) {
-  main { flex-direction: column; }
   nav, aside { width: auto; max-height: 30vh; border: 0; border-bottom: 1px solid var(--line); }
   #stage { padding: 0; min-height: 50vh; }
   /* slide list becomes a side-scrolling strip; drag reorders left/right */
@@ -385,6 +384,7 @@ main[data-source=far-left] > #srcpane { grid-column: 1; }
 main[data-source=far-left] > #splitter { grid-column: 2; }
 main[data-props=far-left] > #panel { grid-column: 3; }
 main[data-props=left] > #panel { grid-column: 8; }
+main:is([data-props=far-left], [data-props=left]) > #panel { border-left: 0; border-right: 1px solid var(--line); }
 main[data-source=right] > #splitter { grid-column: 11; }
 main[data-source=right] > #srcpane { grid-column: 12; }
 main[data-props=below] > #panel { grid-column: 9; grid-row: 2; width: auto; max-height: 35vh; border: 0; border-top: 1px solid var(--line); }
@@ -397,7 +397,7 @@ main:has(> #splitter[aria-orientation=horizontal]) > #srcpane { width: auto; min
 main.source-full:has(> #splitter[aria-orientation=horizontal]) > #srcpane { height: auto; }
 #splitter[aria-orientation=horizontal] { width: auto; height: 6px; cursor: row-resize; }
 @media (max-width: 700px) {
-  main { display: flex; }
+  main { display: flex; flex-direction: column; }
   /* the source pane first, as spec 022 had it: the column is the taller to scroll */
   main > #stage { order: 1; }
   main > #splitter { order: 2; }

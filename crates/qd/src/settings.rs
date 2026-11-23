@@ -47,6 +47,9 @@ const fn ui(key: &'static str, kind: Kind, default: fn() -> Value) -> Def {
     def(key, "", "", kind, default)
 }
 
+/// Where a pane can sit: the source pane (spec 022), the properties column (spec 023).
+const PLACES: &[&str] = &["far-left", "left", "right", "below"];
+
 // Theme first: the one most people look for (spec 008 US9)
 const DEFS: &[Def] = &[
     def(
@@ -60,14 +63,14 @@ const DEFS: &[Def] = &[
         "source.side",
         "Source pane place",
         "Where the source pane sits: before the slide list, beside it, right of the slide, or below the slide.",
-        Kind::Choice(&["far-left", "left", "right", "below"]),
+        Kind::Choice(PLACES),
         || json!("left"),
     ),
     def(
         "properties.side",
         "Properties column place",
         "Where the properties column sits: before the slide list, beside it, right of the slide, or below the slide.",
-        Kind::Choice(&["far-left", "left", "right", "below"]),
+        Kind::Choice(PLACES),
         || json!("right"),
     ),
     def(
@@ -292,7 +295,7 @@ mod tests {
         assert_eq!(v["diagrams.source-preview"], true, "spec 021 US2");
         assert_eq!(v["ui.inspector"], true, "spec 023: shown");
         assert!(notices.is_empty());
-        assert_eq!(defs().as_array().unwrap().len(), 11, "ui.* are not shown");
+        assert_eq!(defs().as_array().unwrap().len(), 12, "ui.* are not shown");
     }
 
     #[test]
@@ -347,20 +350,12 @@ mod tests {
             0o600
         );
 
-        // spec 022: four places; the old two keep their meaning
-        for place in ["far-left", "left", "right", "below"] {
-            assert_eq!(
-                set(&p, &m(json!({"source.side": place}))).unwrap()["source.side"],
-                place
-            );
-        }
-        // spec 023: the properties column has the same four, on the right by default
+        // specs 022, 023: four places for each pane; the column on the right by default
         assert_eq!(load(&p).0["properties.side"], "right");
-        for place in ["far-left", "left", "right", "below"] {
-            assert_eq!(
-                set(&p, &m(json!({"properties.side": place}))).unwrap()["properties.side"],
-                place
-            );
+        for key in ["source.side", "properties.side"] {
+            for place in PLACES {
+                assert_eq!(set(&p, &m(json!({key: place}))).unwrap()[key], *place);
+            }
         }
         assert_eq!(
             set(&p, &m(json!({"source.side": "top"})))
