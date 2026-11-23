@@ -963,7 +963,7 @@ fn alone(text: &str, g: &Graph, s: &Stmt, boxes: &[&str], arrow: Option<&Edge>) 
     if !graph.is_empty() {
         out.push(format!("  graph{};", list(&graph)));
     }
-    // the defaults written before it, in the subgraphs around it too
+    // the defaults written before a point, in the subgraphs around it too
     fn defaults<'a>(stmts: &'a [Stmt], at: usize, out: &mut Vec<(&'a str, Vec<Attr>)>) {
         for d in stmts.iter().filter(|d| d.span.start < at) {
             match &d.kind {
@@ -975,18 +975,44 @@ fn alone(text: &str, g: &Graph, s: &Stmt, boxes: &[&str], arrow: Option<&Edge>) 
             }
         }
     }
-    let mut found = vec![];
-    defaults(&g.stmts, s.span.start, &mut found);
-    for (target, attrs) in found {
-        out.push(format!("  {target}{};", list(&attrs)));
+    // where a box first appears: Graphviz gives it the node defaults in force there
+    fn first(stmts: &[Stmt], name: &str) -> Option<usize> {
+        stmts.iter().find_map(|d| match &d.kind {
+            Kind::Node { name: n, .. } if n == name => Some(d.span.start),
+            Kind::Edge { ops, .. }
+                if ops.iter().any(|o| match o {
+                    Operand::Node { name: n, .. } => n == name,
+                    Operand::Group(g) => g.iter().any(|n| n == name),
+                }) =>
+            {
+                Some(d.span.start)
+            }
+            Kind::Subgraph { body, .. } => first(body, name),
+            _ => None,
+        })
     }
+    let in_force = |at: usize, target: &str| -> Vec<String> {
+        let mut found = vec![];
+        defaults(&g.stmts, at, &mut found);
+        (found.into_iter().filter(|(t, _)| *t == target))
+            .map(|(t, a)| format!("{t}{};", list(&a)))
+            .collect()
+    };
+    out.extend(
+        in_force(s.span.start, "edge")
+            .into_iter()
+            .map(|d| format!("  {d}")),
+    );
     let nodes = g.nodes();
     for name in boxes {
         let attrs = nodes
             .iter()
             .find(|n| n.name == *name)
             .map_or(&[][..], |n| &n.attrs[..]);
-        out.push(format!("  {}{};", dot_value(name), list(attrs)));
+        // in braces of its own: its defaults are its alone
+        let mut own = in_force(first(&g.stmts, name).unwrap_or(s.span.start), "node");
+        own.push(format!("{}{};", dot_value(name), list(attrs)));
+        out.push(format!("  {{ {} }}", own.join(" ")));
     }
     if let Some(e) = arrow {
         out.push(format!(
@@ -2154,6 +2180,23 @@ mod tests {
         for gone in ["pos=", "layout", "splines", "ellipse", "-> b"] {
             assert!(!a.contains(gone), "{gone} in {a}");
         }
+        // a box takes the defaults in force where it first appears, as Graphviz does
+        let late =
+            "digraph {\n  a;\n  node [shape=box];\n  a [label=x];\n  b [label=y];\n  a -> b;\n}\n";
+        let on = |needle: &str| {
+            at(late, late.find(needle).unwrap() + 1).unwrap()["at"]["alone"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        let a = on("a [label");
+        assert!(!a.contains("shape=box"), "a's later default applied: {a}");
+        let ab = on("a -> b");
+        assert!(
+            ab.contains("{ node [shape=box]; b"),
+            "b keeps its default: {ab}"
+        );
+        assert!(!ab.contains("{ node [shape=box]; a"), "a gets none: {ab}");
         // a box in a subgraph takes the subgraph's defaults too
         let sub = "digraph {\n  subgraph s {\n    node [shape=circle];\n    x [label=X];\n  }\n}\n";
         let v = at(sub, sub.find("x [").unwrap() + 1).unwrap();

@@ -1,3 +1,5 @@
+import { textPos } from '/ui/pane.js';
+
 // In-place source editor (spec 003 US2): a markdown text box drawn over the
 // element (or slide) it edits, for anything that can't be typed into on the
 // rendered slide — math, code cells, callouts, raw HTML — or on request.
@@ -22,19 +24,30 @@ let cursorTimer = 0;
  * line height and the scroll, the box not wrapping lines while it reports
  * (openSource). `beside`: the drawing goes right of the box, off the text typed.
  */
-function caretLine() {
+function lineBox(pos) {
   const cs = getComputedStyle(ta);
   const lh = parseFloat(cs.lineHeight);
   const r = ta.getBoundingClientRect();
   const top = r.top + parseFloat(cs.paddingTop) + parseFloat(cs.borderTopWidth)
-    + (ta.value.slice(0, ta.selectionStart).split('\n').length - 1) * lh - ta.scrollTop;
+    + (ta.value.slice(0, pos).split('\n').length - 1) * lh - ta.scrollTop;
   return { left: r.left, top, bottom: top + lh, beside: box.getBoundingClientRect().right };
 }
 
-/** Tell `on.cursor` where the caret is, a moment after it stops (spec 021 US3). */
-function reportCursor() {
+let hovering = false; // a resting pointer wins over the caret until it leaves, or the keyboard is used
+
+/** Tell `on.cursor` about position `pos` (the caret's, or the resting pointer's) a moment after it stops (spec 021 US3). */
+function report(pos, wait = 60) {
   clearTimeout(cursorTimer);
-  if (current?.cursor) cursorTimer = setTimeout(() => current.cursor(ta.value, ta.selectionStart, caretLine()), 60);
+  if (current?.cursor) cursorTimer = setTimeout(() => current.cursor(ta.value, pos(), lineBox(pos())), wait);
+}
+const reportCursor = () => { hovering = false; report(() => ta.selectionStart); };
+
+/** The text position under the pointer, the box not wrapping: a row from the line height, a column from the font's width. */
+function posAt(x, y) {
+  const cs = getComputedStyle(ta);
+  const i = Math.floor((y - lineBox(0).top) / parseFloat(cs.lineHeight));
+  const dx = x - ta.getBoundingClientRect().left - parseFloat(cs.paddingLeft) - parseFloat(cs.borderLeftWidth) + ta.scrollLeft;
+  return textPos(ta, i, dx);
 }
 
 function fit() {
@@ -68,6 +81,7 @@ export function openSource(rect, text, on) {
 
 export function closeSource() {
   clearTimeout(cursorTimer);
+  hovering = false;
   current = null;
   box.hidden = true;
   err.textContent = '';
@@ -84,7 +98,14 @@ export function sourceText() {
 
 ta.addEventListener('input', () => { err.textContent = ''; fit(); reportCursor(); });
 ta.addEventListener('keyup', reportCursor);
-ta.addEventListener('scroll', reportCursor); // the drawing follows its line
+ta.addEventListener('scroll', () => { if (!hovering) reportCursor(); }); // the drawing follows its line
+ta.addEventListener('mousemove', (e) => {
+  const pos = current?.cursor && posAt(e.clientX, e.clientY);
+  if (pos == null) return; // not a diagram, or below the text
+  hovering = true;
+  report(() => pos, 300);
+});
+ta.addEventListener('mouseleave', () => { if (hovering) reportCursor(); });
 ta.addEventListener('click', reportCursor);
 ta.addEventListener('keydown', (e) => {
   if (!current) return;
