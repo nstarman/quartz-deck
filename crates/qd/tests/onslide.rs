@@ -3128,12 +3128,11 @@ async fn present_from_here_and_from_start() {
          Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => window.__full ?? null })",
     )
     .await;
-    let reveal = "document.querySelector('#preview').contentWindow.Reveal";
     let leave = "window.__full = null; document.dispatchEvent(new Event('fullscreenchange'))";
     let presenting =
-        format!("{reveal}.getConfig().progress === true && {reveal}.getConfig().keyboard === true");
+        format!("{REVEAL}.getConfig().progress === true && {REVEAL}.getConfig().keyboard === true");
     let editing = format!(
-        "{reveal}.getConfig().progress === false && {reveal}.getConfig().keyboard?.[27] === null"
+        "{REVEAL}.getConfig().progress === false && {REVEAL}.getConfig().keyboard?.[27] === null"
     );
 
     ed.go("s4").await;
@@ -3141,7 +3140,7 @@ async fn present_from_here_and_from_start() {
     ed.wait(&format!("__fs.join() === 'preview' && {presenting}"))
         .await;
     assert_eq!(
-        ed.eval(&format!("{reveal}.getCurrentSlide().id")).await,
+        ed.eval(&format!("{REVEAL}.getCurrentSlide().id")).await,
         "s4"
     );
     ed.eval(leave).await;
@@ -3151,7 +3150,7 @@ async fn present_from_here_and_from_start() {
     ed.click_menu("Present from the beginning").await;
     ed.wait(&format!("__fs.length === 2 && {presenting}")).await;
     assert_eq!(
-        ed.eval(&format!("{reveal}.getCurrentSlide().id")).await,
+        ed.eval(&format!("{REVEAL}.getCurrentSlide().id")).await,
         "title-slide"
     );
     ed.eval(leave).await;
@@ -4425,6 +4424,8 @@ async fn history_commit_notice() {
 // ---------- spec 019: the inspector (the properties column, spec 023) ----------
 
 const INSPECTOR_DECK: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## A {#a}\n\nFirst words\n\nSecond words\n\n![A picture](pic.png)\n\n## B {#b}\n\n```{python}\nprint(1)\n```\n";
+/// The preview's reveal.js.
+const REVEAL: &str = "document.querySelector('#preview').contentWindow.Reveal";
 const INSPECTING: &str = "document.querySelector('main').classList.contains('inspector')";
 /// The inspector's tab names, in order, and the selected one.
 const TABS: &str = "[[...document.querySelectorAll('#panel .tabs [role=tab]')].map((t) => t.textContent), document.querySelector('#panel .tabs [aria-selected=true]')?.textContent]";
@@ -4800,7 +4801,6 @@ async fn props_deck() {
     };
     ed.wait(INSPECTING).await;
     props(&ed, "deck").await;
-    let reveal = "document.querySelector('#preview').contentWindow.Reveal";
     ed.eval(&pick_in("deck", "theme", "dark")).await;
     ed.wait_file(
         |f| f.contains("format:\n  revealjs:\n    theme: dark\n"),
@@ -4819,7 +4819,7 @@ async fn props_deck() {
     )
     .await;
     ed.settle().await;
-    ed.wait(&format!("{reveal}.getConfig().height === 788"))
+    ed.wait(&format!("{REVEAL}.getConfig().height === 788"))
         .await;
     assert_eq!(
         ed.eval("document.querySelector('#panel .deck [name=size]').value")
@@ -4837,7 +4837,7 @@ async fn props_deck() {
     ed.wait_file(|f| f.contains("transition: fade"), "fades")
         .await;
     ed.settle().await;
-    ed.wait(&format!("{reveal}.getConfig().transition === 'fade'"))
+    ed.wait(&format!("{REVEAL}.getConfig().transition === 'fade'"))
         .await;
     // back to the default: the key goes
     ed.eval(&pick_in("deck", "transition", "")).await;

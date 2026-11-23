@@ -299,14 +299,16 @@ pub(crate) fn scaled(
     let text = d.slice(span);
     let a = read(text)?.ok()?;
     let s = |p: (f64, f64)| pt((p.0 * sx, p.1 * sy));
-    let mut changes = vec![("from", s(a.from)), ("to", s(a.to))];
-    for (k, c) in ["control1", "control2"].into_iter().zip(&a.control) {
-        changes.push((k, s(*c)));
-    }
-    let changes: Vec<_> = changes
-        .iter()
-        .map(|(k, v)| (*k, Some(v.as_str())))
+    let points: Vec<_> = [("from", a.from), ("to", a.to)]
+        .into_iter()
+        .chain(
+            ["control1", "control2"]
+                .into_iter()
+                .zip(a.control.iter().copied()),
+        )
+        .map(|(k, p)| (k, s(p)))
         .collect();
+    let changes: Vec<_> = points.iter().map(|(k, v)| (*k, Some(v.as_str()))).collect();
     Some(patch("", "", span, text, &a, &changes).map(|p| p.replacements))
 }
 

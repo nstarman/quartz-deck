@@ -1763,11 +1763,9 @@ new MutationObserver(renderAnimate).observe(panel, { childList: true }); // a ne
 const deckEl = $('#panel .deck');
 async function renderDeckView() {
   const meta = await fetchMeta();
-  const has = (k) => meta.format?.revealjs?.[k] !== undefined || meta[k] !== undefined;
   const { width, height, navigation_mode: navigation } = state.deck;
   deckEl.replaceChildren(deckView.render({ meta, width, height, navigation }, {
-    set: (k, value) => value != null ? op('meta set', { key: `format.revealjs.${k}`, value })
-      : has(k) && op('meta unset', { key: `format.revealjs.${k}` }),
+    set: (k, value) => op(value != null ? 'meta set' : 'meta unset', { key: `format.revealjs.${k}`, ...(value != null && { value }) }),
     size: (w, h) => op('meta size', { width: w, height: h, 'keep-places': true }),
     navigation: (mode) => op('navigation', { mode }),
   }));

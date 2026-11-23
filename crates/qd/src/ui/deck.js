@@ -17,19 +17,19 @@ const MODES = [['linear', 'Linear'], ['vertical', 'Vertical'], ['grid', 'Grid']]
  */
 export function render({ meta, width, height, navigation }, api) {
   const opt = (k) => meta.format?.revealjs?.[k] ?? meta[k];
+  const set = (k, v) => (v != null || opt(k) !== undefined) && api.set(k, v); // nothing to remove
   // a theme may list the deck's own .scss after the built-in one: those are kept
   const theme = [opt('theme') ?? []].flat().map(String);
   const own = theme.filter((t) => t.endsWith('.scss'));
   const base = theme.find((t) => !t.endsWith('.scss')) || 'default';
   const themes = THEMES.includes(base) ? THEMES : [...THEMES, base];
-  const setTheme = (v) => api.set('theme', own.length ? JSON.stringify([v, ...own]) : v === 'default' ? null : v);
+  const setTheme = (v) => set('theme', own.length ? JSON.stringify([v, ...own]) : v === 'default' ? null : v);
 
   const size = SIZES.some(([v]) => v === `${width}x${height}`) ? `${width}x${height}` : 'custom';
   const px = (name, v) => el('input', { type: 'number', name, min: 1, max: 10000, value: v });
   const w = px('width', width), h = px('height', height);
   const custom = () => api.size(Number(w.value), Number(h.value));
-  w.addEventListener('change', custom);
-  h.addEventListener('change', custom);
+  for (const i of [w, h]) i.addEventListener('change', custom);
 
   const out = el('div', {});
   out.append(
@@ -38,8 +38,8 @@ export function render({ meta, width, height, navigation }, api) {
     label('Slide size ', select('size', SIZES, size, (v) => v !== 'custom' && api.size(...v.split('x').map(Number)))),
     label('Width ', w),
     label('Height ', h),
-    check('slide-number', 'Slide numbers', !!opt('slide-number'), (on) => api.set('slide-number', on ? 'true' : null)),
-    label('Transition ', select('transition', [['', 'default'], ...TRANSITIONS.map((t) => [t, t])], opt('transition') || '', (v) => api.set('transition', v || null))),
+    check('slide-number', 'Slide numbers', !!opt('slide-number'), (on) => set('slide-number', on ? 'true' : null)),
+    label('Transition ', select('transition', [['', 'default'], ...TRANSITIONS.map((t) => [t, t])], opt('transition') || '', (v) => set('transition', v || null))),
     label('Navigation ', select('navigation', MODES, navigation, api.navigation)),
   );
   return out;

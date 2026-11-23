@@ -1395,14 +1395,20 @@ fn key_extent(lines: &[&str], key: &str) -> Option<(usize, usize)> {
     Some((first, end))
 }
 
+/// `v`, a single-line YAML value for `key`, parsed.
+fn yaml_value(key: &str, v: &str) -> Result<serde_yaml_ng::Value> {
+    single_line(v, "value")?;
+    let m: serde_yaml_ng::Value = serde_yaml_ng::from_str(&format!("{key}: {v}"))
+        .map_err(|e| QdError::InvalidArg(format!("value is not valid YAML: {e}")))?;
+    Ok(m.get(key).cloned().unwrap_or_default())
+}
+
 fn edit_front_matter(d: &Deck, key: &str, value: Option<&str>) -> Result<Patch> {
     if !valid_name(key) {
         return Err(QdError::InvalidArg(format!("'{key}' is not a valid key")));
     }
     if let Some(v) = value {
-        single_line(v, "value")?;
-        serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&format!("{key}: {v}"))
-            .map_err(|e| QdError::InvalidArg(format!("value is not valid YAML: {e}")))?;
+        yaml_value(key, v)?;
     }
     replace_key(d, key, value.map(|v| format!("{key}: {v}{}", d.nl)))
 }
@@ -1551,22 +1557,13 @@ fn revealjs_key(d: &Deck, key: &str, value: Option<&str>) -> Option<Vec<(Span, S
     }
 }
 
-/// `format.revealjs.KEY`'s key, for `qd meta set`/`unset` (spec 023 R4).
-fn revealjs_name(key: &str) -> Option<&str> {
-    key.strip_prefix("format.revealjs.")
-}
-
 /// Set `format: revealjs: KEY`: in its mapping, or the top-level key when
 /// that's where it is, or by writing `format:` as that mapping.
 fn revealjs_set(d: &Deck, key: &str, v: &str) -> Result<Patch> {
     if !valid_name(key) || key.contains('.') {
         return Err(QdError::InvalidArg(format!("'{key}' is not a valid key")));
     }
-    single_line(v, "value")?;
-    let value: serde_yaml_ng::Value = serde_yaml_ng::from_str(&format!("{key}: {v}"))
-        .ok()
-        .and_then(|m: serde_yaml_ng::Value| m.get(key).cloned())
-        .ok_or_else(|| QdError::InvalidArg(format!("'{v}' is not a valid YAML value")))?;
+    let value = yaml_value(key, v)?;
     let target = format!("format.revealjs.{key}");
     if let Some(reps) = revealjs_key(d, key, Some(v)) {
         return Ok(patch("meta", target, reps, vec![]));
@@ -1609,14 +1606,14 @@ fn revealjs_unset(d: &Deck, key: &str) -> Result<Patch> {
 /// Set a front matter key to a single-line YAML value: a top-level key, or
 /// `format.revealjs.KEY`.
 pub fn meta_set(d: &Deck, key: &str, value: &str) -> Result<Patch> {
-    match revealjs_name(key) {
+    match key.strip_prefix("format.revealjs.") {
         Some(k) => revealjs_set(d, k, value),
         None => edit_front_matter(d, key, Some(value)),
     }
 }
 
 pub fn meta_unset(d: &Deck, key: &str) -> Result<Patch> {
-    match revealjs_name(key) {
+    match key.strip_prefix("format.revealjs.") {
         Some(k) => revealjs_unset(d, k),
         None => edit_front_matter(d, key, None),
     }
@@ -1639,21 +1636,11 @@ pub fn meta_size(d: &Deck, w: u32, h: u32, keep_places: bool) -> Result<Patch> {
             for b in &s.blocks {
                 let t = d.slice(b.span);
                 if b.kind == BlockKind::Box {
-                    let image = t.trim_start().starts_with("![");
-                    let Some((a0, a1)) = box_attrs_range(t, image) else {
+                    // a box qd can't read keeps its place, as an arrow does
+                    let Ok(((a0, a1), mut a)) = box_attrs(t, &b.id) else {
                         continue;
                     };
-                    let Some(mut a) = Attrs::parse(&t[a0..a1]) else {
-                        continue;
-                    };
-                    for (k, f) in [
-                        ("left", sx),
-                        ("width", sx),
-                        ("right", sx),
-                        ("top", sy),
-                        ("height", sy),
-                        ("bottom", sy),
-                    ] {
+                    for (k, f) in GEOM.into_iter().zip([sx, sy, sx, sy, sx, sy]) {
                         if let Some(v) = a.get(k).and_then(Length::parse).and_then(|v| v.px()) {
                             a.set(k, &px(v * f));
                         }
@@ -1666,10 +1653,10 @@ pub fn meta_size(d: &Deck, w: u32, h: u32, keep_places: bool) -> Result<Patch> {
                         },
                         a.render(),
                     ));
-                } else if b.kind == BlockKind::Para {
-                    if let Some(r) = crate::arrows::scaled(d, b.span, sx, sy) {
-                        reps.extend(r?);
-                    }
+                } else if b.kind == BlockKind::Para
+                    && let Some(r) = crate::arrows::scaled(d, b.span, sx, sy)
+                {
+                    reps.extend(r?);
                 }
             }
         }
@@ -1772,6 +1759,16 @@ fn check_size(w: f64, h: f64) -> Result<()> {
 }
 
 /// Byte range of a box block's `{...}` attribute text (div: first line; image: trailing).
+/// A box's attribute range in its `text`, and its attributes.
+fn box_attrs(text: &str, r: &str) -> Result<((usize, usize), Attrs)> {
+    let image = text.trim_start().starts_with("![");
+    let (a0, a1) = box_attrs_range(text, image)
+        .ok_or_else(|| QdError::UnsafeEdit(format!("cannot locate attributes of '{r}'")))?;
+    let a = Attrs::parse(&text[a0..a1])
+        .ok_or_else(|| QdError::UnsafeEdit(format!("cannot parse attributes of '{r}'")))?;
+    Ok(((a0, a1), a))
+}
+
 fn box_attrs_range(text: &str, image: bool) -> Option<(usize, usize)> {
     if image {
         let start = text.rfind("){")? + 1;
@@ -1854,11 +1851,7 @@ fn edit_box(
     }
     let s = ctx.slide(&format!("@{}", s.index))?;
     let text = d.slice(b.span);
-    let image = text.trim_start().starts_with("![");
-    let (a0, a1) = box_attrs_range(text, image)
-        .ok_or_else(|| QdError::UnsafeEdit(format!("cannot locate attributes of '{r}'")))?;
-    let mut attrs = Attrs::parse(&text[a0..a1])
-        .ok_or_else(|| QdError::UnsafeEdit(format!("cannot parse attributes of '{r}'")))?;
+    let ((a0, a1), mut attrs) = box_attrs(text, r)?;
     let mut assigned = Vec::new();
     let id = match attrs.id() {
         Some(id) => id.to_string(),
@@ -2039,11 +2032,7 @@ pub fn block_unplace(d: &Deck, r: &str) -> Result<Patch> {
         return Err(QdError::InvalidArg(format!("'{r}' is not placed freely")));
     }
     let text = d.slice(b.span);
-    let image = text.trim_start().starts_with("![");
-    let (a0, a1) = box_attrs_range(text, image)
-        .ok_or_else(|| QdError::UnsafeEdit(format!("cannot locate attributes of '{r}'")))?;
-    let mut a = Attrs::parse(&text[a0..a1])
-        .ok_or_else(|| QdError::UnsafeEdit(format!("cannot parse attributes of '{r}'")))?;
+    let ((a0, a1), mut a) = box_attrs(text, r)?;
     a.remove_class("absolute");
     for k in GEOM {
         a.unset(k);
@@ -2051,7 +2040,7 @@ pub fn block_unplace(d: &Deck, r: &str) -> Result<Patch> {
     if a.id().is_some_and(|id| id.starts_with("b-")) {
         a.items.retain(|i| !matches!(i, crate::attrs::Item::Id(_)));
     }
-    let new = if image {
+    let new = if text.trim_start().starts_with("![") {
         let rest = if a.is_empty() {
             String::new()
         } else {
