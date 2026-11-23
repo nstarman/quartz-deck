@@ -110,6 +110,26 @@ cursor is.
 
 Each PR passes `/pr-audit`.
 
+**Final re-check after the build (T019, 2026-11-22)**: pass.
+- **I.** Our own code; Graphviz used as Quarto ships it; the look is ours.
+- **II.** Nothing is written: `qd dot at` reads the text it is given, and
+  the outline and the drawing are only what the editor shows.
+- **III.** `qd dot at` is a read-only CLI op with JSON out, in `qd schema`
+  (tested) and `/api/op`, and needs no deck. The setting is in
+  `qd settings`.
+- **IV.** The slide still shows Quarto's render. The outline is a class on
+  it, and the drawing comes from the same engine with the cell's defaults.
+- **V.** No edit, so no conflict path. Unsaved text is only read.
+- **VI.** Each story's tests were written first. The preview test was seen
+  failing without the pop-over code. A startup bug the tests caught (the
+  pane closing before the diagram code was set up) is fixed.
+- **VII.** No new dependency. About 130 lines of Rust on the existing
+  reader, and about 200 in the editor across `dot.js`, `pane.js`,
+  `source.js` and `editor.js`. No second DOT parser.
+- **Measured** (checklists/quickstart-run.md): 69–74 ms from a caret stop
+  to the outline on a 20-box diagram, with the drawing at the same moment.
+  Typing is one frame per keystroke inside a diagram and outside it.
+
 ## Complexity Tracking
 
 None: no principle is bent.

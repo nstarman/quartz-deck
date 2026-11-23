@@ -217,8 +217,16 @@ line or two of the cell's DOT text.
   Graphviz, so it matches the render without waiting for it. Nothing is
   downloaded. Settings ▸ "Route arrows while dragging" off: straight lines
   until the drop.
-- **CLI:** `qd dot show`, `pin`, `move`, `new`, `add`, `connect`, `rename`,
-  `set`, `rm`, `flip`. DOT that qd can't read safely stays editable as text.
+- **The source follows the cursor** (spec [021](specs/021-dot-source-follow/spec.md)):
+  with the cursor on a box's or an arrow's line in a diagram's source (the
+  source pane, or the source opened over the slide), that box or arrow is
+  outlined on the slide, dashed, and a small drawing of it shows beside the
+  line. The drawing changes as you type, before the slide renders; while the
+  text can't be read yet it stays, dimmed. In the source pane, resting the
+  mouse on another line does the same until it moves away. The selection isn't changed. Settings ▸
+  "Preview the box at the cursor" off: the outline only.
+- **CLI:** `qd dot show`, `at`, `pin`, `move`, `new`, `add`, `connect`,
+  `rename`, `set`, `rm`, `flip`. DOT that qd can't read safely stays editable as text.
 - **From a drawing** (spec [017](specs/017-dot-import/spec.md)): `qd dot import
   drawing.svg --on SLIDE` (or `--after`/`--before REF`, or `--replace REF` for
   the element showing the drawing) turns an SVG into a pinned diagram you can

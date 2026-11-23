@@ -374,6 +374,8 @@ fn schema_lists_every_command() {
         "box move",
         "box resize",
         "box rm",
+        "dot show",
+        "dot at",
     ] {
         assert!(
             names.contains(&c.to_string()),

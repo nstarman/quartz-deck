@@ -1407,6 +1407,7 @@ function endSession(s, saved, { keepPending = false } = {}) {
   s.root.classList.remove('qd-editing');
   if (s.mode === 'source') {
     closeSource();
+    dot.cursorGone();
   } else {
     s.ac.abort();
     s.root.removeAttribute('contenteditable');
@@ -1443,8 +1444,15 @@ function pageRect(el) {
 
 function startSourceSession(s, text) {
   openSession(s);
-  openSource(pageRect(s.root), text, { save: () => saveSession(), cancel: () => endSession(s, false), run: s.cell ? () => runSource(s) : undefined });
+  openSource(pageRect(s.root), text, { save: () => saveSession(), cancel: () => endSession(s, false), run: s.cell ? () => runSource(s) : undefined,
+    cursor: s.ref && dot.diagram(s.ref) ? (t, pos, line) => diagramCursor(s.ref, t, pos, line) : undefined });
   say('Editing source — ⌘Enter, Esc or click elsewhere saves; Cancel discards');
+}
+
+/** The caret at `pos` of a diagram cell's markdown `text` (fences and all): its box or arrow followed (spec 021 US3). */
+function diagramCursor(ref, text, pos, line) {
+  const c = pane.dotAt(text, pos);
+  if (c) dot.cursorAt(ref, c.body, c.bytes, line); else dot.cursorGone();
 }
 
 /** Edit one element's markdown over it; `draft` and `base` carry over a typing session. */

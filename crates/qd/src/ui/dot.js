@@ -571,6 +571,11 @@ async function draw(cell, alone, line, current) {
   peek.classList.remove('stale');
   peek.hidden = false;
   const p = peek.getBoundingClientRect();
+  if (line.beside !== undefined && line.beside + 8 + p.width <= innerWidth) { // right of the box being typed in
+    peek.style.top = `${Math.max(4, Math.min(line.top, innerHeight - p.height - 4))}px`;
+    peek.style.left = `${line.beside + 8}px`;
+    return;
+  }
   const below = line.bottom + 4 + p.height <= innerHeight;
   peek.style.top = `${below ? line.bottom + 4 : Math.max(4, line.top - 4 - p.height)}px`;
   peek.style.left = `${Math.max(4, Math.min(line.left + 24, innerWidth - p.width - 4))}px`;

@@ -15,6 +15,27 @@ const cancel = box.querySelector('.cancel');
 const runB = box.querySelector('.run');
 
 let current = null;
+let cursorTimer = 0;
+
+/**
+ * The caret's line on screen (a text box has no element per line): from the
+ * line height and the scroll, the box not wrapping lines while it reports
+ * (openSource). `beside`: the drawing goes right of the box, off the text typed.
+ */
+function caretLine() {
+  const cs = getComputedStyle(ta);
+  const lh = parseFloat(cs.lineHeight);
+  const r = ta.getBoundingClientRect();
+  const top = r.top + parseFloat(cs.paddingTop) + parseFloat(cs.borderTopWidth)
+    + (ta.value.slice(0, ta.selectionStart).split('\n').length - 1) * lh - ta.scrollTop;
+  return { left: r.left, top, bottom: top + lh, beside: box.getBoundingClientRect().right };
+}
+
+/** Tell `on.cursor` where the caret is, a moment after it stops (spec 021 US3). */
+function reportCursor() {
+  clearTimeout(cursorTimer);
+  if (current?.cursor) cursorTimer = setTimeout(() => current.cursor(ta.value, ta.selectionStart, caretLine()), 60);
+}
 
 function fit() {
   const lines = ta.value.split('\n').length;
@@ -25,11 +46,13 @@ function fit() {
  * Open the editor over `rect` (page coordinates) with `text`.
  * `on.save(text)` is called on ⌘/Ctrl+Enter, Escape or blur; `on.cancel()` on Cancel
  * (or Escape after a refused save). With `on.run(text)` (a code cell, spec 013),
- * Run and ⇧Enter save without closing and run the cell.
+ * Run and ⇧Enter save without closing and run the cell. With `on.cursor(text,
+ * pos, line)` (a diagram, spec 021), the caret is reported as it moves.
  */
 export function openSource(rect, text, on) {
   current = on;
   runB.hidden = !on.run;
+  ta.wrap = on.cursor ? 'off' : 'soft'; // a diagram's lines, one per row: the caret's row is its line
   ta.value = text;
   err.textContent = '';
   fit();
@@ -40,9 +63,11 @@ export function openSource(rect, text, on) {
   box.style.top = Math.max(8, Math.min(rect.top, innerHeight - box.offsetHeight - 8)) + 'px';
   ta.focus();
   ta.setSelectionRange(text.length, text.length);
+  reportCursor();
 }
 
 export function closeSource() {
+  clearTimeout(cursorTimer);
   current = null;
   box.hidden = true;
   err.textContent = '';
@@ -57,7 +82,10 @@ export function sourceText() {
   return ta.value;
 }
 
-ta.addEventListener('input', () => { err.textContent = ''; fit(); });
+ta.addEventListener('input', () => { err.textContent = ''; fit(); reportCursor(); });
+ta.addEventListener('keyup', reportCursor);
+ta.addEventListener('scroll', reportCursor); // the drawing follows its line
+ta.addEventListener('click', reportCursor);
 ta.addEventListener('keydown', (e) => {
   if (!current) return;
   e.stopPropagation();
