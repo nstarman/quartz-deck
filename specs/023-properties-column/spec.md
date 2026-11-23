@@ -167,8 +167,9 @@ the View menu and check the slide takes the room.
 
 ### Edge Cases
 
-- Several elements selected: the column shows the settings they share.
-  Changing one changes all of them, as one undo step.
+- Several elements selected: the column shows the settings they share,
+  and changing one changes all of them as one undo step. This waits on the
+  editor selecting several elements, which it doesn't yet (research R6).
 - An element qd can't safely edit (opaque markdown): the column says so,
   and offers its source as today's panel does.
 - The title slide: the Format view shows the deck's title, subtitle,
