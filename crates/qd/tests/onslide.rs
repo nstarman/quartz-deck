@@ -4714,6 +4714,52 @@ async fn props_animate() {
     };
     ed.go("a").await;
     props(&ed, "animate").await;
+    // two builds (first: the slide's zoom would move them mid-click): a grow that fades out, then a fade up
+    ed.go("a").await;
+    ed.select("[data-qd=\"a/0\"]").await;
+    ed.wait("!!document.querySelector('#panel .anim [name=appear]')")
+        .await;
+    ed.eval(&pick("appear", "fade-in")).await;
+    ed.wait_file(|f| f.contains("::: {.fragment}\nFirst words"), "a build")
+        .await;
+    ed.settle().await;
+    ed.select("[data-qd=\"a/0\"]").await;
+    ed.wait("document.querySelector('#panel .anim [name=appear]')?.value === 'fade-in'")
+        .await;
+    ed.eval(&pick("leave", "fade-out")).await;
+    ed.wait_file(|f| f.contains(".fade-in-then-out"), "in, then out")
+        .await;
+    ed.settle().await;
+    ed.select("[data-qd=\"a/1\"]").await;
+    // its own view, not a/0's
+    ed.wait("document.querySelector('#panel .anim [name=appear]')?.value === 'none'")
+        .await;
+    ed.eval(&pick("appear", "fade-up")).await;
+    ed.wait_file(|f| f.contains(".fade-up"), "fades up").await;
+    ed.settle().await;
+    // the list, the selected one marked; ⌥↓ moves the first after the second
+    let rows = "[...document.querySelectorAll('#panel .builds li')].map((li) => li.dataset.ref)";
+    ed.select("[data-qd=\"a/1\"]").await;
+    ed.wait(&format!("JSON.stringify({rows}) === '[\"a/0\",\"a/1\"]' && document.querySelector('#panel .builds [aria-current=true]')?.dataset.ref === 'a/1'")).await;
+    ed.eval("document.querySelector('#panel .builds li[data-ref=\"a/0\"]').focus()")
+        .await;
+    ed.key("ArrowDown", "ArrowDown", 40, 1).await;
+    ed.wait_file(|f| f.matches("fragment-index").count() == 2, "reordered")
+        .await;
+    ed.settle().await;
+    // a drag puts it back: source order, no indexes
+    ed.go("a").await;
+    ed.wait(&format!("JSON.stringify({rows}) === '[\"a/1\",\"a/0\"]'"))
+        .await;
+    ed.eval("(() => { const [a, b] = document.querySelectorAll('#panel .builds li'); const dt = new DataTransfer(); b.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true })); a.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); })()").await;
+    ed.wait_file(|f| !f.contains("fragment-index"), "back in source order")
+        .await;
+    ed.settle().await;
+    ed.go("a").await;
+    ed.select("[data-qd=\"a/2\"]").await;
+    ed.key("Escape", "Escape", 27, 0).await; // back to the slide
+    ed.wait("!!document.querySelector('#panel .anim [name=transition]')")
+        .await;
     let before = ed.file();
     ed.eval(&pick("transition", "zoom")).await;
     ed.wait_file(|f| f.contains("transition=zoom"), "zoomed")
@@ -4736,45 +4782,6 @@ async fn props_animate() {
     )
     .await;
     ed.settle().await;
-    // two builds: a grow that fades out, then a fade up
-    ed.go("a").await;
-    ed.select("[data-qd=\"a/0\"]").await;
-    ed.wait("!!document.querySelector('#panel .anim [name=appear]')")
-        .await;
-    ed.eval(&pick("appear", "fade-in")).await;
-    ed.wait_file(|f| f.contains("::: {.fragment}\nFirst words"), "a build")
-        .await;
-    ed.settle().await;
-    ed.select("[data-qd=\"a/0\"]").await;
-    ed.wait("document.querySelector('#panel .anim [name=appear]')?.value === 'fade-in'")
-        .await;
-    ed.eval(&pick("leave", "fade-out")).await;
-    ed.wait_file(|f| f.contains(".fade-in-then-out"), "in, then out")
-        .await;
-    ed.settle().await;
-    ed.select("[data-qd=\"a/1\"]").await;
-    ed.wait("!!document.querySelector('#panel .anim [name=appear]')")
-        .await;
-    ed.eval(&pick("appear", "fade-up")).await;
-    ed.wait_file(|f| f.contains(".fade-up"), "fades up").await;
-    ed.settle().await;
-    // the list, the selected one marked; ⌥↓ moves the first after the second
-    let rows = "[...document.querySelectorAll('#panel .builds li')].map((li) => li.dataset.ref)";
-    ed.select("[data-qd=\"a/1\"]").await;
-    ed.wait(&format!("JSON.stringify({rows}) === '[\"a/0\",\"a/1\"]' && document.querySelector('#panel .builds [aria-current=true]')?.dataset.ref === 'a/1'")).await;
-    ed.eval("document.querySelector('#panel .builds li[data-ref=\"a/0\"]').focus()")
-        .await;
-    ed.key("ArrowDown", "ArrowDown", 40, 1).await;
-    ed.wait_file(|f| f.matches("fragment-index").count() == 2, "reordered")
-        .await;
-    ed.settle().await;
-    // a drag puts it back: source order, no indexes
-    ed.go("a").await;
-    ed.wait(&format!("JSON.stringify({rows}) === '[\"a/1\",\"a/0\"]'"))
-        .await;
-    ed.eval("(() => { const [a, b] = document.querySelectorAll('#panel .builds li'); const dt = new DataTransfer(); b.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true })); a.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); })()").await;
-    ed.wait_file(|f| !f.contains("fragment-index"), "back in source order")
-        .await;
 }
 
 /// Spec 023 US2 (T011): presenting, the builds show in the list's order.

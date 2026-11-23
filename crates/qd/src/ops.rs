@@ -1150,14 +1150,7 @@ pub fn build_of(a: Option<&Attrs>) -> (Option<&'static str>, Option<&'static str
     }
     let leave = LEAVES.iter().copied().find(|c| a.has_class(c));
     let appear = APPEARS.iter().copied().find(|c| a.has_class(c));
-    (
-        appear.or(if leave.is_some() {
-            None
-        } else {
-            Some("fade-in")
-        }),
-        leave,
-    )
+    (appear.or(leave.is_none().then_some("fade-in")), leave)
 }
 
 /// `qd build set`: `appear`/`leave` are `Some("none")` for none, `None` to keep.
@@ -1219,13 +1212,11 @@ pub fn build_set(
         }
         Ok(())
     })?;
-    let mut p = keep_structure(
+    keep_structure(
         d,
         patch("build set", b.id.clone(), vec![(b.span, new)], Vec::new()),
         index,
-    )?;
-    p.target = b.id.clone();
-    Ok(p)
+    )
 }
 
 /// A build's name in a list: the start of its text, or its kind.
@@ -1273,13 +1264,11 @@ pub fn build_list<'d>(d: &'d Deck, slide: &str) -> Result<Vec<Build<'d>>> {
             let items = (incremental && appear.is_none() && leave.is_none()).then(|| {
                 d.slice(b.span)
                     .lines()
-                    .filter_map(|l| {
-                        let l = l.strip_prefix(['-', '*', '+']).or_else(|| {
-                            l.split_once(". ")
-                                .filter(|(n, _)| n.parse::<u32>().is_ok())
-                                .map(|(_, t)| t)
-                        })?;
-                        Some(l.trim().to_string())
+                    .filter(|l| !l.starts_with([' ', '\t']) && crate::deck::is_list_item(l))
+                    .map(|l| {
+                        l.trim_start_matches(|c: char| c.is_ascii_digit() || "-*+.)#(@".contains(c))
+                            .trim()
+                            .to_string()
                     })
                     .collect()
             });

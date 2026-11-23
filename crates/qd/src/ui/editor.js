@@ -1727,17 +1727,12 @@ new ResizeObserver(() => requestAnimationFrame(() => requestAnimationFrame(place
 
 // the column's Animate view (spec 023): the slide's transition and builds, an element's build
 const anim = $('#panel .anim');
-/** The slide's builds, in the order they show (`qd build list`, without op()'s status). */
-async function fetchBuilds(slide) {
-  const res = await fetch('/api/op', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: 'build list', args: { slide } }) });
-  return res.ok ? (await res.json()).builds : [];
-}
 async function renderAnimate() {
   placeEmptyadd();
   const cur = slideByAnchor(state.anchor);
   const ref = state.sel;
   const t = ref && (await elementTarget(ref));
-  const builds = cur ? await fetchBuilds(cur.id) : [];
+  const builds = cur ? (await run.read('build list', { slide: cur.id }))?.builds || [] : [];
   if (ref !== state.sel) return; // a newer selection is drawing
   let element = null;
   if (t && arrows.is(ref)) element = { arrow: true, appears: !!actions.checked('fragment', t) };
