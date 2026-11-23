@@ -1226,14 +1226,25 @@ pub fn build_name(d: &Deck, b: &Block) -> String {
         .lines()
         .find(|l| !l.trim_start().starts_with(":::"))
         .unwrap_or("");
+    // a picture: its alt text, else its `fig-alt`
     let alt = line
         .split_once("![")
         .and_then(|(_, r)| r.split_once(']'))
-        .map(|(a, _)| a);
+        .and_then(|(a, rest)| match a.trim() {
+            "" => rest
+                .find('{')
+                .and_then(|p| Attrs::parse(rest[p..].trim_end()))?
+                .get("fig-alt")
+                .map(str::to_string),
+            a => Some(a.to_string()),
+        });
+    // without its list or heading marker, and without emphasis and code marks
     let text = alt
+        .as_deref()
         .unwrap_or(line)
-        .trim_start_matches(['#', '-', '*', '+', '>', ' '])
-        .trim();
+        .trim_start_matches(['#', '-', '+', '>', ' '])
+        .replace(['*', '`'], "");
+    let text = text.trim();
     match text.char_indices().nth(40) {
         _ if text.is_empty() => format!("{:?}", b.kind),
         Some((i, _)) => format!("{}…", &text[..i]),

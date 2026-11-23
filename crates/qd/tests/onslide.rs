@@ -4699,6 +4699,40 @@ async fn props_title_slide() {
     .await;
 }
 
+/// T024's finding: a slide of the file whose id is `title-slide` (a deck with
+/// no `title:`) is a slide like any other, not Quarto's title slide.
+#[tokio::test(flavor = "multi_thread")]
+async fn props_own_title_slide() {
+    let deck =
+        "---\nformat: revealjs\n---\n\n## Hello {#title-slide}\n\nWelcome\n\n## B {#b}\n\nx\n";
+    let Some(ed) = Ed::open(deck).await else {
+        return;
+    };
+    ed.wait(INSPECTING).await;
+    ed.go("title-slide").await;
+    ed.wait(&format!(
+        "JSON.stringify({TABS}) === JSON.stringify([['Slide'], 'Slide'])"
+    ))
+    .await;
+    // the list: numbered and movable like the rest
+    ed.wait("(() => { const li = document.querySelector('#slides li[data-id=\"title-slide\"]'); return !!li && !li.classList.contains('made-title') && li.querySelector('.idx')?.textContent === '1' && !!li.querySelector('.handle'); })()")
+        .await;
+    ed.eval("(() => { const f = document.querySelector('#panel .body form'); f.bg.value = 'aquamarine'; f.requestSubmit(); })()")
+        .await;
+    ed.wait_file(
+        |f| {
+            f.contains("{#title-slide background-color=aquamarine}")
+                || f.contains("{#title-slide background-color=\"aquamarine\"}")
+        },
+        "the slide's own background",
+    )
+    .await;
+    assert!(
+        !ed.file().contains("title:"),
+        "no title in the front matter"
+    );
+}
+
 /// Spec 023 T011: choose a select in the Animate view, as the person does.
 fn pick(name: &str, value: &str) -> String {
     pick_in("anim", name, value)

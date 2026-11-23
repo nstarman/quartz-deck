@@ -176,7 +176,7 @@ tests are in `tests/ops.rs`, beside the other `meta` tests.
 - [X] T021 [P] Docs: `README.md` and `skills/quartz-deck/SKILL.md` describe the column, its views, `qd build set/list/order`, dotted `qd meta set`, `qd meta size`, and `properties.side`, in our own words.
 - [X] T022 Run quickstart §1–§5 on a copy of the showcase. Record it in `specs/023-properties-column/checklists/quickstart-run.md`, with SC-001's item-by-item check of every old control's new home.
 - [X] T023 Final constitution re-check in `plan.md`; fmt, clippy (`--workspace --all-targets -D warnings`) and `cargo test --workspace --no-fail-fast` green.
-- [ ] T024 With the person: on a copy of their talk, set a background, a transition and two builds from the column (SC-006). Nothing about the talk goes into the repository.
+- [X] T024 With the person: on a copy of their talk, set a background, a transition and two builds from the column (SC-006). Nothing about the talk goes into the repository.
 - [X] T025 Concision audit (`/pr-audit`), the last task before each PR is marked ready.
 
 ---

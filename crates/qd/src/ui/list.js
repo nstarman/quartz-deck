@@ -48,7 +48,7 @@ export function makeList(api) {
   // a new slide after `id` (after the title slide: before the first slide)
   const addAfter = (id, at) => {
     const first = api.state.deck?.slides[0];
-    return api.addSlide(id !== 'title-slide' ? { after: id } : first ? { before: first.id } : {}, at);
+    return api.addSlide(byId(id) ? { after: id } : first ? { before: first.id } : {}, at);
   };
   const nameOf = (s) => frameDoc()?.getElementById(s.anchor)?.querySelector(':scope > :is(h1, h2, h3)')?.textContent.trim() || s.title || s.summary || 'Untitled';
 
@@ -171,6 +171,7 @@ export function makeList(api) {
     const li = el('li');
     li.dataset.id = s.id;
     li.dataset.anchor = s.anchor;
+    li.classList.toggle('made-title', isTitle); // Quarto's, from the front matter: not a slide of the file
     const b = el('button');
     b.type = 'button';
     li.append(b);
@@ -283,7 +284,7 @@ export function makeList(api) {
   /** A new render is on the canvas: redraw the thumbnails in view (the rest as they scroll in). */
   function refresh() {
     for (const li of list.children) {
-      const s = li.dataset.id === 'title-slide' ? null : byId(li.dataset.id);
+      const s = byId(li.dataset.id);
       const name = li.querySelector('.name');
       if (name) name.textContent = s ? nameOf(s) : titleText();
     }
@@ -336,7 +337,7 @@ export function makeList(api) {
     let frameReq = 0;
 
     const begin = () => {
-      const items = [...list.querySelectorAll('li[data-id]:not([data-id=title-slide]):not([hidden])')];
+      const items = [...list.querySelectorAll('li[data-id]:not(.made-title):not([hidden])')];
       const from = items.indexOf(li);
       const r = li.getBoundingClientRect();
       const ghost = el('div', 'drag-ghost');
@@ -538,6 +539,6 @@ const THUMB_CSS = `
   opacity: 1 !important; visibility: visible !important; width: 100% !important; height: 100% !important; }
 .reveal .fragment { opacity: 1 !important; visibility: visible !important; transform: none !important; }
 /* reveal.js centres these slides with script, which a copy doesn't run */
-.reveal .slides > section.center, .reveal .slides > section#title-slide { display: flex !important; flex-direction: column;
+.reveal .slides > section.center, .reveal .slides > section#title-slide:has(> .title) { display: flex !important; flex-direction: column;
   justify-content: center; }
 `;

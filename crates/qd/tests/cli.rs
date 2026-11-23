@@ -1677,3 +1677,22 @@ fn build_list_and_order() {
         1,
     );
 }
+
+/// T024's findings: a build's name has no stray markdown, and a picture
+/// without alt text is named by its `fig-alt`.
+#[test]
+fn build_names() {
+    let e = Env::with(
+        "## A {#a}\n\n![](p.svg){fig-alt=\"A red kite\"}\n\n- **Bold** start, then `code`\n- plain\n",
+    );
+    e.ok(&["build", "set", "a/0", "--appear", "fade-in"]);
+    e.ok(&["build", "set", "a/1", "--appear", "fade-up"]);
+    let v = e.ok(&["build", "list", "a"]);
+    let names: Vec<_> = v["builds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| b["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["A red kite", "Bold start, then code"]);
+}
