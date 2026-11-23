@@ -2,7 +2,7 @@
 // can do nothing the CLI cannot (FR-010). The .qmd file stays the only state.
 import { SNAP_PX, nearest } from '/ui/guides.js';
 import { region, hintsFor, gate, reserialize, splice } from '/ui/inline.js';
-import { showToolbar, hideToolbar, place as placeToolbar, placeNear } from '/ui/toolbar.js';
+import { showToolbar, hideToolbar, place as placeToolbar, copy as toolbarCopy } from '/ui/toolbar.js';
 import { openSource, closeSource, sourceError, sourceText } from '/ui/source.js';
 import { makeActions, INSERTS, TRANSITIONS } from '/ui/actions.js';
 import * as keys from '/ui/keys.js';
@@ -13,6 +13,7 @@ import * as runslide from '/ui/runslide.js';
 import * as dot from '/ui/dot.js';
 import * as arrows from '/ui/arrows.js';
 import * as inspector from '/ui/inspector.js';
+import * as animate from '/ui/animate.js';
 import * as dock from '/ui/dock.js';
 import { openMenu, closeMenu, menuOpen } from '/ui/menu.js';
 import { makeList } from '/ui/list.js';
@@ -95,7 +96,7 @@ async function fetchDeck() {
   document.title = state.deck.title || state.deck.file || 'quartz-deck';
   focus.setVersion(state.version);
   slideList.render();
-  renderSlidebar();
+  renderAnimate();
 }
 
 // slides as of the deck version we last saw: menus and keys resolve their target
@@ -668,7 +669,7 @@ function hookFrame() {
     else syncFocus();
     slideList.render();
     renderPanel();
-    renderSlidebar();
+    renderAnimate();
   };
   if (w.Reveal?.isReady?.()) onReady();
   else w.Reveal?.on?.('ready', onReady);
@@ -756,7 +757,6 @@ const slideList = makeList({
 
 const BG = 'background-color';
 const BG_IMG = 'background-image';
-const TRANSITION = 'transition';
 
 function blockOfBody(slide) {
   return slide.blocks.filter((b) => b.kind !== 'box').map((b) => b.text).join('\n\n');
@@ -776,7 +776,7 @@ async function renderPanel() {
   f.bg.value = kv[BG] || '';
   f.bgpick.value = /^#[0-9a-f]{6}$/i.test(kv[BG] || '') ? kv[BG] : '#ffffff';
   f.bgimage.value = kv[BG_IMG] || '';
-  f.transition.value = kv[TRANSITION] || '';
+  f.hidden.checked = kv.visibility === 'hidden';
   f.classes.value = (slide.attrs?.classes || []).join(' ');
   f.body.value = blockOfBody(slide);
   f.bgpick.addEventListener('input', () => { f.bg.value = f.bgpick.value; });
@@ -798,18 +798,30 @@ async function newBox(slide, source) {
   if (r) { state.selectIdAfterRender = r.target; await fetchDeck(); }
 }
 
+const TITLE_KEYS = ['title', 'subtitle', 'author', 'date'];
+/** The title slide's own lines, from the front matter (a list or map there is left as it is). */
 async function renderTitlePanel() {
   const view = $('#title-panel').content.cloneNode(true);
   const f = $('form', view);
   const meta = await fetchMeta();
-  const before = typeof meta.title === 'string' ? meta.title : '';
-  f.title.value = before;
+  const before = {};
+  for (const k of TITLE_KEYS) {
+    const v = meta[k];
+    before[k] = typeof v === 'string' ? v : '';
+    f[k].value = before[k];
+    f[k].disabled = v != null && typeof v !== 'string';
+  }
   f.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const t = f.title.value.trim();
-    if (t === before) return;
-    const r = t ? await op('meta set', { key: 'title', value: JSON.stringify(t) }) : await op('meta unset', { key: 'title' });
-    if (r) renderPanel();
+    let done = false;
+    for (const k of TITLE_KEYS) {
+      const t = f[k].value.trim();
+      if (t === before[k]) continue;
+      const r = t ? await op('meta set', { key: k, value: JSON.stringify(t) }) : await op('meta unset', { key: k });
+      if (!r) break;
+      done = true;
+    }
+    if (done) renderPanel();
   });
   panel.replaceChildren(view);
 }
@@ -827,7 +839,7 @@ async function applySlide(slide, f, version) {
   const kv = slide.attrs?.kv || {};
   const attr = [];
   const unset = [];
-  for (const [key, val] of [[BG, f.bg.value.trim()], [BG_IMG, f.bgimage.value.trim()], [TRANSITION, f.transition.value]]) {
+  for (const [key, val] of [[BG, f.bg.value.trim()], [BG_IMG, f.bgimage.value.trim()], ['visibility', f.hidden.checked ? 'hidden' : '']]) {
     if (val && val !== kv[key]) attr.push(`${key}=${val}`);
     if (!val && kv[key] !== undefined) unset.push(key);
   }
@@ -960,10 +972,10 @@ async function renderDeck() {
  * the panel closed (008); "Back to slide" puts the panel back as it was. */
 function showResult(view) {
   $('[data-act=close]', view).addEventListener('click', () => {
-    layout('panel-open', 'ui.form_panel', !!settings.get('ui.form_panel'), false);
+    mainEl.classList.remove('panel-open');
     renderPanel();
   });
-  layout('panel-open', 'ui.form_panel', true, false);
+  mainEl.classList.add('panel-open');
   panel.replaceChildren(view);
 }
 
@@ -1630,7 +1642,7 @@ const actions = makeActions({
     if (name === 'block place') state.sel = args.element; // the box is where the element was
     await fetchDeck();
     await renderPanel();
-    renderSlidebar();
+    renderAnimate();
     slideList.adopted(behind);
     return r;
   },
@@ -1677,20 +1689,21 @@ async function keyboardMenu() {
   if (cur) openMenu(actions.empty(await slideTarget(cur.id)), f.left + 40, f.top + 40);
 }
 
-// element bar: the common actions for the selected element (US3)
+// the element's common actions, at the foot of the column (spec 023)
 const elbar = document.createElement('div');
 elbar.id = 'elbar';
 elbar.setAttribute('role', 'toolbar');
 elbar.setAttribute('aria-label', 'Element');
 elbar.hidden = true;
 for (const [id, label, title] of [['run', '▶ Run', 'Run this code cell'], ['edit', 'Edit', 'Edit text (Enter)'], ['source', 'Markdown', 'Edit markdown (⌥Enter)'],
-  ['fragment', 'Appears on click', 'Appears on click (a fragment)'], ['delete', 'Delete', 'Delete (⌫)'], ['more', '⋯', 'More (right-click, ⇧F10)']]) {
+  ['delete', 'Delete', 'Delete (⌫)'], ['more', '⋯', 'More (right-click, ⇧F10)']]) {
   const b = Object.assign(document.createElement('button'), { type: 'button', textContent: label, title });
   b.dataset.act = id;
   b.setAttribute('aria-label', title);
   elbar.append(b);
 }
-document.body.append(elbar);
+$('#panel').append(elbar);
+$('#panel .fmt-tab').append(toolbarCopy()); // the Text tab: the typing toolbar's buttons
 elbar.addEventListener('click', async (e) => {
   const id = e.target.closest('button')?.dataset.act;
   const t = id && state.sel && (await elementTarget(state.sel));
@@ -1705,47 +1718,30 @@ async function placeElbar() {
   if (!el) { elbar.hidden = true; return; }
   const t = await elementTarget(state.sel);
   $('[data-act=run]', elbar).hidden = t?.block.kind !== 'cell';
-  $('[data-act=fragment]', elbar).setAttribute('aria-pressed', String(!!(t && actions.checked('fragment', t))));
   elbar.hidden = false;
-  if (!inspector.shown()) placeNear(elbar, el.querySelector('.qd-arrow-hit') || el, frame); // an arrow: beside its line
 }
 
-// the preview resized (source pane, panels, window): follow the element, or the bar
-// is left floating over whatever is there now. After reveal.js has laid out again.
+// the preview resized (source pane, panels, window): the run buttons follow, after
+// reveal.js has laid out again
 new ResizeObserver(() => requestAnimationFrame(() => requestAnimationFrame(placeElbar))).observe(frame);
 
-// slide bar: the slide's common properties (US3)
-const slidebar = $('#slidebar');
-async function renderSlidebar() {
-  const cur = slideByAnchor(state.anchor);
-  // the title slide has no slide properties: the bar keeps its row (the canvas
-  // doesn't jump, spec 008 US2) but shows nothing and can't be reached (hidden)
-  slidebar.style.visibility = cur ? '' : 'hidden';
-  if (!cur) return;
-  const full = await fetchSlide(cur.id);
-  const kv = full?.attrs?.kv || {};
-  $('[data-act=bg] .chip', slidebar).style.background = kv['background-color'] || '';
-  slidebar.querySelector('[name=transition]').value = kv.transition || '';
-  slidebar.querySelector('[name=hidden]').checked = kv.visibility === 'hidden';
+// the column's Animate view (spec 023): the slide's transition, an element's build
+const anim = $('#panel .anim');
+async function renderAnimate() {
   placeEmptyadd();
+  const cur = slideByAnchor(state.anchor);
+  const ref = state.sel;
+  const t = ref && (await elementTarget(ref));
+  if (ref !== state.sel) return; // a newer selection is drawing
+  const kv = cur && !ref ? (await fetchSlide(cur.id))?.attrs?.kv || {} : null;
+  anim.replaceChildren(animate.render(t ? { fragment: !!actions.checked('fragment', t) } : { kv }, {
+    transition: (v) => cur && actions.setAttr({ slideId: cur.id }, 'transition', v || null),
+    toggleFragment: () => t && actions.run('fragment', t),
+  }));
 }
-const setSlideAttr = (key, value) => {
-  const cur = slideByAnchor(state.anchor);
-  if (cur) actions.setAttr({ slideId: cur.id }, key, value);
-};
-slidebar.querySelector('[name=transition]').addEventListener('change', (e) => setSlideAttr('transition', e.target.value));
-slidebar.querySelector('[name=hidden]').addEventListener('change', (e) => setSlideAttr('visibility', e.target.checked ? 'hidden' : null));
-slidebar.addEventListener('click', async (e) => {
-  const act = e.target.closest('button')?.dataset.act;
-  const cur = slideByAnchor(state.anchor);
-  if (!act || !cur) return;
-  const t = await slideTarget(cur.id);
-  if (act === 'bg') actions.run('slide-bg', t, 'slide');
-  else if (act === 'bg-image') actions.run('slide-bgimg', t, 'slide');
-  else if (act === 'more') { const r = e.target.getBoundingClientRect(); openMenu(actions.slide(t), r.left, r.bottom + 4); }
-});
+new MutationObserver(renderAnimate).observe(panel, { childList: true }); // a new selection
 
-// layout: source pane (which side, open, width, full width) and the old form panel,
+// layout: the source pane (which side, open, width, full width),
 // remembered in the person's settings (spec 007), so the same in every deck and in VS Code
 const mainEl = document.querySelector('main');
 const srcpane = $('#srcpane');
@@ -1754,7 +1750,6 @@ function layout(cls, key, on, remember = true) {
   mainEl.classList.toggle(cls, on);
   if (remember && settings.get(key) !== on) settings.set({ [key]: on });
 }
-const setPanel = (on) => layout('panel-open', 'ui.form_panel', on);
 const setFull = (on) => { $('[data-act=full]', srcpane).setAttribute('aria-pressed', String(on)); layout('source-full', 'ui.source_full', on); };
 function setSource(open, remember) {
   layout('source-open', 'ui.source_was_open', open, remember);
@@ -1816,19 +1811,13 @@ await settings.ready((n) => say(n, true)).catch(() => say('settings could not be
   const v = settings.get;
   if (v('ui.source_width')) mainEl.style.setProperty('--srcw', v('ui.source_width') + 'px');
   if (v('ui.source_height')) mainEl.style.setProperty('--srch', v('ui.source_height') + 'px');
-  setPanel(v('ui.form_panel'));
   setFull(v('ui.source_full'));
   setSource(v('source.open') === 'open' || (v('source.open') === 'last' && v('ui.source_was_open')), false);
 }
-$('[data-act=form]', srcpane).addEventListener('click', () => properties(!mainEl.classList.contains('panel-open')));
-// the inspector (spec 019): the panel beside the slide whenever the window is wide enough
+// the properties column (specs 019, 023), kept or hidden by View ▸ Properties
 inspector.init(() => ({ kind: state.sel ? state.selKind : null, typeable: state.selTypeable, title: !slideByAnchor(state.anchor) }), () => frame.contentWindow?.focus());
-addEventListener('qd-inspector', () => { placeElbar(); placeToolbar(frame); });
-/** View ▸ Properties: on a window wide enough, the inspector (it was turned off); else the panel. */
-function properties(on) {
-  if (inspector.fits()) settings.set({ 'ui.inspector': true });
-  else setPanel(on);
-}
+const toggleProperties = () => settings.set({ 'ui.inspector': !inspector.shown() });
+$('[data-act=form]', srcpane).addEventListener('click', toggleProperties);
 $('[data-act=full]', srcpane).addEventListener('click', () => setFull(!mainEl.classList.contains('source-full')));
 
 
@@ -2319,9 +2308,8 @@ for (const [id, d, where] of [['slide-move-up', -1, 'before'], ['slide-move-down
 const toggle = (cls, set) => ({ checked: () => mainEl.classList.contains(cls), run: () => set(!mainEl.classList.contains(cls)) });
 keys.on('toggle-source', { checked: () => !srcpane.hidden, run: () => setSource(srcpane.hidden) });
 keys.on('source-full', toggle('source-full', setFull));
-keys.on('form-panel', { checked: () => mainEl.classList.contains('panel-open') || inspector.shown(), run: () => properties(!mainEl.classList.contains('panel-open')) });
 keys.on('focus-inspector', { enabled: inspector.shown, run: inspector.toggleFocus });
-keys.on('inspector', { checked: () => !!settings.get('ui.inspector'), run: () => settings.set({ 'ui.inspector': !settings.get('ui.inspector') }) });
+keys.on('inspector', { checked: inspector.shown, run: toggleProperties });
 keys.on('history', { checked: hist.isOpen, run: () => hist.toggle() });
 keys.on('history-compare', { enabled: hist.versionOpen, run: hist.compare });
 keys.on('history-restore', {

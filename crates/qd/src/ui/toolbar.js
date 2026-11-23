@@ -10,6 +10,7 @@ const bar = document.createElement('div');
 bar.id = 'fmtbar';
 bar.setAttribute('role', 'toolbar');
 bar.setAttribute('aria-label', 'Formatting');
+bar.className = 'fmt';
 bar.hidden = true;
 document.body.append(bar);
 
@@ -202,7 +203,7 @@ function button(id, label, title, run) {
 // the common few up front, the rest in two pop-overs (spec 008 US7, research R12)
 const sep = () => el('span', { className: 'sep' });
 const make = (id) => button(...BUTTONS.find((b) => b[0] === id));
-const closePops = () => { for (const p of bar.querySelectorAll('.pop')) p.hidden = true; };
+const closePops = () => { for (const p of document.querySelectorAll('.fmt .pop')) p.hidden = true; };
 function pop(id, label, title, children) {
   const p = el('div', { className: 'pop', hidden: true });
   p.append(...children);
@@ -211,29 +212,37 @@ function pop(id, label, title, children) {
   b.setAttribute('aria-haspopup', 'true');
   return [b, p];
 }
-const swatches = COLOURS.map(([c, name]) => {
-  const b = button('color', '', `Text colour: ${name}`, () => setStyle('color', c));
-  b.className = 'swatch';
-  b.style.background = c;
-  return b;
-});
-// any other colour from the system's own picker (on a Mac, the Colours window); the mousedown
-// keeps focus in the slide, so the edit stays open and each change recolours the selection
-const wheel = el('input', { type: 'color', value: COLOURS[0][0], title: 'Other colour…', ariaLabel: 'Other text colour' });
-wheel.addEventListener('mousedown', (e) => e.preventDefault());
-wheel.addEventListener('input', () => { if (session) setStyle('color', wheel.value); });
-const segment = el('span', { className: 'seg' });
-segment.append(...['left', 'center', 'right'].map(make));
-bar.append(
-  ...['bold', 'italic', 'underline', 'strike', 'link', 'ul'].map(make), sep(),
-  ...pop('color', 'A', 'Text colour', [...swatches, wheel, button('nocolor', '⌀', 'Remove text colour', noColor)]),
-  ...pop('more', 'Aa', 'More formatting', [...['code', 'ol', 'outdent', 'indent', 'mark'].map(make), sep(), make('font'), make('smaller'), make('larger'), sep(), segment]),
-);
+/** The buttons, into `box`: the floating bar, or the column's Text tab (spec 023). */
+function fill(box) {
+  const swatches = COLOURS.map(([c, name]) => {
+    const b = button('color', '', `Text colour: ${name}`, () => setStyle('color', c));
+    b.className = 'swatch';
+    b.style.background = c;
+    return b;
+  });
+  // any other colour from the system's own picker (on a Mac, the Colours window); the mousedown
+  // keeps focus in the slide, so the edit stays open and each change recolours the selection
+  const wheel = el('input', { type: 'color', value: COLOURS[0][0], title: 'Other colour…', ariaLabel: 'Other text colour' });
+  wheel.addEventListener('mousedown', (e) => e.preventDefault());
+  wheel.addEventListener('input', () => { if (session) setStyle('color', wheel.value); });
+  const segment = el('span', { className: 'seg' });
+  segment.append(...['left', 'center', 'right'].map(make));
+  box.append(
+    ...['bold', 'italic', 'underline', 'strike', 'link', 'ul'].map(make), sep(),
+    ...pop('color', 'A', 'Text colour', [...swatches, wheel, button('nocolor', '⌀', 'Remove text colour', noColor)]),
+    ...pop('more', 'Aa', 'More formatting', [...['code', 'ol', 'outdent', 'indent', 'mark'].map(make), sep(), make('font'), make('smaller'), make('larger'), sep(), segment]),
+  );
+  return box;
+}
+fill(bar);
+
+/** The same buttons, bound to the same actions, for another place. */
+export const copy = () => fill(el('div', { className: 'fmt', role: 'toolbar', ariaLabel: 'Formatting' }));
 
 /** Show the toolbar for an edit session; `frame` is the preview iframe. */
 export function showToolbar(s, frame) {
   session = s;
-  for (const b of bar.querySelectorAll('button')) b.hidden = s.reg.mode === 'inline' && BLOCK_ONLY.has(b.dataset.fmt);
+  for (const b of document.querySelectorAll('.fmt button')) b.hidden = s.reg.mode === 'inline' && BLOCK_ONLY.has(b.dataset.fmt);
   bar.hidden = false;
   place(frame);
 }
@@ -249,7 +258,7 @@ export function place(frame) {
  * (over the end of itself, never another element). Not shown while
  * the canvas is (full-width source pane).
  */
-export function placeNear(b, el, frame) {
+function placeNear(b, el, frame) {
   const f = frame.getBoundingClientRect();
   b.style.visibility = f.width && f.height ? '' : 'hidden';
   const r = el.getBoundingClientRect();

@@ -32,8 +32,8 @@ about the talk in the repository.
 
 ## Phase 1: Setup
 
-- [ ] T001 Create `crates/qd/src/ui/props/` with empty `format.js`, `animate.js` and `deck.js` modules. Each exports `render(target, api)` returning the view's body. Serve them like the other `ui/` modules in `crates/qd/src/server.rs`'s embedded-files list.
-- [ ] T002 [P] Add a test helper `props(ed, view)` in `crates/qd/tests/onslide.rs` that clicks the column's view tab (`#panel .views [data-view=…]`) and waits for its body. Add `no_bars(ed)`, which asserts `#slidebar` and `#elbar` are absent or hidden.
+- [X] T001 Create `crates/qd/src/ui/props/` with empty `format.js`, `animate.js` and `deck.js` modules. Each exports `render(target, api)` returning the view's body. Serve them like the other `ui/` modules in `crates/qd/src/server.rs`'s embedded-files list.
+- [X] T002 [P] Add a test helper `props(ed, view)` in `crates/qd/tests/onslide.rs` that clicks the column's view tab (`#panel .views [data-view=…]`) and waits for its body. Add `no_bars(ed)`, which asserts `#slidebar` and `#elbar` are absent or hidden.
 
 ---
 
@@ -43,27 +43,40 @@ about the talk in the repository.
 
 **Independent test**: spec US1's independent test.
 
-- [ ] T003 [US1] Write failing browser tests in `crates/qd/tests/onslide.rs` (contracts/editor.md § Tests):
+- [X] T003 [US1] Write failing browser tests in `crates/qd/tests/onslide.rs` (contracts/editor.md § Tests):
   - **`props_format_slide`:** with nothing selected, Format shows the background colour, image, hidden, title, classes and source. Setting each writes the same text as `qd set` / `qd title`. `no_bars`.
   - **`props_format_element`:** select a paragraph, a placed box, a picture, a diagram box and an arrow in turn. Each shows its tabs (Text only for text). The Look and Arrange settings write as today, and the footer's Delete deletes. `no_bars`.
   - **`props_text_tab`:** while typing, the floating toolbar shows. The Text tab's Bold bolds the selected word, and the selection is kept.
   - **`props_title_slide`:** on the title slide, Format shows title, subtitle, author and date, and each saves.
-- [ ] T004 [US1] Make the column always shown in `crates/qd/src/ui/inspector.js`:
+- [X] T004 [US1] Make the column always shown in `crates/qd/src/ui/inspector.js`:
   - remove `fits()`/`WIDE`/`SLIDE_MIN`;
   - `ui.inspector` is the only switch (View ▸ Properties);
   - add `.views` (Format, Animate, Deck) as a tablist above `.tabs`, with ←/→ and F6 as for tabs (research R1, R7).
-- [ ] T005 [US1] Build Format in `crates/qd/src/ui/props/format.js` (research R2):
+- [X] T005 [US1] Build Format in `crates/qd/src/ui/props/format.js` (research R2):
   - the slide section (from the slide panel and slide bar);
   - the title-slide section;
   - an element's Look, Text and Arrange tabs (from the element panel, element bar, Arrange actions, and the diagram and arrow panels, moved, not rewritten);
   - the footer actions.
 
   Each control calls the same `op()` as before.
-- [ ] T006 [US1] Make `crates/qd/src/ui/toolbar.js`'s buttons renderable into a second container for the Text tab, bound to the same actions, with mousedown kept from stealing focus. The floating toolbar is unchanged.
-- [ ] T007 [US1] Remove `#slidebar` from `crates/qd/src/ui/index.html` and the element bar from `crates/qd/src/ui/editor.js`, with their CSS in `editor.css`. The right-click menus keep every action. Route the selection to the column (`renderPanel` → `format.render`).
-- [ ] T008 [US1] Move the existing tests that drive the slide bar, element bar or the old panel to the column's controls, keeping their checks on the deck's text: `bars_set_properties_and_source_panel_is_hidden`, `tidier_bars_and_fuller_insert`, the `inspector_*` tests, and any that click `#slidebar` or `#elbar`. T003 passes, and the full `onslide` suite passes.
+- [X] T006 [US1] Make `crates/qd/src/ui/toolbar.js`'s buttons renderable into a second container for the Text tab, bound to the same actions, with mousedown kept from stealing focus. The floating toolbar is unchanged.
+- [X] T007 [US1] Remove `#slidebar` from `crates/qd/src/ui/index.html` and the element bar from `crates/qd/src/ui/editor.js`, with their CSS in `editor.css`. The right-click menus keep every action. Route the selection to the column (`renderPanel` → `format.render`).
+- [X] T008 [US1] Move the existing tests that drive the slide bar, element bar or the old panel to the column's controls, keeping their checks on the deck's text: `bars_set_properties_and_source_panel_is_hidden`, `tidier_bars_and_fuller_insert`, the `inspector_*` tests, and any that click `#slidebar` or `#elbar`. T003 passes, and the full `onslide` suite passes.
 
 **Checkpoint**: PR 1. Every setting has one home; no bar floats over the slide.
+
+**As built (PR 1):**
+- The editor serves its modules from one flat `/ui/{name}` route, so Animate
+  is `ui/animate.js`, not `ui/props/animate.js`. Format stays in `editor.js`
+  (its panels were moved, not rewritten), and Deck waits for PR 3.
+- Animate already holds the slide's transition and an element's "Appears on
+  click", moved from the slide and element bars, so each control has one
+  home in PR 1. PR 2 fills in the rest.
+- View ▸ Properties panel and View ▸ Inspector were one column now, so they
+  are one item, View ▸ Properties (⌥⌘0). The unused `ui.form_panel` setting
+  is gone (a stored value is kept and ignored, as for any unknown key).
+- The narrow-window stack (below the slide at 700 px or less) was already the
+  layout's own, so it holds in PR 1.
 
 ---
 

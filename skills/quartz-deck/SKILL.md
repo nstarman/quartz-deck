@@ -295,8 +295,8 @@ when they ask) routes arrows while they drag; it changes nothing that's saved.
 With the cursor on a box's or an arrow's line of a diagram's source, the
 editor outlines it on the slide and draws it alone beside the line;
 `diagrams.source-preview` (on by default) turns the drawing off.
-On a wide window the details are in the inspector on the right instead of a
-panel; `ui.inspector` (on by default) turns it off when they ask.
+The details are in the editor's properties column on the right;
+`ui.inspector` (on by default) hides it when they ask.
 
 Looks are written on each box, so a box renders the same everywhere.
 Boxes and arrows inside a `subgraph` are refused with `E_UNSAFE_EDIT`:

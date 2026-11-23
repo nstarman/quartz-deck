@@ -57,25 +57,17 @@
   </section>
   <div id="splitter" role="separator" aria-orientation="vertical" aria-label="Resize the source pane" tabindex="0"></div>
   <section id="stage" aria-label="Preview">
-    <div id="slidebar" role="toolbar" aria-label="Slide properties">
-      <button type="button" data-act="bg" title="Background colour"><span class="chip"></span> Background</button>
-      <button type="button" data-act="bg-image" title="Background image">Image…</button>
-      <label class="inline">Transition <select name="transition" aria-label="Transition">
-        <option value="">default</option><option>none</option><option>fade</option><option>slide</option>
-        <option>convex</option><option>concave</option><option>zoom</option>
-      </select></label>
-      <label class="inline"><input type="checkbox" name="hidden" aria-label="Hidden in the presentation"> Hidden</label>
-      <button type="button" data-act="more" aria-haspopup="menu" title="More slide actions (or right-click the slide)">⋯</button>
-    </div>
     <div class="previews">
       <iframe id="preview" title="Slide preview"></iframe>
       <figure id="then" hidden><figcaption></figcaption><iframe title="The deck as it was"></iframe></figure>
     </div>
   </section>
   <aside id="panel" aria-label="Properties">
-    <div class="tabs" role="tablist" aria-label="Inspector"></div>
-    <div class="bars"><p class="hint note" data-tab="text">Click into text to format it here.</p></div>
+    <div class="views" role="tablist" aria-label="Properties views"></div>
+    <div class="tabs" role="tablist" aria-label="Format"></div>
+    <div class="bars"><div class="fmt-tab" data-tab="text"><p class="hint note">Click into text to format it here.</p></div></div>
     <div class="body"></div>
+    <div class="anim"></div>
   </aside>
 </main>
 <div id="dock-zones" hidden></div>
@@ -92,13 +84,7 @@
       </label>
       <label>Image <input name="bgimage" placeholder="path or URL" autocomplete="off"></label>
     </fieldset>
-    <label>Transition
-      <select name="transition">
-        <option value="">default</option>
-        <option>none</option><option>fade</option><option>slide</option>
-        <option>convex</option><option>concave</option><option>zoom</option>
-      </select>
-    </label>
+    <label class="inline"><input type="checkbox" name="hidden"> Hidden in the presentation</label>
     <label>Classes <input name="classes" placeholder="e.g. smaller center" autocomplete="off"></label>
     <label>Content (markdown; positioned boxes are kept)
       <textarea name="body" rows="10" spellcheck="false"></textarea>
@@ -127,9 +113,12 @@
   <h2>Title slide <code>front matter</code></h2>
   <form>
     <label>Deck title <input name="title" autocomplete="off"></label>
+    <label>Subtitle <input name="subtitle" autocomplete="off"></label>
+    <label>Author <input name="author" autocomplete="off"></label>
+    <label>Date <input name="date" autocomplete="off"></label>
     <div class="buttons"><button type="submit" class="primary">Apply</button></div>
   </form>
-  <p class="hint">Author, date and other options live in the YAML front matter (<code>qd meta</code>).</p>
+  <p class="hint">Other options live in the YAML front matter (<code>qd meta</code>).</p>
 </template>
 
 <template id="export-panel">

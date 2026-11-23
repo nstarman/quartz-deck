@@ -35,7 +35,7 @@ reason is given.
 | Add Python package… (was + Package) | — | `run-add-package` |
 | Set up Python… (was Create environment) | — | `run-env` |
 | Full width | — | `source-full` |
-| Properties (was Form) | — | `form-panel` |
+| Properties (was Form; spec 023: one item with the inspector) | ⌥⌘0 | `inspector` |
 | (typing) save now | ⌘S | `source-save` |
 | (typing) run the cell at the caret | ⇧Enter | `run-cell` |
 

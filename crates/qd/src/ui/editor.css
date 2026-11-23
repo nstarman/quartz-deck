@@ -188,7 +188,7 @@ aside { width: 320px; flex: none; overflow: auto; padding: 12px 16px; border-lef
 aside h2 { font-size: 15px; margin: 4px 0 12px; }
 aside h2 code { font-size: 12px; color: var(--muted); font-weight: normal; }
 aside label { display: block; margin: 0 0 10px; color: var(--muted); font-size: 12px; }
-aside input:not([type=color]), aside select, aside textarea { display: block; width: 100%; margin-top: 3px;
+aside input:not([type=color], [type=checkbox]), aside select, aside textarea { display: block; width: 100%; margin-top: 3px;
   padding: 5px 7px; background: var(--bg); font-size: 13px; }
 aside textarea { font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
 aside label.row { display: flex; align-items: center; gap: 6px; }
@@ -235,38 +235,36 @@ aside .status.fail { color: var(--danger); }
     position: relative; top: -10px; margin: 0 12px 0 16px; } /* -10px: level with the thumbnails, not their titles */
 }
 
-/* a narrow window (spec 008 US8): a slide picker in the top row instead of the
-   list, and the slide's properties under ··· */
+/* a narrow window (spec 008 US8): a slide picker in the top row instead of the list */
 #slide-picker { display: none; }
 @media (max-width: 599px) {
   nav, #deck-name { display: none; }
   #slide-picker { display: block; min-width: 0; height: 28px; overflow: hidden; text-overflow: ellipsis; }
-  #slidebar > :not([data-act=more]) { display: none; }
 }
 
 /* ---------- on-slide editing (spec 003) ---------- */
 #fmtbar { position: fixed; z-index: 20; display: flex; flex-wrap: wrap; gap: 2px; align-items: center;
   max-width: calc(100vw - 8px); padding: 4px; border: 1px solid var(--line); border-radius: 8px;
   background: var(--panel); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2); }
-#fmtbar button { min-width: 28px; height: 28px; padding: 0 6px; }
-#fmtbar button[data-fmt=bold] { font-weight: 700; }
-#fmtbar button[data-fmt=italic] { font-style: italic; }
-#fmtbar button[data-fmt=underline] { text-decoration: underline; }
-#fmtbar button[data-fmt=strike] { text-decoration: line-through; }
-#fmtbar .swatch { min-width: 18px; width: 18px; height: 18px; padding: 0; border-radius: 50%; }
-#fmtbar input[type=color] { appearance: none; width: 18px; height: 18px; margin: 0 5px; padding: 0; border: 0; border-radius: 50%; cursor: pointer;
+.fmt button { min-width: 28px; height: 28px; padding: 0 6px; }
+.fmt button[data-fmt=bold] { font-weight: 700; }
+.fmt button[data-fmt=italic] { font-style: italic; }
+.fmt button[data-fmt=underline] { text-decoration: underline; }
+.fmt button[data-fmt=strike] { text-decoration: line-through; }
+.fmt .swatch { min-width: 18px; width: 18px; height: 18px; padding: 0; border-radius: 50%; }
+.fmt input[type=color] { appearance: none; width: 18px; height: 18px; margin: 0 5px; padding: 0; border: 0; border-radius: 50%; cursor: pointer;
   background: conic-gradient(#e53935, #fdd835, #43a047, #00acc1, #1e88e5, #8e24aa, #e53935); }
-#fmtbar input[type=color]::-webkit-color-swatch { border: 0; opacity: 0; }
-#fmtbar .sep { width: 1px; height: 20px; margin: 0 3px; background: var(--line); }
+.fmt input[type=color]::-webkit-color-swatch { border: 0; opacity: 0; }
+.fmt .sep { width: 1px; height: 20px; margin: 0 3px; background: var(--line); }
 /* the colour and "Aa" pop-overs (spec 008 US7): under the bar, not in its row */
-#fmtbar .pop { position: absolute; top: calc(100% + 4px); right: 0; display: flex; flex-wrap: wrap; gap: 2px; align-items: center;
+.fmt .pop { position: absolute; top: calc(100% + 4px); right: 0; display: flex; flex-wrap: wrap; gap: 2px; align-items: center;
   padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2); }
-#fmtbar .pop[hidden] { display: none; }
-#fmtbar .seg { display: inline-flex; }
-#fmtbar .seg button { border-radius: 0; }
-#fmtbar .seg button:first-child { border-radius: 6px 0 0 6px; }
-#fmtbar .seg button:last-child { border-radius: 0 6px 6px 0; }
-#fmtbar button[data-fmt=color]:not(.swatch) { font-weight: 700; text-decoration: underline 3px #c0392b; text-underline-offset: 3px; }
+.fmt .pop[hidden] { display: none; }
+.fmt .seg { display: inline-flex; }
+.fmt .seg button { border-radius: 0; }
+.fmt .seg button:first-child { border-radius: 6px 0 0 6px; }
+.fmt .seg button:last-child { border-radius: 0 6px 6px 0; }
+.fmt button[data-fmt=color]:not(.swatch) { font-weight: 700; text-decoration: underline 3px #c0392b; text-underline-offset: 3px; }
 #pending { margin-left: 8px; color: var(--muted); font-size: 12px; }
 /* the box or arrow at the cursor in a diagram's source, drawn alone (spec 021): on white, like the slide */
 #dot-peek { position: fixed; z-index: 25; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff;
@@ -318,25 +316,17 @@ aside .status.fail { color: var(--danger); }
 #then figcaption { font-size: 12px; color: var(--muted); padding: 0 0 4px; }
 #then iframe { flex: 1; width: 100%; border: 1px dashed var(--line); border-radius: 8px; background: #fff; }
 nav li.changed::after { content: '●'; position: absolute; top: 4px; right: 6px; color: var(--accent); font-size: 10px; }
-#slidebar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; }
-/* one height for every control (spec 008 US7) */
-#slidebar button, #slidebar select { height: 28px; }
-#slidebar .chip { display: inline-block; width: 14px; height: 14px; border: 1px solid var(--line); border-radius: 3px;
-  vertical-align: -2px; background: repeating-linear-gradient(45deg, transparent 0 3px, var(--line) 3px 4px); }
 main:not(.panel-open, .inspector) > #panel { display: none; }
-/* the inspector (spec 019): the panel stays beside the slide on a wide window, its
-   tabs choosing what shows, and the slide, element and formatting bars inside it */
-#panel > .tabs, #panel > .bars { display: none; }
-main.inspector > #panel > .tabs { display: flex; gap: 2px; margin: 0 0 12px; padding: 2px; border-radius: 8px; background: var(--line); }
-main.inspector > #panel > .tabs > button { flex: 1; height: 26px; border: 0; border-radius: 6px; background: none; font-size: 12px; color: var(--muted); }
-main.inspector > #panel > .tabs > button[aria-selected=true] { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, .15); }
-main.inspector > #panel > .bars { display: block; }
-main.inspector > #panel > .bars > :is(#slidebar, #elbar, #fmtbar) { position: static; z-index: auto; width: auto; max-width: none;
-  flex-wrap: wrap; margin: 0 0 12px; padding: 0; border: 0; box-shadow: none; background: none; }
-main.inspector > #panel > .bars:has(> #fmtbar:not([hidden])) > .note { display: none; }
-main.inspector > #panel .off { display: none; } /* another tab's (inspector.js) */
-/* the slide form's background and transition: the slide bar above has them, applied at once */
-main.inspector > #panel .slide-form > :is(fieldset, label:has(> select[name=transition])) { display: none; }
+/* the properties column (specs 019, 023): its views, then the tabs choosing what shows */
+#panel > :is(.views, .tabs) { display: flex; gap: 2px; margin: 0 0 12px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; }
+#panel > :is(.views, .tabs) > button { flex: 1; height: 26px; border: 0; border-radius: 6px; background: none; font-size: 12px; color: var(--text); }
+#panel > :is(.views, .tabs) > button[aria-selected=true] { background: var(--accent); color: var(--accent-text); }
+#panel[data-view=animate] > :not(.views, .anim), #panel:not([data-view=animate]) > .anim { display: none; }
+#panel > .bars > .fmt-tab { margin: 0 0 12px; }
+#panel .fmt { position: relative; display: flex; flex-wrap: wrap; gap: 2px; align-items: center; }
+body:has(> #fmtbar:not([hidden])) #panel .fmt-tab > .note { display: none; }
+#panel > #elbar { position: static; flex-wrap: wrap; width: auto; margin: 12px 0 0; padding: 0; border: 0; box-shadow: none; background: none; }
+#panel .off { display: none; } /* another tab's (inspector.js) */
 
 #ctxmenu { position: fixed; z-index: 30; }
 #ctxmenu ul { list-style: none; margin: 0; padding: 4px; min-width: 210px; background: var(--panel); color: var(--text);
@@ -372,7 +362,7 @@ main.inspector > #panel .slide-form > :is(fieldset, label:has(> select[name=tran
 main.source-open > #splitter { display: block; }
 #srcpane { flex: none; width: var(--srcw, 40%); min-width: 240px; display: flex; flex-direction: column;
   border-right: 1px solid var(--line); background: var(--panel); min-height: 0; }
-main.source-full > #stage, main.source-full > #splitter { display: none; }
+main.source-full > :is(#stage, #splitter, #panel) { display: none; }
 main.source-full > #srcpane { flex: 1; width: auto; }
 /* its place (spec 022): left (the DOM's order) by default; History stays by the list */
 main[data-source=far-left] > #srcpane { order: -2; }

@@ -78,24 +78,26 @@ stderr with a stable `code` and a `hint`. Decks inside a Quarto project
   wrapping, quotes, indentation and untouched markup stay as they were.
 - **Source in place:** code (a code cell, a diagram, a code block), math,
   callouts, raw HTML and tables are selected by a click; Enter, ⌥Enter, a double-click or the
-  element bar's **Markdown** opens their markdown over the element. Anything
+  column's **Markdown** opens their markdown over the element. Anything
   else that can't be typed into opens it on a click (Alt+click any element;
   Alt+click the slide background for the whole slide; ⌥Enter while typing).
   ⌘Enter or Esc saves it; its **Cancel** button discards.
 - **Actions:** right-click an element, a slide in the list or an empty slide
-  area for the full menu (Shift+F10 from the keyboard); the slide bar above
-  the preview sets background, transition and hidden; the element bar on a
-  selection toggles "appears on click". Hover an element for **+** (insert)
-  and **⠿** (drag). Tab / Shift+Tab in the slide move the selection; ⌘C/⌘X/
-  ⌘V/⌘D, ⌫, ⌥↑/⌥↓ act on it. The old form panel is View ▸ Properties panel.
-- **The inspector** (spec [019](specs/019-mac-inspector/spec.md)): on a window
-  at least 1200 px wide, with 640 px left for the slide, the properties stay
-  on the right and the slide, element and formatting bars move into them, so
-  nothing floats over the slide. Its tabs follow the selection: **Slide** (or
-  **Title**) with nothing selected; **Element**, **Text** and **Position** for
-  an element; **Text** while you type. It makes way for the source and History
-  panes. View ▸ Inspector (⌥⌘0) turns it off (setting `ui.inspector`); F6 goes
-  to it and back, ← → move along its tabs, Esc in a field returns to the slide.
+  area for the full menu (Shift+F10 from the keyboard). Hover an element for
+  **+** (insert) and **⠿** (drag). Tab / Shift+Tab in the slide move the
+  selection; ⌘C/⌘X/⌘V/⌘D, ⌫, ⌥↑/⌥↓ act on it.
+- **The properties column** (specs [019](specs/019-mac-inspector/spec.md),
+  [023](specs/023-properties-column/spec.md)): every slide and element setting
+  is in one column on the right, so nothing floats over the slide but the text
+  toolbar while you type. **Format** has tabs that follow the selection:
+  **Slide** (background, image, hidden, title, classes, its markdown) or
+  **Title** (title, subtitle, author, date) with nothing selected; **Look**,
+  **Text** and **Arrange** for an element, with Run, Edit, Markdown and Delete
+  at the foot. **Animate** has the slide's transition, or whether the element
+  appears on a click. View ▸ Properties (⌥⌘0) hides and shows it (setting
+  `ui.inspector`); F6 goes to it and back, ← → move along its tabs, Esc in a
+  field returns to the slide. On a window 700 px wide or less it is below the
+  slide.
 - **With an agent:** you and Claude can edit at the same time. Saves are
   checked per element (`qd edit … --expect-text <hash>`, hashes in `qd
   show`); if both change the same element you see both versions and choose.
@@ -207,7 +209,7 @@ line or two of the cell's DOT text.
   box for an arrow, or into empty space for a new connected box.
 - **Change:** double-click a box to rename it. Select an arrow by clicking
   it. Edit ▸ Delete from diagram and Arrange ▸ Reverse arrow act on the
-  selection. View ▸ Properties panel shows the box's label, look, link,
+  selection. The properties column shows the box's label, look, link,
   picture and size, or the arrow's settings.
 - **Pictures:** a box can show a picture at its left. The first one adds the
   `dot-image` filter to the deck, because Quarto's Graphviz doesn't draw
@@ -252,7 +254,7 @@ extension.
 - **Change:** click an arrow's line to select it. Drag either end, or the
   line to move it all; drag the middle handle to bend it; the arrow keys
   nudge it (⇧ for 10 px); Delete removes it.
-- **Style and label:** View ▸ Properties panel sets its colour, width,
+- **Style and label:** the properties column sets its colour, width,
   dashes, head and which ends have one; double-click it for a label.
   "Appears on click" makes it draw itself in when you click while
   presenting.
