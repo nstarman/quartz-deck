@@ -93,7 +93,9 @@ The results, in three slides you go down through.
 :::
 :::
 ::: {.column width="55%"}
-![Readers per quarter](images/growth.svg){.fragment .fade-up fragment-index=1}
+::: {.fragment .fade-up fragment-index=1}
+![Readers per quarter](images/growth.svg)
+:::
 :::
 ::::
 
