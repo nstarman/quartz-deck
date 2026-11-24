@@ -106,6 +106,15 @@ export function makeActions(api) {
     })),
   ];
 
+  // inside columns (spec 024) the CLI refuses what rearranges the slide's elements
+  const SLIDE_LEVEL = new Set(['cut', 'paste', 'dup', 'delete', 'history-restore-element', 'up', 'down', 'insert-before', 'insert-after',
+    'place', 'unplace', 'box-front', 'box-forward', 'box-backward', 'box-back']);
+  for (const a of element.filter((x) => SLIDE_LEVEL.has(x.id))) {
+    const { enabled, why } = a;
+    a.enabled = (t) => !t.nested && (!enabled || enabled(t));
+    a.why = (t) => (t.nested ? 'Inside columns: edit the source to change it' : why?.(t));
+  }
+
   /** After an indent, outdent or a move that landed indented: say what else changed (spec 018 FR-015). */
   function regrouped(r, id) {
     if (!r?.changed) return r;

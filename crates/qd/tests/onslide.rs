@@ -5061,6 +5061,88 @@ async fn build_order_presents() {
     );
 }
 
+// ---------- spec 024: builds inside columns ----------
+
+const COLUMNS_DECK: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## C {#c}\n\n:::: {.columns}\n::: {.column}\n- one\n- two\n:::\n::: {.column}\n![A plot](pic.png)\n:::\n::::\n";
+
+/// Spec 024 US1: click the list in one column and the picture in the other,
+/// give each a build, swap them in the build list, and present them in that
+/// order; Escape steps out to the column, then the columns; the slide's own
+/// moves are off inside a column.
+#[tokio::test(flavor = "multi_thread")]
+async fn builds_inside_columns() {
+    let Some(ed) = Ed::open(COLUMNS_DECK).await else {
+        return;
+    };
+    ed.wait(INSPECTING).await;
+    ed.go("c").await;
+    props(&ed, "animate").await;
+    let selected = format!("[...{FRAME}.querySelectorAll('.qd-sel')].map((e) => e.dataset.qd)");
+    let list = "[data-qd=\"c/0/0/0\"]";
+    let pic = "[data-qd=\"c/0/1/0\"]";
+    for (el, fx, written) in [
+        (list, "fade-in", "::: {.fragment}\n- one"),
+        (pic, "fade-up", "::: {.fragment .fade-up}\n![A plot]"),
+    ] {
+        ed.go("c").await;
+        ed.select(el).await;
+        let r = el.split('"').nth(1).unwrap();
+        ed.wait(&format!("JSON.stringify({selected}) === '[\"{r}\"]'"))
+            .await;
+        ed.wait("document.querySelector('#panel .anim [name=appear]')?.value === 'none'")
+            .await;
+        ed.eval(&pick("appear", fx)).await;
+        ed.wait_file(|f| f.contains(written), fx).await;
+        ed.settle().await;
+    }
+    // the build list, then ⌥↑ on the picture: it comes first
+    ed.go("c").await;
+    ed.select(pic).await;
+    let rows = "[...document.querySelectorAll('#panel .builds li')].map((li) => li.dataset.ref)";
+    ed.wait(&format!("JSON.stringify({rows}) === '[\"c/0/0/0\",\"c/0/1/0\"]' && document.querySelector('#panel .builds [aria-current=true]')?.dataset.ref === 'c/0/1/0'"))
+        .await;
+    ed.eval("document.querySelector('#panel .builds li[data-ref=\"c/0/1/0\"]').focus()")
+        .await;
+    ed.key("ArrowUp", "ArrowUp", 38, 1).await;
+    ed.wait_file(|f| f.contains("fragment-index=1}\n![A plot]"), "reordered")
+        .await;
+    ed.settle().await;
+    ed.go("c").await;
+    let shown = format!(
+        "[...{FRAME}.querySelectorAll('section.present .fragment.visible')].map((f) => f.querySelector('img') ? 'plot' : f.textContent.trim())"
+    );
+    let mut order = Vec::new();
+    for _ in 0..2 {
+        ed.eval(&format!("{FRAME}.defaultView.Reveal.nextFragment()"))
+            .await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        order.push(ed.eval(&shown).await);
+    }
+    assert_eq!(order, [json!(["plot"]), json!(["one\ntwo", "plot"])]);
+
+    // inside a column the slide's own moves are off, with the reason
+    ed.go("c").await;
+    ed.right_click(ed.slide_point(list).await).await;
+    let labels = ed.menu_labels().await;
+    for l in [
+        "Delete (disabled)",
+        "Move up (disabled)",
+        "Duplicate (disabled)",
+    ] {
+        assert!(labels.iter().any(|x| x == l), "{l}: {labels:?}");
+    }
+    ed.close_menu().await;
+    // Escape steps out: the column, the columns, nothing
+    ed.select(list).await;
+    ed.wait(&format!("JSON.stringify({selected}) === '[\"c/0/0/0\"]'"))
+        .await;
+    for want in ["[\"c/0/0\"]", "[\"c/0\"]", "[]"] {
+        ed.key("Escape", "Escape", 27, 0).await;
+        ed.wait(&format!("JSON.stringify({selected}) === '{want}'"))
+            .await;
+    }
+}
+
 // ---------- spec 015 US1: diagrams on the slide ----------
 
 const DIAGRAM: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## Flow {#flow}\n\n```{dot}\ndigraph {\n  layout=neato; splines=ortho;\n  node [shape=box];\n  a [label=\"Data\", pos=\"0,1!\"];\n  b [label=\"Tool\", pos=\"2,1!\"];\n  c [label=\"Paper\", pos=\"2,0!\"];\n  a -> b; b -> c;\n}\n```\n";
