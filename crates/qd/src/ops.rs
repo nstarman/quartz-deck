@@ -1022,14 +1022,13 @@ fn renew_ids(
     // from the last, so the places of the earlier ones stay put
     let mut out = text.to_string();
     for (x, nid) in renew.into_iter().rev() {
+        // its own `{#id}` is on its first line (a div's fence, a heading, a
+        // picture), after any `#x` in its text: the last whole match there
         let at = x.span.start - b.span.start;
+        let line = out[at..].lines().next().unwrap_or("");
         let old = format!("#{}", x.id);
-        // the id itself, not the start of a longer one
-        let whole = |p: &usize| {
-            !out[at + p + old.len()..]
-                .starts_with(|c: char| c.is_alphanumeric() || "-_:.".contains(c))
-        };
-        if let Some(p) = out[at..].match_indices(&old).map(|(p, _)| p).find(whole) {
+        let whole = |p: &usize| !line[p + old.len()..].starts_with(crate::attrs::name_char);
+        if let Some(p) = line.rmatch_indices(&old).map(|(p, _)| p).find(whole) {
             out.replace_range(at + p..at + p + old.len(), &format!("#{nid}"));
         }
     }
