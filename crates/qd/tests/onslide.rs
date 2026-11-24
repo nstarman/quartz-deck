@@ -3870,14 +3870,11 @@ async fn place_freely() {
             break;
         }
     }
-    // what's inside them is refused too (spec 024)
+    // what's inside them can be placed (spec 025)
     assert_eq!(
-        place[0], "true",
-        "Place freely is greyed out in the columns"
-    );
-    assert!(
-        place[1].as_str().unwrap().contains("Inside columns"),
-        "{place}"
+        place[0],
+        Value::Null,
+        "Place freely is on in the columns: {place}"
     );
     ed.close_menu().await;
     // Escape out to the columns themselves, then their actions menu
@@ -5149,18 +5146,7 @@ async fn builds_inside_columns() {
     let order = presented(&ed, &shown).await;
     assert_eq!(order, [json!(["plot"]), json!(["one\ntwo", "plot"])]);
 
-    // inside a column the slide's own moves are off, with the reason
     ed.go("c").await;
-    ed.right_click(ed.slide_point(list).await).await;
-    let labels = ed.menu_labels().await;
-    for l in [
-        "Delete (disabled)",
-        "Move up (disabled)",
-        "Duplicate (disabled)",
-    ] {
-        assert!(labels.iter().any(|x| x == l), "{l}: {labels:?}");
-    }
-    ed.close_menu().await;
     // Escape steps out: the column, the columns, nothing
     ed.select(list).await;
     ed.wait(&format!("JSON.stringify({selected}) === '[\"c/0/0/0\"]'"))
@@ -5170,6 +5156,62 @@ async fn builds_inside_columns() {
         ed.wait(&format!("JSON.stringify({selected}) === '{want}'"))
             .await;
     }
+}
+
+// ---------- spec 025: arranging inside columns ----------
+
+const ARRANGE_DECK: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## C {#c}\n\n:::: {.columns}\n::: {.column}\n- one\n\nTwo.\n:::\n::: {.column}\nThree.\n:::\n::::\n\nBelow.\n";
+
+/// Spec 025 US1–US3: ⌥↑ moves within a column; dragging takes an element to
+/// the other column and out below the columns; an emptied column offers
+/// "+ Add content", and what is added there goes in it.
+#[tokio::test(flavor = "multi_thread")]
+async fn arrange_inside_columns() {
+    let Some(ed) = Ed::open(ARRANGE_DECK).await else {
+        return;
+    };
+    // ⌥↑ on the second element of the left column
+    ed.go("c").await;
+    ed.select("[data-qd=\"c/0/0/1\"]").await;
+    ed.key("ArrowUp", "ArrowUp", 38, 1).await;
+    ed.wait_file(
+        |f| f.contains("::: {.column}\nTwo.\n\n- one\n:::"),
+        "moved up",
+    )
+    .await;
+    // drag the right column's paragraph under the list, in the left column
+    ed.settle().await;
+    ed.go("c").await;
+    ed.hover("[data-qd=\"c/0/1/0\"]").await;
+    let handle = ed.editor_point("#hoverbar [data-act=drag]", None).await;
+    let (x, y) = ed.slide_point("[data-qd=\"c/0/0/1\"]").await;
+    ed.drag(handle, (x, y + 6.0)).await;
+    ed.wait_file(
+        |f| f.contains("- one\n\nThree.\n:::\n::: {.column}\n:::"),
+        "into the other column",
+    )
+    .await;
+    // and the first one out, below the columns
+    ed.settle().await;
+    ed.go("c").await;
+    ed.hover("[data-qd=\"c/0/0/0\"]").await;
+    let handle = ed.editor_point("#hoverbar [data-act=drag]", None).await;
+    let (x, y) = ed.slide_point("[data-qd=\"c/1\"]").await;
+    ed.drag(handle, (x, y + 6.0)).await;
+    ed.wait_file(|f| f.ends_with("Below.\n\nTwo.\n"), "out of the columns")
+        .await;
+    // the emptied right column: + Add content ▸ Paragraph goes in it
+    ed.settle().await;
+    ed.go("c").await;
+    ed.wait(&format!("!!{FRAME}.querySelector('.qd-emptycol')"))
+        .await;
+    ed.click_in_slide(".qd-emptycol").await;
+    ed.click_menu("Paragraph").await;
+    ed.wait_file(
+        |f| f.contains("::: {.column}\nNew paragraph.\n:::\n::::"),
+        "added in the column",
+    )
+    .await;
 }
 
 // ---------- spec 015 US1: diagrams on the slide ----------

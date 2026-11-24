@@ -266,6 +266,9 @@ const PREVIEW_CSS = `html:not(.qd-present) {
   .qd-ph:not(:has(*))::before { content: 'Click to add text'; color: #9a9aa0; font-size: .6em; }
   .qd-ph[data-ph=image]:not(:has(*))::before { content: 'Drop an image'; }
   .qd-ph[data-ph=image]:not(:has(*)) { cursor: copy; }
+  /* an empty column (spec 025): what can go there, on the canvas only */
+  .qd-emptycol { min-height: 3em; display: flex; align-items: center; justify-content: center; outline: 2px dashed #b9b9bf; outline-offset: -2px; border-radius: 6px; }
+  .qd-emptycol::before { content: '+ Add content'; color: #9a9aa0; font-size: .6em; }
   [data-qd]:hover:not(:has([data-qd]:hover)) { outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; }
   .qd-sel, .qd-sel:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 2px; }
   /* an arrow (spec 016): its line is the hit area, its handles show the selection */
@@ -581,6 +584,14 @@ function hookFrame() {
     }
     const node = clickNode(e);
     const el = node.closest('[data-qd]');
+    // an empty column (spec 025): what to add in it
+    if (el?.classList.contains('qd-emptycol')) {
+      e.preventDefault();
+      e.stopPropagation();
+      const p = pageRect(el);
+      openMenu(actions.insert({ slideId: el.dataset.qd.split('/')[0] }, { into: el.dataset.qd }), p.left, p.top + p.height);
+      return;
+    }
     const target = editTarget(node);
     const sec = node.closest('section');
     if (!el && !target && !(e.altKey && sec)) { if (state.sel) select(null); return; }
@@ -672,6 +683,7 @@ function hookFrame() {
     dot.mark();
     arrows.mark();
     markOffSlide(w);
+    for (const c of w.document.querySelectorAll('.column[data-qd]')) c.classList.toggle('qd-emptycol', !c.children.length && !c.textContent.trim());
     // math typesets after ready: MathJax 3's promise, or (as Quarto's reveal.js loads) MathJax 2's queue
     if (w.MathJax?.startup?.promise) w.MathJax.startup.promise.then(() => slideList.refresh());
     else w.MathJax?.Hub?.Queue?.(() => slideList.refresh());
@@ -1642,8 +1654,7 @@ async function elementTarget(ref) {
   const block = among[index];
   if (!block) return null;
   const el = elOf(ref);
-  // inside columns the slide's own moves don't reach it
-  return { ref, block, slideId, index, count: among.length, kinds: among.map((b) => b.kind), el, nested: up(ref).includes('/') };
+  return { ref, block, slideId, index, count: among.length, kinds: among.map((b) => b.kind), el };
 }
 
 /** … or a slide. */
@@ -2008,8 +2019,6 @@ function hoverAt(node) {
   if (state.session || menuOpen() || dragging) return;
   const el = node.closest?.('[data-qd]');
   if (!el || el.classList.contains('absolute')) return;
-  // inside columns (spec 024): insert and drag are the slide's, not the column's
-  if (up(el.dataset.qd).includes('/')) { hoverbar.hidden = true; return; }
   hovered = el;
   const p = pageRect(el);
   hoverbar.hidden = false;
@@ -2038,16 +2047,17 @@ hoverbar.querySelector('[data-act=drag]').addEventListener('pointerdown', (e) =>
   handle.setPointerCapture(e.pointerId);
   dragging = true;
   const from = hovered.dataset.qd;
-  const slideId = up(from);
-  let drop = null; // { ref, before }
+  const slideOf = (r) => r.split('/')[0];
+  let drop = null; // { ref, before } next to an element, or { ref, into } a column (spec 025)
   const onMove = (ev) => {
     const f = frame.getBoundingClientRect();
     const hit = frame.contentDocument.elementFromPoint(ev.clientX - f.left, ev.clientY - f.top)?.closest?.('[data-qd]');
     const ref = hit?.dataset.qd;
-    if (!hit || ref === from || up(ref) !== slideId) { dropline.hidden = true; drop = null; return; }
+    if (!hit || hovered.contains(hit) || slideOf(ref) !== slideOf(from)) { dropline.hidden = true; drop = null; return; }
     const p = pageRect(hit);
     const before = ev.clientY < p.top + p.height / 2;
-    drop = { ref, before };
+    // a column itself (its empty space, or an empty column): last in it
+    drop = hit.classList.contains('column') ? { ref, into: true } : { ref, before };
     Object.assign(dropline.style, { left: p.left + 'px', width: p.width + 'px', top: (before ? p.top - 4 : p.top + p.height + 2) + 'px' });
     dropline.hidden = false;
   };
@@ -2058,7 +2068,7 @@ hoverbar.querySelector('[data-act=drag]').addEventListener('pointerdown', (e) =>
     dropline.hidden = true;
     hoverbar.hidden = true;
     if (!drop) return;
-    const r = await op('block move', { element: from, [drop.before ? 'before' : 'after']: drop.ref });
+    const r = await op('block move', { element: from, [drop.into ? 'into' : drop.before ? 'before' : 'after']: drop.ref });
     if (r) { state.sel = r.target; await fetchDeck(); }
   };
   handle.addEventListener('pointermove', onMove);

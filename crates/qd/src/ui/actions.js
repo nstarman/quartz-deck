@@ -58,6 +58,9 @@ const UNPLACEABLE = {
   pause: 'A pause has nothing to show',
 };
 
+/** The element `d` places from `t` among what holds it. */
+const sibling = (t, d) => `${t.ref.slice(0, t.ref.lastIndexOf('/'))}/${t.index + d}`;
+
 export function makeActions(api) {
   const classesOf = (t) => t.block.attrs?.classes || [];
   const toggleClass = (t, c) => api.op('block class', { element: t.ref, [classesOf(t).includes(c) ? 'remove' : 'add']: c });
@@ -84,8 +87,9 @@ export function makeActions(api) {
     { id: 'delete', label: 'Delete', run: (t) => (dot.selectedIn(t.ref) ? dot.remove() : api.op('block rm', { element: t.ref })) },
     { id: 'history-restore-element', label: 'Restore from this version', visible: () => !!api.version(), run: (t) => api.op('restore', { rev: api.version().rev, element: t.ref }) },
     '-',
-    { id: 'up', label: 'Move up', enabled: (t) => t.index > 0, run: (t) => api.op('block move', { element: t.ref, before: `${t.slideId}/${t.index - 1}` }) },
-    { id: 'down', label: 'Move down', enabled: (t) => t.index < t.count - 1, run: (t) => api.op('block move', { element: t.ref, after: `${t.slideId}/${t.index + 1}` }) },
+    // within what holds it: the slide, or its column (spec 025)
+    { id: 'up', label: 'Move up', enabled: (t) => t.index > 0, run: (t) => api.op('block move', { element: t.ref, before: sibling(t, -1) }) },
+    { id: 'down', label: 'Move down', enabled: (t) => t.index < t.count - 1, run: (t) => api.op('block move', { element: t.ref, after: sibling(t, 1) }) },
     { id: 'insert-before', label: 'Insert before', items: (t) => insertMenu(t, { before: t.ref }) },
     { id: 'insert-after', label: 'Insert after', items: (t) => insertMenu(t, { after: t.ref }) },
     '-',
@@ -105,15 +109,6 @@ export function makeActions(api) {
       run: (t) => api.op(`box ${to}`, { box: t.ref }),
     })),
   ];
-
-  // inside columns (spec 024) the CLI refuses what rearranges the slide's elements
-  const SLIDE_LEVEL = new Set(['cut', 'paste', 'dup', 'delete', 'history-restore-element', 'up', 'down', 'insert-before', 'insert-after',
-    'place', 'unplace', 'box-front', 'box-forward', 'box-backward', 'box-back']);
-  for (const a of element.filter((x) => SLIDE_LEVEL.has(x.id))) {
-    const { enabled, why } = a;
-    a.enabled = (t) => !t.nested && (!enabled || enabled(t));
-    a.why = (t) => (t.nested ? 'Inside columns: edit the source to change it' : why?.(t));
-  }
 
   /** After an indent, outdent or a move that landed indented: say what else changed (spec 018 FR-015). */
   function regrouped(r, id) {
