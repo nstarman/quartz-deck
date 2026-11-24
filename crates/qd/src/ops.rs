@@ -895,7 +895,7 @@ fn place_in<'d>(d: &'d Deck, s: &Slide, r: &str) -> Result<(&'d [Block], usize, 
     let (es, parent, list, i) = d.siblings(r)?;
     if es.index != s.index {
         return Err(QdError::InvalidArg(format!(
-            "'{r}' is on another slide; move elements between slides with cut and paste (`block rm` + `block add`)"
+            "'{r}' is on another slide; elements go between slides by cut and paste (`block rm` + `block add`)"
         )));
     }
     let prefix = parent.map_or_else(|| es.id.clone(), |p| crate::deck::positional(es, p));
@@ -963,16 +963,12 @@ fn insertion_at(d: &Deck, s: &Slide, at: &Pos, md: &str) -> Result<(usize, Strin
     })
 }
 
-/// The ref of the element starting at `offset` in deck `d`.
-fn ref_at(d: &Deck, offset: usize) -> String {
-    d.slides
-        .iter()
-        .find_map(|s| {
-            walk(&s.blocks)
-                .find(|b| b.span.start == offset)
-                .map(|b| crate::deck::positional(s, b))
-        })
-        .unwrap_or_default()
+/// The ref of the element starting at `offset` on slide `index` of deck `d`.
+fn ref_at(d: &Deck, index: usize, offset: usize) -> String {
+    let s = &d.slides[index - 1];
+    walk(&s.blocks)
+        .find(|b| b.span.start == offset)
+        .map_or_else(String::new, |b| crate::deck::positional(s, b))
 }
 
 /// `md` inserted at `at` (`insertion_at`), with `cut` taken out in the same
@@ -1006,7 +1002,7 @@ fn insert_elsewhere(
         reps.push((c, String::new()));
     }
     let mut p = patch(op, String::new(), reps, Vec::new());
-    p.target = ref_at(&Deck::parse(apply(&d.text, &p)?), landed);
+    p.target = ref_at(&Deck::parse(apply(&d.text, &p)?), s.index, landed);
     keep_structure(d, p, s.index)
 }
 
@@ -1061,7 +1057,9 @@ pub fn block_move(d: &Deck, element: &str, to: Pos) -> Result<Patch> {
     let i = match to {
         Pos::Before(r) => same(r)?,
         Pos::After(r) => same(r)?.map(|j| j + 1),
-        _ => None,
+        // last in the column it is already in
+        Pos::Into(c) => std::ptr::eq(&d.element(c)?.1.children[..], list).then_some(list.len()),
+        Pos::End => None,
     };
     let Some(mut i) = i else {
         let b = &list[from];

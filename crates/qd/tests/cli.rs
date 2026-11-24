@@ -1754,29 +1754,22 @@ const ARRANGE: &str = "## R {#r}\n\n:::: {.columns}\n::: {.column}\n- one\n\nTwo
 fn arrange_inside_columns() {
     let left = |e: &Env| {
         let t = e.text();
-        let a = t.find("::: {.column}\n").unwrap() + 14;
-        t[a..a + t[a..].find("\n:::").unwrap()].to_string()
+        let col = t.split("::: {.column}\n").nth(1).unwrap();
+        col.split("\n:::").next().unwrap().to_string()
     };
-    let target = |v: &Value| v["target"].as_str().unwrap().to_string();
     // inside a column
     let e = Env::with(ARRANGE);
     let v = e.ok(&["block", "move", "r/0/0/1", "--before", "r/0/0/0"]);
-    assert_eq!(
-        (left(&e), target(&v)),
-        ("Two.\n\n- one".into(), "r/0/0/0".into())
-    );
+    assert_eq!(left(&e), "Two.\n\n- one");
+    assert_eq!(v["target"], "r/0/0/0");
     let e = Env::with(ARRANGE);
     let v = e.ok(&["block", "dup", "r/0/0/0"]);
-    assert_eq!(
-        (left(&e), target(&v)),
-        ("- one\n\n- one\n\nTwo.".into(), "r/0/0/1".into())
-    );
+    assert_eq!(left(&e), "- one\n\n- one\n\nTwo.");
+    assert_eq!(v["target"], "r/0/0/1");
     let e = Env::with(ARRANGE);
     let v = e.ok(&["block", "add", "r", "--after", "r/0/0/0", "--md", "New."]);
-    assert_eq!(
-        (left(&e), target(&v)),
-        ("- one\n\nNew.\n\nTwo.".into(), "r/0/0/1".into())
-    );
+    assert_eq!(left(&e), "- one\n\nNew.\n\nTwo.");
+    assert_eq!(v["target"], "r/0/0/1");
     let e = Env::with(ARRANGE);
     e.ok(&["block", "rm", "r/0/0/0"]);
     assert_eq!(left(&e), "Two.");
@@ -1784,7 +1777,7 @@ fn arrange_inside_columns() {
     // between columns, and back into the emptied one
     let e = Env::with(ARRANGE);
     let v = e.ok(&["block", "move", "r/0/1/0", "--after", "r/0/0/1"]);
-    assert_eq!(target(&v), "r/0/0/2");
+    assert_eq!(v["target"], "r/0/0/2");
     assert!(
         e.text()
             .contains("Two.\n\n![A plot](p.png)\n:::\n::: {.column}\n:::\n::::"),
@@ -1792,12 +1785,10 @@ fn arrange_inside_columns() {
         e.text()
     );
     let v = e.ok(&["block", "move", "r/0/0/2", "--into", "r/0/1"]);
-    assert_eq!(
-        (e.text(), target(&v)),
-        (ARRANGE.to_string(), "r/0/1/0".into())
-    );
+    assert_eq!(e.text(), ARRANGE);
+    assert_eq!(v["target"], "r/0/1/0");
     let v = e.ok(&["block", "add", "r", "--into", "r/0/1", "--md", "Three."]);
-    assert_eq!(target(&v), "r/0/1/1");
+    assert_eq!(v["target"], "r/0/1/1");
     assert!(
         e.text().contains("![A plot](p.png)\n\nThree.\n:::"),
         "{}",
@@ -1807,18 +1798,24 @@ fn arrange_inside_columns() {
     // out to the slide, and in from it
     let e = Env::with(ARRANGE);
     let v = e.ok(&["block", "move", "r/0/0/0", "--after", "r/1"]);
-    assert_eq!(target(&v), "r/2");
+    assert_eq!(v["target"], "r/2");
     assert!(e.text().ends_with("Below.\n\n- one\n"), "{}", e.text());
     assert_eq!(left(&e), "Two.");
     let e = Env::with(ARRANGE);
     let v = e.ok(&["block", "move", "r/1", "--before", "r/0/1/0"]);
-    assert_eq!(target(&v), "r/0/1/0");
+    assert_eq!(v["target"], "r/0/1/0");
     assert!(
         e.text()
             .ends_with("::: {.column}\nBelow.\n\n![A plot](p.png)\n:::\n::::\n"),
         "{}",
         e.text()
     );
+
+    // already last in that column (its only element): nothing moves
+    let e = Env::with(ARRANGE);
+    let v = e.ok(&["block", "move", "r/0/1/0", "--into", "r/0/1"]);
+    assert_eq!(e.text(), ARRANGE);
+    assert_eq!(v["target"], "r/0/1/0");
 
     // a column's last element: the column stays, empty
     let e = Env::with(ARRANGE);
@@ -1865,9 +1862,7 @@ fn place_from_a_column_and_copied_builds() {
     let e = Env::with(ARRANGE);
     e.ok(&["build", "set", "r/0/0/0", "--appear", "fade-in"]);
     e.ok(&["build", "set", "r/1", "--appear", "fade-up"]);
-    let v = e.ok(&["block", "dup", "r/0/0/0"]);
-    let copy = v["target"].as_str().unwrap().to_string();
-    assert_eq!(copy, "r/0/0/1");
+    assert_eq!(e.ok(&["block", "dup", "r/0/0/0"])["target"], "r/0/0/1");
     assert_eq!(
         refs(&e.ok(&["build", "list", "r"])),
         ["r/0/0/0", "r/1", "r/0/0/1"]

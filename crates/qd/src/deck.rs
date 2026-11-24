@@ -849,13 +849,12 @@ impl Deck {
     /// `element`, refused when it is inside columns, for an op that
     /// rearranges a slide's blocks (`verb` it, spec 024).
     pub fn top_element(&self, r: &str, verb: &str) -> Result<(&Slide, &Block)> {
-        let (s, b) = self.element(r)?;
-        if !s.blocks.iter().any(|x| std::ptr::eq(x, b)) {
+        if self.siblings(r)?.1.is_some() {
             return Err(QdError::InvalidArg(format!(
                 "'{r}' is inside columns: {verb} it in the source for now"
             )));
         }
-        Ok((s, b))
+        self.element(r)
     }
 
     /// Every explicit id in the deck (slides and blocks).

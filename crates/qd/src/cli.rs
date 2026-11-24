@@ -670,15 +670,6 @@ struct ElWhere {
     into: Option<String>,
 }
 
-impl ElWhere {
-    fn pos(&self) -> Pos<'_> {
-        match &self.into {
-            Some(c) => Pos::Into(c),
-            None => at(&self.after, &self.before),
-        }
-    }
-}
-
 #[derive(Args)]
 #[group(required = true, multiple = false)]
 struct BlockWhere {
@@ -2584,16 +2575,22 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             BlockCmd::Add { slide, at, input } => {
                 let md = required_input(input)?;
                 let first = format!("{slide}/0"); // --start: before the first element
-                let pos = match (&at.after, &at.before, at.start) {
-                    _ if at.into.is_some() => Pos::Into(at.into.as_deref().unwrap()),
-                    (Some(r), _, _) => Pos::After(r),
-                    (_, Some(r), _) => Pos::Before(r),
-                    (_, _, true) => Pos::Before(&first),
+                let pos = match (&at.after, &at.before, at.start, at.into.as_deref()) {
+                    (.., Some(c)) => Pos::Into(c),
+                    (Some(r), ..) => Pos::After(r),
+                    (_, Some(r), ..) => Pos::Before(r),
+                    (_, _, true, _) => Pos::Before(&first),
                     _ => Pos::End,
                 };
                 ctx.edit(|d| ops::block_add(d, slide, pos, &md))
             }
-            BlockCmd::Move { element, to } => ctx.edit(|d| ops::block_move(d, element, to.pos())),
+            BlockCmd::Move { element, to } => {
+                let pos = to
+                    .into
+                    .as_deref()
+                    .map_or_else(|| at(&to.after, &to.before), Pos::Into);
+                ctx.edit(|d| ops::block_move(d, element, pos))
+            }
             BlockCmd::Rm { element } => ctx.edit(|d| ops::block_rm(d, element)),
             BlockCmd::Dup { element } => ctx.edit(|d| ops::block_dup(d, element)),
             BlockCmd::Class {
