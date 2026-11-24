@@ -1994,7 +1994,7 @@ pub(crate) fn add_cell(
 ) -> Result<crate::ops::Patch> {
     use crate::ops::Pos;
     let slide = match (&at, on) {
-        (Pos::After(r) | Pos::Before(r), _) => d.element(r)?.0.id.clone(),
+        (Pos::After(r) | Pos::Before(r) | Pos::Into(r), _) => d.element(r)?.0.id.clone(),
         (Pos::End, Some(s)) => s.to_string(),
         (Pos::End, None) => {
             return Err(QdError::InvalidArg(

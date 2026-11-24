@@ -6,20 +6,20 @@
 
 ## Phase 1: Setup
 
-- [ ] T001 After #137 merges, branch `025-arrange-in-columns` from `origin/main`; commit spec, plan and tasks.
+- [X] T001 After #137 merges, branch `025-arrange-in-columns` from `origin/main`; commit spec, plan and tasks.
 
 ## Phase 2: Foundational (PR 1)
 
-- [ ] T002 Tests first in `crates/qd/src/deck.rs`: `Deck::siblings` gives the list and index for a top-level ref, a column's element, a column, and an `#id` inside a column.
-- [ ] T003 `Deck::siblings(r)` in `crates/qd/src/deck.rs` (research R1); `rearrange` and `on_slide` in `crates/qd/src/ops.rs` take a list instead of the slide (R2); `cut` and `insert` span helpers (R3).
+- [X] T002 Tests first in `crates/qd/src/deck.rs`: `Deck::siblings` gives the list and index for a top-level ref, a column's element, a column, and an `#id` inside a column.
+- [X] T003 `Deck::siblings(r)` in `crates/qd/src/deck.rs` (research R1); `rearrange` and `on_slide` in `crates/qd/src/ops.rs` take a list instead of the slide (R2); `cut` and `insert` span helpers (R3).
 
 ## Phase 3: User Story 6 — the CLI (P1, PR 1)
 
 **Independent test**: `cargo test --test cli` on a two-column fixture.
 
-- [ ] T004 [US6] Tests in `crates/qd/tests/cli.rs`: inside a column `block move --before`, `dup`, `rm`, `add --after` (US1 1–4); across lists: column to column, column to top level, top level to column, `--into` an empty column, a target inside the moving block refused, another slide refused (US2 1–4, 6); a column's last element removed leaves `::: {.column}` / `:::`; `block place` on a nested ref makes a box after the slide's blocks and removes it from the column (US4 1); `block dup` of an element with a build puts it last in `build list` (FR-011); each result's `target` is the new ref.
-- [ ] T005 [US6] `crates/qd/src/ops.rs`: `block_move` (same list: `rearrange`; other list: cut + insert; `--into`), `block_add` (`--into`, nested `--before/--after`), `block_rm` and `block_dup` on any list; `top_element` callers that become free of it; `block_place` for a nested element (R6); `block_dup` with a build reorders (R7). `crates/qd/src/cli.rs`: `--into` on `block move` and `block add`; help text.
-- [ ] T006 [P] [US6] `skills/quartz-deck/SKILL.md`: arranging inside columns, `--into`.
+- [X] T004 [US6] Tests in `crates/qd/tests/cli.rs`: inside a column `block move --before`, `dup`, `rm`, `add --after` (US1 1–4); across lists: column to column, column to top level, top level to column, `--into` an empty column, a target inside the moving block refused, another slide refused (US2 1–4, 6); a column's last element removed leaves `::: {.column}` / `:::`; `block place` on a nested ref makes a box after the slide's blocks and removes it from the column (US4 1); `block dup` of an element with a build puts it last in `build list` (FR-011); each result's `target` is the new ref.
+- [X] T005 [US6] `crates/qd/src/ops.rs`: `block_move` (same list: `rearrange`; other list: cut + insert; `--into`), `block_add` (`--into`, nested `--before/--after`), `block_rm` and `block_dup` on any list; `top_element` callers that become free of it; `block_place` for a nested element (R6); `block_dup` with a build reorders (R7). `crates/qd/src/cli.rs`: `--into` on `block move` and `block add`; help text.
+- [X] T006 [P] [US6] `skills/quartz-deck/SKILL.md`: arranging inside columns, `--into`.
 - [ ] T007 [US6] fmt, clippy, `cargo test`; `/pr-audit`; open PR 1.
 
 ## Phase 4: User Stories 1–4 — the editor (P1–P3, PR 2)

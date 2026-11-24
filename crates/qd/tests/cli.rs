@@ -1699,8 +1699,7 @@ fn build_list_and_order() {
 
 const COLUMNS: &str = "## R {#r}\n\nIntro.\n\n:::: {.columns}\n::: {.column}\n- one\n- two\n:::\n::: {.column}\n![A plot](p.png)\n:::\n::::\n";
 
-/// Spec 024 US2: elements inside columns take builds by their nested refs,
-/// and ops that rearrange a slide refuse them.
+/// Spec 024 US2: elements inside columns take builds by their nested refs.
 #[test]
 fn builds_inside_columns() {
     let e = Env::with(COLUMNS);
@@ -1742,24 +1741,137 @@ fn builds_inside_columns() {
         e.text()
     );
 
-    for args in [
-        &["block", "rm", "r/1/0/0"][..],
-        &["block", "dup", "r/1/1/0"],
-        &["block", "move", "r/1/1/0", "--before", "r/0"],
-        &["block", "place", "r/1/1/0", "--at", "10,10"],
-    ] {
-        let v = e.err(args, "E_INVALID_ARG", 1);
-        assert!(
-            v["error"]["message"]
-                .as_str()
-                .unwrap()
-                .contains("inside columns"),
-            "{v}"
-        );
-    }
     for r in ["r/1/2/0", "r/0/0"] {
         e.err(&["build", "set", r, "--appear", "grow"], "E_NOT_FOUND", 1);
     }
+}
+
+const ARRANGE: &str = "## R {#r}\n\n:::: {.columns}\n::: {.column}\n- one\n\nTwo.\n:::\n::: {.column}\n![A plot](p.png)\n:::\n::::\n\nBelow.\n";
+
+/// Spec 025 US6: elements move, are added, copied and removed inside a column,
+/// between columns, and in and out of them; each result names where it went.
+#[test]
+fn arrange_inside_columns() {
+    let left = |e: &Env| {
+        let t = e.text();
+        let a = t.find("::: {.column}\n").unwrap() + 14;
+        t[a..a + t[a..].find("\n:::").unwrap()].to_string()
+    };
+    let target = |v: &Value| v["target"].as_str().unwrap().to_string();
+    // inside a column
+    let e = Env::with(ARRANGE);
+    let v = e.ok(&["block", "move", "r/0/0/1", "--before", "r/0/0/0"]);
+    assert_eq!(
+        (left(&e), target(&v)),
+        ("Two.\n\n- one".into(), "r/0/0/0".into())
+    );
+    let e = Env::with(ARRANGE);
+    let v = e.ok(&["block", "dup", "r/0/0/0"]);
+    assert_eq!(
+        (left(&e), target(&v)),
+        ("- one\n\n- one\n\nTwo.".into(), "r/0/0/1".into())
+    );
+    let e = Env::with(ARRANGE);
+    let v = e.ok(&["block", "add", "r", "--after", "r/0/0/0", "--md", "New."]);
+    assert_eq!(
+        (left(&e), target(&v)),
+        ("- one\n\nNew.\n\nTwo.".into(), "r/0/0/1".into())
+    );
+    let e = Env::with(ARRANGE);
+    e.ok(&["block", "rm", "r/0/0/0"]);
+    assert_eq!(left(&e), "Two.");
+
+    // between columns, and back into the emptied one
+    let e = Env::with(ARRANGE);
+    let v = e.ok(&["block", "move", "r/0/1/0", "--after", "r/0/0/1"]);
+    assert_eq!(target(&v), "r/0/0/2");
+    assert!(
+        e.text()
+            .contains("Two.\n\n![A plot](p.png)\n:::\n::: {.column}\n:::\n::::"),
+        "{}",
+        e.text()
+    );
+    let v = e.ok(&["block", "move", "r/0/0/2", "--into", "r/0/1"]);
+    assert_eq!(
+        (e.text(), target(&v)),
+        (ARRANGE.to_string(), "r/0/1/0".into())
+    );
+    let v = e.ok(&["block", "add", "r", "--into", "r/0/1", "--md", "Three."]);
+    assert_eq!(target(&v), "r/0/1/1");
+    assert!(
+        e.text().contains("![A plot](p.png)\n\nThree.\n:::"),
+        "{}",
+        e.text()
+    );
+
+    // out to the slide, and in from it
+    let e = Env::with(ARRANGE);
+    let v = e.ok(&["block", "move", "r/0/0/0", "--after", "r/1"]);
+    assert_eq!(target(&v), "r/2");
+    assert!(e.text().ends_with("Below.\n\n- one\n"), "{}", e.text());
+    assert_eq!(left(&e), "Two.");
+    let e = Env::with(ARRANGE);
+    let v = e.ok(&["block", "move", "r/1", "--before", "r/0/1/0"]);
+    assert_eq!(target(&v), "r/0/1/0");
+    assert!(
+        e.text()
+            .ends_with("::: {.column}\nBelow.\n\n![A plot](p.png)\n:::\n::::\n"),
+        "{}",
+        e.text()
+    );
+
+    // a column's last element: the column stays, empty
+    let e = Env::with(ARRANGE);
+    e.ok(&["block", "rm", "r/0/1/0"]);
+    assert!(
+        e.text().contains("::: {.column}\n:::\n::::"),
+        "{}",
+        e.text()
+    );
+
+    // refused, the deck unchanged
+    let e = Env::with(ARRANGE);
+    for args in [
+        &["block", "move", "r/0", "--into", "r/0/1"][..],
+        &["block", "move", "r/0/0/0", "--into", "r/1"],
+        &["block", "move", "r/0/0/0", "--into", "r/0/1/0"],
+    ] {
+        e.err(args, "E_INVALID_ARG", 1);
+    }
+}
+
+/// Spec 025 US4: placing an element of a column freely takes it out of the
+/// column, as a box after the slide's elements; FR-011: a copy of a build
+/// comes in after the slide's last build.
+#[test]
+fn place_from_a_column_and_copied_builds() {
+    let e = Env::with(ARRANGE);
+    let v = e.ok(&[
+        "block", "place", "r/0/0/1", "--at", "600,400", "--width", "300",
+    ]);
+    let t = e.text();
+    let id = v["target"].as_str().unwrap();
+    assert!(
+        t.contains("- one\n:::\n::: {.column}"),
+        "out of its column: {t}"
+    );
+    assert!(
+        t.ends_with(&format!(
+            "Below.\n\n::: {{#{id} .absolute left=600 top=400 width=300}}\nTwo.\n:::\n"
+        )),
+        "{t}"
+    );
+
+    let e = Env::with(ARRANGE);
+    e.ok(&["build", "set", "r/0/0/0", "--appear", "fade-in"]);
+    e.ok(&["build", "set", "r/1", "--appear", "fade-up"]);
+    let v = e.ok(&["block", "dup", "r/0/0/0"]);
+    let copy = v["target"].as_str().unwrap().to_string();
+    assert_eq!(copy, "r/0/0/1");
+    assert_eq!(
+        refs(&e.ok(&["build", "list", "r"])),
+        ["r/0/0/0", "r/1", "r/0/0/1"]
+    );
 }
 
 /// Spec 025: a copy gets fresh ids inside its columns too, so no id is in the deck twice.

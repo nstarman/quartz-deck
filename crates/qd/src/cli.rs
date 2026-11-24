@@ -400,7 +400,7 @@ enum Cmd {
         #[command(subcommand)]
         action: ImageCmd,
     },
-    /// Single elements of a slide: add, move, remove, duplicate (ref: <slide>/<index> or #id; not inside columns)
+    /// Single elements of a slide: add, move, remove, duplicate (ref: <slide>/<index>, <slide>/<index>/<index>… inside columns, or #id)
     Block {
         #[command(subcommand)]
         action: BlockCmd,
@@ -596,13 +596,13 @@ enum BlockCmd {
         #[command(flatten)]
         input: Input,
     },
-    /// Move an element before/after another element of the same slide
+    /// Move an element next to another of the same slide, in its column or another, or last in a column
     Move {
         element: String,
         #[command(flatten)]
-        to: Where,
+        to: ElWhere,
     },
-    /// Remove an element
+    /// Remove an element (a column's last one leaves the column empty)
     Rm { element: String },
     /// Duplicate an element (placed right after it; explicit ids are renewed)
     Dup { element: String },
@@ -658,6 +658,29 @@ enum BuildCmd {
 
 #[derive(Args)]
 #[group(required = true, multiple = false)]
+struct ElWhere {
+    /// Place after this element
+    #[arg(long)]
+    after: Option<String>,
+    /// Place before this element
+    #[arg(long)]
+    before: Option<String>,
+    /// Place last in this column (`<slide>/<i>/<j>`; an empty one too)
+    #[arg(long)]
+    into: Option<String>,
+}
+
+impl ElWhere {
+    fn pos(&self) -> Pos<'_> {
+        match &self.into {
+            Some(c) => Pos::Into(c),
+            None => at(&self.after, &self.before),
+        }
+    }
+}
+
+#[derive(Args)]
+#[group(required = true, multiple = false)]
 struct BlockWhere {
     /// Place after this element
     #[arg(long)]
@@ -671,6 +694,9 @@ struct BlockWhere {
     /// Place after the slide's last element
     #[arg(long)]
     end: bool,
+    /// Place last in this column (`<slide>/<i>/<j>`; an empty one too)
+    #[arg(long)]
+    into: Option<String>,
 }
 
 /// `X,Y` (numbers, px).
@@ -2559,6 +2585,7 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                 let md = required_input(input)?;
                 let first = format!("{slide}/0"); // --start: before the first element
                 let pos = match (&at.after, &at.before, at.start) {
+                    _ if at.into.is_some() => Pos::Into(at.into.as_deref().unwrap()),
                     (Some(r), _, _) => Pos::After(r),
                     (_, Some(r), _) => Pos::Before(r),
                     (_, _, true) => Pos::Before(&first),

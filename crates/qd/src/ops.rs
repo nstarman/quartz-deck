@@ -66,6 +66,8 @@ pub enum Pos<'a> {
     End,
     After(&'a str),
     Before(&'a str),
+    /// Last in this column (an element's place only, spec 025).
+    Into(&'a str),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -254,6 +256,11 @@ impl<'a> Ctx<'a> {
             }
             Pos::After(r) => self.slide(r)?.span.end,
             Pos::Before(r) => self.slide(r)?.span.start,
+            Pos::Into(_) => {
+                return Err(QdError::InvalidArg(
+                    "--into places elements, not slides".into(),
+                ));
+            }
         })
     }
 
@@ -535,7 +542,9 @@ pub fn mv(d: &Deck, slides: &[impl AsRef<str>], pos: Pos) -> Result<Patch> {
     let moved = several(&ctx, slides)?;
     let target = match pos {
         Pos::After(r) | Pos::Before(r) => ctx.slide(r)?,
-        Pos::End => return Err(QdError::InvalidArg("move needs --after or --before".into())),
+        Pos::End | Pos::Into(_) => {
+            return Err(QdError::InvalidArg("move needs --after or --before".into()));
+        }
     };
     if moved.iter().any(|s| s.index == target.index) {
         return Err(QdError::InvalidArg(
@@ -853,30 +862,26 @@ pub fn edit(d: &Deck, element: &str, md: &str, expect_text: Option<&str>) -> Res
 
 // ---------- single elements: qd block (spec 003 US4) ----------
 
-/// Rewrite the run of blocks of `s` (first block to last) after `f` has
-/// rearranged their texts and the separators between them. Bytes outside that
-/// run — the heading, blank lines around it — are untouched.
+/// Rewrite the run of blocks `list` (a slide's, or a column's, spec 025),
+/// first to last, after `f` has rearranged their texts and the separators
+/// between them. Bytes outside that run (the heading, the blank lines around
+/// it, a column's fences) are untouched.
 fn rearrange(
     d: &Deck,
-    s: &Slide,
+    list: &[Block],
     f: impl FnOnce(&mut Vec<String>, &mut Vec<String>),
 ) -> (Span, String) {
     let span = Span {
-        start: s.blocks[0].span.start,
-        end: s.blocks[s.blocks.len() - 1].span.end,
+        start: list[0].span.start,
+        end: list[list.len() - 1].span.end,
     };
-    let mut texts: Vec<String> = s
-        .blocks
-        .iter()
-        .map(|b| d.slice(b.span).to_string())
-        .collect();
-    let mut seps: Vec<String> = s
-        .blocks
+    let mut texts: Vec<String> = list.iter().map(|b| d.slice(b.span).to_string()).collect();
+    let mut seps: Vec<String> = list
         .windows(2)
         .map(|w| d.text[w[0].span.end..w[1].span.start].to_string())
         .collect();
     f(&mut texts, &mut seps);
-    let mut out = texts[0].clone(); // never empty: removing a slide's last block goes via `body`
+    let mut out = texts[0].clone(); // never empty: removing a list's last block is a cut
     for (sep, t) in seps.iter().zip(&texts[1..]) {
         out += sep;
         out += t;
@@ -884,15 +889,125 @@ fn rearrange(
     (span, out)
 }
 
-/// Element `r`, which must be on slide `s`; returns its index there.
-fn on_slide(d: &Deck, s: &Slide, r: &str) -> Result<usize> {
-    let (es, b) = d.top_element(r, "move")?;
+/// Where element `r` sits, which must be on slide `s` (spec 025): the list it
+/// is in, its index there, and that list's ref (the slide's, or its column's).
+fn place_in<'d>(d: &'d Deck, s: &Slide, r: &str) -> Result<(&'d [Block], usize, String)> {
+    let (es, parent, list, i) = d.siblings(r)?;
     if es.index != s.index {
         return Err(QdError::InvalidArg(format!(
             "'{r}' is on another slide; move elements between slides with cut and paste (`block rm` + `block add`)"
         )));
     }
-    Ok(s.blocks.iter().position(|x| x.span == b.span).unwrap())
+    let prefix = parent.map_or_else(|| es.id.clone(), |p| crate::deck::positional(es, p));
+    Ok((list, i, prefix))
+}
+
+/// What to delete to take `list[i]` out, with the blank line beside it; an
+/// only child takes its line ending, and its column stays, empty.
+fn cut(d: &Deck, list: &[Block], i: usize) -> Span {
+    let b = list[i].span;
+    match (list.get(i + 1), i.checked_sub(1).map(|j| &list[j])) {
+        (Some(next), _) => Span {
+            start: b.start,
+            end: next.span.start,
+        },
+        (None, Some(prev)) => Span {
+            start: prev.span.end,
+            end: b.end,
+        },
+        (None, None) => Span {
+            start: b.start,
+            end: (b.end + d.nl.len()).min(d.text.len()),
+        },
+    }
+}
+
+/// Where `md` goes for `at` on slide `s`, as an element of its own (spec 025):
+/// next to an element of any list, or last in a column (`Pos::Into`). Returns
+/// the offset, the text to insert there, and where `md` starts in that text.
+fn insertion_at(d: &Deck, s: &Slide, at: &Pos, md: &str) -> Result<(usize, String, usize)> {
+    let nl = d.nl;
+    Ok(match *at {
+        Pos::Before(r) => {
+            let (list, i, _) = place_in(d, s, r)?;
+            (list[i].span.start, format!("{md}{nl}{nl}"), 0)
+        }
+        Pos::After(r) => {
+            let (list, i, _) = place_in(d, s, r)?;
+            (list[i].span.end, format!("{nl}{nl}{md}"), 2 * nl.len())
+        }
+        Pos::Into(c) => {
+            let (list, i, _) = place_in(d, s, c)?;
+            let col = &list[i];
+            let fence = d.slice(col.span).lines().next().unwrap_or("");
+            if col.kind != BlockKind::Div || !crate::deck::opens_up(fence) {
+                return Err(QdError::InvalidArg(format!(
+                    "'{c}' is not a column or columns block"
+                )));
+            }
+            match col.children.last() {
+                Some(last) => (last.span.end, format!("{nl}{nl}{md}"), 2 * nl.len()),
+                // an empty column: right after its opening fence
+                None => (
+                    col.span.start + fence.len() + nl.len(),
+                    format!("{md}{nl}"),
+                    0,
+                ),
+            }
+        }
+        Pos::End => {
+            return Err(QdError::InvalidArg(
+                "give --before, --after or --into".into(),
+            ));
+        }
+    })
+}
+
+/// The ref of the element starting at `offset` in deck `d`.
+fn ref_at(d: &Deck, offset: usize) -> String {
+    d.slides
+        .iter()
+        .find_map(|s| {
+            walk(&s.blocks)
+                .find(|b| b.span.start == offset)
+                .map(|b| crate::deck::positional(s, b))
+        })
+        .unwrap_or_default()
+}
+
+/// `md` inserted at `at` (`insertion_at`), with `cut` taken out in the same
+/// edit; the patch's target is where `md` lands.
+fn insert_elsewhere(
+    d: &Deck,
+    s: &Slide,
+    op: &str,
+    at: &Pos,
+    md: &str,
+    cut: Option<Span>,
+) -> Result<Patch> {
+    let (off, text, k) = insertion_at(d, s, at, md)?;
+    let mut reps = vec![(
+        Span {
+            start: off,
+            end: off,
+        },
+        text,
+    )];
+    let mut landed = off + k;
+    if let Some(c) = cut {
+        if c.start < off && off < c.end {
+            return Err(QdError::InvalidArg(
+                "an element can't move into itself".into(),
+            ));
+        }
+        if c.end <= off {
+            landed -= c.end - c.start;
+        }
+        reps.push((c, String::new()));
+    }
+    let mut p = patch(op, String::new(), reps, Vec::new());
+    p.target = ref_at(&Deck::parse(apply(&d.text, &p)?), landed);
+    keep_structure(d, p, s.index)
 }
 
 pub fn block_add(d: &Deck, slide: &str, at: Pos, md: &str) -> Result<Patch> {
@@ -902,6 +1017,9 @@ pub fn block_add(d: &Deck, slide: &str, at: Pos, md: &str) -> Result<Patch> {
     if md.is_empty() {
         return Err(QdError::InvalidArg("nothing to add".into()));
     }
+    if let Pos::Into(_) = at {
+        return insert_elsewhere(d, s, "block add", &at, &md, None);
+    }
     if s.blocks.is_empty() {
         // first content of an empty slide: `body` handles the blank lines
         let mut p = body(d, slide, &md)?;
@@ -909,13 +1027,13 @@ pub fn block_add(d: &Deck, slide: &str, at: Pos, md: &str) -> Result<Patch> {
         p.target = format!("{}/0", s.id);
         return Ok(p);
     }
-    let i = match at {
-        Pos::End => s.blocks.len(),
-        Pos::After(r) => on_slide(d, s, r)? + 1,
-        Pos::Before(r) => on_slide(d, s, r)?,
+    let (list, i, prefix) = match at {
+        Pos::After(r) => place_in(d, s, r).map(|(l, i, p)| (l, i + 1, p))?,
+        Pos::Before(r) => place_in(d, s, r)?,
+        _ => (&s.blocks[..], s.blocks.len(), s.id.clone()),
     };
     let blank = format!("{0}{0}", d.nl);
-    let (span, new) = rearrange(d, s, |texts, seps| {
+    let (span, new) = rearrange(d, list, |texts, seps| {
         texts.insert(i, md);
         seps.insert(i.min(seps.len()), blank);
     });
@@ -923,7 +1041,7 @@ pub fn block_add(d: &Deck, slide: &str, at: Pos, md: &str) -> Result<Patch> {
         d,
         patch(
             "block add",
-            format!("{}/{i}", s.id),
+            format!("{prefix}/{i}"),
             vec![(span, new)],
             Vec::new(),
         ),
@@ -931,31 +1049,58 @@ pub fn block_add(d: &Deck, slide: &str, at: Pos, md: &str) -> Result<Patch> {
     )
 }
 
+/// `qd block move`: next to another element of the slide, in its list or in
+/// another one (a column, the top level), or last in a column (spec 025).
 pub fn block_move(d: &Deck, element: &str, to: Pos) -> Result<Patch> {
     let (s, _) = d.element(element)?;
-    let from = on_slide(d, s, element)?;
-    let mut i = match to {
-        Pos::Before(r) => on_slide(d, s, r)?,
-        Pos::After(r) => on_slide(d, s, r)? + 1,
-        Pos::End => s.blocks.len(),
+    let (list, from, prefix) = place_in(d, s, element)?;
+    let same = |r: &str| -> Result<Option<usize>> {
+        let (l, j, _) = place_in(d, s, r)?;
+        Ok(std::ptr::eq(l, list).then_some(j))
+    };
+    let i = match to {
+        Pos::Before(r) => same(r)?,
+        Pos::After(r) => same(r)?.map(|j| j + 1),
+        _ => None,
+    };
+    let Some(mut i) = i else {
+        let b = &list[from];
+        return insert_elsewhere(
+            d,
+            s,
+            "block move",
+            &to,
+            d.slice(b.span),
+            Some(cut(d, list, from)),
+        );
     };
     if i > from {
         i -= 1; // the moving block no longer sits before its destination
     }
-    let (span, new) = rearrange(d, s, |texts, _| {
+    let (span, new) = rearrange(d, list, |texts, _| {
         let t = texts.remove(from);
         texts.insert(i, t);
     });
     Ok(patch(
         "block move",
-        format!("{}/{i}", s.id),
+        format!("{prefix}/{i}"),
         vec![(span, new)],
         Vec::new(),
     ))
 }
 
 pub fn block_rm(d: &Deck, element: &str) -> Result<Patch> {
-    let (s, b) = d.top_element(element, "delete")?;
+    let (s, b) = d.element(element)?;
+    let (list, i, _) = place_in(d, s, element)?;
+    if !std::ptr::eq(list, &s.blocks[..]) {
+        // inside a column: the column stays, empty if this was its last
+        return Ok(patch(
+            "block rm",
+            b.id.clone(),
+            vec![(cut(d, list, i), String::new())],
+            Vec::new(),
+        ));
+    }
     if s.blocks.len() == 1 {
         // the slide's only content: leave it empty, cleanly separated
         let mut p = if b.kind == BlockKind::Box {
@@ -967,8 +1112,7 @@ pub fn block_rm(d: &Deck, element: &str) -> Result<Patch> {
         p.target = b.id.clone();
         return Ok(p);
     }
-    let i = on_slide(d, s, element)?;
-    let (span, new) = rearrange(d, s, |texts, seps| {
+    let (span, new) = rearrange(d, list, |texts, seps| {
         texts.remove(i);
         seps.remove(i.min(seps.len() - 1));
     });
@@ -1036,12 +1180,30 @@ fn renew_ids(
 }
 
 pub fn block_dup(d: &Deck, element: &str) -> Result<Patch> {
-    let (s, b) = d.top_element(element, "duplicate")?;
+    let (s, b) = d.element(element)?;
     let mut assigned = Vec::new();
     let copy = renew_ids(&mut Ctx::new(d), b, d.slice(b.span), false, &mut assigned);
     let mut p = block_add(d, &s.id, Pos::After(element), &copy)?;
     p.op = "block dup".into();
     p.assigned_ids = assigned;
+    if build_of(b.attrs.as_ref()) == (None, None) {
+        return Ok(p);
+    }
+    // a copied build comes in after the slide's last build (spec 025 FR-011),
+    // as `build order` puts it; the patch rewrites that slide
+    let mid = Deck::parse(apply(&d.text, &p)?);
+    let copied = mid.element(&p.target)?.1.id.clone();
+    let mut order: Vec<String> = build_list(&mid, &s.id)?
+        .iter()
+        .filter(|b| b.items.is_none() && b.block.id != copied)
+        .map(|b| b.block.id.clone())
+        .collect();
+    order.push(copied);
+    let after = Deck::parse(apply(&mid.text, &build_order(&mid, &s.id, &order)?)?);
+    p.replacements = vec![(
+        s.span,
+        after.slice(after.slides[s.index - 1].span).to_string(),
+    )];
     Ok(p)
 }
 
@@ -1996,7 +2158,7 @@ pub fn box_rm(d: &Deck, r: &str) -> Result<Patch> {
         )));
     }
     let s = ctx.slide(&format!("@{}", s.index))?;
-    let i = on_slide(d, s, r)?;
+    let i = place_in(d, s, r)?.1;
     // drop the box and the blank lines that separate it from its neighbour
     let (cut0, cut1) = match (i.checked_sub(1).map(|j| &s.blocks[j]), s.blocks.get(i + 1)) {
         (_, Some(next)) => (b.span.start, next.span.start),
@@ -2024,7 +2186,7 @@ pub fn block_place(
     width: Option<f64>,
     height: Option<f64>,
 ) -> Result<Patch> {
-    let (_, b) = d.top_element(r, "place")?;
+    let (s, b) = d.element(r)?;
     let refuse = |why: &str| Err(QdError::InvalidArg(format!("'{r}' can't be placed: {why}")));
     match b.kind {
         BlockKind::Box => return refuse("it is already placed freely"),
@@ -2078,13 +2240,24 @@ pub fn block_place(
         _ => id.clone(),
     };
     let assigned = if target == id { vec![id] } else { vec![] };
-    Ok(patch("block place", target, vec![(b.span, new)], assigned))
+    let (list, i, _) = place_in(d, s, r)?;
+    if std::ptr::eq(list, &s.blocks[..]) {
+        return Ok(patch("block place", target, vec![(b.span, new)], assigned));
+    }
+    // inside a column (spec 025): out of it, as a box after the slide's elements
+    let end = s.blocks.last().expect("it is on the slide").span.end;
+    let nl = d.nl;
+    let reps = vec![
+        (cut(d, list, i), String::new()),
+        (Span { start: end, end }, format!("{nl}{nl}{new}")),
+    ];
+    Ok(patch("block place", target, reps, assigned))
 }
 
 /// Put a placed element back in the flow: exactly undoes `block_place`.
 pub fn block_unplace(d: &Deck, r: &str) -> Result<Patch> {
     let (s, b) = d.element(r)?;
-    let i = on_slide(d, s, r)?;
+    let i = place_in(d, s, r)?.1;
     if b.kind != BlockKind::Box {
         return Err(QdError::InvalidArg(format!("'{r}' is not placed freely")));
     }
