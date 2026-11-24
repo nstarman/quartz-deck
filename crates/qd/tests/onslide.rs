@@ -3870,11 +3870,34 @@ async fn place_freely() {
             break;
         }
     }
+    // what's inside them is refused too (spec 024)
+    assert_eq!(
+        place[0], "true",
+        "Place freely is greyed out in the columns"
+    );
+    assert!(
+        place[1].as_str().unwrap().contains("Inside columns"),
+        "{place}"
+    );
+    ed.close_menu().await;
+    // Escape out to the columns themselves, then their actions menu
+    let sel = format!("{FRAME}.querySelector('.qd-sel')?.dataset.qd");
+    for _ in 0..3 {
+        if ed.eval(&sel).await == "a/2" {
+            break;
+        }
+        ed.key("Escape", "Escape", 27, 0).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    ed.wait(&format!("{sel} === 'a/2'")).await;
+    ed.key("F10", "F10", 121, 8).await; // ⇧
+    ed.wait(&format!("JSON.stringify({item})?.includes('div')"))
+        .await;
+    let place = ed.eval(item).await;
     assert_eq!(
         place[0], "true",
         "Place freely is greyed out on the columns"
     );
-    assert!(place[1].as_str().unwrap().contains("div"), "{place}");
     ed.close_menu().await;
 }
 
@@ -4426,6 +4449,9 @@ async fn history_commit_notice() {
 const INSPECTOR_DECK: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## A {#a}\n\nFirst words\n\nSecond words\n\n![A picture](pic.png)\n\n## B {#b}\n\n```{python}\nprint(1)\n```\n";
 /// The preview's reveal.js.
 const REVEAL: &str = "document.querySelector('#preview').contentWindow.Reveal";
+/// The Animate view's build list, as refs in order.
+const BUILD_ROWS: &str =
+    "[...document.querySelectorAll('#panel .builds li')].map((li) => li.dataset.ref)";
 const INSPECTING: &str = "document.querySelector('main').classList.contains('inspector')";
 /// The inspector's tab names, in order, and the selected one.
 const TABS: &str = "[[...document.querySelectorAll('#panel .tabs [role=tab]')].map((t) => t.textContent), document.querySelector('#panel .tabs [aria-selected=true]')?.textContent]";
@@ -4808,9 +4834,8 @@ async fn props_animate() {
     ed.wait("document.querySelector('#panel .anim [name=appear]')?.value === 'fade-up' && document.querySelector('#panel .anim [name=leave]').disabled")
         .await;
     // the list, the selected one marked; ⌥↓ moves the first after the second
-    let rows = "[...document.querySelectorAll('#panel .builds li')].map((li) => li.dataset.ref)";
     ed.select("[data-qd=\"a/1\"]").await;
-    ed.wait(&format!("JSON.stringify({rows}) === '[\"a/0\",\"a/1\"]' && document.querySelector('#panel .builds [aria-current=true]')?.dataset.ref === 'a/1'")).await;
+    ed.wait(&format!("JSON.stringify({BUILD_ROWS}) === '[\"a/0\",\"a/1\"]' && document.querySelector('#panel .builds [aria-current=true]')?.dataset.ref === 'a/1'")).await;
     ed.eval("document.querySelector('#panel .builds li[data-ref=\"a/0\"]').focus()")
         .await;
     ed.key("ArrowDown", "ArrowDown", 40, 1).await;
@@ -4819,8 +4844,10 @@ async fn props_animate() {
     ed.settle().await;
     // a drag puts it back: source order, no indexes
     ed.go("a").await;
-    ed.wait(&format!("JSON.stringify({rows}) === '[\"a/1\",\"a/0\"]'"))
-        .await;
+    ed.wait(&format!(
+        "JSON.stringify({BUILD_ROWS}) === '[\"a/1\",\"a/0\"]'"
+    ))
+    .await;
     ed.eval("(() => { const [a, b] = document.querySelectorAll('#panel .builds li'); const dt = new DataTransfer(); b.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true })); a.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); })()").await;
     ed.wait_file(|f| !f.contains("fragment-index"), "back in source order")
         .await;
@@ -5030,6 +5057,18 @@ async fn props_deck() {
     ed.settle().await;
 }
 
+/// What `shown` finds on the slide after each of two clicks, presenting.
+async fn presented(ed: &Ed, shown: &str) -> Vec<Value> {
+    let mut order = Vec::new();
+    for _ in 0..2 {
+        ed.eval(&format!("{FRAME}.defaultView.Reveal.nextFragment()"))
+            .await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        order.push(ed.eval(shown).await);
+    }
+    order
+}
+
 /// Spec 023 US2 (T011): presenting, the builds show in the list's order.
 #[tokio::test(flavor = "multi_thread")]
 async fn build_order_presents() {
@@ -5045,13 +5084,7 @@ async fn build_order_presents() {
     let shown = format!(
         "[...{FRAME}.querySelectorAll('section.present .fragment.visible')].map((f) => f.textContent.trim())"
     );
-    let mut order = Vec::new();
-    for _ in 0..2 {
-        ed.eval(&format!("{FRAME}.defaultView.Reveal.nextFragment()"))
-            .await;
-        tokio::time::sleep(Duration::from_millis(200)).await;
-        order.push(ed.eval(&shown).await);
-    }
+    let order = presented(&ed, &shown).await;
     assert_eq!(
         order,
         [
@@ -5059,6 +5092,78 @@ async fn build_order_presents() {
             json!(["First words", "Second words"])
         ]
     );
+}
+
+// ---------- spec 024: builds inside columns ----------
+
+const COLUMNS_DECK: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## C {#c}\n\n:::: {.columns}\n::: {.column}\n- one\n- two\n:::\n::: {.column}\n![A plot](pic.png)\n:::\n::::\n";
+
+/// Spec 024 US1: click the list in one column and the picture in the other,
+/// give each a build, swap them in the build list, and present them in that
+/// order; Escape steps out to the column, then the columns; the slide's own
+/// moves are off inside a column.
+#[tokio::test(flavor = "multi_thread")]
+async fn builds_inside_columns() {
+    let Some(ed) = Ed::open(COLUMNS_DECK).await else {
+        return;
+    };
+    ed.wait(INSPECTING).await;
+    props(&ed, "animate").await;
+    let selected = format!("[...{FRAME}.querySelectorAll('.qd-sel')].map((e) => e.dataset.qd)");
+    let (list, pic) = ("[data-qd=\"c/0/0/0\"]", "[data-qd=\"c/0/1/0\"]");
+    for (r, fx, written) in [
+        ("c/0/0/0", "fade-in", "::: {.fragment}\n- one"),
+        ("c/0/1/0", "fade-up", "::: {.fragment .fade-up}\n![A plot]"),
+    ] {
+        ed.go("c").await;
+        ed.select(&format!("[data-qd=\"{r}\"]")).await;
+        ed.wait(&format!("JSON.stringify({selected}) === '[\"{r}\"]'"))
+            .await;
+        ed.wait("document.querySelector('#panel .anim [name=appear]')?.value === 'none'")
+            .await;
+        ed.eval(&pick("appear", fx)).await;
+        ed.wait_file(|f| f.contains(written), fx).await;
+        ed.settle().await;
+    }
+    // the build list, then ⌥↑ on the picture: it comes first
+    ed.go("c").await;
+    ed.select(pic).await;
+    ed.wait(&format!("JSON.stringify({BUILD_ROWS}) === '[\"c/0/0/0\",\"c/0/1/0\"]' && document.querySelector('#panel .builds [aria-current=true]')?.dataset.ref === 'c/0/1/0'"))
+        .await;
+    ed.eval("document.querySelector('#panel .builds li[data-ref=\"c/0/1/0\"]').focus()")
+        .await;
+    ed.key("ArrowUp", "ArrowUp", 38, 1).await;
+    ed.wait_file(|f| f.contains("fragment-index=1}\n![A plot]"), "reordered")
+        .await;
+    ed.settle().await;
+    ed.go("c").await;
+    let shown = format!(
+        "[...{FRAME}.querySelectorAll('section.present .fragment.visible')].map((f) => f.querySelector('img') ? 'plot' : f.textContent.trim())"
+    );
+    let order = presented(&ed, &shown).await;
+    assert_eq!(order, [json!(["plot"]), json!(["one\ntwo", "plot"])]);
+
+    // inside a column the slide's own moves are off, with the reason
+    ed.go("c").await;
+    ed.right_click(ed.slide_point(list).await).await;
+    let labels = ed.menu_labels().await;
+    for l in [
+        "Delete (disabled)",
+        "Move up (disabled)",
+        "Duplicate (disabled)",
+    ] {
+        assert!(labels.iter().any(|x| x == l), "{l}: {labels:?}");
+    }
+    ed.close_menu().await;
+    // Escape steps out: the column, the columns, nothing
+    ed.select(list).await;
+    ed.wait(&format!("JSON.stringify({selected}) === '[\"c/0/0/0\"]'"))
+        .await;
+    for want in ["[\"c/0/0\"]", "[\"c/0\"]", "[]"] {
+        ed.key("Escape", "Escape", 27, 0).await;
+        ed.wait(&format!("JSON.stringify({selected}) === '{want}'"))
+            .await;
+    }
 }
 
 // ---------- spec 015 US1: diagrams on the slide ----------

@@ -31,15 +31,15 @@
 
 **Independent test**: browser tests in `crates/qd/tests/onslide.rs`.
 
-- [ ] T009 [US1] Tests in `crates/qd/src/render.rs`: `preview_copy` tags `r/0`, `r/0/0`, `r/0/0/0`, `r/0/1/0`; a cell in a column is copied verbatim; slides without columns are unchanged (existing tests).
-- [ ] T010 [US1] Browser tests in `crates/qd/tests/onslide.rs`: clicking the list selects `r/0/0/0` and only it has `.qd-sel`; Appear in the Animate view writes the build; both builds listed; ⌥↑ reorders; presenting shows the picture then the list; Escape goes `r/0/0/0` → `r/0/0` → `r/0` → none; Delete and Move up are disabled for a nested element with the reason.
-- [ ] T011 [US1] `crates/qd/src/render.rs`: the per-block tagging loop becomes a function over a block list that, for a block with children, tags the opening fence and recurses over the inner text; nested `Cell` blocks verbatim.
-- [ ] T012 [US1] `crates/qd/src/ui/editor.js`: `elementTarget(ref)` splits at the first `/`, walks `blocks`/`children`, and returns `nested` and `parent`; the `deselect` key selects `parent` when there is one.
-- [ ] T013 [US1] `crates/qd/src/ui/actions.js`: cut, delete, dup, paste, move up/down, insert before/after, place, unplace, box order and restore are disabled for `t.nested`, with `why` "Inside columns: edit the source to move it".
+- [X] T009 [US1] Tests in `crates/qd/src/render.rs`: `preview_copy` tags `r/0`, `r/0/0`, `r/0/0/0`, `r/0/1/0`; a cell in a column is copied verbatim; slides without columns are unchanged (existing tests).
+- [X] T010 [US1] Browser tests in `crates/qd/tests/onslide.rs`: clicking the list selects `r/0/0/0` and only it has `.qd-sel`; Appear in the Animate view writes the build; both builds listed; ⌥↑ reorders; presenting shows the picture then the list; Escape goes `r/0/0/0` → `r/0/0` → `r/0` → none; Delete and Move up are disabled for a nested element with the reason.
+- [X] T011 [US1] `crates/qd/src/render.rs`: the per-block tagging loop becomes a function over a block list that, for a block with children, tags the opening fence and recurses over the inner text; nested `Cell` blocks verbatim.
+- [X] T012 [US1] `crates/qd/src/ui/editor.js`: `elementTarget(ref)` splits at the first `/`, walks `blocks`/`children`, and returns `nested` and `parent`; the `deselect` key selects `parent` when there is one.
+- [X] T013 [US1] `crates/qd/src/ui/actions.js`: cut, delete, dup, paste, move up/down, insert before/after, place, unplace, box order and restore are disabled for `t.nested`, with `why` "Inside columns: edit the source to move it".
 
 ## Phase 5: User Story 3 — the showcase (P3, PR 2)
 
-- [ ] T014 [US3] `examples/showcase/showcase.qmd`: a "Builds inside columns" slide, a list in the left column and a picture in the right, each with a build, the picture first by `fragment-index`.
+- [X] T014 [US3] `examples/showcase/showcase.qmd`: a "Builds inside columns" slide, a list in the left column and a picture in the right, each with a build, the picture first by `fragment-index`.
 - [ ] T015 [US3] Rebuild `target/release/qd`, restart `qd-showcase` (port 4880), step through the slide in the browser pane.
 
 ## Phase 6: Polish

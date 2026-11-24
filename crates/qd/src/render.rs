@@ -1,7 +1,7 @@
 //! Quarto rendering (research.md R5): locate Quarto, build the annotated
 //! *preview copy* of a deck, render a deck text to reveal.js HTML.
 
-use crate::deck::{BlockKind, Deck, Slide, SlideKind};
+use crate::deck::{Block, BlockKind, Deck, Slide, SlideKind};
 use crate::error::{QdError, Result};
 use serde_json::Value;
 use std::ffi::{OsStr, OsString};
@@ -191,77 +191,94 @@ pub fn preview_copy(d: &Deck, outputs: &Value) -> String {
             out += &d.text[s.content_start()..s.span.end];
             continue;
         }
-        let mut pos = s.content_start();
-        for (i, b) in s.blocks.iter().enumerate() {
-            out += &d.text[pos..b.span.start];
-            pos = b.span.end;
-            let text = d.slice(b.span);
-            let tag = format!("{}/{i}", s.id);
-            let next_is_caption = s
-                .blocks
-                .get(i + 1)
-                .is_some_and(|n| is_caption(d.slice(n.span)));
-            let skip = matches!(b.kind, BlockKind::Pause | BlockKind::Notes)
-                || (b.kind == BlockKind::Html && text.starts_with("<!--"))
-                || is_caption(text)
-                || text.starts_with("[^")
-                || (b.kind == BlockKind::Table && next_is_caption);
-            if skip {
-                out += text;
-                continue;
-            }
-            let first_end = text.find(['\n', '\r']).unwrap_or(text.len());
-            let first = &text[..first_end];
-            out += &match b.kind {
-                BlockKind::Div | BlockKind::Box if first.trim_start().starts_with(':') => {
-                    match first.rfind('}') {
-                        Some(close) if first.contains('{') => insert_attr(text, close, &tag),
-                        _ => {
-                            // `::: class` shorthand -> `::: {.class data-qd=...}`
-                            let colons = first.len() - first.trim_start_matches(':').len();
-                            let word = first[colons..].trim().trim_end_matches(':').trim();
-                            format!(
-                                "{} {{.{word} data-qd=\"{tag}\"}}{}",
-                                &first[..colons],
-                                &text[first_end..]
-                            )
-                        }
-                    }
-                }
-                // a heading inside a div would start a slide in Quarto: mark the heading itself
-                BlockKind::Heading => {
-                    let line = first.trim_end();
-                    let marked = match line.rfind('{') {
-                        Some(o)
-                            if line.ends_with('}')
-                                && crate::attrs::Attrs::parse(&line[o..]).is_some() =>
-                        {
-                            insert_attr(line, line.len() - 1, &tag)
-                        }
-                        _ => format!("{line} {{data-qd=\"{tag}\"}}"),
-                    };
-                    format!("{marked}{}", &text[first_end..])
-                }
-                BlockKind::Image | BlockKind::Box
-                    if b.attrs.is_some() && text.trim_end().ends_with('}') =>
-                {
-                    insert_attr(text, text.trim_end().len() - 1, &tag)
-                }
-                _ if b.kind == BlockKind::Cell => {
-                    let shown = output_html(&outputs[&b.id], nl);
-                    // .qd-cell: the editor's placeholder for a cell that shows
-                    // nothing yet (revealjs hides code by default; spec 013)
-                    let lang = crate::kernel::cell_lang(d, b);
-                    format!(
-                        "::: {{.qd-cell data-qd=\"{tag}\" data-qd-lang=\"{lang}\"}}{nl}{text}{nl}{shown}:::"
-                    )
-                }
-                _ => format!("::: {{data-qd=\"{tag}\"}}{nl}{text}{nl}:::"),
-            };
-        }
+        let pos = tag_blocks(d, &mut out, &s.blocks, &s.id, s.content_start(), outputs);
         out += &d.text[pos..s.span.end];
     }
     out
+}
+
+/// `blocks`' text from `pos` on into `out`, each marked `data-qd="<prefix>/<i>"`,
+/// and the elements inside columns too (spec 024); returns where it stopped.
+fn tag_blocks(
+    d: &Deck,
+    out: &mut String,
+    blocks: &[Block],
+    prefix: &str,
+    mut pos: usize,
+    outputs: &Value,
+) -> usize {
+    let nl = d.nl;
+    let nested = prefix.contains('/');
+    for (i, b) in blocks.iter().enumerate() {
+        *out += &d.text[pos..b.span.start];
+        pos = b.span.end;
+        let text = d.slice(b.span);
+        let tag = format!("{prefix}/{i}");
+        let next_is_caption = blocks
+            .get(i + 1)
+            .is_some_and(|n| is_caption(d.slice(n.span)));
+        let skip = matches!(b.kind, BlockKind::Pause | BlockKind::Notes)
+            || (b.kind == BlockKind::Html && text.starts_with("<!--"))
+            || is_caption(text)
+            || text.starts_with("[^")
+            || (b.kind == BlockKind::Table && next_is_caption)
+            // kernel runs and stored outputs know only top-level cells
+            || (nested && b.kind == BlockKind::Cell);
+        if skip {
+            *out += text;
+            continue;
+        }
+        let first_end = text.find(['\n', '\r']).unwrap_or(text.len());
+        let first = &text[..first_end];
+        let marked = match b.kind {
+            BlockKind::Div | BlockKind::Box if first.trim_start().starts_with(':') => {
+                let fence = match first.rfind('}') {
+                    Some(close) if first.contains('{') => insert_attr(first, close, &tag),
+                    _ => {
+                        // `::: class` shorthand -> `::: {.class data-qd=...}`
+                        let colons = first.len() - first.trim_start_matches(':').len();
+                        let word = first[colons..].trim().trim_end_matches(':').trim();
+                        format!("{} {{.{word} data-qd=\"{tag}\"}}", &first[..colons])
+                    }
+                };
+                *out += &fence;
+                let at = tag_blocks(d, out, &b.children, &tag, b.span.start + first_end, outputs);
+                *out += &d.text[at..b.span.end];
+                continue;
+            }
+            // a heading inside a div would start a slide in Quarto: mark the heading itself
+            BlockKind::Heading => {
+                let line = first.trim_end();
+                let marked = match line.rfind('{') {
+                    Some(o)
+                        if line.ends_with('}')
+                            && crate::attrs::Attrs::parse(&line[o..]).is_some() =>
+                    {
+                        insert_attr(line, line.len() - 1, &tag)
+                    }
+                    _ => format!("{line} {{data-qd=\"{tag}\"}}"),
+                };
+                format!("{marked}{}", &text[first_end..])
+            }
+            BlockKind::Image | BlockKind::Box
+                if b.attrs.is_some() && text.trim_end().ends_with('}') =>
+            {
+                insert_attr(text, text.trim_end().len() - 1, &tag)
+            }
+            _ if b.kind == BlockKind::Cell => {
+                let shown = output_html(&outputs[&b.id], nl);
+                // .qd-cell: the editor's placeholder for a cell that shows
+                // nothing yet (revealjs hides code by default; spec 013)
+                let lang = crate::kernel::cell_lang(d, b);
+                format!(
+                    "::: {{.qd-cell data-qd=\"{tag}\" data-qd-lang=\"{lang}\"}}{nl}{text}{nl}{shown}:::"
+                )
+            }
+            _ => format!("::: {{data-qd=\"{tag}\"}}{nl}{text}{nl}:::"),
+        };
+        *out += &marked;
+    }
+    pos
 }
 
 pub(crate) fn esc(t: &str) -> String {
@@ -528,6 +545,24 @@ mod tests {
         assert_eq!(p.slides.len(), d.slides.len());
         assert_eq!(p.slides[2].id, "qd-3");
         assert!(p.slides.iter().all(|s| !s.opaque));
+    }
+
+    /// Spec 024: the elements inside columns are marked too; a cell there stays as it is.
+    #[test]
+    fn preview_copy_marks_columns() {
+        let d = Deck::parse(
+            ":::: columns\n::: {.column}\n- one\n:::\n::: column\n![](p.png){.r}\n\n```{python}\nx\n```\n:::\n::::\n"
+                .into(),
+        );
+        let c = preview_copy(&d, &Value::Null);
+        assert!(
+            c.contains(concat!(
+                ":::: {.columns data-qd=\"@1/0\"}\n::: {.column data-qd=\"@1/0/0\"}\n",
+                "::: {data-qd=\"@1/0/0/0\"}\n- one\n:::\n:::\n::: {.column data-qd=\"@1/0/1\"}\n",
+                "![](p.png){.r data-qd=\"@1/0/1/0\"}\n\n```{python}\nx\n```\n:::\n::::\n"
+            )),
+            "{c}"
+        );
     }
 
     #[test]

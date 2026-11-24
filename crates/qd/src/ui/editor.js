@@ -118,11 +118,26 @@ function fetchSlide(ref) {
   return p;
 }
 
-/** The block for an element ref `<slide>/<i>`, or null. */
-async function fetchBlock(ref) {
-  const cut = ref.lastIndexOf('/');
+/**
+ * Where element `ref` is: its slide's id, the blocks it sits among and its
+ * index there. `<slide>/<i>`, or `<slide>/<i>/<j>…` inside columns (spec 024).
+ */
+async function locate(ref) {
+  const cut = ref.indexOf('/');
   const slide = await fetchSlide(ref.slice(0, cut));
-  return slide?.blocks[Number(ref.slice(cut + 1))] || null;
+  const path = ref.slice(cut + 1).split('/').map(Number);
+  let among = slide?.blocks;
+  for (const i of path.slice(0, -1)) among = among?.[i]?.children;
+  return { slideId: ref.slice(0, cut), among: among || [], index: path.at(-1) };
+}
+
+/** What holds element `ref`: its slide, or inside columns its column (spec 024). */
+const up = (r) => r.slice(0, r.lastIndexOf('/'));
+
+/** The block for an element ref, or null. */
+async function fetchBlock(ref) {
+  const { among, index } = await locate(ref);
+  return among[index] || null;
 }
 
 /** The deck's front matter (without op()'s status message). */
@@ -251,7 +266,7 @@ const PREVIEW_CSS = `html:not(.qd-present) {
   .qd-ph:not(:has(*))::before { content: 'Click to add text'; color: #9a9aa0; font-size: .6em; }
   .qd-ph[data-ph=image]:not(:has(*))::before { content: 'Drop an image'; }
   .qd-ph[data-ph=image]:not(:has(*)) { cursor: copy; }
-  [data-qd]:hover { outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; }
+  [data-qd]:hover:not(:has([data-qd]:hover)) { outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; }
   .qd-sel, .qd-sel:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 2px; }
   /* an arrow (spec 016): its line is the hit area, its handles show the selection */
   .qd-arrow.qd-sel, .qd-arrow:hover { outline: none !important; }
@@ -1622,14 +1637,12 @@ window.qdSession = () => {
 
 /** What actions act on: an element (`<slide>/<i>`) … */
 async function elementTarget(ref) {
-  const cut = ref.lastIndexOf('/');
-  const slideId = ref.slice(0, cut);
-  const slide = await fetchSlide(slideId);
-  const index = Number(ref.slice(cut + 1));
-  const block = slide?.blocks[index];
+  const { slideId, among, index } = await locate(ref);
+  const block = among[index];
   if (!block) return null;
   const el = elOf(ref);
-  return { ref, block, slideId, index, count: slide.blocks.length, kinds: slide.blocks.map((b) => b.kind), el };
+  // inside columns the slide's own moves don't reach it
+  return { ref, block, slideId, index, count: among.length, kinds: among.map((b) => b.kind), el, nested: up(ref).includes('/') };
 }
 
 /** … or a slide. */
@@ -1994,6 +2007,8 @@ function hoverAt(node) {
   if (state.session || menuOpen() || dragging) return;
   const el = node.closest?.('[data-qd]');
   if (!el || el.classList.contains('absolute')) return;
+  // inside columns (spec 024): insert and drag are the slide's, not the column's
+  if (up(el.dataset.qd).includes('/')) { hoverbar.hidden = true; return; }
   hovered = el;
   const p = pageRect(el);
   hoverbar.hidden = false;
@@ -2022,13 +2037,13 @@ hoverbar.querySelector('[data-act=drag]').addEventListener('pointerdown', (e) =>
   handle.setPointerCapture(e.pointerId);
   dragging = true;
   const from = hovered.dataset.qd;
-  const slideId = from.slice(0, from.lastIndexOf('/'));
+  const slideId = up(from);
   let drop = null; // { ref, before }
   const onMove = (ev) => {
     const f = frame.getBoundingClientRect();
     const hit = frame.contentDocument.elementFromPoint(ev.clientX - f.left, ev.clientY - f.top)?.closest?.('[data-qd]');
     const ref = hit?.dataset.qd;
-    if (!hit || ref === from || ref.slice(0, ref.lastIndexOf('/')) !== slideId) { dropline.hidden = true; drop = null; return; }
+    if (!hit || ref === from || up(ref) !== slideId) { dropline.hidden = true; drop = null; return; }
     const p = pageRect(hit);
     const before = ev.clientY < p.top + p.height / 2;
     drop = { ref, before };
@@ -2312,7 +2327,8 @@ for (const [dir, dx, dy] of [['left', -1, 0], ['right', 1, 0], ['up', 0, -1], ['
 const inSlide = (e) => e.target.ownerDocument === frame.contentDocument && !!frameWin()?.Reveal?.getCurrentSlide()?.querySelector('[data-qd]');
 keys.on('next-element', { key: inSlide, enabled: (ctx) => !!ctx.slide, run: () => stepSelection(false) });
 keys.on('prev-element', { key: inSlide, enabled: (ctx) => !!ctx.slide, run: () => stepSelection(true) });
-keys.on('deselect', { enabled: () => !!state.sel, run: () => select(null) });
+// Escape: out of a column to what holds it (spec 024), else nothing selected
+keys.on('deselect', { enabled: () => !!state.sel, run: () => select(up(state.sel).includes('/') ? up(state.sel) : null) });
 keys.on('dot-add', { enabled: (ctx) => dot.diagram(ctx.el?.ref), run: (ctx) => dot.addBox(ctx.el.ref) });
 keys.on('actions-menu', keyboardMenu);
 keys.on('focus-text', () => window.parent.postMessage({ type: 'focusText' }, '*')); // VS Code's panel only

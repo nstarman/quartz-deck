@@ -22,7 +22,7 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::{Notify, broadcast};
 use tower_http::services::ServeDir;
@@ -110,6 +110,9 @@ struct App {
     /// The deck's live session, started on the first run.
     kernel: Mutex<Option<Arc<Kernel>>>,
     runs: AtomicU64,
+    /// The last run that finished: run N waits for N - 1, so runs go in the
+    /// order asked (spec 013 FR-007; the kernel's lock alone isn't first come, first served).
+    turn: (Mutex<u64>, Condvar),
     /// `POST /api/shutdown` (`qd stop`).
     stop: Notify,
     /// Shared focus (spec 005).
@@ -515,6 +518,17 @@ fn run_cells(
     fresh: bool,
     timeout: Option<Duration>,
 ) -> Value {
+    /// Hands the turn to the next run when this one ends, however it ends.
+    struct Turn<'a>(&'a (Mutex<u64>, Condvar), u64);
+    impl Drop for Turn<'_> {
+        fn drop(&mut self) {
+            *self.0.0.lock().unwrap_or_else(|e| e.into_inner()) = self.1;
+            self.0.1.notify_all();
+        }
+    }
+    let (last, next) = &app.turn;
+    drop(next.wait_while(last.lock().unwrap(), |l| *l + 1 < run));
+    let _turn = Turn(&app.turn, run);
     let outputs = Outputs::new(&app.store);
     let mut runs = vec![];
     let go = || -> Result<&'static str> {
@@ -1355,6 +1369,7 @@ pub fn serve(store: Store, port: u16, on_ready: impl FnOnce(&Session)) -> Result
             token: token()?,
             kernel: Mutex::new(None),
             runs: AtomicU64::new(0),
+            turn: Default::default(),
             stop: Notify::new(),
             focus: Mutex::default(),
             buffer: Mutex::default(),

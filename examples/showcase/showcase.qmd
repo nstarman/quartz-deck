@@ -83,6 +83,20 @@ The results, in three slides you go down through.
 :::
 ::::
 
+# Builds inside columns {#column-builds}
+
+:::: {.columns}
+::: {.column width="45%"}
+::: {.fragment fragment-index=2}
+- The list comes in second
+- though it is written first
+:::
+:::
+::: {.column width="55%"}
+![Readers per quarter](images/growth.svg){.fragment .fade-up fragment-index=1}
+:::
+::::
+
 # Placed boxes {#boxes background-color="#f4f1ea" transition="zoom" transition-speed=slow}
 
 ::: {#box-note .absolute left=60 top=150 width=380}

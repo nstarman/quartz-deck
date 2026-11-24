@@ -13,7 +13,7 @@ It has:
 - bullet and numbered lists, with builds that fade up and turn red;
 - a group of slides (Results) that you go down through;
 - a table and a picture;
-- two columns;
+- two columns, and a slide whose columns build: the picture on the right, then the list on the left;
 - boxes placed by hand, on a slide with its own background and transition;
 - a diagram of four boxes;
 - arrows;
