@@ -80,7 +80,12 @@ Found, and fixed in the same PR:
   with no alt text was named "Image" though it had a `fig-alt` (test
   `build_names`).
 
+Fixed after:
+- On a slide filled by a picture, a click landed on the picture. A picture,
+  or anything with no text of its own, now gives way to text or a slide title
+  under the pointer (test `click_through_a_covering_picture`).
+
 Left for later:
-- Elements inside `.columns` can't be selected or given builds one by one.
-- On a slide filled by a picture, a click lands on the picture; Tab reaches
-  the elements under it.
+- Elements inside `.columns` can't be selected or given builds one by one:
+  the deck addresses only a slide's top-level blocks, so this needs its own
+  spec.

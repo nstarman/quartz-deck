@@ -564,9 +564,10 @@ function hookFrame() {
       e.stopPropagation();
       return;
     }
-    const el = e.target.closest('[data-qd]');
-    const target = editTarget(e.target);
-    const sec = e.target.closest('section');
+    const node = clickNode(e);
+    const el = node.closest('[data-qd]');
+    const target = editTarget(node);
+    const sec = node.closest('section');
     if (!el && !target && !(e.altKey && sec)) { if (state.sel) select(null); return; }
     e.preventDefault();
     e.stopPropagation();
@@ -585,7 +586,7 @@ function hookFrame() {
   doc.addEventListener('pointerdown', placeDrag, true);
   doc.addEventListener('dblclick', (e) => {
     if (state.session || presenting()) return;
-    const el = e.target.closest('[data-qd]') || doc.querySelector(`[data-qd="${CSS.escape(state.sel || '')}"]`);
+    const el = clickNode(e).closest('[data-qd]') || doc.querySelector(`[data-qd="${CSS.escape(state.sel || '')}"]`);
     if (!el) return;
     e.preventDefault();
     // a positioned text box: single click selects it for dragging, double click types
@@ -1215,6 +1216,21 @@ function pendingBadge(on) {
     statusEl.after(b);
   }
   b.textContent = on ? 'updated — will refresh when you finish editing' : '';
+}
+
+/**
+ * What a click lands on. A picture, or anything with no text of its own, laid over
+ * text (a figure filling the slide) gives way to the text under the pointer.
+ */
+function clickNode(e) {
+  const el = e.target.closest?.('[data-qd]');
+  if (!el || el.textContent.trim()) return e.target;
+  // an element with text, or a slide title
+  const under = e.target.ownerDocument.elementsFromPoint(e.clientX, e.clientY).find((n) => {
+    const o = n.closest('[data-qd]');
+    return !el.contains(n) && (o ? !!o.textContent.trim() : !!editTarget(n));
+  });
+  return under || e.target;
 }
 
 /** What a click on `node` would edit: a block, a slide title, or a title-slide field. */
