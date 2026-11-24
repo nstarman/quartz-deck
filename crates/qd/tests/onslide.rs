@@ -3870,11 +3870,34 @@ async fn place_freely() {
             break;
         }
     }
+    // what's inside them is refused too (spec 024)
+    assert_eq!(
+        place[0], "true",
+        "Place freely is greyed out in the columns"
+    );
+    assert!(
+        place[1].as_str().unwrap().contains("Inside columns"),
+        "{place}"
+    );
+    ed.close_menu().await;
+    // Escape out to the columns themselves, then their actions menu
+    let sel = format!("{FRAME}.querySelector('.qd-sel')?.dataset.qd");
+    for _ in 0..3 {
+        if ed.eval(&sel).await == "a/2" {
+            break;
+        }
+        ed.key("Escape", "Escape", 27, 0).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    ed.wait(&format!("{sel} === 'a/2'")).await;
+    ed.key("F10", "F10", 121, 8).await; // ⇧
+    ed.wait(&format!("JSON.stringify({item})?.includes('div')"))
+        .await;
+    let place = ed.eval(item).await;
     assert_eq!(
         place[0], "true",
         "Place freely is greyed out on the columns"
     );
-    assert!(place[1].as_str().unwrap().contains("div"), "{place}");
     ed.close_menu().await;
 }
 
