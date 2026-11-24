@@ -1525,6 +1525,16 @@ fn api_values_are_not_flags() {
 
 // ---------- spec 023 US2: builds ----------
 
+/// The refs of `qd build list`, in order.
+fn refs(v: &Value) -> Vec<String> {
+    v["builds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| b["ref"].as_str().unwrap().to_string())
+        .collect()
+}
+
 const BUILDS: &str = "## Results {#results}\n\nFirst point.\n\nSecond point.\n\n![A picture](pic.png){.wide}\n\n- One\n- Two\n";
 
 /// T009: `qd build set` writes each appear and leave as reveal.js's fragment
@@ -1626,14 +1636,6 @@ fn build_list_and_order() {
         e.ok(&["build", "set", el, "--appear", fx]);
     }
     e.ok(&["block", "class", "results/3", "--add", "incremental"]);
-    let refs = |v: &Value| {
-        v["builds"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|b| b["ref"].as_str().unwrap().to_string())
-            .collect::<Vec<_>>()
-    };
     let v = e.ok(&["build", "list", "results"]);
     assert_eq!(refs(&v), ["results/0", "results/2", "results/3"]);
     assert_eq!(v["builds"][1]["appear"], "grow");
@@ -1703,14 +1705,6 @@ fn builds_inside_columns() {
                 "::: {.fragment .fade-up}\n![A plot](p.png)\n:::\n"
             )
     );
-    let refs = |v: &Value| {
-        v["builds"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|b| b["ref"].as_str().unwrap().to_string())
-            .collect::<Vec<_>>()
-    };
     assert_eq!(refs(&e.ok(&["build", "list", "r"])), ["r/1/0/0", "r/1/1/0"]);
     let built = e.text();
     e.ok(&["build", "order", "r", "r/1/1/0", "r/1/0/0"]);
@@ -1746,16 +1740,9 @@ fn builds_inside_columns() {
             "{v}"
         );
     }
-    e.err(
-        &["build", "set", "r/1/2/0", "--appear", "grow"],
-        "E_NOT_FOUND",
-        1,
-    );
-    e.err(
-        &["build", "set", "r/0/0", "--appear", "grow"],
-        "E_NOT_FOUND",
-        1,
-    );
+    for r in ["r/1/2/0", "r/0/0"] {
+        e.err(&["build", "set", r, "--appear", "grow"], "E_NOT_FOUND", 1);
+    }
 }
 
 /// T024's findings: a build's name has no stray markdown, and a picture

@@ -1300,12 +1300,7 @@ fn block_json(d: &Deck, b: &Block) -> Value {
     }
     // a columns or column div's own elements (spec 024)
     if !b.children.is_empty() {
-        v["children"] = json!(
-            b.children
-                .iter()
-                .map(|c| block_json(d, c))
-                .collect::<Vec<_>>()
-        );
+        v["children"] = b.children.iter().map(|c| block_json(d, c)).collect();
     }
     v
 }

@@ -483,12 +483,19 @@ fn blocks_of<'c>(
 
 /// A `.columns` or `.column` div, whose contents are elements of their own.
 fn opens_up(fence: &str) -> bool {
+    div_attrs(fence).is_some_and(|a| a.has_class("columns") || a.has_class("column"))
+}
+
+/// A div fence's attributes: `{...}`, or `{.class}` for the shorthand `::: class`.
+fn div_attrs(fence: &str) -> Option<Attrs> {
     let rest = div_open(fence).unwrap_or("");
-    match rest.strip_prefix('{') {
-        Some(_) => {
-            Attrs::parse(rest).is_some_and(|a| a.has_class("columns") || a.has_class("column"))
-        }
-        None => matches!(rest.split_whitespace().next(), Some("columns" | "column")),
+    if rest.starts_with('{') {
+        Attrs::parse(rest)
+    } else {
+        Attrs::parse(&format!(
+            "{{.{}}}",
+            rest.split_whitespace().next().unwrap_or("")
+        ))
     }
 }
 
@@ -928,14 +935,7 @@ fn classify(chunk: Chunk, text: &str, used: &mut HashSet<String>) -> (BlockKind,
         }
         Chunk::Div => {
             let rest = div_open(first).unwrap_or("");
-            let attrs = if rest.starts_with('{') {
-                Attrs::parse(rest)
-            } else {
-                Attrs::parse(&format!(
-                    "{{.{}}}",
-                    rest.split_whitespace().next().unwrap_or("")
-                ))
-            };
+            let attrs = div_attrs(first);
             let kind = match &attrs {
                 Some(a) if a.has_class("absolute") => BlockKind::Box,
                 Some(a) if a.has_class("notes") => BlockKind::Notes,

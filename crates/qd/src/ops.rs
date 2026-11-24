@@ -932,7 +932,7 @@ pub fn block_add(d: &Deck, slide: &str, at: Pos, md: &str) -> Result<Patch> {
 }
 
 pub fn block_move(d: &Deck, element: &str, to: Pos) -> Result<Patch> {
-    let (s, _) = d.top_element(element, "move")?;
+    let (s, _) = d.element(element)?;
     let from = on_slide(d, s, element)?;
     let mut i = match to {
         Pos::Before(r) => on_slide(d, s, r)?,
@@ -2034,7 +2034,7 @@ pub fn block_place(
 
 /// Put a placed element back in the flow: exactly undoes `block_place`.
 pub fn block_unplace(d: &Deck, r: &str) -> Result<Patch> {
-    let (s, b) = d.top_element(r, "move")?;
+    let (s, b) = d.element(r)?;
     let i = on_slide(d, s, r)?;
     if b.kind != BlockKind::Box {
         return Err(QdError::InvalidArg(format!("'{r}' is not placed freely")));
