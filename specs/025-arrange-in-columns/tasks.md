@@ -38,9 +38,9 @@
 
 ## Phase 5: User Story 5 — column widths and number (P4, PR 3)
 
-- [ ] T017 [US5] Tests in `crates/qd/tests/cli.rs`: `qd block attr r/0/0 width=40%` changes only that attribute; `qd column add r/0` appends an empty column; `qd block rm r/0/1` removes a column with its contents.
-- [ ] T018 [US5] `qd block attr` (`with_attrs` setting/unsetting keys) and `qd column add` in `crates/qd/src/ops.rs` and `cli.rs`.
-- [ ] T019 [US5] Format view: Width for a selected column; Add column for a selected columns block. Browser test.
+- [X] T017 [US5] Tests in `crates/qd/tests/cli.rs`: `qd block attr r/0/0 --attr width=40%` changes only that attribute; `qd block add-column r/0` appends an empty column; `qd block rm r/0/1` removes a column with its contents.
+- [X] T018 [US5] `qd block attr` (`with_attrs` setting/unsetting keys) and `qd block add-column` in `crates/qd/src/ops.rs` and `cli.rs`.
+- [X] T019 [US5] Format view: Width for a selected column; Add column for a selected columns block. Browser test.
 - [ ] T020 fmt, clippy, `cargo test`; `/pr-audit`; open PR 3.
 
 ## Phase 6: Polish

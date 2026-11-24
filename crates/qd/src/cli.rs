@@ -631,6 +631,18 @@ enum BlockCmd {
     },
     /// Put a placed element back in the flow
     Unplace { element: String },
+    /// Set or remove an element's attributes (e.g. a column's `width=40%`)
+    Attr {
+        element: String,
+        /// key=value (repeatable)
+        #[arg(long = "attr", value_parser = parse_kv)]
+        attrs: Vec<(String, String)>,
+        /// Remove attribute key (repeatable)
+        #[arg(long)]
+        unset: Vec<String>,
+    },
+    /// Add an empty column, last in a columns block
+    AddColumn { columns: String },
 }
 
 #[derive(Subcommand)]
@@ -1602,6 +1614,8 @@ const API_OPS: &[&str] = &[
     "block place",
     "block unplace",
     "block class",
+    "block attr",
+    "block add-column",
     "build set",
     "build list",
     "build order",
@@ -2608,6 +2622,19 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
                 ops::block_place(d, element, *at, w, h)
             }),
             BlockCmd::Unplace { element } => ctx.edit(|d| ops::block_unplace(d, element)),
+            BlockCmd::Attr {
+                element,
+                attrs,
+                unset,
+            } => {
+                let change = ops::AttrChange {
+                    set: attrs.clone(),
+                    unset: unset.clone(),
+                    ..Default::default()
+                };
+                ctx.edit(|d| ops::block_attr(d, element, &change))
+            }
+            BlockCmd::AddColumn { columns } => ctx.edit(|d| ops::add_column(d, columns)),
         },
         Cmd::Build { action } => match action {
             BuildCmd::Set {

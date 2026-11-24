@@ -154,6 +154,13 @@
     </div>
     <p class="hint">Or drag the box in the preview; drag a handle to resize (Shift keeps the aspect ratio).</p>
   </form>
+  <form class="columns-form" data-tab="position" hidden>
+    <label class="colwidth">Column width <input name="width" placeholder="e.g. 40%"></label>
+    <div class="buttons">
+      <button type="submit" class="primary colwidth">Apply width</button>
+      <button type="button" data-act="addcol">Add column</button>
+    </div>
+  </form>
   <form class="element-form" data-tab="element">
     <label>Source (markdown)
       <textarea name="md" rows="12" spellcheck="false"></textarea>

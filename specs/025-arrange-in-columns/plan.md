@@ -77,7 +77,7 @@ examples/showcase/showcase.qmd, skills/quartz-deck/SKILL.md
 
 1. **The CLI arranges inside columns** (US6, CLI side of US1–US4, FR-010/011): `siblings`, cut/insert, nested refs for move/add/rm/dup/place, `--into`, the copied build last.
 2. **The editor arranges inside columns** (US1–US3 editor side, US4 menu): actions back on, siblings for Move up/down, drag across containers, "+ Add content", paste into a column; showcase slide.
-3. **Column widths and number** (US5, P4): `qd block attr`, `qd column add`, column delete; Format view fields. Built last; can be left for later if the person says so.
+3. **Column widths and number** (US5, P4): `qd block attr`, `qd block add-column`, column delete; Format view fields. Built last; can be left for later if the person says so.
 
 The duplicate-id fix the spec relies on (FR-010) is PR #137, merged first.
 
