@@ -1169,7 +1169,7 @@ pub fn build_set(
     };
     known(appear, APPEARS, "appear")?;
     known(leave, LEAVES, "leave")?;
-    let (_, b) = d.element(element)?;
+    let (s, b) = d.element(element)?;
     let (was_appear, was_leave) = build_of(b.attrs.as_ref());
     let pick = |v: Option<&str>, was: Option<&'static str>| match v {
         Some("none") => None,
@@ -1207,44 +1207,41 @@ pub fn build_set(
     };
     // A picture with a caption renders as a figure, and Quarto moves its
     // `.fragment` to the figure but leaves `fragment-index` on the picture,
-    // so the order is lost: its build goes on a div around it instead.
-    if b.kind == BlockKind::Image && !add.is_empty() {
-        let (s, _) = d.element(element)?;
-        let mut wrap = Attrs::default();
-        let text = match &b.attrs {
-            Some(a) => {
-                if let Some(i) = a.get("fragment-index") {
-                    wrap.set("fragment-index", i);
-                }
-                with_attrs(d, element, |a| {
-                    strip(a);
-                    a.unset("fragment-index");
-                    Ok(())
-                })?
-                .2
+    // so the order is lost: its build goes on a div around it instead (one
+    // without attributes gets that div from `with_attrs`).
+    let (index, new) = match (&b.attrs, b.kind == BlockKind::Image && !add.is_empty()) {
+        (Some(own), true) => {
+            let mut wrap = Attrs::default();
+            if let Some(i) = own.get("fragment-index") {
+                wrap.set("fragment-index", i);
             }
-            None => d.slice(b.span).to_string(),
-        };
-        for c in &add {
-            wrap.add_class(c);
+            for c in &add {
+                wrap.add_class(c);
+            }
+            let (_, _, text) = with_attrs(d, element, |a| {
+                strip(a);
+                a.unset("fragment-index");
+                Ok(())
+            })?;
+            (
+                s.index,
+                format!("::: {}{nl}{text}{nl}:::", wrap.render(), nl = d.nl),
+            )
         }
-        let new = format!("::: {}{nl}{text}{nl}:::", wrap.render(), nl = d.nl);
-        return keep_structure(
-            d,
-            patch("build set", b.id.clone(), vec![(b.span, new)], Vec::new()),
-            s.index,
-        );
-    }
-    let (index, b, new) = with_attrs(d, element, |a| {
-        strip(a);
-        if add.is_empty() {
-            a.unset("fragment-index");
+        _ => {
+            let (i, _, n) = with_attrs(d, element, |a| {
+                strip(a);
+                if add.is_empty() {
+                    a.unset("fragment-index");
+                }
+                for c in &add {
+                    a.add_class(c);
+                }
+                Ok(())
+            })?;
+            (i, n)
         }
-        for c in &add {
-            a.add_class(c);
-        }
-        Ok(())
-    })?;
+    };
     keep_structure(
         d,
         patch("build set", b.id.clone(), vec![(b.span, new)], Vec::new()),
