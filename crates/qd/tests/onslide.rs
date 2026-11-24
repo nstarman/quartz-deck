@@ -4754,10 +4754,7 @@ async fn click_through_a_covering_picture() {
     ed.key("Escape", "Escape", 27, 0).await;
     ed.wait("window.qdSession() === null").await;
     // below the list: only the picture
-    let (x, y) = ed
-        .point("(() => { const f = document.querySelector('#preview').getBoundingClientRect(); const s = document.querySelector('#preview').contentDocument.querySelector('section#a').getBoundingClientRect(); return [f.left + s.left + s.width * 0.8, f.top + s.top + s.height * 0.85]; })()")
-        .await;
-    ed.page.click(Point { x, y }).await.unwrap();
+    ed.click_js("(() => { const f = document.querySelector('#preview').getBoundingClientRect(); const s = document.querySelector('#preview').contentDocument.querySelector('section#a').getBoundingClientRect(); return [f.left + s.left + s.width * 0.8, f.top + s.top + s.height * 0.85]; })()").await;
     ed.wait("window.qdSession()?.ref === 'a/0' && window.qdSession().mode === 'source'")
         .await;
 }
@@ -5319,8 +5316,11 @@ async fn diagram_delete_and_edge_properties() {
     ed.settle().await;
     ed.select_edge("a->b").await;
     ed.properties().await;
-    // the panel's own controls (the element bar can float over them in a small window)
-    ed.eval("[...document.querySelectorAll('form.dot-form button')].find((b) => b.textContent === 'Reverse').click()").await;
+    // the panel's own controls (the element bar can float over them in a small window),
+    // once the arrow's form is drawn
+    let reverse = "[...document.querySelectorAll('form.dot-form button')].find((b) => b.textContent === 'Reverse')";
+    ed.wait(&format!("!!{reverse}")).await;
+    ed.eval(&format!("{reverse}.click()")).await;
     ed.wait_file(|f| f.contains("  b -> a;\n"), "reversed")
         .await;
     ed.settle().await;

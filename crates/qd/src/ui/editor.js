@@ -614,13 +614,14 @@ function hookFrame() {
   });
   doc.addEventListener('contextmenu', (e) => {
     if (state.session || presenting()) return; // the browser's own menu (spelling) while typing
-    const sec = e.target.closest('section');
+    const node = clickNode(e); // the same element a click would take
+    const sec = node.closest('section');
     if (!sec) return;
     e.preventDefault();
     const f = frame.getBoundingClientRect();
-    contextMenuAt(e.target.closest('[data-qd]'), sec, f.left + e.clientX, f.top + e.clientY);
+    contextMenuAt(node.closest('[data-qd]'), sec, f.left + e.clientX, f.top + e.clientY);
   });
-  doc.addEventListener('mousemove', (e) => { hoverAt(e.target); runslide.hover(e.target); }, { passive: true });
+  doc.addEventListener('mousemove', (e) => { hoverAt(clickNode(e)); runslide.hover(e.target); }, { passive: true });
   doc.addEventListener('mousedown', () => closeMenu());
 
   const onReady = () => {
@@ -1228,7 +1229,7 @@ function clickNode(e) {
   // an element with text, or a slide title
   const under = e.target.ownerDocument.elementsFromPoint(e.clientX, e.clientY).find((n) => {
     const o = n.closest('[data-qd]');
-    return !el.contains(n) && (o ? !!o.textContent.trim() : !!editTarget(n));
+    return !el.contains(n) && (o ? o.textContent.trim() : editTarget(n));
   });
   return under || e.target;
 }
