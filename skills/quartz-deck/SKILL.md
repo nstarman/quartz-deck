@@ -58,6 +58,11 @@ when the current directory has exactly one `.qmd`.
   The edit result's `target` is the id to use from then on.
 - **Element** (block inside a slide): `<slide>/<index>` (0-based, as listed by
   `qd show`) or `#id` for blocks with an explicit id (e.g. boxes `#b-1a2b`).
+  Inside columns the ref goes on with the place at each level: in
+  `:::: {.columns}` at `results/1`, `results/1/0` is the first `.column` and
+  `results/1/0/2` the third element in it (`qd show` lists them under
+  `children`). `build set/list/order`, `block class` and `edit` take these
+  refs; `block move/dup/rm/add/place` refuse them (edit the source instead).
 
 ## Commands
 
@@ -86,7 +91,7 @@ when the current directory has exactly one `.qmd`.
 | remove attribute/class | `qd set results --unset background-color --unclass center` |
 | front matter key | `qd meta set title '"My talk"'` / `qd meta unset subtitle` |
 | reveal.js option | `qd meta set format.revealjs.theme dark` / `qd meta unset format.revealjs.slide-number` (under `format: revealjs:`, made when missing) |
-| builds (appear on a click) | `qd build set results/1 --appear fade-up --leave fade-out` (`--appear none` makes it always shown), `qd build list results` (in the order they show), `qd build order results results/2 results/1` (every build named once; source order removes the indexes) |
+| builds (appear on a click) | `qd build set results/1 --appear fade-up --leave fade-out` (`--appear none` makes it always shown), `qd build list results` (in the order they show), `qd build order results results/2 results/1` (every build named once; source order removes the indexes); inside columns, name the element: `qd build set results/1/1/0 --appear fade-up` |
 | slide size | `qd meta size 1050 590 --keep-places` (`--keep-places` scales every placed box and arrow with the slide) |
 | positioned text box | `qd box add results --text "Note" --at 700,80 --size 300,100` |
 | positioned image | `qd box add results --image figures/plot.png --at 100,150 --size 600,400` |

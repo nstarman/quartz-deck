@@ -3,7 +3,7 @@
 //! any targeted slide without an explicit id gets one written (research R3).
 
 use crate::attrs::{Attrs, valid_name};
-use crate::deck::{Block, BlockKind, Deck, Slide, SlideKind, Span};
+use crate::deck::{Block, BlockKind, Deck, Slide, SlideKind, Span, walk};
 use crate::error::{QdError, Result};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -138,7 +138,7 @@ impl<'a> Ctx<'a> {
         taken.extend(
             d.slides
                 .iter()
-                .flat_map(|s| s.blocks.iter().map(|b| b.id.clone())),
+                .flat_map(|s| walk(&s.blocks).map(|b| b.id.clone())),
         );
         Ctx { d, taken, salt: 0 }
     }
@@ -886,7 +886,7 @@ fn rearrange(
 
 /// Element `r`, which must be on slide `s`; returns its index there.
 fn on_slide(d: &Deck, s: &Slide, r: &str) -> Result<usize> {
-    let (es, b) = d.element(r)?;
+    let (es, b) = d.top_element(r, "move")?;
     if es.index != s.index {
         return Err(QdError::InvalidArg(format!(
             "'{r}' is on another slide; move elements between slides with cut and paste (`block rm` + `block add`)"
@@ -955,7 +955,7 @@ pub fn block_move(d: &Deck, element: &str, to: Pos) -> Result<Patch> {
 }
 
 pub fn block_rm(d: &Deck, element: &str) -> Result<Patch> {
-    let (s, b) = d.element(element)?;
+    let (s, b) = d.top_element(element, "delete")?;
     if s.blocks.len() == 1 {
         // the slide's only content: leave it empty, cleanly separated
         let mut p = if b.kind == BlockKind::Box {
@@ -1017,7 +1017,7 @@ fn renew_id(ctx: &mut Ctx, b: &Block, text: &str, assigned: &mut Vec<String>) ->
 }
 
 pub fn block_dup(d: &Deck, element: &str) -> Result<Patch> {
-    let (s, b) = d.element(element)?;
+    let (s, b) = d.top_element(element, "duplicate")?;
     let mut assigned = Vec::new();
     let copy = renew_id(&mut Ctx::new(d), b, d.slice(b.span), &mut assigned);
     let mut p = block_add(d, &s.id, Pos::After(element), &copy)?;
@@ -1263,12 +1263,11 @@ pub struct Build<'d> {
 }
 
 /// `qd build list`: the slide's builds in the order they show: by
-/// `fragment-index` where set, then source order (as reveal.js sorts them).
+/// `fragment-index` where set, then source order (as reveal.js sorts them),
+/// those inside columns too (spec 024).
 pub fn build_list<'d>(d: &'d Deck, slide: &str) -> Result<Vec<Build<'d>>> {
     let s = d.slide(slide)?;
-    let mut out: Vec<Build> = s
-        .blocks
-        .iter()
+    let mut out: Vec<Build> = walk(&s.blocks)
         .filter_map(|b| {
             let (appear, leave) = build_of(b.attrs.as_ref());
             let incremental = b.attrs.as_ref().is_some_and(|a| a.has_class("incremental"));
@@ -1325,9 +1324,7 @@ pub fn build_order(d: &Deck, slide: &str, refs: &[String]) -> Result<Patch> {
             ordered.join(" ")
         )));
     }
-    let source = s
-        .blocks
-        .iter()
+    let source = walk(&s.blocks)
         .map(|b| b.id.as_str())
         .filter(|id| ordered.contains(id));
     let in_source = source.eq(refs.iter().map(String::as_str));
@@ -1853,7 +1850,7 @@ fn edit_box(
     f: impl FnOnce(&mut Attrs) -> Result<bool>,
 ) -> Result<Patch> {
     let mut ctx = Ctx::new(d);
-    let (s, b) = d.element(r)?;
+    let (s, b) = d.top_element(r, "move")?;
     if b.kind != BlockKind::Box {
         return Err(QdError::InvalidArg(format!(
             "'{r}' is a {:?} block, not a positioned (.absolute) box",
@@ -1943,7 +1940,7 @@ pub fn box_resize(d: &Deck, r: &str, size: (f64, f64), at: Option<(f64, f64)>) -
 
 pub fn box_rm(d: &Deck, r: &str) -> Result<Patch> {
     let mut ctx = Ctx::new(d);
-    let (s, b) = d.element(r)?;
+    let (s, b) = d.top_element(r, "delete")?;
     if b.kind != BlockKind::Box {
         return Err(QdError::InvalidArg(format!(
             "'{r}' is not a positioned box"
@@ -1978,7 +1975,7 @@ pub fn block_place(
     width: Option<f64>,
     height: Option<f64>,
 ) -> Result<Patch> {
-    let (_, b) = d.element(r)?;
+    let (_, b) = d.top_element(r, "place")?;
     let refuse = |why: &str| Err(QdError::InvalidArg(format!("'{r}' can't be placed: {why}")));
     match b.kind {
         BlockKind::Box => return refuse("it is already placed freely"),
@@ -2080,7 +2077,7 @@ pub fn block_unplace(d: &Deck, r: &str) -> Result<Patch> {
 /// `front`/`back` move it after the slide's last box or before its first;
 /// `forward`/`backward` past the next or previous box. Flow elements keep their order.
 pub fn box_order(d: &Deck, r: &str, to: &str) -> Result<Patch> {
-    let (s, b) = d.element(r)?;
+    let (s, b) = d.top_element(r, "reorder")?;
     if b.kind != BlockKind::Box {
         return Err(QdError::InvalidArg(format!(
             "'{r}' is not placed freely; only placed elements stack"
