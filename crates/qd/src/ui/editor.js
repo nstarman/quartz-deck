@@ -936,7 +936,8 @@ async function renderElementPanel() {
   });
   $('[data-act=deselect]', view).addEventListener('click', () => select(null));
   // a column's width, and a columns block's Add column (spec 025)
-  const classes = block.attrs?.classes || [];
+  // (a shorthand fence, `::: column`, has its class but no attributes)
+  const classes = block.attrs?.classes || [block.text.match(/^:{3,}\s*([\w-]+)\s*:*$/m)?.[1]];
   const [isCol, isCols] = ['column', 'columns'].map((c) => classes.includes(c));
   if (isCol || isCols) {
     const c = $('form.columns-form', view);

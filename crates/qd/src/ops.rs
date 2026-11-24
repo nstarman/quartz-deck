@@ -1250,9 +1250,7 @@ pub fn block_attr(d: &Deck, element: &str, change: &AttrChange) -> Result<Patch>
 pub fn add_column(d: &Deck, columns: &str) -> Result<Patch> {
     let (s, b) = d.element(columns)?;
     let fence = d.slice(b.span).lines().next().unwrap_or("");
-    if b.kind != BlockKind::Div
-        || !crate::deck::div_attrs(fence).is_some_and(|a| a.has_class("columns"))
-    {
+    if !crate::deck::div_attrs(fence).is_some_and(|a| a.has_class("columns")) {
         return Err(QdError::InvalidArg(format!(
             "'{columns}' is not a columns block"
         )));
@@ -1309,6 +1307,20 @@ fn with_attrs<'d>(
                     format!("{left}{}{right}", a.render())
                 }
             }
+        }
+        // a div written `::: column`: its attributes go in braces on its own fence (spec 025)
+        None if fenced => {
+            let first = lines[0];
+            let mut a = crate::deck::div_attrs(first).unwrap_or_default();
+            change(&mut a)?;
+            let colons = first.len() - first.trim_start().len()
+                + first.trim_start().chars().take_while(|&c| c == ':').count();
+            format!(
+                "{} {}{}",
+                &first[..colons],
+                a.render(),
+                &text[first.len()..]
+            )
         }
         None => {
             let mut a = Attrs::default();

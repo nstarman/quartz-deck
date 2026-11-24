@@ -1889,6 +1889,20 @@ fn column_widths_and_number() {
     e.ok(&["block", "rm", "r/0/1"]);
     assert!(!e.text().contains("A plot"), "{}", e.text());
     e.err(&["block", "add-column", "r/0/0"], "E_INVALID_ARG", 1);
+    // a column written `::: column`: the width goes on its own fence, in braces
+    let short = "## S {#s}\n\n:::: columns\n::: column\nA\n:::\n::::\n";
+    let e = Env::with(short);
+    e.ok(&["block", "attr", "s/0/0", "--attr", "width=40%"]);
+    assert_eq!(
+        e.text(),
+        short.replace("::: column\n", "::: {.column width=40%}\n")
+    );
+    e.ok(&["block", "add-column", "s/0"]);
+    assert!(
+        e.text().contains("A\n:::\n\n::: {.column}\n:::\n::::"),
+        "{}",
+        e.text()
+    );
 }
 
 /// Spec 025: a copy gets fresh ids inside its columns too, so no id is in the deck twice.
