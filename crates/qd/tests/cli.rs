@@ -1596,11 +1596,28 @@ fn build_set_effects() {
     );
     e.ok(&["build", "set", "results/0", "--leave", "none"]);
     assert_eq!(e.text(), BUILDS, "back to none, bytes as before");
-    // another class is kept
+    // a picture's build goes on a div around it (a captioned picture is a
+    // figure, and Quarto leaves its fragment-index behind); its classes stay
     e.ok(&["build", "set", "results/2", "--appear", "grow"]);
-    assert!(e.text().contains("{.wide .fragment .grow}"), "{}", e.text());
+    assert!(
+        e.text()
+            .contains("::: {.fragment .grow}\n![A picture](pic.png){.wide}\n:::"),
+        "{}",
+        e.text()
+    );
     e.ok(&["build", "set", "results/2", "--appear", "none"]);
     assert_eq!(e.text(), BUILDS);
+    // one written on the picture itself moves to the div, with its place in the order
+    let own = BUILDS.replace("{.wide}", "{.wide .fragment fragment-index=2}");
+    let e = Env::with(&own);
+    e.ok(&["build", "set", "results/2", "--appear", "fade-up"]);
+    assert!(
+        e.text().contains(
+            "::: {.fragment .fade-up fragment-index=2}\n![A picture](pic.png){.wide}\n:::"
+        ),
+        "{}",
+        e.text()
+    );
     // errors
     e.err(
         &["build", "set", "results/0", "--appear", "spin"],

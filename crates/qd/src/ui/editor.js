@@ -1244,7 +1244,8 @@ function clickNode(e) {
   // an element with text, or a slide title
   const under = e.target.ownerDocument.elementsFromPoint(e.clientX, e.clientY).find((n) => {
     const o = n.closest('[data-qd]');
-    return !el.contains(n) && (o ? o.textContent.trim() : editTarget(n));
+    // under it, not holding it (a column, spec 024)
+    return !el.contains(n) && !n.contains(el) && (o ? o.textContent.trim() : editTarget(n));
   });
   return under || e.target;
 }

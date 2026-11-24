@@ -5096,7 +5096,7 @@ async fn build_order_presents() {
 
 // ---------- spec 024: builds inside columns ----------
 
-const COLUMNS_DECK: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## C {#c}\n\n:::: {.columns}\n::: {.column}\n- one\n- two\n:::\n::: {.column}\n![A plot](pic.png)\n:::\n::::\n";
+const COLUMNS_DECK: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## C {#c}\n\n:::: {.columns}\n::: {.column}\n- one\n- two\n:::\n::: {.column}\n![A plot](pic.svg){width=60%}\n:::\n::::\n";
 
 /// Spec 024 US1: click the list in one column and the picture in the other,
 /// give each a build, swap them in the build list, and present them in that
@@ -5104,7 +5104,13 @@ const COLUMNS_DECK: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## C {#c}\n\
 /// moves are off inside a column.
 #[tokio::test(flavor = "multi_thread")]
 async fn builds_inside_columns() {
-    let Some(ed) = Ed::open(COLUMNS_DECK).await else {
+    // a captioned picture is a figure: its build must keep its place (on a div around it)
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="120"><rect width="200" height="120"/></svg>"#;
+    let Some(ed) = Ed::open_with(COLUMNS_DECK, &[], |dir| {
+        std::fs::write(dir.join("pic.svg"), svg).unwrap()
+    })
+    .await
+    else {
         return;
     };
     ed.wait(INSPECTING).await;

@@ -1169,7 +1169,7 @@ pub fn build_set(
     };
     known(appear, APPEARS, "appear")?;
     known(leave, LEAVES, "leave")?;
-    let (_, b) = d.element(element)?;
+    let (s, b) = d.element(element)?;
     let (was_appear, was_leave) = build_of(b.attrs.as_ref());
     let pick = |v: Option<&str>, was: Option<&'static str>| match v {
         Some("none") => None,
@@ -1195,7 +1195,7 @@ pub fn build_set(
         ),
         (None, Some(l)) => add.extend(["fragment", l]),
     }
-    let (index, b, new) = with_attrs(d, element, |a| {
+    let strip = |a: &mut Attrs| {
         let all = APPEARS
             .iter()
             .chain(LEAVES)
@@ -1204,14 +1204,44 @@ pub fn build_set(
         for c in std::iter::once("fragment").chain(all) {
             a.remove_class(c);
         }
-        if add.is_empty() {
-            a.unset("fragment-index");
+    };
+    // A picture with a caption renders as a figure, and Quarto moves its
+    // `.fragment` to the figure but leaves `fragment-index` on the picture,
+    // so the order is lost: its build goes on a div around it instead (one
+    // without attributes gets that div from `with_attrs`).
+    let (index, new) = match (&b.attrs, b.kind == BlockKind::Image && !add.is_empty()) {
+        (Some(own), true) => {
+            let mut wrap = Attrs::default();
+            if let Some(i) = own.get("fragment-index") {
+                wrap.set("fragment-index", i);
+            }
+            for c in &add {
+                wrap.add_class(c);
+            }
+            let (_, _, text) = with_attrs(d, element, |a| {
+                strip(a);
+                a.unset("fragment-index");
+                Ok(())
+            })?;
+            (
+                s.index,
+                format!("::: {}{nl}{text}{nl}:::", wrap.render(), nl = d.nl),
+            )
         }
-        for c in &add {
-            a.add_class(c);
+        _ => {
+            let (i, _, n) = with_attrs(d, element, |a| {
+                strip(a);
+                if add.is_empty() {
+                    a.unset("fragment-index");
+                }
+                for c in &add {
+                    a.add_class(c);
+                }
+                Ok(())
+            })?;
+            (i, n)
         }
-        Ok(())
-    })?;
+    };
     keep_structure(
         d,
         patch("build set", b.id.clone(), vec![(b.span, new)], Vec::new()),
