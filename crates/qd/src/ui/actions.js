@@ -58,13 +58,17 @@ const UNPLACEABLE = {
   pause: 'A pause has nothing to show',
 };
 
-/** The element `d` places from `t` among what holds it. */
-const sibling = (t, d) => `${t.ref.slice(0, t.ref.lastIndexOf('/'))}/${t.index + d}`;
+/** What holds element `ref`: its slide, or inside columns its column (spec 024). */
+export const up = (r) => r.slice(0, r.lastIndexOf('/'));
+/** The slide element `ref` is on. */
+export const slideOf = (r) => r.split('/')[0];
 
 export function makeActions(api) {
   const classesOf = (t) => t.block.attrs?.classes || [];
   const toggleClass = (t, c) => api.op('block class', { element: t.ref, [classesOf(t).includes(c) ? 'remove' : 'add']: c });
-  const insertMenu = (t, where) => INSERTS.map((k) => ({ label: k.label, run: () => api.insert(t.slideId, where, k) }));
+  // in a column (spec 025), only what goes in the flow: boxes, arrows and diagrams are the slide's
+  const insertMenu = (t, where) => INSERTS.filter((k) => !(where.into && (k.box || k.arrow || k.diagram)))
+    .map((k) => ({ label: k.label, run: () => api.insert(t.slideId, where, k) }));
 
   // Appearance ▸: also the menu bar's Edit ▸ Appearance (spec 007)
   const classes = [
@@ -88,8 +92,8 @@ export function makeActions(api) {
     { id: 'history-restore-element', label: 'Restore from this version', visible: () => !!api.version(), run: (t) => api.op('restore', { rev: api.version().rev, element: t.ref }) },
     '-',
     // within what holds it: the slide, or its column (spec 025)
-    { id: 'up', label: 'Move up', enabled: (t) => t.index > 0, run: (t) => api.op('block move', { element: t.ref, before: sibling(t, -1) }) },
-    { id: 'down', label: 'Move down', enabled: (t) => t.index < t.count - 1, run: (t) => api.op('block move', { element: t.ref, after: sibling(t, 1) }) },
+    { id: 'up', label: 'Move up', enabled: (t) => t.index > 0, run: (t) => api.op('block move', { element: t.ref, before: `${up(t.ref)}/${t.index - 1}` }) },
+    { id: 'down', label: 'Move down', enabled: (t) => t.index < t.count - 1, run: (t) => api.op('block move', { element: t.ref, after: `${up(t.ref)}/${t.index + 1}` }) },
     { id: 'insert-before', label: 'Insert before', items: (t) => insertMenu(t, { before: t.ref }) },
     { id: 'insert-after', label: 'Insert after', items: (t) => insertMenu(t, { after: t.ref }) },
     '-',

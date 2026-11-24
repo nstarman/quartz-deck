@@ -34,7 +34,7 @@
 - [X] T013 [US3] `crates/qd/src/ui/editor.js`: "+ Add content" in an empty `.column[data-qd]` (editor only), opening the insert menu with `{ into: ref }`; `api.insert` passes `into`.
 - [X] T014 [US4] Place freely enabled for nested elements (its `why` for divs stays).
 - [X] T015 [P] Showcase `examples/showcase/showcase.qmd`: a slide to rearrange (text and a picture in two columns); README line.
-- [ ] T016 fmt, clippy, `cargo test`; `/pr-audit`; open PR 2.
+- [X] T016 fmt, clippy, `cargo test`; `/pr-audit`; open PR 2.
 
 ## Phase 5: User Story 5 — column widths and number (P4, PR 3)
 

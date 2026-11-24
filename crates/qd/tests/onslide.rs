@@ -5203,9 +5203,11 @@ async fn arrange_inside_columns() {
     // the emptied right column: + Add content ▸ Paragraph goes in it
     ed.settle().await;
     ed.go("c").await;
-    ed.wait(&format!("!!{FRAME}.querySelector('.qd-emptycol')"))
-        .await;
-    ed.click_in_slide(".qd-emptycol").await;
+    ed.wait(&format!(
+        "!!{FRAME}.querySelector('.column[data-qd]:not(:has(*))')"
+    ))
+    .await;
+    ed.click_in_slide(".column[data-qd]:not(:has(*))").await;
     ed.click_menu("Paragraph").await;
     ed.wait_file(
         |f| f.contains("::: {.column}\nNew paragraph.\n:::\n::::"),
