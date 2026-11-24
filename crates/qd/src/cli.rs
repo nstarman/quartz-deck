@@ -364,7 +364,7 @@ enum Cmd {
         #[arg(long)]
         unclass: Vec<String>,
     },
-    /// Replace one element's source (ref: <slide>/<index> or #id)
+    /// Replace one element's source (ref: <slide>/<index>, <slide>/<index>/<index>… inside columns, or #id)
     Edit {
         element: String,
         #[command(flatten)]
@@ -400,7 +400,7 @@ enum Cmd {
         #[command(subcommand)]
         action: ImageCmd,
     },
-    /// Single elements of a slide: add, move, remove, duplicate (ref: <slide>/<index> or #id)
+    /// Single elements of a slide: add, move, remove, duplicate (ref: <slide>/<index> or #id; not inside columns)
     Block {
         #[command(subcommand)]
         action: BlockCmd,
@@ -952,7 +952,7 @@ fn output_of(cmd: &str) -> &'static str {
             r#"{"version","slide_level","group_level","navigation_mode","width","height","title_slide","slides":[{"id","explicit","index","kind","title","summary","blocks","boxes","opaque","anchor","hidden","head","in"?}]}"#
         }
         "show" => {
-            r#"{"version","slide":{"id","explicit","index","kind","level","title","attrs":{"id","classes","kv"},"opaque","source","blocks":[{"id","explicit","kind","text","attrs","geom"?}]}}"#
+            r#"{"version","slide":{"id","explicit","index","kind","level","title","attrs":{"id","classes","kv"},"opaque","source","blocks":[{"id","explicit","kind","text","attrs","geom"?,"children"?:[<block>...]}]}}"#
         }
         "meta" => r#"{"version","front_matter":{...}}"#,
         "arrow" => {
@@ -1089,7 +1089,7 @@ fn schema() -> Value {
     ]);
     v["refs"] = json!({
         "slide": "explicit id | auto id | @N (1-based) | first | last",
-        "element": "<slide>/<index> (0-based among the slide's blocks) | #id"
+        "element": "<slide>/<index> (0-based among the slide's blocks), <slide>/<index>/<index>… inside columns | #id"
     });
     v
 }
@@ -1297,6 +1297,15 @@ fn block_json(d: &Deck, b: &Block) -> Value {
         };
         v["geom"] = json!({"left": len(g.left), "top": len(g.top), "width": len(g.width), "height": len(g.height),
             "right": len(g.right), "bottom": len(g.bottom)});
+    }
+    // a columns or column div's own elements (spec 024)
+    if !b.children.is_empty() {
+        v["children"] = json!(
+            b.children
+                .iter()
+                .map(|c| block_json(d, c))
+                .collect::<Vec<_>>()
+        );
     }
     v
 }

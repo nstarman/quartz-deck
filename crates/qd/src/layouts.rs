@@ -200,7 +200,7 @@ pub fn from_slide(
     let s = d.slide(slide)?;
     let mut places = std::collections::HashMap::new();
     for (r, rect) in at {
-        let (es, b) = d.element(r)?;
+        let (es, b) = d.top_element(r, "place")?;
         if es.index != s.index {
             return Err(QdError::InvalidArg(format!(
                 "'{r}' is not on slide '{slide}'"

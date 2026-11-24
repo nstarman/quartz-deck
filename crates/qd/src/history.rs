@@ -460,7 +460,7 @@ pub fn restore(current: &Deck, old: &Deck, short: &str, what: Restore) -> Result
             ))
         }
         Restore::Element(r) => {
-            let (os, ob) = old.element(r)?;
+            let (os, ob) = old.top_element(r, "restore")?;
             let Some(j) = now(at_old(os)) else {
                 return Err(QdError::InvalidArg(format!(
                     "slide '{}' of {r} is gone now; restore the slide instead",

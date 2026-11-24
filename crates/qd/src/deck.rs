@@ -55,6 +55,8 @@ pub struct Block {
     pub attrs: Option<Attrs>,
     /// First line start .. end of last line (line terminator excluded).
     pub span: Span,
+    /// A `.columns` or `.column` div's own blocks (spec 024); empty for any other block.
+    pub children: Vec<Block>,
 }
 
 #[derive(Clone, Debug)]
@@ -411,6 +413,85 @@ fn scan_text(ls: &[Line], i: usize) -> (usize, bool) {
     }
 }
 
+/// The positional ref of block `b` of slide `s`, `<slide>/<i>[/<j>…]`, as
+/// the preview tags it.
+pub fn positional(s: &Slide, b: &Block) -> String {
+    fn find(blocks: &[Block], b: &Block, path: &mut String) -> bool {
+        blocks.iter().enumerate().any(|(i, x)| {
+            let len = path.len();
+            path.push_str(&format!("/{i}"));
+            let hit = std::ptr::eq(x, b) || find(&x.children, b, path);
+            if !hit {
+                path.truncate(len);
+            }
+            hit
+        })
+    }
+    let mut path = s.id.clone();
+    find(&s.blocks, b, &mut path);
+    path
+}
+
+/// Blocks and every block inside them (spec 024), in source order.
+pub fn walk(blocks: &[Block]) -> Box<dyn Iterator<Item = &Block> + '_> {
+    Box::new(
+        blocks
+            .iter()
+            .flat_map(|b| std::iter::once(b).chain(walk(&b.children))),
+    )
+}
+
+/// The blocks of a slide (or of a columns or column div, spec 024) from its
+/// chunks; a block's id is `{prefix}/{i}` unless it has an explicit one.
+fn blocks_of<'c>(
+    ls: &[Line],
+    text: &str,
+    chunks: impl IntoIterator<Item = &'c Chunked>,
+    prefix: &str,
+    slide_level: u8,
+    used: &mut HashSet<String>,
+) -> Vec<Block> {
+    let mut out = Vec::new();
+    for (i, c) in chunks.into_iter().enumerate() {
+        let span = Span {
+            start: ls[c.first].start,
+            end: ls[c.last].end,
+        };
+        let (kind, attrs) = classify(c.kind, &text[span.start..span.end], used);
+        let (id, id_explicit) = match attrs.as_ref().and_then(|a| a.id()) {
+            Some(x) => (x.to_string(), true),
+            None => (format!("{prefix}/{i}"), false),
+        };
+        let children = if kind == BlockKind::Div && !c.opaque && opens_up(ls[c.first].text) {
+            // the lines between the fences, scanned as a slide's are
+            let inner = scan(&ls[..c.last], c.first + 1, slide_level);
+            blocks_of(ls, text, &inner, &id, slide_level, used)
+        } else {
+            Vec::new()
+        };
+        out.push(Block {
+            id,
+            id_explicit,
+            kind,
+            attrs,
+            span,
+            children,
+        });
+    }
+    out
+}
+
+/// A `.columns` or `.column` div, whose contents are elements of their own.
+fn opens_up(fence: &str) -> bool {
+    let rest = div_open(fence).unwrap_or("");
+    match rest.strip_prefix('{') {
+        Some(_) => {
+            Attrs::parse(rest).is_some_and(|a| a.has_class("columns") || a.has_class("column"))
+        }
+        None => matches!(rest.split_whitespace().next(), Some("columns" | "column")),
+    }
+}
+
 // ---------- headings & ids ----------
 
 /// Split heading text into (title, attrs). `text` excludes the `#` marker.
@@ -600,28 +681,16 @@ impl Deck {
                     None => (format!("@{index}"), false),
                 },
             };
-            let mut blocks = Vec::new();
-            let mut opaque = start.is_some_and(|s| chunks[s].opaque);
-            for (bi, &ci) in members.iter().enumerate() {
-                let c = &chunks[ci];
-                opaque |= c.opaque;
-                let span = Span {
-                    start: ls[c.first].start,
-                    end: ls[c.last].end,
-                };
-                let (kind, attrs) = classify(c.kind, &text[span.start..span.end], &mut used);
-                let (bid, explicit) = match attrs.as_ref().and_then(|a| a.id()) {
-                    Some(x) => (x.to_string(), true),
-                    None => (format!("{id}/{bi}"), false),
-                };
-                blocks.push(Block {
-                    id: bid,
-                    id_explicit: explicit,
-                    kind,
-                    attrs,
-                    span,
-                });
-            }
+            let opaque = start.is_some_and(|s| chunks[s].opaque)
+                || members.iter().any(|&ci| chunks[ci].opaque);
+            let blocks = blocks_of(
+                &ls,
+                &text,
+                members.iter().map(|&ci| &chunks[ci]),
+                &id,
+                slide_level,
+                &mut used,
+            );
             slides.push(Slide {
                 id,
                 id_explicit,
@@ -715,26 +784,29 @@ impl Deck {
         }
     }
 
-    /// Resolve an element ref: `<slide>/<i>` or `#id` / `id` of a block.
+    /// Resolve an element ref: `<slide>/<i>`, `<slide>/<i>/<j>…` inside
+    /// columns (spec 024), or `#id` / `id` of a block at any depth.
     pub fn element(&self, r: &str) -> Result<(&Slide, &Block)> {
-        if let Some((s, i)) = r.rsplit_once('/') {
+        if let Some((s, path)) = r.split_once('/') {
             let slide = self.slide(s)?;
-            let i: usize = i
-                .parse()
-                .map_err(|_| QdError::InvalidArg(format!("bad element index in '{r}'")))?;
-            let b = slide
-                .blocks
-                .get(i)
-                .ok_or_else(|| QdError::NotFound(format!("element '{r}'")))?;
-            return Ok((slide, b));
+            let (mut blocks, mut found) = (&slide.blocks, None);
+            for i in path.split('/') {
+                let i: usize = i
+                    .parse()
+                    .map_err(|_| QdError::InvalidArg(format!("bad element index in '{r}'")))?;
+                let b = blocks
+                    .get(i)
+                    .ok_or_else(|| QdError::NotFound(format!("element '{r}'")))?;
+                (blocks, found) = (&b.children, Some(b));
+            }
+            return Ok((slide, found.expect("a path has one index at least")));
         }
         let id = r.strip_prefix('#').unwrap_or(r);
         let found: Vec<(&Slide, &Block)> = self
             .slides
             .iter()
             .flat_map(|s| {
-                s.blocks
-                    .iter()
+                walk(&s.blocks)
                     .filter(|b| b.id_explicit && b.id == id)
                     .map(move |b| (s, b))
             })
@@ -749,6 +821,18 @@ impl Deck {
         }
     }
 
+    /// `element`, refused when it is inside columns, for an op that
+    /// rearranges a slide's blocks (`verb` it, spec 024).
+    pub fn top_element(&self, r: &str, verb: &str) -> Result<(&Slide, &Block)> {
+        let (s, b) = self.element(r)?;
+        if !s.blocks.iter().any(|x| std::ptr::eq(x, b)) {
+            return Err(QdError::InvalidArg(format!(
+                "'{r}' is inside columns: {verb} it in the source for now"
+            )));
+        }
+        Ok((s, b))
+    }
+
     /// Every explicit id in the deck (slides and blocks).
     pub fn explicit_ids(&self) -> Vec<&str> {
         let mut ids = Vec::new();
@@ -757,8 +841,7 @@ impl Deck {
                 ids.push(s.id.as_str());
             }
             ids.extend(
-                s.blocks
-                    .iter()
+                walk(&s.blocks)
                     .filter(|b| b.id_explicit)
                     .map(|b| b.id.as_str()),
             );
@@ -1124,6 +1207,41 @@ mod tests {
         assert_eq!(d.element("a/0").unwrap().1.id, "img");
         assert_eq!(d.element("#img").unwrap().0.id, "a");
         assert_eq!(d.element("a/5").unwrap_err().code(), "E_NOT_FOUND");
+    }
+
+    /// Spec 024: columns and their columns open up; other divs don't.
+    #[test]
+    fn columns_have_children() {
+        let d = deck(concat!(
+            "## R\n\n:::: {.columns}\n::: {.column width=\"40%\"}\n- one\n- two\n:::\n",
+            "::: column\n![A plot](p.png){#fig}\n\n:::: columns\n::: column\nx\n:::\n::::\n:::\n::::\n\n",
+            "::: {.fragment}\n- a\n:::\n\n::: {.callout-note}\nn\n:::\n",
+        ));
+        let ids = |bs: &[Block]| bs.iter().map(|b| b.id.clone()).collect::<Vec<_>>();
+        let r = &d.slides[0].blocks;
+        assert_eq!(ids(r), ["r/0", "r/1", "r/2"]);
+        assert_eq!(ids(&r[0].children), ["r/0/0", "r/0/1"]);
+        assert_eq!(ids(&r[0].children[1].children), ["fig", "r/0/1/1"]);
+        assert!(r[1].children.is_empty() && r[2].children.is_empty());
+        let (_, list) = d.element("r/0/0/0").unwrap();
+        assert_eq!(
+            (list.kind, d.slice(list.span)),
+            (BlockKind::List, "- one\n- two")
+        );
+        assert_eq!(d.element("r/0/1/1/0/0").unwrap().1.id, "r/0/1/1/0/0");
+        assert_eq!(d.element("#fig").unwrap().1.kind, BlockKind::Image);
+        assert_eq!(d.element("r/0/1/0").unwrap().1.id, "fig");
+        assert_eq!(
+            positional(&d.slides[0], d.element("#fig").unwrap().1),
+            "r/0/1/0"
+        );
+        for bad in ["r/0/9/0", "r/1/0", "r/0/0/0/0"] {
+            assert_eq!(d.element(bad).unwrap_err().code(), "E_NOT_FOUND", "{bad}");
+        }
+        assert!(d.explicit_ids().contains(&"fig"));
+        let twice =
+            deck("## A\n\n![](a.png){#x}\n\n:::: columns\n::: column\n![](b.png){#x}\n:::\n::::\n");
+        assert_eq!(twice.element("#x").unwrap_err().code(), "E_AMBIGUOUS");
     }
 
     #[test]

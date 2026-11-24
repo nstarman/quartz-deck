@@ -1678,6 +1678,86 @@ fn build_list_and_order() {
     );
 }
 
+const COLUMNS: &str = "## R {#r}\n\nIntro.\n\n:::: {.columns}\n::: {.column}\n- one\n- two\n:::\n::: {.column}\n![A plot](p.png)\n:::\n::::\n";
+
+/// Spec 024 US2: elements inside columns take builds by their nested refs,
+/// and ops that rearrange a slide refuse them.
+#[test]
+fn builds_inside_columns() {
+    let e = Env::with(COLUMNS);
+    let v = e.ok(&["show", "r"]);
+    let cols = &v["slide"]["blocks"][1]["children"];
+    assert_eq!(cols[0]["id"], "r/1/0");
+    assert_eq!(cols[0]["children"][0]["id"], "r/1/0/0");
+    assert_eq!(cols[1]["children"][0]["kind"], "image");
+    assert!(v["slide"]["blocks"][0].get("children").is_none());
+
+    e.ok(&["build", "set", "r/1/0/0", "--appear", "fade-in"]);
+    e.ok(&["build", "set", "r/1/1/0", "--appear", "fade-up"]);
+    assert_eq!(
+        e.text(),
+        COLUMNS
+            .replace("- one\n- two\n", "::: {.fragment}\n- one\n- two\n:::\n")
+            .replace(
+                "![A plot](p.png)\n",
+                "::: {.fragment .fade-up}\n![A plot](p.png)\n:::\n"
+            )
+    );
+    let refs = |v: &Value| {
+        v["builds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|b| b["ref"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(refs(&e.ok(&["build", "list", "r"])), ["r/1/0/0", "r/1/1/0"]);
+    let built = e.text();
+    e.ok(&["build", "order", "r", "r/1/1/0", "r/1/0/0"]);
+    assert_eq!(refs(&e.ok(&["build", "list", "r"])), ["r/1/1/0", "r/1/0/0"]);
+    assert!(
+        e.text()
+            .contains("::: {.fragment .fade-up fragment-index=1}"),
+        "{}",
+        e.text()
+    );
+    e.ok(&["build", "order", "r", "r/1/0/0", "r/1/1/0"]);
+    assert_eq!(e.text(), built, "source order: no indexes");
+
+    e.ok(&["block", "class", "r/1/0/0", "--add", "incremental"]);
+    assert!(
+        e.text().contains("::: {.fragment .incremental}\n- one"),
+        "{}",
+        e.text()
+    );
+
+    for args in [
+        &["block", "rm", "r/1/0/0"][..],
+        &["block", "dup", "r/1/1/0"],
+        &["block", "move", "r/1/1/0", "--before", "r/0"],
+        &["block", "place", "r/1/1/0", "--at", "10,10"],
+    ] {
+        let v = e.err(args, "E_INVALID_ARG", 1);
+        assert!(
+            v["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("inside columns"),
+            "{v}"
+        );
+    }
+    e.err(
+        &["build", "set", "r/1/2/0", "--appear", "grow"],
+        "E_NOT_FOUND",
+        1,
+    );
+    e.err(
+        &["build", "set", "r/0/0", "--appear", "grow"],
+        "E_NOT_FOUND",
+        1,
+    );
+}
+
 /// T024's findings: a build's name has no stray markdown, and a picture
 /// without alt text is named by its `fig-alt`.
 #[test]

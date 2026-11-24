@@ -86,7 +86,7 @@ pub fn plan(
 ) -> Result<Vec<Planned>> {
     let mut picked = vec![];
     for r in cells {
-        let (_, b) = d.element(r)?;
+        let (_, b) = d.top_element(r, "run")?;
         runnable(d, b, engine)?;
         picked.push(b.id.clone());
     }

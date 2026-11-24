@@ -74,10 +74,7 @@ impl Snapshot {
 /// (`<slide>/<i>`, as the preview tags them) even when named by `#id`.
 pub fn resolve(d: &Deck, r: &str) -> Result<(String, String)> {
     match d.element(r) {
-        Ok((s, b)) => {
-            let i = s.blocks.iter().position(|x| std::ptr::eq(x, b)).unwrap();
-            Ok((preview_id(s), format!("{}/{i}", s.id)))
-        }
+        Ok((s, b)) => Ok((preview_id(s), crate::deck::positional(s, b))),
         // a bare name that is no element's id may be a slide's
         Err(QdError::NotFound(_)) if !r.contains('/') => {
             d.slide(r).map(|s| (preview_id(s), s.id.clone()))
