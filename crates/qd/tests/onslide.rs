@@ -4733,6 +4733,32 @@ async fn props_own_title_slide() {
     );
 }
 
+/// T024's finding: a picture laid over the slide's text (a figure filling the
+/// slide) doesn't take every click. Text under the pointer is edited; the bare
+/// picture still opens its source.
+#[tokio::test(flavor = "multi_thread")]
+async fn click_through_a_covering_picture() {
+    let deck = "---\nformat: revealjs\n---\n\n## A {#a}\n\n![](cover.png){style=\"position:absolute; top:0; left:0; width:100%; height:100%\"}\n\n- First words\n- Second words\n";
+    let Some(ed) = Ed::open(deck).await else {
+        return;
+    };
+    ed.go("a").await;
+    // the picture is on top of the list
+    assert_eq!(
+        ed.eval("(() => { const d = document.querySelector('#preview').contentDocument; const li = d.querySelector('[data-qd=\"a/1\"] li'); const r = li.getBoundingClientRect(); return d.elementFromPoint(r.left + 8, r.top + r.height / 2).closest('[data-qd]')?.dataset.qd; })()").await,
+        json!("a/0")
+    );
+    ed.click_in_slide("[data-qd=\"a/1\"] li").await;
+    ed.wait("window.qdSession()?.ref === 'a/1' && window.qdSession().mode === 'typed'")
+        .await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("window.qdSession() === null").await;
+    // below the list: only the picture
+    ed.click_js("(() => { const f = document.querySelector('#preview').getBoundingClientRect(); const s = document.querySelector('#preview').contentDocument.querySelector('section#a').getBoundingClientRect(); return [f.left + s.left + s.width * 0.8, f.top + s.top + s.height * 0.85]; })()").await;
+    ed.wait("window.qdSession()?.ref === 'a/0' && window.qdSession().mode === 'source'")
+        .await;
+}
+
 /// Spec 023 T011: choose a select in the Animate view, as the person does.
 fn pick(name: &str, value: &str) -> String {
     pick_in("anim", name, value)
@@ -5290,8 +5316,11 @@ async fn diagram_delete_and_edge_properties() {
     ed.settle().await;
     ed.select_edge("a->b").await;
     ed.properties().await;
-    // the panel's own controls (the element bar can float over them in a small window)
-    ed.eval("[...document.querySelectorAll('form.dot-form button')].find((b) => b.textContent === 'Reverse').click()").await;
+    // the panel's own controls (the element bar can float over them in a small window),
+    // once the arrow's form is drawn
+    let reverse = "[...document.querySelectorAll('form.dot-form button')].find((b) => b.textContent === 'Reverse')";
+    ed.wait(&format!("!!{reverse}")).await;
+    ed.eval(&format!("{reverse}.click()")).await;
     ed.wait_file(|f| f.contains("  b -> a;\n"), "reversed")
         .await;
     ed.settle().await;
