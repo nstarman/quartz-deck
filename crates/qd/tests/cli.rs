@@ -1762,6 +1762,51 @@ fn builds_inside_columns() {
     }
 }
 
+/// Spec 025: a copy gets fresh ids inside its columns too, so no id is in the deck twice.
+#[test]
+fn copies_renew_ids_inside_columns() {
+    // `#ab` before `#a`, and `#a` in alt text: only the ids themselves change
+    let deck = "## R {#r}\n\n:::: {.columns}\n::: {.column #left}\n![](b.png){#ab}\n:::\n::: {.column}\n![see #a](a.png){#a}\n:::\n::::\n";
+    let ids = |e: &Env| {
+        let t = e.text();
+        let mut v: Vec<String> = t
+            .match_indices('#')
+            .map(|(i, _)| {
+                t[i + 1..]
+                    .chars()
+                    .take_while(|&c| quartz_deck::attrs::name_char(c))
+                    .collect::<String>()
+            })
+            // an attribute's id ends at `}` or a space (not a heading's `##`, nor alt text)
+            .zip(t.match_indices('#'))
+            .filter(|(id, (i, _))| !id.is_empty() && t[i + 1 + id.len()..].starts_with(['}', ' ']))
+            .map(|(id, _)| id)
+            .collect();
+        let n = v.len();
+        v.sort();
+        v.dedup();
+        assert_eq!(v.len(), n, "an id twice: {t}");
+    };
+    for args in [&["block", "dup", "r/0"][..], &["dup", "r"]] {
+        let e = Env::with(deck);
+        let v = e.ok(args);
+        ids(&e);
+        let t = e.text();
+        assert_eq!(
+            t.matches("{#ab}").count(),
+            1,
+            "#ab renewed in the copy: {t}"
+        );
+        assert_eq!(t.matches("![see #a]").count(), 2, "alt text kept: {t}");
+        assert!(v["assigned_ids"].as_array().unwrap().len() >= 3, "{v}");
+    }
+    // a pasted slide keeps ids the deck doesn't have, and renews those it has
+    let e = Env::with(deck);
+    e.ok(&["paste", "--after", "r", "--md", "## P\n\n:::: {.columns}\n::: {.column}\n![](a.png){#a}\n:::\n::: {.column}\n![](c.png){#c}\n:::\n::::\n"]);
+    ids(&e);
+    assert!(e.text().contains("{#c}"), "{}", e.text());
+}
+
 /// T024's findings: a build's name has no stray markdown, and a picture
 /// without alt text is named by its `fig-alt`.
 #[test]

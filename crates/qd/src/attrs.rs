@@ -229,7 +229,12 @@ fn quote(v: &str) -> String {
 
 /// Valid attribute key or class/id name for user input.
 pub fn valid_name(s: &str) -> bool {
-    !s.is_empty() && s.chars().all(|c| c.is_alphanumeric() || "_-:.".contains(c))
+    !s.is_empty() && s.chars().all(name_char)
+}
+
+/// A character of an attribute key or class/id name.
+pub fn name_char(c: char) -> bool {
+    c.is_alphanumeric() || "_-:.".contains(c)
 }
 
 #[cfg(test)]

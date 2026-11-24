@@ -993,33 +993,52 @@ fn copy_body(
     let mut pos = s.content_start();
     for b in &s.blocks {
         out.push_str(&src.text[pos..b.span.start]);
-        let t = src.slice(b.span);
-        if keep_free && b.id_explicit && ctx.taken.insert(b.id.clone()) {
-            out.push_str(t);
-        } else {
-            out.push_str(&renew_id(ctx, b, t, assigned));
-        }
+        out.push_str(&renew_ids(ctx, b, src.slice(b.span), keep_free, assigned));
         pos = b.span.end;
     }
     out.push_str(&src.text[pos..s.span.end]);
     out
 }
 
-/// A copy's text: an explicit id is replaced by a fresh one.
-fn renew_id(ctx: &mut Ctx, b: &Block, text: &str, assigned: &mut Vec<String>) -> String {
-    if !b.id_explicit {
-        return text.to_string();
+/// A copy's text: its explicit ids, its own and those inside it (columns,
+/// spec 025), replaced by fresh ones; with `keep_free`, one not yet in the
+/// deck is kept.
+fn renew_ids(
+    ctx: &mut Ctx,
+    b: &Block,
+    text: &str,
+    keep_free: bool,
+    assigned: &mut Vec<String>,
+) -> String {
+    let mut renew = Vec::new();
+    for x in walk(std::slice::from_ref(b)).filter(|x| x.id_explicit) {
+        if keep_free && ctx.taken.insert(x.id.clone()) {
+            continue;
+        }
+        let nid = ctx.fresh(if x.kind == BlockKind::Box { "b" } else { "e" });
+        assigned.push(nid.clone());
+        renew.push((x, nid));
     }
-    let nid = ctx.fresh(if b.kind == BlockKind::Box { "b" } else { "e" });
-    let t = text.replacen(&format!("#{}", b.id), &format!("#{nid}"), 1);
-    assigned.push(nid);
-    t
+    // from the last, so the places of the earlier ones stay put
+    let mut out = text.to_string();
+    for (x, nid) in renew.into_iter().rev() {
+        // its own `{#id}` is on its first line (a div's fence, a heading, a
+        // picture), after any `#x` in its text: the last whole match there
+        let at = x.span.start - b.span.start;
+        let line = out[at..].lines().next().unwrap_or("");
+        let old = format!("#{}", x.id);
+        let whole = |p: &usize| !line[p + old.len()..].starts_with(crate::attrs::name_char);
+        if let Some(p) = line.rmatch_indices(&old).map(|(p, _)| p).find(whole) {
+            out.replace_range(at + p..at + p + old.len(), &format!("#{nid}"));
+        }
+    }
+    out
 }
 
 pub fn block_dup(d: &Deck, element: &str) -> Result<Patch> {
     let (s, b) = d.top_element(element, "duplicate")?;
     let mut assigned = Vec::new();
-    let copy = renew_id(&mut Ctx::new(d), b, d.slice(b.span), &mut assigned);
+    let copy = renew_ids(&mut Ctx::new(d), b, d.slice(b.span), false, &mut assigned);
     let mut p = block_add(d, &s.id, Pos::After(element), &copy)?;
     p.op = "block dup".into();
     p.assigned_ids = assigned;
