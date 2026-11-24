@@ -4426,6 +4426,9 @@ async fn history_commit_notice() {
 const INSPECTOR_DECK: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## A {#a}\n\nFirst words\n\nSecond words\n\n![A picture](pic.png)\n\n## B {#b}\n\n```{python}\nprint(1)\n```\n";
 /// The preview's reveal.js.
 const REVEAL: &str = "document.querySelector('#preview').contentWindow.Reveal";
+/// The Animate view's build list, as refs in order.
+const BUILD_ROWS: &str =
+    "[...document.querySelectorAll('#panel .builds li')].map((li) => li.dataset.ref)";
 const INSPECTING: &str = "document.querySelector('main').classList.contains('inspector')";
 /// The inspector's tab names, in order, and the selected one.
 const TABS: &str = "[[...document.querySelectorAll('#panel .tabs [role=tab]')].map((t) => t.textContent), document.querySelector('#panel .tabs [aria-selected=true]')?.textContent]";
@@ -4808,9 +4811,8 @@ async fn props_animate() {
     ed.wait("document.querySelector('#panel .anim [name=appear]')?.value === 'fade-up' && document.querySelector('#panel .anim [name=leave]').disabled")
         .await;
     // the list, the selected one marked; ⌥↓ moves the first after the second
-    let rows = "[...document.querySelectorAll('#panel .builds li')].map((li) => li.dataset.ref)";
     ed.select("[data-qd=\"a/1\"]").await;
-    ed.wait(&format!("JSON.stringify({rows}) === '[\"a/0\",\"a/1\"]' && document.querySelector('#panel .builds [aria-current=true]')?.dataset.ref === 'a/1'")).await;
+    ed.wait(&format!("JSON.stringify({BUILD_ROWS}) === '[\"a/0\",\"a/1\"]' && document.querySelector('#panel .builds [aria-current=true]')?.dataset.ref === 'a/1'")).await;
     ed.eval("document.querySelector('#panel .builds li[data-ref=\"a/0\"]').focus()")
         .await;
     ed.key("ArrowDown", "ArrowDown", 40, 1).await;
@@ -4819,8 +4821,10 @@ async fn props_animate() {
     ed.settle().await;
     // a drag puts it back: source order, no indexes
     ed.go("a").await;
-    ed.wait(&format!("JSON.stringify({rows}) === '[\"a/1\",\"a/0\"]'"))
-        .await;
+    ed.wait(&format!(
+        "JSON.stringify({BUILD_ROWS}) === '[\"a/1\",\"a/0\"]'"
+    ))
+    .await;
     ed.eval("(() => { const [a, b] = document.querySelectorAll('#panel .builds li'); const dt = new DataTransfer(); b.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true })); a.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); })()").await;
     ed.wait_file(|f| !f.contains("fragment-index"), "back in source order")
         .await;
@@ -5030,6 +5034,18 @@ async fn props_deck() {
     ed.settle().await;
 }
 
+/// What `shown` finds on the slide after each of two clicks, presenting.
+async fn presented(ed: &Ed, shown: &str) -> Vec<Value> {
+    let mut order = Vec::new();
+    for _ in 0..2 {
+        ed.eval(&format!("{FRAME}.defaultView.Reveal.nextFragment()"))
+            .await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        order.push(ed.eval(shown).await);
+    }
+    order
+}
+
 /// Spec 023 US2 (T011): presenting, the builds show in the list's order.
 #[tokio::test(flavor = "multi_thread")]
 async fn build_order_presents() {
@@ -5045,13 +5061,7 @@ async fn build_order_presents() {
     let shown = format!(
         "[...{FRAME}.querySelectorAll('section.present .fragment.visible')].map((f) => f.textContent.trim())"
     );
-    let mut order = Vec::new();
-    for _ in 0..2 {
-        ed.eval(&format!("{FRAME}.defaultView.Reveal.nextFragment()"))
-            .await;
-        tokio::time::sleep(Duration::from_millis(200)).await;
-        order.push(ed.eval(&shown).await);
-    }
+    let order = presented(&ed, &shown).await;
     assert_eq!(
         order,
         [
@@ -5075,18 +5085,15 @@ async fn builds_inside_columns() {
         return;
     };
     ed.wait(INSPECTING).await;
-    ed.go("c").await;
     props(&ed, "animate").await;
     let selected = format!("[...{FRAME}.querySelectorAll('.qd-sel')].map((e) => e.dataset.qd)");
-    let list = "[data-qd=\"c/0/0/0\"]";
-    let pic = "[data-qd=\"c/0/1/0\"]";
-    for (el, fx, written) in [
-        (list, "fade-in", "::: {.fragment}\n- one"),
-        (pic, "fade-up", "::: {.fragment .fade-up}\n![A plot]"),
+    let (list, pic) = ("[data-qd=\"c/0/0/0\"]", "[data-qd=\"c/0/1/0\"]");
+    for (r, fx, written) in [
+        ("c/0/0/0", "fade-in", "::: {.fragment}\n- one"),
+        ("c/0/1/0", "fade-up", "::: {.fragment .fade-up}\n![A plot]"),
     ] {
         ed.go("c").await;
-        ed.select(el).await;
-        let r = el.split('"').nth(1).unwrap();
+        ed.select(&format!("[data-qd=\"{r}\"]")).await;
         ed.wait(&format!("JSON.stringify({selected}) === '[\"{r}\"]'"))
             .await;
         ed.wait("document.querySelector('#panel .anim [name=appear]')?.value === 'none'")
@@ -5098,8 +5105,7 @@ async fn builds_inside_columns() {
     // the build list, then ⌥↑ on the picture: it comes first
     ed.go("c").await;
     ed.select(pic).await;
-    let rows = "[...document.querySelectorAll('#panel .builds li')].map((li) => li.dataset.ref)";
-    ed.wait(&format!("JSON.stringify({rows}) === '[\"c/0/0/0\",\"c/0/1/0\"]' && document.querySelector('#panel .builds [aria-current=true]')?.dataset.ref === 'c/0/1/0'"))
+    ed.wait(&format!("JSON.stringify({BUILD_ROWS}) === '[\"c/0/0/0\",\"c/0/1/0\"]' && document.querySelector('#panel .builds [aria-current=true]')?.dataset.ref === 'c/0/1/0'"))
         .await;
     ed.eval("document.querySelector('#panel .builds li[data-ref=\"c/0/1/0\"]').focus()")
         .await;
@@ -5111,13 +5117,7 @@ async fn builds_inside_columns() {
     let shown = format!(
         "[...{FRAME}.querySelectorAll('section.present .fragment.visible')].map((f) => f.querySelector('img') ? 'plot' : f.textContent.trim())"
     );
-    let mut order = Vec::new();
-    for _ in 0..2 {
-        ed.eval(&format!("{FRAME}.defaultView.Reveal.nextFragment()"))
-            .await;
-        tokio::time::sleep(Duration::from_millis(200)).await;
-        order.push(ed.eval(&shown).await);
-    }
+    let order = presented(&ed, &shown).await;
     assert_eq!(order, [json!(["plot"]), json!(["one\ntwo", "plot"])]);
 
     // inside a column the slide's own moves are off, with the reason

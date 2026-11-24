@@ -131,6 +131,9 @@ async function locate(ref) {
   return { slideId: ref.slice(0, cut), among: among || [], index: path.at(-1) };
 }
 
+/** What holds element `ref`: its slide, or inside columns its column (spec 024). */
+const up = (r) => r.slice(0, r.lastIndexOf('/'));
+
 /** The block for an element ref, or null. */
 async function fetchBlock(ref) {
   const { among, index } = await locate(ref);
@@ -1638,9 +1641,8 @@ async function elementTarget(ref) {
   const block = among[index];
   if (!block) return null;
   const el = elOf(ref);
-  // inside columns: `parent` holds it, and the slide's own moves don't reach it
-  const parent = ref.split('/').length > 2 ? ref.slice(0, ref.lastIndexOf('/')) : null;
-  return { ref, block, slideId, index, count: among.length, kinds: among.map((b) => b.kind), el, nested: !!parent, parent };
+  // inside columns the slide's own moves don't reach it
+  return { ref, block, slideId, index, count: among.length, kinds: among.map((b) => b.kind), el, nested: up(ref).includes('/') };
 }
 
 /** … or a slide. */
@@ -2006,7 +2008,7 @@ function hoverAt(node) {
   const el = node.closest?.('[data-qd]');
   if (!el || el.classList.contains('absolute')) return;
   // inside columns (spec 024): insert and drag are the slide's, not the column's
-  if (el.dataset.qd.split('/').length > 2) { hoverbar.hidden = true; return; }
+  if (up(el.dataset.qd).includes('/')) { hoverbar.hidden = true; return; }
   hovered = el;
   const p = pageRect(el);
   hoverbar.hidden = false;
@@ -2035,13 +2037,13 @@ hoverbar.querySelector('[data-act=drag]').addEventListener('pointerdown', (e) =>
   handle.setPointerCapture(e.pointerId);
   dragging = true;
   const from = hovered.dataset.qd;
-  const slideId = from.slice(0, from.lastIndexOf('/'));
+  const slideId = up(from);
   let drop = null; // { ref, before }
   const onMove = (ev) => {
     const f = frame.getBoundingClientRect();
     const hit = frame.contentDocument.elementFromPoint(ev.clientX - f.left, ev.clientY - f.top)?.closest?.('[data-qd]');
     const ref = hit?.dataset.qd;
-    if (!hit || ref === from || ref.slice(0, ref.lastIndexOf('/')) !== slideId) { dropline.hidden = true; drop = null; return; }
+    if (!hit || ref === from || up(ref) !== slideId) { dropline.hidden = true; drop = null; return; }
     const p = pageRect(hit);
     const before = ev.clientY < p.top + p.height / 2;
     drop = { ref, before };
@@ -2326,7 +2328,7 @@ const inSlide = (e) => e.target.ownerDocument === frame.contentDocument && !!fra
 keys.on('next-element', { key: inSlide, enabled: (ctx) => !!ctx.slide, run: () => stepSelection(false) });
 keys.on('prev-element', { key: inSlide, enabled: (ctx) => !!ctx.slide, run: () => stepSelection(true) });
 // Escape: out of a column to what holds it (spec 024), else nothing selected
-keys.on('deselect', { enabled: () => !!state.sel, run: () => select(state.sel.split('/').length > 2 ? state.sel.slice(0, state.sel.lastIndexOf('/')) : null) });
+keys.on('deselect', { enabled: () => !!state.sel, run: () => select(up(state.sel).includes('/') ? up(state.sel) : null) });
 keys.on('dot-add', { enabled: (ctx) => dot.diagram(ctx.el?.ref), run: (ctx) => dot.addBox(ctx.el.ref) });
 keys.on('actions-menu', keyboardMenu);
 keys.on('focus-text', () => window.parent.postMessage({ type: 'focusText' }, '*')); // VS Code's panel only

@@ -241,14 +241,10 @@ fn tag_blocks(
                         format!("{} {{.{word} data-qd=\"{tag}\"}}", &first[..colons])
                     }
                 };
-                if b.children.is_empty() {
-                    format!("{fence}{}", &text[first_end..])
-                } else {
-                    *out += &fence;
-                    let at =
-                        tag_blocks(d, out, &b.children, &tag, b.span.start + first_end, outputs);
-                    d.text[at..b.span.end].to_string()
-                }
+                *out += &fence;
+                let at = tag_blocks(d, out, &b.children, &tag, b.span.start + first_end, outputs);
+                *out += &d.text[at..b.span.end];
+                continue;
             }
             // a heading inside a div would start a slide in Quarto: mark the heading itself
             BlockKind::Heading => {
