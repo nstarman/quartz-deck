@@ -26,15 +26,15 @@
 
 **Independent test**: browser tests in `crates/qd/tests/onslide.rs`.
 
-- [ ] T008 [US1] Browser test: ⌥↑ on the second element of a column swaps them; Duplicate and Delete in the menu; Insert after adds into the column; Move up disabled on a column's first element.
-- [ ] T009 [US2] Browser test: drag the picture to the other column (drop line shown there), then below the columns block; drop on an empty column fills it.
-- [ ] T010 [US3] Browser test: an emptied column shows "+ Add content" (not when presenting); choosing Paragraph adds it in that column.
-- [ ] T011 [US1] `crates/qd/src/ui/actions.js`: remove the `SLIDE_LEVEL` gate; Move up/down name `up(ref)/i±1`; Insert before/after and paste pass the nested ref.
-- [ ] T012 [US2] `crates/qd/src/ui/editor.js`: hover bar and drag for nested elements; drop targets any `[data-qd]` of the slide, an empty column as `--into`; keep the moved element selected by the op's `target`.
-- [ ] T013 [US3] `crates/qd/src/ui/editor.js`: "+ Add content" in an empty `.column[data-qd]` (editor only), opening the insert menu with `{ into: ref }`; `api.insert` passes `into`.
-- [ ] T014 [US4] Place freely enabled for nested elements (its `why` for divs stays).
-- [ ] T015 [P] Showcase `examples/showcase/showcase.qmd`: a slide to rearrange (text and a picture in two columns); README line.
-- [ ] T016 fmt, clippy, `cargo test`; `/pr-audit`; open PR 2.
+- [X] T008 [US1] Browser test: ⌥↑ on the second element of a column swaps them; Duplicate and Delete in the menu; Insert after adds into the column; Move up disabled on a column's first element.
+- [X] T009 [US2] Browser test: drag the picture to the other column (drop line shown there), then below the columns block; drop on an empty column fills it.
+- [X] T010 [US3] Browser test: an emptied column shows "+ Add content" (not when presenting); choosing Paragraph adds it in that column.
+- [X] T011 [US1] `crates/qd/src/ui/actions.js`: remove the `SLIDE_LEVEL` gate; Move up/down name `up(ref)/i±1`; Insert before/after and paste pass the nested ref.
+- [X] T012 [US2] `crates/qd/src/ui/editor.js`: hover bar and drag for nested elements; drop targets any `[data-qd]` of the slide, an empty column as `--into`; keep the moved element selected by the op's `target`.
+- [X] T013 [US3] `crates/qd/src/ui/editor.js`: "+ Add content" in an empty `.column[data-qd]` (editor only), opening the insert menu with `{ into: ref }`; `api.insert` passes `into`.
+- [X] T014 [US4] Place freely enabled for nested elements (its `why` for divs stays).
+- [X] T015 [P] Showcase `examples/showcase/showcase.qmd`: a slide to rearrange (text and a picture in two columns); README line.
+- [X] T016 fmt, clippy, `cargo test`; `/pr-audit`; open PR 2.
 
 ## Phase 5: User Story 5 — column widths and number (P4, PR 3)
 

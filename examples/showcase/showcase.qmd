@@ -99,6 +99,18 @@ The results, in three slides you go down through.
 :::
 ::::
 
+# Arrange inside columns {#column-arrange}
+
+:::: {.columns}
+::: {.column width="50%"}
+Drag me into the empty column.
+
+- or move me up with ⌥↑
+:::
+::: {.column width="50%"}
+:::
+::::
+
 # Placed boxes {#boxes background-color="#f4f1ea" transition="zoom" transition-speed=slow}
 
 ::: {#box-note .absolute left=60 top=150 width=380}

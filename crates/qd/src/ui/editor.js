@@ -4,7 +4,7 @@ import { SNAP_PX, nearest } from '/ui/guides.js';
 import { region, hintsFor, gate, reserialize, splice } from '/ui/inline.js';
 import { showToolbar, hideToolbar, place as placeToolbar, copy as toolbarCopy } from '/ui/toolbar.js';
 import { openSource, closeSource, sourceError, sourceText } from '/ui/source.js';
-import { makeActions, INSERTS, TRANSITIONS } from '/ui/actions.js';
+import { makeActions, INSERTS, TRANSITIONS, up, slideOf } from '/ui/actions.js';
 import * as keys from '/ui/keys.js';
 import * as settings from '/ui/settings.js';
 import { submenu } from '/ui/menubar.js';
@@ -130,9 +130,6 @@ async function locate(ref) {
   for (const i of path.slice(0, -1)) among = among?.[i]?.children;
   return { slideId: ref.slice(0, cut), among: among || [], index: path.at(-1) };
 }
-
-/** What holds element `ref`: its slide, or inside columns its column (spec 024). */
-const up = (r) => r.slice(0, r.lastIndexOf('/'));
 
 /** The block for an element ref, or null. */
 async function fetchBlock(ref) {
@@ -266,6 +263,9 @@ const PREVIEW_CSS = `html:not(.qd-present) {
   .qd-ph:not(:has(*))::before { content: 'Click to add text'; color: #9a9aa0; font-size: .6em; }
   .qd-ph[data-ph=image]:not(:has(*))::before { content: 'Drop an image'; }
   .qd-ph[data-ph=image]:not(:has(*)) { cursor: copy; }
+  /* an empty column (spec 025): what can go there, on the canvas only */
+  .column[data-qd]:not(:has(*)) { min-height: 3em; text-align: center; outline: 2px dashed #b9b9bf; outline-offset: -2px; border-radius: 6px; }
+  .column[data-qd]:not(:has(*))::before { content: '+ Add content'; display: block; padding-top: 1em; color: #9a9aa0; font-size: .6em; }
   [data-qd]:hover:not(:has([data-qd]:hover)) { outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; }
   .qd-sel, .qd-sel:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 2px; }
   /* an arrow (spec 016): its line is the hit area, its handles show the selection */
@@ -581,6 +581,14 @@ function hookFrame() {
     }
     const node = clickNode(e);
     const el = node.closest('[data-qd]');
+    // an empty column (spec 025): what to add in it
+    if (el?.matches(EMPTY_COLUMN)) {
+      e.preventDefault();
+      e.stopPropagation();
+      const p = pageRect(el);
+      openMenu(actions.insert({ slideId: slideOf(el.dataset.qd) }, { into: el.dataset.qd }), p.left, p.top + p.height);
+      return;
+    }
     const target = editTarget(node);
     const sec = node.closest('section');
     if (!el && !target && !(e.altKey && sec)) { if (state.sel) select(null); return; }
@@ -1634,6 +1642,9 @@ window.qdSession = () => {
   return { kind: s.kind, mode: s.mode || 'typed', ref: s.ref || null, draft: s.mode === 'source' ? sourceText() : draftSource(s) };
 };
 
+/** An empty column (spec 025): it shows + Add content. */
+const EMPTY_COLUMN = '.column[data-qd]:not(:has(*))';
+
 // ---------- menus, bars, insert, drag, clipboard (spec 003 US3/US4/US6) ----------
 
 /** What actions act on: an element (`<slide>/<i>`) … */
@@ -1642,8 +1653,7 @@ async function elementTarget(ref) {
   const block = among[index];
   if (!block) return null;
   const el = elOf(ref);
-  // inside columns the slide's own moves don't reach it
-  return { ref, block, slideId, index, count: among.length, kinds: among.map((b) => b.kind), el, nested: up(ref).includes('/') };
+  return { ref, block, slideId, index, count: among.length, kinds: among.map((b) => b.kind), el };
 }
 
 /** … or a slide. */
@@ -2007,9 +2017,8 @@ let hovered = null;
 function hoverAt(node) {
   if (state.session || menuOpen() || dragging) return;
   const el = node.closest?.('[data-qd]');
-  if (!el || el.classList.contains('absolute')) return;
-  // inside columns (spec 024): insert and drag are the slide's, not the column's
-  if (up(el.dataset.qd).includes('/')) { hoverbar.hidden = true; return; }
+  // a column itself isn't moved by hand (spec 025): its elements are
+  if (!el || el.classList.contains('absolute') || el.classList.contains('column')) return;
   hovered = el;
   const p = pageRect(el);
   hoverbar.hidden = false;
@@ -2038,17 +2047,17 @@ hoverbar.querySelector('[data-act=drag]').addEventListener('pointerdown', (e) =>
   handle.setPointerCapture(e.pointerId);
   dragging = true;
   const from = hovered.dataset.qd;
-  const slideId = up(from);
-  let drop = null; // { ref, before }
+  let drop = null; // { ref, at: before | after | into (a column, spec 025) }
   const onMove = (ev) => {
     const f = frame.getBoundingClientRect();
     const hit = frame.contentDocument.elementFromPoint(ev.clientX - f.left, ev.clientY - f.top)?.closest?.('[data-qd]');
     const ref = hit?.dataset.qd;
-    if (!hit || ref === from || up(ref) !== slideId) { dropline.hidden = true; drop = null; return; }
+    if (!hit || hovered.contains(hit) || slideOf(ref) !== slideOf(from)) { dropline.hidden = true; drop = null; return; }
     const p = pageRect(hit);
     const before = ev.clientY < p.top + p.height / 2;
-    drop = { ref, before };
-    Object.assign(dropline.style, { left: p.left + 'px', width: p.width + 'px', top: (before ? p.top - 4 : p.top + p.height + 2) + 'px' });
+    // a column itself (its empty space, or an empty column): last in it
+    drop = { ref, at: hit.classList.contains('column') ? 'into' : before ? 'before' : 'after' };
+    Object.assign(dropline.style, { left: p.left + 'px', width: p.width + 'px', top: (drop.at === 'before' ? p.top - 4 : p.top + p.height + 2) + 'px' });
     dropline.hidden = false;
   };
   const onUp = async () => {
@@ -2058,7 +2067,7 @@ hoverbar.querySelector('[data-act=drag]').addEventListener('pointerdown', (e) =>
     dropline.hidden = true;
     hoverbar.hidden = true;
     if (!drop) return;
-    const r = await op('block move', { element: from, [drop.before ? 'before' : 'after']: drop.ref });
+    const r = await op('block move', { element: from, [drop.at]: drop.ref });
     if (r) { state.sel = r.target; await fetchDeck(); }
   };
   handle.addEventListener('pointermove', onMove);
