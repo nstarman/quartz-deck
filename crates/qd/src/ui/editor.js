@@ -264,8 +264,8 @@ const PREVIEW_CSS = `html:not(.qd-present) {
   .qd-ph[data-ph=image]:not(:has(*))::before { content: 'Drop an image'; }
   .qd-ph[data-ph=image]:not(:has(*)) { cursor: copy; }
   /* an empty column (spec 025): what can go there, on the canvas only */
-  .column[data-qd]:not(:has(*)) { min-height: 3em; display: flex; align-items: center; justify-content: center; outline: 2px dashed #b9b9bf; outline-offset: -2px; border-radius: 6px; }
-  .column[data-qd]:not(:has(*))::before { content: '+ Add content'; color: #9a9aa0; font-size: .6em; }
+  .column[data-qd]:not(:has(*)) { min-height: 3em; text-align: center; outline: 2px dashed #b9b9bf; outline-offset: -2px; border-radius: 6px; }
+  .column[data-qd]:not(:has(*))::before { content: '+ Add content'; display: block; padding-top: 1em; color: #9a9aa0; font-size: .6em; }
   [data-qd]:hover:not(:has([data-qd]:hover)) { outline: 2px dashed rgba(42, 91, 215, .55); outline-offset: 2px; }
   .qd-sel, .qd-sel:hover { outline: 3px solid #2a5bd7 !important; outline-offset: 2px; }
   /* an arrow (spec 016): its line is the hit area, its handles show the selection */
