@@ -1231,6 +1231,34 @@ pub fn block_class(d: &Deck, element: &str, add: &[String], remove: &[String]) -
     )
 }
 
+/// `qd block attr`: set or unset an element's attributes, such as a column's
+/// `width` (spec 025); untouched attributes keep their bytes.
+pub fn block_attr(d: &Deck, element: &str, change: &AttrChange) -> Result<Patch> {
+    change.validate()?;
+    let (index, b, new) = with_attrs(d, element, |a| {
+        change.apply_to(a);
+        Ok(())
+    })?;
+    keep_structure(
+        d,
+        patch("block attr", b.id.clone(), vec![(b.span, new)], Vec::new()),
+        index,
+    )
+}
+
+/// `qd block add-column`: an empty column last in a columns block (spec 025).
+pub fn add_column(d: &Deck, columns: &str) -> Result<Patch> {
+    let (s, b) = d.element(columns)?;
+    let fence = d.slice(b.span).lines().next().unwrap_or("");
+    if !crate::deck::div_attrs(fence).is_some_and(|a| a.has_class("columns")) {
+        return Err(QdError::InvalidArg(format!(
+            "'{columns}' is not a columns block"
+        )));
+    }
+    let col = format!("::: {{.column}}{}:::", d.nl);
+    insert_elsewhere(d, s, "block add-column", &Pos::Into(columns), &col, None)
+}
+
 /// Element `element`'s text with its attributes changed by `change`, and its
 /// slide's index (`block class`, `build set`, `build order`).
 fn with_attrs<'d>(
@@ -1279,6 +1307,20 @@ fn with_attrs<'d>(
                     format!("{left}{}{right}", a.render())
                 }
             }
+        }
+        // a div written `::: column`: its attributes go in braces on its own fence (spec 025)
+        None if fenced => {
+            let first = lines[0];
+            let mut a = crate::deck::div_attrs(first).unwrap_or_default();
+            change(&mut a)?;
+            let colons = first.len() - first.trim_start().len()
+                + first.trim_start().chars().take_while(|&c| c == ':').count();
+            format!(
+                "{} {}{}",
+                &first[..colons],
+                a.render(),
+                &text[first.len()..]
+            )
         }
         None => {
             let mut a = Attrs::default();

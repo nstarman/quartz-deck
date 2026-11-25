@@ -5216,6 +5216,46 @@ async fn arrange_inside_columns() {
     .await;
 }
 
+/// Spec 025 US5: a selected column's width, and Add column on its columns
+/// block, in the Format column's Arrange tab.
+#[tokio::test(flavor = "multi_thread")]
+async fn column_width_and_add() {
+    let Some(ed) = Ed::open(ARRANGE_DECK).await else {
+        return;
+    };
+    let arrange = "[...document.querySelectorAll('#panel .tabs [role=tab]')].find((t) => t.textContent === 'Arrange').click()";
+    // Escape from the list: its column
+    ed.go("c").await;
+    ed.select("[data-qd=\"c/0/0/0\"]").await;
+    ed.key("Escape", "Escape", 27, 0).await;
+    ed.wait("document.querySelector('#panel .ref')?.textContent === 'c/0/0'")
+        .await;
+    ed.eval(arrange).await;
+    ed.wait("!document.querySelector('#panel form.columns-form').hidden")
+        .await;
+    ed.eval("(() => { const f = document.querySelector('#panel form.columns-form'); f.width.value = '40%'; f.requestSubmit(); })()")
+        .await;
+    ed.wait_file(|f| f.contains("::: {.column width=40%}\n- one"), "a width")
+        .await;
+    // the columns block: Add column
+    ed.settle().await;
+    ed.go("c").await;
+    ed.select("[data-qd=\"c/0/0/0\"]").await;
+    for _ in 0..2 {
+        ed.key("Escape", "Escape", 27, 0).await;
+    }
+    ed.wait("document.querySelector('#panel .ref')?.textContent === 'c/0'")
+        .await;
+    ed.eval(arrange).await;
+    ed.click_editor("#panel form.columns-form [data-act=addcol]")
+        .await;
+    ed.wait_file(
+        |f| f.contains("Three.\n:::\n\n::: {.column}\n:::\n::::"),
+        "a third column",
+    )
+    .await;
+}
+
 // ---------- spec 015 US1: diagrams on the slide ----------
 
 const DIAGRAM: &str = "---\ntitle: T\nformat: revealjs\n---\n\n## Flow {#flow}\n\n```{dot}\ndigraph {\n  layout=neato; splines=ortho;\n  node [shape=box];\n  a [label=\"Data\", pos=\"0,1!\"];\n  b [label=\"Tool\", pos=\"2,1!\"];\n  c [label=\"Paper\", pos=\"2,0!\"];\n  a -> b; b -> c;\n}\n```\n";

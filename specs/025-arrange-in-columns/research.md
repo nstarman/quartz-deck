@@ -40,4 +40,4 @@
 
 ## R9 — Column width and number (P4)
 
-- **Decision**: `qd block attr ELEMENT key=value… [--unset key]` through `with_attrs` (any element, not only columns); `qd column add COLUMNS` appends `::: {.column}` / `:::`; deleting a column is `block rm` of its ref. The Format view shows Width for a selected column.
+- **Decision**: `qd block attr ELEMENT --attr key=value… [--unset key]` through `with_attrs` (any element, not only columns); `qd block add-column COLUMNS` appends `::: {.column}` / `:::`; deleting a column is `block rm` of its ref. The Format view shows Width for a selected column.

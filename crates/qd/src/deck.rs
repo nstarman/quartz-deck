@@ -487,7 +487,7 @@ pub(crate) fn opens_up(fence: &str) -> bool {
 }
 
 /// A div fence's attributes: `{...}`, or `{.class}` for the shorthand `::: class`.
-fn div_attrs(fence: &str) -> Option<Attrs> {
+pub(crate) fn div_attrs(fence: &str) -> Option<Attrs> {
     let rest = div_open(fence).unwrap_or("");
     if rest.starts_with('{') {
         Attrs::parse(rest)

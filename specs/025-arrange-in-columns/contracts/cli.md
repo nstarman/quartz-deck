@@ -8,7 +8,7 @@
 | `qd block add SLIDE --before/--after REF` | REF may be nested |
 | `qd block rm / dup EL` | EL may be nested; a column's last element leaves the column empty |
 | `qd block place EL …` | EL may be nested: it leaves its column and becomes a box |
-| `qd block attr EL key=value… [--unset key]` | new (P4) |
-| `qd column add COLUMNS` | new (P4): an empty column at the end |
+| `qd block attr EL --attr key=value… [--unset key]` | new (P4) |
+| `qd block add-column COLUMNS` | new (P4): an empty column at the end |
 
 Results report `target`: the element's ref after the change.

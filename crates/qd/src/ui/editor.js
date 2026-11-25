@@ -935,6 +935,27 @@ async function renderElementPanel() {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); f.requestSubmit(); }
   });
   $('[data-act=deselect]', view).addEventListener('click', () => select(null));
+  // a column's width, and a columns block's Add column (spec 025)
+  // (a shorthand fence, `::: column`, has its class but no attributes)
+  const classes = block.attrs?.classes || [block.text.match(/^:{3,}\s*([\w-]+)\s*:*$/m)?.[1]];
+  const [isCol, isCols] = ['column', 'columns'].map((c) => classes.includes(c));
+  if (isCol || isCols) {
+    const c = $('form.columns-form', view);
+    c.hidden = false;
+    c.querySelectorAll('.colwidth').forEach((x) => { x.hidden = !isCol; });
+    $('[data-act=addcol]', c).hidden = !isCols;
+    c.width.value = block.attrs.kv?.width || '';
+    const done = async (r, sel = ref) => { if (r) { state.sel = sel; await fetchDeck(); await renderPanel(); } };
+    c.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const w = c.width.value.trim();
+      done(await op('block attr', w ? { element: ref, attr: [`width=${w}`] } : { element: ref, unset: ['width'] }));
+    });
+    $('[data-act=addcol]', c).addEventListener('click', async () => {
+      const r = await op('block add-column', { columns: ref });
+      done(r, r?.target);
+    });
+  }
   if (block.kind === 'box') {
     const expect = state.version; // what the form shows; a change elsewhere meanwhile is a conflict
     const g = $('form.geom-form', view);

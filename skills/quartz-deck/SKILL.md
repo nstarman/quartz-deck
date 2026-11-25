@@ -65,7 +65,9 @@ when the current directory has exactly one `.qmd`.
   act inside the element's column, `block move X --before/--after Y` moves
   between columns and in and out of them, `--into <column>` (on `block move`
   and `block add`) puts it last in a column, an empty one too, and `block
-  place` takes it out of its column as a box.
+  place` takes it out of its column as a box. `qd block attr r/1/0 --attr
+  width=40%` sets a column's width (`--unset width` removes it), `qd block
+  add-column r/1` adds an empty column, and `block rm` of a column removes it.
 
 ## Commands
 

@@ -1869,6 +1869,42 @@ fn place_from_a_column_and_copied_builds() {
     );
 }
 
+/// Spec 025 US5: a column's width, and adding and removing a column.
+#[test]
+fn column_widths_and_number() {
+    let deck = ARRANGE.replace("::: {.column}\n- one", "::: {.column width=\"50%\"}\n- one");
+    let e = Env::with(&deck);
+    e.ok(&["block", "attr", "r/0/0", "--attr", "width=40%"]);
+    assert_eq!(e.text(), deck.replace("width=\"50%\"", "width=40%"));
+    e.ok(&["block", "attr", "r/0/0", "--unset", "width"]);
+    assert_eq!(e.text(), ARRANGE);
+    let v = e.ok(&["block", "add-column", "r/0"]);
+    assert_eq!(v["target"], "r/0/2");
+    assert!(
+        e.text()
+            .contains("![A plot](p.png)\n:::\n\n::: {.column}\n:::\n::::"),
+        "{}",
+        e.text()
+    );
+    e.ok(&["block", "rm", "r/0/1"]);
+    assert!(!e.text().contains("A plot"), "{}", e.text());
+    e.err(&["block", "add-column", "r/0/0"], "E_INVALID_ARG", 1);
+    // a column written `::: column`: the width goes on its own fence, in braces
+    let short = "## S {#s}\n\n:::: columns\n::: column\nA\n:::\n::::\n";
+    let e = Env::with(short);
+    e.ok(&["block", "attr", "s/0/0", "--attr", "width=40%"]);
+    assert_eq!(
+        e.text(),
+        short.replace("::: column\n", "::: {.column width=40%}\n")
+    );
+    e.ok(&["block", "add-column", "s/0"]);
+    assert!(
+        e.text().contains("A\n:::\n\n::: {.column}\n:::\n::::"),
+        "{}",
+        e.text()
+    );
+}
+
 /// Spec 025: a copy gets fresh ids inside its columns too, so no id is in the deck twice.
 #[test]
 fn copies_renew_ids_inside_columns() {
