@@ -400,7 +400,7 @@ enum Cmd {
         #[command(subcommand)]
         action: ImageCmd,
     },
-    /// Single elements of a slide: add, move, remove, duplicate (ref: <slide>/<index> or #id; not inside columns)
+    /// Single elements of a slide: add, move, remove, duplicate (ref: <slide>/<index>, <slide>/<index>/<index>… inside columns, or #id)
     Block {
         #[command(subcommand)]
         action: BlockCmd,
@@ -596,13 +596,13 @@ enum BlockCmd {
         #[command(flatten)]
         input: Input,
     },
-    /// Move an element before/after another element of the same slide
+    /// Move an element next to another of the same slide, in its column or another, or last in a column
     Move {
         element: String,
         #[command(flatten)]
-        to: Where,
+        to: ElWhere,
     },
-    /// Remove an element
+    /// Remove an element (a column's last one leaves the column empty)
     Rm { element: String },
     /// Duplicate an element (placed right after it; explicit ids are renewed)
     Dup { element: String },
@@ -658,6 +658,20 @@ enum BuildCmd {
 
 #[derive(Args)]
 #[group(required = true, multiple = false)]
+struct ElWhere {
+    /// Place after this element
+    #[arg(long)]
+    after: Option<String>,
+    /// Place before this element
+    #[arg(long)]
+    before: Option<String>,
+    /// Place last in this column (`<slide>/<i>/<j>`; an empty one too)
+    #[arg(long)]
+    into: Option<String>,
+}
+
+#[derive(Args)]
+#[group(required = true, multiple = false)]
 struct BlockWhere {
     /// Place after this element
     #[arg(long)]
@@ -671,6 +685,9 @@ struct BlockWhere {
     /// Place after the slide's last element
     #[arg(long)]
     end: bool,
+    /// Place last in this column (`<slide>/<i>/<j>`; an empty one too)
+    #[arg(long)]
+    into: Option<String>,
 }
 
 /// `X,Y` (numbers, px).
@@ -2558,15 +2575,22 @@ fn run_with(cli: &Cli, store: Option<&Store>) -> Result<Value> {
             BlockCmd::Add { slide, at, input } => {
                 let md = required_input(input)?;
                 let first = format!("{slide}/0"); // --start: before the first element
-                let pos = match (&at.after, &at.before, at.start) {
-                    (Some(r), _, _) => Pos::After(r),
-                    (_, Some(r), _) => Pos::Before(r),
-                    (_, _, true) => Pos::Before(&first),
+                let pos = match (&at.after, &at.before, at.start, at.into.as_deref()) {
+                    (.., Some(c)) => Pos::Into(c),
+                    (Some(r), ..) => Pos::After(r),
+                    (_, Some(r), ..) => Pos::Before(r),
+                    (_, _, true, _) => Pos::Before(&first),
                     _ => Pos::End,
                 };
                 ctx.edit(|d| ops::block_add(d, slide, pos, &md))
             }
-            BlockCmd::Move { element, to } => ctx.edit(|d| ops::block_move(d, element, to.pos())),
+            BlockCmd::Move { element, to } => {
+                let pos = to
+                    .into
+                    .as_deref()
+                    .map_or_else(|| at(&to.after, &to.before), Pos::Into);
+                ctx.edit(|d| ops::block_move(d, element, pos))
+            }
             BlockCmd::Rm { element } => ctx.edit(|d| ops::block_rm(d, element)),
             BlockCmd::Dup { element } => ctx.edit(|d| ops::block_dup(d, element)),
             BlockCmd::Class {

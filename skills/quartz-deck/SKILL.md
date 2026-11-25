@@ -61,8 +61,11 @@ when the current directory has exactly one `.qmd`.
   Inside columns the ref goes on with the place at each level: in
   `:::: {.columns}` at `results/1`, `results/1/0` is the first `.column` and
   `results/1/0/2` the third element in it (`qd show` lists them under
-  `children`). `build set/list/order`, `block class` and `edit` take these
-  refs; `block move/dup/rm/add/place` refuse them (edit the source instead).
+  `children`). Every element op takes these refs: `block move/dup/rm/add`
+  act inside the element's column, `block move X --before/--after Y` moves
+  between columns and in and out of them, `--into <column>` (on `block move`
+  and `block add`) puts it last in a column, an empty one too, and `block
+  place` takes it out of its column as a box.
 
 ## Commands
 

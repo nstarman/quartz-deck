@@ -482,7 +482,7 @@ fn blocks_of<'c>(
 }
 
 /// A `.columns` or `.column` div, whose contents are elements of their own.
-fn opens_up(fence: &str) -> bool {
+pub(crate) fn opens_up(fence: &str) -> bool {
     div_attrs(fence).is_some_and(|a| a.has_class("columns") || a.has_class("column"))
 }
 
@@ -828,16 +828,33 @@ impl Deck {
         }
     }
 
+    /// Where element `r` sits (spec 025): its slide, the block holding it
+    /// (none at the top level), the list it is in and its index there.
+    pub fn siblings(&self, r: &str) -> Result<(&Slide, Option<&Block>, &[Block], usize)> {
+        type Found<'a> = (Option<&'a Block>, &'a [Block], usize);
+        fn find<'a>(list: &'a [Block], parent: Option<&'a Block>, b: &Block) -> Option<Found<'a>> {
+            list.iter().enumerate().find_map(|(i, x)| {
+                if std::ptr::eq(x, b) {
+                    Some((parent, list, i))
+                } else {
+                    find(&x.children, Some(x), b)
+                }
+            })
+        }
+        let (s, b) = self.element(r)?;
+        let (parent, list, i) = find(&s.blocks, None, b).expect("an element is in its slide");
+        Ok((s, parent, list, i))
+    }
+
     /// `element`, refused when it is inside columns, for an op that
     /// rearranges a slide's blocks (`verb` it, spec 024).
     pub fn top_element(&self, r: &str, verb: &str) -> Result<(&Slide, &Block)> {
-        let (s, b) = self.element(r)?;
-        if !s.blocks.iter().any(|x| std::ptr::eq(x, b)) {
+        if self.siblings(r)?.1.is_some() {
             return Err(QdError::InvalidArg(format!(
                 "'{r}' is inside columns: {verb} it in the source for now"
             )));
         }
-        Ok((s, b))
+        self.element(r)
     }
 
     /// Every explicit id in the deck (slides and blocks).
@@ -1235,6 +1252,13 @@ mod tests {
             positional(&d.slides[0], d.element("#fig").unwrap().1),
             "r/0/1/0"
         );
+        let (_, parent, list, i) = d.siblings("#fig").unwrap();
+        assert_eq!(
+            (parent.unwrap().id.as_str(), list.len(), i),
+            ("r/0/1", 2, 0)
+        );
+        let (_, parent, list, i) = d.siblings("r/1").unwrap();
+        assert_eq!((parent.is_none(), list.len(), i), (true, 3, 1));
         for bad in ["r/0/9/0", "r/1/0", "r/0/0/0/0"] {
             assert_eq!(d.element(bad).unwrap_err().code(), "E_NOT_FOUND", "{bad}");
         }
